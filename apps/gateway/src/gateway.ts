@@ -8,7 +8,7 @@
  * The gateway holds no business logic and no database. It discovers wiring from each module's /_manifest.
  */
 import Fastify, { type FastifyInstance } from 'fastify';
-import { toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
+import { safeEqual, toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
 
 /** module response headers passed through to the client */
 export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy'] as const;
@@ -83,7 +83,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
   }));
 
   app.post('/_events/publish', async (req, reply) => {
-    if (req.headers['x-internal-token'] !== opts.internalToken) throw unauthorized('Internal endpoint');
+    if (!safeEqual(req.headers['x-internal-token'], opts.internalToken)) throw unauthorized('Internal endpoint');
     const event = req.body as { type?: string; source?: string };
     const targets = manifests.filter((m) => event.type && m.subscribes.includes(event.type as never) && m.id !== event.source);
     const results = await Promise.all(targets.map(async (m) => {

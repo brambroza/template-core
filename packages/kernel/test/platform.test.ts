@@ -250,6 +250,11 @@ describe('audit log', () => {
     expect(auditSummary({})).toBeNull();
   });
 
+  it('SEC-10 (security review 0.3): drops API keys, OTPs, PINs and auth headers; masks passports', () => {
+    expect(redact({ apiKey: 'k', api_key: 'k', privateKey: 'k', otp: '123456', otpCode: '1', pin: '1234', credentials: 'c', authorization: 'Bearer x', passportNo: 'AA1234567', name: 'ok', signatureLabels: ['ผู้อนุมัติ'] }))
+      .toEqual({ passportNo: '••••4567', name: 'ok', signatureLabels: ['ผู้อนุมัติ'] });
+  });
+
   it('keeps only the last 4 digits of bank account / ID numbers (bugs-0.4 PAY-01)', () => {
     expect(redact({ bankAccount: '123-4-56789-0', bank_account: '1234567890', accountNo: '9876543210', idCard: '1-1037-02345-67-8', bankName: 'กสิกร', empty: null }))
       .toEqual({ bankAccount: '••••7890', bank_account: '••••7890', accountNo: '••••3210', idCard: '••••5678', bankName: 'กสิกร', empty: null });

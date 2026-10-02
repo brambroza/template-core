@@ -14,13 +14,13 @@ import { parse } from './errors.ts';
 
 export const AUDIT_SUMMARY_MAX = 2048;
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** body fields never written to the log: credentials and file contents */
-const DROP_KEY = /(password|passwd|secret|token|base64$|^logo)/i;
+/** body fields never written to the log: credentials (incl. API keys, OTPs, PINs — security review 0.3, SEC-10) and file contents */
+const DROP_KEY = /(password|passwd|passcode|secret|token|api_?key|private_?key|credential|authorization|cookie|otp$|^otp|^pin$|^pin_?code$|base64$|^logo)/i;
 /**
  * body fields kept only as their last 4 characters: bank account / card / national-ID numbers. Modules that promise never to store a full
  * number (payroll keeps `bank_account_last4`) must not have it written in full to the audit log either (bugs-0.4 PAY-01).
  */
-const MASK_KEY = /(bank_?account|account_?(no|number)|card_?(no|number)|national_?id|id_?card|citizen_?id)/i;
+const MASK_KEY = /(bank_?account|account_?(no|number)|card_?(no|number)|national_?id|id_?card|citizen_?id|passport_?(no|number)?$|iban)/i;
 const mask = (v: unknown) => {
   const digits = String(v).replace(/[^0-9A-Za-z]/g, '');
   return digits ? `••••${digits.slice(-4)}` : null;

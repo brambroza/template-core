@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Bot, CornerDownLeft, FileText, LayoutGrid, Loader2, Search, Sparkles, Zap } from 'lucide-react';
+import { ArrowRight, Bot, CornerDownLeft, FileText, LayoutGrid, ListFilter, Loader2, Search, Sparkles, Zap } from 'lucide-react';
 import {
   commandTarget, get, hasPerm, matchCommand, pickRecord,
   type CommandSpec, type ModuleUi, type SearchSpec,
@@ -162,6 +162,32 @@ export function CommandPalette() {
     }
   };
 
+  /** "ค้นหาด้วย AI": a Thai sentence -> one list screen with its filters (POST /assist/find). Opens it straight away. */
+  const findWithAi = async (sentence: string) => {
+    const q = sentence.trim();
+    if (!q) return;
+    const session = loadSession();
+    setChat([{ role: 'user', content: `ค้นหา: ${q}` }]);
+    setText('');
+    setThinking(true);
+    try {
+      const res = await fetch('/assist/find', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(session ? { authorization: `Bearer ${session.token}` } : {}) },
+        body: JSON.stringify({ text: q }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message ?? 'ค้นหาด้วย AI ไม่ได้ในตอนนี้');
+      const href = safeHref(data.actions?.[0]?.href);
+      if (href && !data.offline) { go(href); return; }
+      setChat((h) => [...(h ?? []), { role: 'assistant', content: data.reply || 'ไม่พบหน้ารายการที่ตรงกับคำค้นนี้', error: !!data.offline }]);
+    } catch (e) {
+      setChat((h) => [...(h ?? []), { role: 'assistant', content: e instanceof Error ? e.message : 'ผิดพลาด', error: true }]);
+    } finally {
+      setThinking(false);
+    }
+  };
+
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: 'end' });
     const last = list.current?.querySelector('.bubble:last-of-type');
@@ -210,9 +236,13 @@ export function CommandPalette() {
       }
     }
     items.push(...records);
+    // a sentence that is not a command: let AI turn it into list filters ("ใบเบิกที่รออนุมัติเดือนนี้")
+    if (q && !match && (q.includes(' ') || q.length >= 8)) items.push({ key: 'find', group: 'ผู้ช่วย AI', title: `ค้นหาด้วย AI: “${text.trim()}”`, sub: 'AI เลือกหน้ารายการและตั้งตัวกรองให้ เช่น “ใบสั่งซื้อรออนุมัติเดือนนี้”', icon: <ListFilter size={16} aria-hidden />, run: () => findWithAi(text) });
     if (q) items.push({ key: 'ask', group: 'ผู้ช่วย AI', title: `ถาม AI: “${text.trim()}”`, sub: 'ตอบจากข้อมูลจริงในระบบ เช่น “เดือนนี้ซื้อเหล็กไปเท่าไหร่”', icon: <Bot size={16} aria-hidden />, run: () => ask(text) });
   }
-  const shown = items.slice(0, 14);
+  // the AI rows stay reachable however many records matched
+  const isAi = (i: Item) => i.key === 'find' || i.key === 'ask';
+  const shown = [...items.filter((i) => !isAi(i)).slice(0, 12), ...items.filter(isAi)];
   useEffect(() => setActive(0), [text, !!chat]);
 
   useEffect(() => {

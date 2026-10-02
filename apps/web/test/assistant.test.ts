@@ -36,6 +36,10 @@ describe('assistant', () => {
     expect(r).toContain('/summary');
     expect(matchesTemplate('/purchase-orders/abc', '/purchase-orders/:id')).toBe(true);
     expect(matchesTemplate('/purchase-orders/abc/approve', '/purchase-orders/:id')).toBe(false);
+    // SEC-08 (security review 0.3): an id cannot smuggle dot segments, encoding or a query into the gateway URL
+    for (const id of ['%2e%2e', '..', '.', 'a?x=1', 'a#b', 'a%2Fb', 'a b', 'a\\b']) expect(matchesTemplate(`/purchase-orders/${id}`, '/purchase-orders/:id'), id).toBe(false);
+    expect(matchesTemplate('/purchase-orders/PO-2569-0001', '/purchase-orders/:id')).toBe(true);
+    expect(matchesTemplate('/certificates/5f0c1d2e-0000-4000-8000-000000000000_2026', '/certificates/:id')).toBe(true);
   });
 
   it('reads data with the user token and answers from it', async () => {

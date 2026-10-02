@@ -34,6 +34,11 @@ describe('CSV export', () => {
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
     expect(csvCell('-5', true)).toBe('-5');
     expect(csvCell('-5')).toBe("'-5");
+    // SEC-13 (security review 0.3): a text value in a numeric column is still neutralised
+    expect(csvCell('=1+cmd|"/c calc"!A1', true)).toBe(`"'=1+cmd|""/c calc""!A1"`);
+    expect(csvCell('-2+3', true)).toBe("'-2+3");
+    expect(csvCell('1.5e3', true)).toBe('1.5e3');
+    expect(toCsv([{ key: 'q', label: 'Q', format: 'qty' }], [{ q: '@SUM(A1)' }]).slice(1)).toBe("Q\r\n'@SUM(A1)\r\n");
   });
 
   it('builds a BOM-prefixed file with the column labels as headers', () => {

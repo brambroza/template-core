@@ -815,3 +815,27 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
   .print-doc table.data:has(th:nth-child(8)) td, .print-doc table.data:has(th:nth-child(8)) th { font-size: 8pt !important; padding: 1mm 1.2mm !important; }
   .print-doc table.data:has(th:nth-child(11)) td, .print-doc table.data:has(th:nth-child(11)) th { font-size: 7.4pt !important; padding: .9mm .9mm !important; }
 }
+
+/* ---------- AI: "สแกนใบเสร็จ" on forms, "สรุปให้หน่อย" on the dashboard (docs/ai.md) ---------- */
+.ai-fill { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ai-fill-btn { display: inline-flex; align-items: center; gap: 8px; border-color: var(--accent-deep); }
+.ai-fill-msg { margin: 0; max-width: 420px; font-size: .85rem; color: var(--ink-2); text-align: right; }
+.ai-review, .briefing { margin: 0 0 20px; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--r-md); background: var(--surface); }
+.ai-review header, .briefing header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-review header b, .briefing header b { display: inline-flex; align-items: center; gap: 8px; }
+.ai-review dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 18px; margin: 10px 0 0; }
+.ai-review dt { font-size: .8rem; color: var(--ink-2); }
+.ai-review dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ai-warn { margin: 10px 0 0; padding: 8px 12px 8px 28px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--ink); font-size: .9rem; }
+.ai-attach { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-size: .9rem; }
+.ai-review > .muted { margin: 10px 0 0; font-size: .9rem; }
+.briefing ul { margin: 10px 0 0; padding-left: 20px; }
+.briefing li { margin: 4px 0; }
+.briefing .bubble-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.briefing .bubble-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.briefing.is-error { border-left-color: var(--warn); }
+.briefing-btn { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 640px) {
+  .ai-fill { align-items: stretch; width: 100%; }
+  .ai-fill-msg { text-align: left; max-width: none; }
+}

@@ -103,6 +103,8 @@ export default defineUi({
         { name: 'submit', label: 'ส่งขออนุมัติทันที', type: 'boolean', default: true },
       ],
       lines: claimLines,
+      // optional: photo of the receipt -> lines prefilled by AI (customer's own key), attached to the claim after save
+      aiFill: { kind: 'receipt', label: 'สแกนใบเสร็จ' },
       submitLabel: 'บันทึกใบเบิก', after: { screen: 'claimDetail', idFrom: 'id' },
     },
     claimEdit: {

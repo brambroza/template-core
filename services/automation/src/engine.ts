@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
 import { get } from '@erp/ui-schema';
 import { eventInfo, type ActionSpec, type Condition } from './catalog.ts';
 
@@ -95,17 +97,54 @@ export function describe(rule: { event_type: string; conditions: Condition[]; ac
   return `${when}${cond}${act}`;
 }
 
-const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?f[cd][0-9a-f]{2}:)|\.(internal|local|localhost)$/i;
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?f[cd][0-9a-f]{2}:)|\.(internal|local|localhost|lan|home|corp|intranet)$/i;
 
-/** Webhook targets must be public https URLs (no SSRF into the customer's network). */
+/** Addresses a webhook may never reach: loopback, private, link-local (cloud metadata), CGNAT, multicast, IPv4-mapped IPv6… */
+const BLOCKED = new BlockList();
+for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24],
+  ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 4], ['240.0.0.0', 4]] as const) BLOCKED.addSubnet(net, prefix, 'ipv4');
+for (const [net, prefix] of [['::', 127], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['64:ff9b::', 96], ['2002::', 16]] as const) BLOCKED.addSubnet(net, prefix, 'ipv6');
+
+/** Is this literal IP address inside the customer's network (or otherwise not a public internet host)? */
+export function isPrivateAddress(ip: string): boolean {
+  const addr = ip.replace(/^\[|\]$/g, '');
+  const v = isIP(addr);
+  if (!v) return false;
+  if (v === 6) {
+    // IPv4-mapped (::ffff:127.0.0.1 = ::ffff:7f00:1): judge the IPv4 address inside
+    const norm = new URL(`http://[${addr}]/`).hostname.slice(1, -1).toLowerCase();
+    const m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(norm);
+    if (m) {
+      const hi = parseInt(m[1], 16); const lo = parseInt(m[2], 16);
+      return isPrivateAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
+  }
+  return BLOCKED.check(addr, v === 4 ? 'ipv4' : 'ipv6');
+}
+
+/** Webhook targets must be public https URLs (no SSRF into the customer's network). Checks the URL text; `sendWebhook` also checks DNS. */
 export function webhookProblem(target: string | undefined, env: NodeJS.ProcessEnv): string | null {
   if (!target) return 'ต้องระบุ URL ของ webhook';
   let u: URL;
   try { u = new URL(target); } catch { return 'URL ของ webhook ไม่ถูกต้อง'; }
   const allowPrivate = env.AUTOMATION_ALLOW_PRIVATE_WEBHOOKS === '1';
   if (u.protocol !== 'https:' && !(allowPrivate && u.protocol === 'http:')) return 'webhook ต้องเป็น https';
-  if (!allowPrivate && PRIVATE_HOST.test(u.hostname)) return 'ส่ง webhook ไปที่อยู่ภายในเครือข่ายไม่ได้';
+  if (u.username || u.password) return 'URL ของ webhook ห้ามมีชื่อผู้ใช้/รหัสผ่าน';
+  if (!allowPrivate && (PRIVATE_HOST.test(u.hostname) || isPrivateAddress(u.hostname) || (!u.hostname.includes('.') && !isIP(u.hostname.replace(/^\[|\]$/g, ''))))) return 'ส่ง webhook ไปที่อยู่ภายในเครือข่ายไม่ได้';
   return null;
+}
+
+/**
+ * The host name must not RESOLVE to an internal address either (e.g. a public name pointing at 10.0.0.5).
+ * Security review 0.3, SEC-06. A DNS answer that changes between this check and the request (rebinding) is not covered — put
+ * outbound traffic of the automation container behind an egress firewall for that.
+ */
+export async function resolvesPrivate(hostname: string, resolve: (host: string) => Promise<{ address: string }[]> = (h) => lookup(h, { all: true, verbatim: true })): Promise<string | null> {
+  const host = hostname.replace(/^\[|\]$/g, '');
+  if (isIP(host)) return isPrivateAddress(host) ? 'ส่ง webhook ไปที่อยู่ภายในเครือข่ายไม่ได้' : null;
+  let addrs: { address: string }[];
+  try { addrs = await resolve(host); } catch { return `หาที่อยู่ของ ${host} ไม่พบ (DNS)`; }
+  return addrs.some((a) => isPrivateAddress(a.address)) ? `ส่ง webhook ไปที่อยู่ภายในเครือข่ายไม่ได้ (${host} ชี้ไปที่อยู่ภายใน)` : null;
 }
 
 export interface Delivery { ok: boolean; detail: string }
@@ -133,7 +172,7 @@ export async function sendLine(target: string | undefined, text: string, env: No
 
 /** JSON webhook, signed with HMAC-SHA256 (X-ERP-Signature) when WEBHOOK_SECRET is set. */
 export async function sendWebhook(target: string | undefined, payload: unknown, env: NodeJS.ProcessEnv): Promise<Delivery> {
-  const problem = webhookProblem(target, env);
+  const problem = webhookProblem(target, env) ?? (env.AUTOMATION_ALLOW_PRIVATE_WEBHOOKS === '1' ? null : await resolvesPrivate(new URL(target!).hostname));
   if (problem) return { ok: false, detail: problem };
   const body = JSON.stringify(payload);
   const headers: Record<string, string> = {};

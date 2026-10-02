@@ -1,6 +1,6 @@
 import {
-  auth, hashPassword, loadManifest, one, parse, requirePerm, s, signToken, unauthorized, verifyPassword, z,
-  type Client, type ServiceDefinition,
+  auth, badRequest, forbidden, hashPassword, hasPerm, HttpError, loadManifest, one, parse, requirePerm, s, signToken, unauthorized, verifyPassword, z,
+  type AuthContext, type Client, type ServiceDefinition,
 } from '@erp/kernel';
 import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,12 @@ export function logoProblem(dataUrl: string): string | null {
   const ok = kind === 'png' ? bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     : kind === 'jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
     : /<svg[\s>]/i.test(bytes.toString('utf8'));
-  return ok ? null : 'ไฟล์โลโก้ไม่ตรงกับชนิดที่ระบุ';
+  if (!ok) return 'ไฟล์โลโก้ไม่ตรงกับชนิดที่ระบุ';
+  // an SVG is a document: no scripts, event handlers, embedded HTML, entities or outside resources (security review 0.3, SEC-11)
+  if (kind === 'svg+xml' && /<script|<foreignObject|<!ENTITY|\son[a-z]+\s*=|javascript:|(?:xlink:)?href\s*=\s*["']?\s*(?!#|data:image\/)[a-z]/i.test(bytes.toString('utf8'))) {
+    return 'โลโก้ SVG ต้องไม่มีสคริปต์หรือลิงก์ภายนอก (บันทึกเป็น PNG แทนได้)';
+  }
+  return null;
 }
 
 const optText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional();
@@ -87,6 +92,46 @@ async function permissionsOf(c: Client, userId: string): Promise<string[]> {
 
 const publicUser = `id, email, name, active, created_at`;
 
+/**
+ * May `a` hand out `perm`? Only what they hold themselves (security review 0.3, SEC-01): `*` needs `*`, `<module>.*` needs
+ * `<module>.*` (or `*`), a single permission needs that permission (or a wildcard covering it).
+ */
+export function canGrant(a: AuthContext, perm: string): boolean {
+  if (a.perms.includes('*')) return true;
+  if (perm === '*') return false;
+  if (perm.endsWith('.*')) return a.perms.includes(perm);
+  return hasPerm(a, perm);
+}
+
+/** 403 unless the caller holds every permission in `perms` (no granting, removing or taking over more than you have). */
+function requireGrantable(a: AuthContext, perms: string[], what: string): void {
+  const missing = [...new Set(perms.filter((p) => !canGrant(a, p)))];
+  if (missing.length) throw forbidden(`${what}: คุณให้ได้เฉพาะสิทธิ์ที่ตัวเองมี (ขาด ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? ' …' : ''})`);
+}
+
+/** Permissions of the given roles of this tenant (RLS); 400 when an id is not a role of this company. */
+async function permissionsOfRoles(c: Client, roleIds: string[]): Promise<string[]> {
+  if (!roleIds.length) return [];
+  const rows = (await c.query<{ id: string; permissions: string[] }>('select id, permissions from roles where id = any($1::uuid[])', [roleIds])).rows;
+  if (rows.length !== new Set(roleIds).size) throw badRequest('ไม่พบบทบาทที่เลือก');
+  return rows.flatMap((r) => r.permissions);
+}
+
+/* ---- login throttling (security review 0.3, SEC-02) ---- */
+export const LOGIN_MAX_FAILURES = 10;
+export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map<string, number[]>();
+const recentFailures = (key: string, now = Date.now()) => (loginFailures.get(key) ?? []).filter((at) => now - at < LOGIN_WINDOW_MS);
+function noteLoginFailure(key: string) {
+  const now = Date.now();
+  loginFailures.set(key, [...recentFailures(key, now), now]);
+  if (loginFailures.size > 50_000) for (const [k] of loginFailures) { loginFailures.delete(k); if (loginFailures.size <= 25_000) break; }
+}
+/** test hook: forget all failed attempts */
+export function resetLoginThrottle() { loginFailures.clear(); }
+/** compared against when the user does not exist, so a wrong e-mail costs the same time as a wrong password */
+const DUMMY_HASH = hashPassword('not-a-real-password-' + Math.random());
+
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
@@ -110,11 +155,25 @@ export const definition: ServiceDefinition = {
 
     app.post('/auth/login', { config: { public: true } }, async (req) => {
       const body = parse(LoginInput, req.body);
+      // one account (company + e-mail) may fail LOGIN_MAX_FAILURES times per LOGIN_WINDOW_MS, then waits (429)
+      const key = `${body.tenant}|${body.email}`;
+      if (recentFailures(key).length >= LOGIN_MAX_FAILURES) {
+        throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
+      }
       const tenant = (await k.db.pool.query('select id, code, name from tenants where code = $1', [body.tenant])).rows[0];
-      if (!tenant) throw unauthorized('Invalid credentials');
+      if (!tenant) {
+        verifyPassword(body.password, DUMMY_HASH);
+        noteLoginFailure(key);
+        throw unauthorized('Invalid credentials');
+      }
       return k.db.tx(tenant.id, async (c) => {
         const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
-        if (!u || !verifyPassword(body.password, u.password_hash)) throw unauthorized('Invalid credentials');
+        const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
+        if (!ok) {
+          noteLoginFailure(key);
+          throw unauthorized('Invalid credentials');
+        }
+        loginFailures.delete(key);
         const perms = await permissionsOf(c, u.id);
         const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl);
         return { token, expiresIn: ttl, tenant, user: { id: u.id, email: u.email, name: u.name }, permissions: perms };
@@ -191,6 +250,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'identity.user.write');
       const body = parse(UserInput, req.body);
       const user = await k.db.tx(a.tenantId, async (c) => {
+        requireGrantable(a, await permissionsOfRoles(c, body.roleIds), 'กำหนดบทบาทไม่ได้');
         const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [body.email, body.name, hashPassword(body.password)])).rows[0];
         for (const roleId of body.roleIds) await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, roleId]);
         return u;
@@ -206,6 +266,8 @@ export const definition: ServiceDefinition = {
       const { roleIds } = parse(z.object({ roleIds: z.array(s.uuid) }), req.body);
       return k.db.tx(a.tenantId, async (c) => {
         await one(c, 'select id from users where id = $1', [id], 'User');
+        requireGrantable(a, await permissionsOf(c, id), 'แก้บทบาทของผู้ใช้ที่มีสิทธิ์มากกว่าคุณไม่ได้');
+        requireGrantable(a, await permissionsOfRoles(c, roleIds), 'กำหนดบทบาทไม่ได้');
         await c.query('delete from user_roles where user_id = $1', [id]);
         for (const roleId of roleIds) await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [id, roleId]);
         return { userId: id, permissions: await permissionsOf(c, id) };
@@ -216,7 +278,11 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'identity.user.write');
       const { id } = parse(z.object({ id: s.uuid }), req.params);
-      return k.db.tx(a.tenantId, (c) => one(c, `update users set active = false where id = $1 returning ${publicUser}`, [id], 'User'));
+      return k.db.tx(a.tenantId, async (c) => {
+        await one(c, 'select id from users where id = $1', [id], 'User');
+        requireGrantable(a, await permissionsOf(c, id), 'ปิดบัญชีผู้ใช้ที่มีสิทธิ์มากกว่าคุณไม่ได้');
+        return one(c, `update users set active = false where id = $1 returning ${publicUser}`, [id], 'User');
+      });
     });
 
     app.get('/roles', async (req) => {
@@ -229,6 +295,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'identity.role.write');
       const body = parse(RoleInput, req.body);
+      requireGrantable(a, body.permissions, 'สร้างบทบาทไม่ได้');
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => (await c.query('insert into roles (name, permissions) values ($1, $2) returning *', [body.name, body.permissions])).rows[0]);
     });
@@ -267,6 +334,7 @@ export const definition: ServiceDefinition = {
       const tpl = ROLE_TEMPLATES.find((x) => x.id === body.template)!;
       const { permissions, skipped } = applyTemplate(tpl, installed(req, body.modules));
       const name = body.name ?? tpl.name;
+      requireGrantable(a, permissions, 'สร้างบทบาทไม่ได้');
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const role = (await c.query('insert into roles (name, permissions) values ($1, $2) returning *', [name, permissions])).rows[0];

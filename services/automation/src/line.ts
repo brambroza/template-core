@@ -11,6 +11,8 @@ import { sendLine, type Delivery } from './engine.ts';
 
 export const LINK_TTL_MINUTES = 10;
 const MAX_WRONG_CODES = 5; // per LINE account per 15 minutes
+/** per company per 15 minutes: guessing with many throw-away LINE accounts stops here (security review 0.3, SEC-09) */
+export const MAX_WRONG_CODES_PER_TENANT = 30;
 
 // fastify types without depending on fastify directly (the kernel owns it)
 type FastifyInstance = Parameters<ServiceDefinition['routes']>[0];
@@ -176,6 +178,8 @@ async function handleEvent(c: Client, ev: LineEvent): Promise<{ reply: string | 
   if (cmd.kind === 'link') {
     const wrong = (await c.query(`select count(*)::int as n from line_link_attempts where line_user_id = $1 and created_at > now() - interval '15 minutes'`, [lineUserId])).rows[0].n;
     if (wrong >= MAX_WRONG_CODES) return { reply: 'ใส่รหัสผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่' };
+    const wrongAll = (await c.query(`select count(*)::int as n from line_link_attempts where created_at > now() - interval '15 minutes'`)).rows[0].n;
+    if (wrongAll >= MAX_WRONG_CODES_PER_TENANT) return { reply: 'ระบบพักการผูกบัญชีชั่วคราวเพราะมีการใส่รหัสผิดจำนวนมาก กรุณาลองใหม่ใน 15 นาที' };
     const code = (await c.query(
       `update line_link_codes set used_at = now(), line_user_id = $2 where code = $1 and used_at is null and expires_at > now() returning user_id, user_name`, [cmd.code, lineUserId])).rows[0];
     if (!code) {

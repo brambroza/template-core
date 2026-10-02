@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyToken } from '@erp/kernel';
 import { bootTestService, TEST_INTERNAL_TOKEN, TEST_JWT_SECRET, type TestService } from '@erp/kernel/testing';
 import { hasPerm } from '@erp/ui-schema';
-import { definition } from '../src/service.ts';
+import { canGrant, definition, LOGIN_MAX_FAILURES, resetLoginThrottle } from '../src/service.ts';
 import ui from '../src/ui.ts';
 
 let t: TestService;
@@ -94,6 +95,69 @@ function taxId(first12: string) {
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const SVG = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>').toString('base64');
 
+describe('security review 0.3', () => {
+  it('SEC-01: user/role admins can only hand out permissions they hold themselves', async () => {
+    await createTenant('esc');
+    const admin = { token: (await login('esc', 'admin@x.co', 'password123')).body.token };
+    const adminRole = (await t.api('GET', '/roles', undefined, admin)).body.find((r: any) => r.name === 'Administrator');
+    const hrRole = (await t.api('POST', '/roles', { name: 'HR officer', permissions: ['identity.user.read', 'identity.user.write', 'identity.role.write', 'hr.*'] }, admin)).body;
+    const hr = (await t.api('POST', '/users', { email: 'hr@x.co', name: 'HR', password: 'password123', roleIds: [hrRole.id] }, admin)).body;
+    const hrTok = { token: (await login('esc', 'hr@x.co', 'password123')).body.token };
+
+    // cannot give themselves (or anyone) the Administrator role
+    expect((await t.api('PUT', `/users/${hr.id}/roles`, { roleIds: [adminRole.id] }, hrTok)).status).toBe(403);
+    expect((await t.api('POST', '/users', { email: 'x@x.co', name: 'X', password: 'password123', roleIds: [adminRole.id] }, hrTok)).status).toBe(403);
+    // cannot mint a role with more than they have
+    expect((await t.api('POST', '/roles', { name: 'Root', permissions: ['*'] }, hrTok)).status).toBe(403);
+    expect((await t.api('POST', '/roles', { name: 'Pay', permissions: ['payroll.run.read'] }, hrTok)).status).toBe(403);
+    expect((await t.api('POST', '/roles', { name: 'Payroll all', permissions: ['payroll.*'] }, hrTok)).status).toBe(403);
+    expect((await t.api('POST', '/roles/from-template', { template: 'accounting', name: 'acc' }, hrTok)).status).toBe(403);
+    // cannot lock out or strip a more powerful user
+    const adminUser = (await t.api('GET', '/users', undefined, admin)).body.find((u: any) => u.email === 'admin@x.co');
+    expect((await t.api('POST', `/users/${adminUser.id}/deactivate`, undefined, hrTok)).status).toBe(403);
+    expect((await t.api('PUT', `/users/${adminUser.id}/roles`, { roleIds: [] }, hrTok)).status).toBe(403);
+    // within their own permissions everything still works
+    const leave = (await t.api('POST', '/roles', { name: 'Leave clerk', permissions: ['hr.leave.request', 'identity.user.read'] }, hrTok));
+    expect(leave.status).toBe(201);
+    const staff = await t.api('POST', '/users', { email: 'staff@x.co', name: 'Staff', password: 'password123', roleIds: [leave.body.id] }, hrTok);
+    expect(staff.status).toBe(201);
+    expect((await t.api('POST', `/users/${staff.body.id}/deactivate`, undefined, hrTok)).status).toBe(200);
+    // a role id of another company is refused, not silently linked
+    const foreign = (await t.api('POST', '/roles', { name: 'foreign', permissions: [] }, { token: t.token(['*'], randomUUID()) })).body;
+    expect((await t.api('PUT', `/users/${hr.id}/roles`, { roleIds: [foreign.id] }, admin)).status).toBe(400);
+    // the administrator can still do everything
+    expect((await t.api('PUT', `/users/${hr.id}/roles`, { roleIds: [adminRole.id] }, admin)).status).toBe(200);
+  });
+
+  it('SEC-01: canGrant follows wildcards', () => {
+    const a = (perms: string[]) => ({ tenantId: 't', userId: 'u', perms });
+    expect(canGrant(a(['*']), '*')).toBe(true);
+    expect(canGrant(a(['hr.*']), 'hr.leave.approve')).toBe(true);
+    expect(canGrant(a(['hr.*']), 'hr.*')).toBe(true);
+    expect(canGrant(a(['hr.leave.approve']), 'hr.*')).toBe(false);
+    expect(canGrant(a(['hr.*']), '*')).toBe(false);
+    expect(canGrant(a(['hr.*']), 'payroll.run.read')).toBe(false);
+  });
+
+  it('SEC-02: throttles repeated wrong passwords per account and does not reveal unknown accounts', async () => {
+    resetLoginThrottle();
+    await createTenant('brute');
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await login('brute', 'admin@x.co', `wrong-${i}`)).status).toBe(401);
+    const locked = await login('brute', 'admin@x.co', 'password123');
+    expect(locked.status).toBe(429);
+    expect(locked.body.error.code).toBe('too_many_attempts');
+    // other accounts are not affected
+    expect((await login('acme', 'admin@x.co', 'password123')).status).toBe(200);
+    // unknown company / unknown user answer exactly like a wrong password
+    const a = await login('brute', 'ghost@x.co', 'x');
+    const b = await login('no-such-co', 'admin@x.co', 'x');
+    expect([a.status, b.status]).toEqual([401, 401]);
+    expect(a.body).toEqual(b.body);
+    resetLoginThrottle();
+    expect((await login('brute', 'admin@x.co', 'password123')).status).toBe(200);
+  });
+});
+
 describe('company profile', () => {
   const tenantA = '7b0c1d36-0000-4000-8000-00000000c0a1';
   const tenantB = '7b0c1d36-0000-4000-8000-00000000c0b2';
@@ -146,6 +210,11 @@ describe('company profile', () => {
     expect((await bad({ address: undefined })).address).toBeTruthy();
     expect((await bad({ logo: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' })).logo[0]).toMatch(/PNG, JPEG หรือ SVG/);
     expect((await bad({ logo: 'https://example.com/logo.png' })).logo).toBeTruthy();
+    // SEC-11 (security review 0.3): an SVG logo may not carry script, handlers, entities or outside links
+    const svg = (body: string) => 'data:image/svg+xml;base64,' + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`).toString('base64');
+    for (const evil of ['<script>alert(1)</script>', '<rect onload="alert(1)"/>', '<a href="javascript:alert(1)"><text>x</text></a>', '<foreignObject><div/></foreignObject>', '<image href="https://evil.example/t.png"/>']) {
+      expect((await bad({ logo: svg(evil) })).logo[0], evil).toMatch(/สคริปต์/);
+    }
     // claims to be PNG but is not
     expect((await bad({ logo: 'data:image/png;base64,' + Buffer.from('hello').toString('base64') })).logo[0]).toMatch(/ไม่ตรงกับชนิด/);
     // too big (> 300 KB decoded)

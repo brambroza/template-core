@@ -2,14 +2,27 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { fillPath, get, initialValues, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
+import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
+import { useRegistry } from '@/lib/registry';
+import { toast } from '@/lib/toast';
+import { AiFillButton, AiFillReview, type AiProposal } from './AiFill';
 import { FieldRow, LinesEditor, type Values } from './Fields';
+
+function readBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+    r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'));
+    r.readAsDataURL(blob);
+  });
+}
 
 const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
-export function FormView({ module, screen, id }: { module: string; screen: FormScreen; id?: string }) {
+/** `screenId`: the screen's name in its module's ui.ts (needed by the "สแกนใบเสร็จ" AI route). */
+export function FormView({ module, screen, id, screenId }: { module: string; screen: FormScreen; id?: string; screenId?: string }) {
   const router = useRouter();
   const search = useSearchParams();
   // values passed by the command palette / assistant: ?f.qty=500&f.itemId=…&l.itemId=RM-STEEL
@@ -23,6 +36,19 @@ export function FormView({ module, screen, id }: { module: string; screen: FormS
   const params = routeParams(screen.load ?? screen.endpoint, id);
   const qs = search.toString();
   const firstQs = useRef(qs);
+  // "สแกนใบเสร็จ": what the AI proposed, and the file to attach to the saved record (if its detail screen has attachments)
+  const { ui } = useRegistry();
+  const [ai, setAi] = useState<{ proposal: AiProposal; filled: number } | null>(null);
+  const aiFile = useRef<File | null>(null);
+  const [attachAi, setAttachAi] = useState(true);
+  const afterScreen = screen.after ? ui(module)?.screens[screen.after.screen] : undefined;
+  const attachEntity = afterScreen?.kind === 'detail' && screen.after?.idFrom ? afterScreen.attachments?.entity : undefined;
+  const applyAi = (proposal: AiProposal) => {
+    const merged = mergeAiFill({ values, lines }, proposal, screen.lines ? initialValues(screen.lines.fields) : {});
+    setValues(merged.values);
+    if (screen.lines) setLines(merged.lines);
+    setAi({ proposal, filled: merged.filled });
+  };
   useEffect(() => {
     // a new command while this form is open: apply its values (the first render already used them)
     if (qs !== firstQs.current) setValues((v) => ({ ...v, ...prefillFromQuery(new URLSearchParams(qs).entries()) }));
@@ -65,6 +91,15 @@ export function FormView({ module, screen, id }: { module: string; screen: FormS
       // automation rules may have reacted to what was just saved: refresh the bell shortly
       setTimeout(() => window.dispatchEvent(new CustomEvent('erp:notifications')), 1500);
       const after = screen.after;
+      const savedId = after?.idFrom ? get(result, after.idFrom) : undefined;
+      if (ai && aiFile.current && attachEntity && attachAi && savedId) {
+        const f = aiFile.current;
+        try {
+          await api(module, '/_attachments', { method: 'POST', body: { ref: attachmentRef(attachEntity, String(savedId)), fileName: f.name, contentType: f.type || undefined, dataBase64: await readBase64(f) } });
+        } catch (err) {
+          toast({ title: 'บันทึกแล้ว แต่แนบรูปไม่ได้', body: `${(err as Error).message} — แนบเองได้ที่หน้าเอกสาร`, tone: 'warn' });
+        }
+      }
       router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
@@ -76,7 +111,15 @@ export function FormView({ module, screen, id }: { module: string; screen: FormS
   if (loading) return <p className="muted">กำลังโหลด…</p>;
   return (
     <form className="screen form" onSubmit={submit} noValidate>
-      <header className="screen-head"><h1>{screen.title}</h1></header>
+      <header className="screen-head">
+        <h1>{screen.title}</h1>
+        {screen.aiFill && !screen.load && screenId && (
+          <AiFillButton module={module} screen={screenId} spec={screen.aiFill} onProposal={applyAi} onFile={(f) => { aiFile.current = f; }} />
+        )}
+      </header>
+      {ai && (
+        <AiFillReview proposal={ai.proposal} filled={ai.filled} attach={attachEntity ? attachAi : null} onAttach={setAttachAi} onClose={() => setAi(null)} />
+      )}
       <div className="form-grid">
         {screen.fields.map((f) => (
           <FieldRow key={f.name} field={f} module={module} values={values} error={fieldErrors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />

@@ -39,6 +39,9 @@
 - `identity` ออก JWT (HS256, `JWT_SECRET` ใช้ร่วมกันทุกโมดูล) มี `tid` (tenant) และ `perms`
 - permission รูปแบบ `<module>.<thing>.<action>` รองรับ `<module>.*` และ `*`
 - แต่ละโมดูลประกาศ permission ของตัวเองใน `module.json` → UI ดึงจาก `/api/_catalog` ไปสร้างหน้าตั้งค่าบทบาท
+- token ต้องมี `exp` เสมอ, alg ไม่อ่านจาก header (HS256 ตายตัว); service/gateway ไม่ยอม start ถ้า `JWT_SECRET`/`INTERNAL_TOKEN` ยังเป็นค่าตัวอย่าง
+  (และใน `NODE_ENV=production` ต้องยาว ≥ 32 ตัวและไม่ซ้ำกัน) · ให้สิทธิ์ได้เฉพาะสิทธิ์ที่ตัวเองมี · login ผิด 10 ครั้ง/15 นาที/บัญชี → 429
+  — รายละเอียดและสิ่งที่ยังค้าง: `docs/security/review-0.3.md`
 
 ## ไฟล์แนบและประวัติการแก้ไข (ความสามารถของ kernel)
 

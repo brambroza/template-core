@@ -205,6 +205,18 @@ export interface FormScreen extends ScreenBase {
   submitLabel: string;
   /** after success: open detail of the response, or go back to a list */
   after?: { screen: string; idFrom?: string };
+  /**
+   * Optional AI button ("สแกนใบเสร็จ"): the web reads a photo/PDF with the customer's own Claude key and fills the
+   * empty fields and lines; the user reviews and presses save. Ignored when AI is not configured. See docs/ai.md.
+   */
+  aiFill?: AiFillSpec;
+}
+
+/** `receipt` = Thai receipt / tax invoice (amount before VAT + VAT); `document` = any other paper the form describes. */
+export interface AiFillSpec {
+  kind: 'receipt' | 'document';
+  /** button text, e.g. "สแกนใบเสร็จ" */
+  label: string;
 }
 
 /** The happy path of a document's status, drawn as a 2D stepper on its detail screen. */
@@ -810,7 +822,9 @@ export function csvValue(value: unknown, format: Format = 'text', labels?: Recor
  */
 export function csvCell(text: string, numeric = false): string {
   let t = text;
-  if (!numeric && /^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+  // a "numeric" column only skips the guard when the cell really is a number (security review 0.3, SEC-13)
+  const isNumber = numeric && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(t);
+  if (!isNumber && /^[=+\-@\t\r＝＋－＠]/.test(t)) t = `'${t}`;
   return /[",\r\n;]/.test(t) || /^\s|\s$/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
@@ -1307,4 +1321,101 @@ export function auditDetailText(row: { route: string; summary_text: string }): s
     if (file) return `ไฟล์ ${file.slice('fileName: '.length)}`;
   }
   return kept.join(' · ');
+}
+
+/* ---------------- AI helpers (server routes in apps/web/src/app/assist/*, docs/ai.md) ---------------- */
+
+/** Field types the AI may propose a value for. Booleans (e.g. "ส่งขออนุมัติทันที"), passwords, permissions and pictures stay with the person. */
+export const AI_FILL_TYPES: readonly FieldType[] = ['text', 'textarea', 'email', 'number', 'date', 'month', 'select', 'lookup'];
+
+export function aiFillable(fields: Field[]): Field[] {
+  return fields.filter((f) => AI_FILL_TYPES.includes(f.type));
+}
+
+/** 2569 -> 2026: Thai papers print Buddhist-era years. */
+const ceYear = (y: number) => (y > 2400 ? y - 543 : y);
+
+/** "2569-03-05", "5/3/2569", "05-03-2026" -> "2026-03-05"; anything else -> undefined. */
+export function toIsoDate(raw: unknown): string | undefined {
+  const s = String(raw ?? '').trim();
+  let y: number, m: number, d: number;
+  let r = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (r) [y, m, d] = [Number(r[1]), Number(r[2]), Number(r[3])];
+  else if ((r = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/))) [d, m, y] = [Number(r[1]), Number(r[2]), Number(r[3])];
+  else return undefined;
+  y = ceYear(y);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return undefined;
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+/**
+ * Clean one value an AI proposed for a field: numbers to 2 decimals ("1,070.00 บาท" -> 1070), dates to
+ * YYYY-MM-DD in ค.ศ., selects must be one of the options (value or Thai label). `undefined` = leave the field alone.
+ * Lookup ids are returned as text — the caller checks them against the records it offered.
+ */
+export function cleanAiValue(field: Field, raw: unknown): unknown {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  switch (field.type) {
+    case 'number': {
+      const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[,\s]|บาท|฿/g, ''));
+      return Number.isFinite(n) ? Math.round(n * 100) / 100 : undefined;
+    }
+    case 'date': return toIsoDate(raw);
+    case 'month': {
+      const r = String(raw).trim().match(/^(\d{4})-(\d{1,2})/);
+      if (!r || Number(r[2]) < 1 || Number(r[2]) > 12) return undefined;
+      return `${ceYear(Number(r[1]))}-${pad2(Number(r[2]))}`;
+    }
+    case 'select': {
+      const s = String(raw).trim();
+      return field.options?.find((o) => o.value === s || o.label === s)?.value;
+    }
+    case 'lookup': case 'text': case 'textarea': case 'email': {
+      const s = String(raw).trim().slice(0, field.type === 'textarea' ? 2000 : 500);
+      return s || undefined;
+    }
+    default: return undefined;
+  }
+}
+
+/** Only the filters a list screen declares, cleaned (for "ค้นหาด้วย AI"): { status: 'รออนุมัติ', bogus: 1 } -> { status: 'submitted' }. */
+export function cleanListFilters(filters: Field[] | undefined, raw: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of filters ?? []) {
+    const v = f.type === 'boolean' ? (raw[f.name] === true || raw[f.name] === 'true' ? 'true' : undefined) : cleanAiValue(f, raw[f.name]);
+    if (v !== undefined) out[f.name] = String(v);
+  }
+  return out;
+}
+
+const emptyValue = (v: unknown) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
+
+/** A line nobody has typed in yet (only defaults). */
+export function isBlankLine(line: Record<string, unknown>, blank: Record<string, unknown> = {}): boolean {
+  return Object.entries(line).every(([k, v]) => k.startsWith('__') || emptyValue(v) || v === blank[k]);
+}
+
+/**
+ * Put an AI proposal into a form without overwriting what the person already typed: empty fields are filled
+ * (with their lookup display text `__label.<field>`), proposed lines replace untouched lines and are added after typed ones.
+ */
+export function mergeAiFill(
+  current: { values: Record<string, unknown>; lines: Record<string, unknown>[] },
+  proposal: { values: Record<string, unknown>; lines: Record<string, unknown>[] },
+  blankLine: Record<string, unknown> = {},
+): { values: Record<string, unknown>; lines: Record<string, unknown>[]; filled: number } {
+  const values = { ...current.values };
+  let filled = 0;
+  for (const [k, v] of Object.entries(proposal.values)) {
+    if (k.startsWith('__') || emptyValue(v) || !emptyValue(values[k])) continue;
+    values[k] = v;
+    filled++;
+    if (proposal.values[`__label.${k}`] !== undefined) values[`__label.${k}`] = proposal.values[`__label.${k}`];
+  }
+  const kept = current.lines.filter((l) => !isBlankLine(l, blankLine));
+  const added = proposal.lines.filter((l) => !isBlankLine(l)).map((l) => ({ ...blankLine, ...l }));
+  filled += added.length;
+  const lines = added.length ? [...kept, ...added] : current.lines;
+  return { values, lines, filled };
 }

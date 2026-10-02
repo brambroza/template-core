@@ -1,6 +1,7 @@
+import { createHmac } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { auth, checkLicense, generateLicenseKeys, hasPerm, hashPassword, issueLicense, nextDocNo, parse, requirePerm, signToken, verifyPassword, verifyToken, z, type ServiceDefinition } from '../src/index.ts';
+import { auth, checkLicense, createService, secretProblems, generateLicenseKeys, hasPerm, hashPassword, issueLicense, nextDocNo, parse, requirePerm, signToken, verifyPassword, verifyToken, z, type ServiceDefinition } from '../src/index.ts';
 import { bootTestService, type TestService } from '../src/testing.ts';
 
 const def: ServiceDefinition = {
@@ -82,6 +83,35 @@ describe('auth helpers', () => {
     expect(hasPerm(ctx, 'inventory.move.create')).toBe(false);
     expect(() => requirePerm(ctx, 'inventory.move.create')).toThrow(/Missing permission/);
     expect(() => verifyToken('other', tok)).toThrow(/Invalid token/);
+  });
+
+  it('SEC-12 (security review 0.3): refuses tokens without an expiry and expired tokens', () => {
+    const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const forge = (claims: object) => {
+      const head = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64(claims)}`;
+      return `${head}.${createHmac('sha256', 's').update(head).digest('base64url')}`;
+    };
+    expect(() => verifyToken('s', forge({ sub: 'u', tid: 't', perms: ['*'] }))).toThrow(/Invalid token claims/);
+    expect(() => verifyToken('s', forge({ sub: 'u', tid: 't', perms: ['*'], exp: 1 }))).toThrow(/expired/);
+    expect(verifyToken('s', forge({ sub: 'u', tid: 't', perms: ['*'], exp: Math.floor(Date.now() / 1000) + 60 })).perms).toEqual(['*']);
+    // alg is never taken from the header: an "alg":"none" token without a valid HMAC is rejected
+    const none = `${b64({ alg: 'none' })}.${b64({ sub: 'u', tid: 't', perms: ['*'], exp: 9999999999 })}.`;
+    expect(() => verifyToken('s', none)).toThrow(/Invalid token/);
+  });
+
+  it('SEC-03 (security review 0.3): refuses example / weak secrets', () => {
+    expect(secretProblems({ JWT_SECRET: 'replace-with-64-random-characters', INTERNAL_TOKEN: 'x'.repeat(40) })).toHaveLength(1);
+    expect(secretProblems({ JWT_SECRET: 'a'.repeat(40), INTERNAL_TOKEN: 'replace-with-another-random-string' })[0]).toMatch(/INTERNAL_TOKEN/);
+    expect(secretProblems({ JWT_SECRET: 'short-dev-secret', INTERNAL_TOKEN: 'short-dev-token', NODE_ENV: 'development' })).toEqual([]);
+    expect(secretProblems({ JWT_SECRET: 'short-dev-secret', INTERNAL_TOKEN: 'b'.repeat(40), NODE_ENV: 'production' })[0]).toMatch(/shorter than 32/);
+    expect(secretProblems({ JWT_SECRET: 'c'.repeat(40), INTERNAL_TOKEN: 'c'.repeat(40), NODE_ENV: 'production' })[0]).toMatch(/different/);
+    expect(secretProblems({ JWT_SECRET: 'd'.repeat(40), INTERNAL_TOKEN: 'e'.repeat(40), NODE_ENV: 'production' })).toEqual([]);
+  });
+
+  it('SEC-03: a service will not start with the .env.example secret', async () => {
+    const svc = createService(def, { DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none', JWT_SECRET: 'replace-with-64-random-characters', INTERNAL_TOKEN: 'x'.repeat(40) });
+    await expect(svc.start({ port: 0 })).rejects.toThrow(/refusing to start: JWT_SECRET/);
+    await svc.close();
   });
 
   it('hashes passwords', () => {

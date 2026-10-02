@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootTestService, type TestService } from '@erp/kernel/testing';
 import { definition } from '../src/service.ts';
-import { describe as sentence, matches, render, webhookProblem } from '../src/engine.ts';
+import { isPrivateAddress, describe as sentence, matches, render, resolvesPrivate, webhookProblem } from '../src/engine.ts';
 import { EVENTS, TEMPLATES } from '../src/catalog.ts';
 import { events, isKnownEvent, parseEvent, type EventType } from '@erp/contracts';
 import manifestJson from '../module.json' with { type: 'json' };
@@ -43,6 +43,22 @@ describe('engine', () => {
     for (const u of ['https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.5/x', 'https://192.168.1.10/x', 'https://172.20.0.1/x', 'https://169.254.169.254/latest', 'https://db.internal/x']) {
       expect(webhookProblem(u, {}), u).toMatch(/ภายในเครือข่าย/);
     }
+  });
+
+  it('SEC-06 (security review 0.3): blocks encoded / IPv6 / CGNAT addresses and names that resolve inside the network', async () => {
+    for (const u of ['https://[::ffff:127.0.0.1]/x', 'https://[::ffff:7f00:1]/x', 'https://[::]/x', 'https://[fe80::1]/x', 'https://2130706433/x', 'https://0x7f.1/x',
+      'https://100.64.1.1/x', 'https://gateway/x', 'https://router.lan/x', 'https://user:pw@hooks.example.com/x']) {
+      expect(webhookProblem(u, {}), u).not.toBeNull();
+    }
+    expect(webhookProblem('https://[2606:4700::1111]/x', {})).toBeNull();
+    expect(isPrivateAddress('8.8.8.8')).toBe(false);
+    expect(isPrivateAddress('172.32.0.1')).toBe(false);
+    expect(isPrivateAddress('172.31.255.1')).toBe(true);
+    const dns = (ips: string[]) => async () => ips.map((address) => ({ address }));
+    expect(await resolvesPrivate('hooks.example.com', dns(['93.184.216.34']))).toBeNull();
+    expect(await resolvesPrivate('evil.example.com', dns(['93.184.216.34', '10.0.0.5']))).toMatch(/ภายใน/);
+    expect(await resolvesPrivate('rebind.example.com', dns(['::ffff:169.254.169.254']))).toMatch(/ภายใน/);
+    expect(await resolvesPrivate('nx.example.com', async () => { throw new Error('ENOTFOUND'); })).toMatch(/DNS/);
   });
 });
 

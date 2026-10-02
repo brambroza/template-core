@@ -25,7 +25,7 @@ export default function ScreenPage() {
     <LabelsContext.Provider value={mod.statusLabels}>
     <Suspense fallback={<p className="muted">กำลังโหลด…</p>}>
       {screen.kind === 'list' && <ListView key={key} module={p.module} screen={screen} id={id} />}
-      {screen.kind === 'form' && <FormView key={key} module={p.module} screen={screen} id={id} />}
+      {screen.kind === 'form' && <FormView key={key} module={p.module} screen={screen} id={id} screenId={p.screen} />}
       {screen.kind === 'detail' && <DetailView key={key} module={p.module} screen={screen} id={id} />}
     </Suspense>
     </LabelsContext.Provider>

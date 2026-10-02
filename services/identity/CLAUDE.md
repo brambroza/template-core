@@ -25,6 +25,13 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - Role templates live in `src/role-templates.ts` (static — identity cannot read other modules). A permission belongs to module `m` when its prefix is `m`
   or `m` starts with `<prefix>-` (`master.*` → `master-data`). `tests/ui/role-templates.test.ts` checks every key against the repo's module.json files.
 - Changing roles affects tokens at next login (tokens live `JWT_TTL_SECONDS`, default 12h).
+- **No granting beyond your own rights** (security review 0.3, SEC-01): `POST /roles`, `POST /roles/from-template`, `POST /users` (roleIds),
+  `PUT /users/:id/roles` and `POST /users/:id/deactivate` answer 403 unless the caller holds every permission involved — the new role's,
+  the assigned roles', and (for role changes / deactivation) the target user's current ones (`canGrant`: `*` needs `*`, `m.*` needs `m.*`).
+  Role ids of another company → 400.
+- **Login throttling** (SEC-02): 10 wrong passwords per company+e-mail in 15 minutes → 429 `too_many_attempts` (in memory, per identity
+  instance; a success clears it). Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password.
+- SVG logos must not contain script, event handlers, `<foreignObject>`, entities or outside links (SEC-11).
 
 ## Extension ideas
 LINE Login (new route + `users.line_user_id` in a new migration), 2FA, password reset, SSO.

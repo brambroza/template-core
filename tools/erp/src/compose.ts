@@ -73,7 +73,9 @@ create role erp_app login password '$APP_DB_PASSWORD';
 ${mods.map((m) => `create database ${dbName(m.id)} owner erp_app;`).join('\n')}
 SQL
 `;
-  const env = `# Copy to .env and change every value.
+  const env = `# Copy to .env and change every value. Generate secrets with: openssl rand -hex 32
+# The services REFUSE TO START while JWT_SECRET / INTERNAL_TOKEN still hold the example values below
+# (whoever knows JWT_SECRET can sign in as anyone). Put the installation behind HTTPS (reverse proxy) before real data.
 POSTGRES_PASSWORD=change-me
 APP_DB_PASSWORD=change-me-too
 JWT_SECRET=${'replace-with-64-random-characters'}
@@ -95,6 +97,7 @@ ${selection.includes('automation') ? '# Automation: LINE Messaging API (personal
    docker compose exec identity node -e "fetch('http://localhost:3000/tenants',{method:'POST',headers:{'content-type':'application/json','x-internal-token':process.env.INTERNAL_TOKEN},body:JSON.stringify({code:'mycompany',name:'My Company',admin:{email:'admin@mycompany.co.th',name:'Admin',password:'change-me-now'}})}).then(r=>r.text()).then(console.log)"
    \`\`\`
 4. Open http://localhost:3000 and log in with company code \`mycompany\`, \`admin@mycompany.co.th\`, \`change-me-now\`
+   — use your own strong password in step 3 instead of \`change-me-now\` (there is no "change password" screen yet).
    (API directly: \`POST http://localhost:8080/api/identity/auth/login\`; installed modules: \`GET http://localhost:8080/api/_catalog\`)
 5. Mobile app: point it at \`http://<server-ip>:8080\` (field "ที่อยู่เซิร์ฟเวอร์" on the login screen)
 `;

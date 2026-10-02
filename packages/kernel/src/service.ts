@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { EventData, EventType } from '@erp/contracts';
 import { attachmentPerms, mountAttachments, type AttachmentsSpec } from './attachments.ts';
 import { mountAudit, recordAudit } from './audit.ts';
-import { verifyToken, type AuthContext } from './auth.ts';
+import { safeEqual, secretProblems, verifyToken, type AuthContext } from './auth.ts';
 import { createDb, migrate, type Client, type Db } from './db.ts';
 import { toErrorBody, unauthorized } from './errors.ts';
 import { dispatchOutbox, emit, receiveEvent, type EventHandlers } from './events.ts';
@@ -100,7 +100,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     const cfg = req.routeOptions.config ?? {};
     if (cfg.public) return;
     if (cfg.internal) {
-      if (req.headers['x-internal-token'] !== internalToken) throw unauthorized('Internal endpoint');
+      if (!safeEqual(req.headers['x-internal-token'], internalToken)) throw unauthorized('Internal endpoint');
       return;
     }
     const h = req.headers.authorization;
@@ -142,6 +142,8 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     migrate: () => migrate(db, def.migrationsDir),
     dispatch,
     async start(opts = {}) {
+      const weak = secretProblems(env);
+      if (weak.length) throw new Error(`[${manifest.id}] refusing to start: ${weak.join('; ')}`);
       const lic = checkLicense(manifest.id, manifest.tier, env);
       if (!lic.ok) throw new Error(`[${manifest.id}] license check failed: ${lic.reason}`);
       await ready;

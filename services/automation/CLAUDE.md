@@ -10,13 +10,17 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 - `notifications` — the bell: `level (info|warn|stop|ok)`, `title`, `body`, `link` (in-app path), `recipient_user_id` (null = broadcast), `read_at` (personal ones; also legacy broadcast reads)
 - `notification_reads` — per-user read state of broadcast notifications (`notification_id`, `user_id`, `read_at`)
 - `line_settings` — one row per tenant: `webhook_secret` (second half of the webhook key) · `line_links` — ERP `user_id` ↔ `line_user_id` (+ names), unique both ways per tenant
-- `line_link_codes` — 6-digit one-time codes (10 min, single use, `used_at`, `line_user_id`) · `line_link_attempts` — wrong codes per LINE account (5 per 15 min)
+- `line_link_codes` — 6-digit one-time codes (10 min, single use, `used_at`, `line_user_id`) · `line_link_attempts` — wrong codes per LINE account (5 per 15 min) and per company (30 per 15 min, security review 0.3 SEC-09)
 
 ## Behaviour
 - `src/catalog.ts` is the single list of events a rule can react to (Thai label, usable fields, default
   message, link, level) and of the 26 one-click templates (8 factory + 14 office/service + 4 wave 5). **New event → add it to `@erp/contracts`, to
   `module.json` `subscribes`, and to `EVENTS` here.**
 - Handlers never throw: every outcome is a `runs` row. LINE/webhook failures are recorded as `failed`.
+- **Webhook SSRF guard** (SEC-06): `webhookProblem` (on save) refuses non-https, credentials in the URL, single-label hosts, private /
+  loopback / link-local / CGNAT / IPv4-mapped IPv6 literals; `sendWebhook` also resolves the host and refuses if ANY address is internal
+  (`resolvesPrivate`). `AUTOMATION_ALLOW_PRIVATE_WEBHOOKS=1` (tests, on-prem integrations) turns both off. DNS rebinding between the check
+  and the request is not covered — use an egress firewall for the automation container.
 - **Recipients** (notify only): `to` = `'all'` (default — everyone with `automation.notify.read`), `'field:<a>[,<b>]'` (user ids carried by the event; only keys listed in
   the event's `userFields` are accepted, 400 otherwise) or `'user:<uuid>'` (one person; the simple form's `toUserId`). One row per distinct user.
   An event without the user id(s) creates **no** notification (never falls back to everyone); the run says "ไม่ได้แจ้งในแอป: เหตุการณ์ไม่มีผู้รับ".

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, ChevronDown, Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { groupByArea, hasPerm, type AreaId, type ModuleUi, type Widget } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
@@ -11,6 +12,7 @@ import { ModuleIcon } from '@/components/Icon';
 import { Bars, Feed, Kpi, Pipeline, Trend, WidgetLink } from '@/components/widgets/Basic';
 import { Floor3D } from '@/components/widgets/Floor3D';
 import { useReveal } from '@/lib/motion';
+import { safeHref } from '@/lib/href';
 
 type Data = Record<string, unknown>;
 type Entry = { m: ModuleUi; w: Widget; key: string; src: string };
@@ -33,6 +35,7 @@ export default function Home() {
   const perms = session?.permissions ?? [];
   const [prefs, setPrefs] = useState<HomePrefs>(NO_PREFS);
   const [picking, setPicking] = useState(false);
+  const [briefing, setBriefing] = useState<BriefingState>(null);
   useEffect(() => setPrefs({ ...NO_PREFS, ...readPref<Partial<HomePrefs>>('home', {}) }), []);
   const savePrefs = (p: HomePrefs) => { setPrefs(p); writePref('home', p); };
 
@@ -86,6 +89,7 @@ export default function Home() {
         </div>
         <div className="pulse-tools">
           <span className="live"><i />อัปเดตทุก 30 วินาที</span>
+          {all.length > 0 && <BriefingButton onResult={setBriefing} busy={briefing === 'loading'} />}
           {all.length > 0 && (
             <button type="button" className="btn" onClick={() => setPicking(true)}>
               <SlidersHorizontal size={16} aria-hidden />เลือกการ์ดที่แสดง
@@ -93,6 +97,7 @@ export default function Home() {
           )}
         </div>
       </header>
+      {briefing && briefing !== 'loading' && <BriefingCard b={briefing} onClose={() => setBriefing(null)} />}
       {loading && <p className="muted">กำลังโหลด…</p>}
       {!loading && !all.length && <p className="muted">ยังไม่มีข้อมูลภาพรวมสำหรับบัญชีนี้ เลือกงานจากเมนูด้านซ้าย</p>}
       {!loading && all.length > 0 && !shown.length && <p className="muted">ซ่อนการ์ดไว้ทั้งหมด — กด “เลือกการ์ดที่แสดง” เพื่อเลือกใหม่</p>}
@@ -235,5 +240,58 @@ function WidgetPicker({ all, isShown, byDefault, prefs, onSave, onClose }: {
         </div>
       </form>
     </dialog>
+  );
+}
+
+/* ---------------- "สรุปให้หน่อย": AI daily briefing (POST /assist/briefing, cached 10 min per user on the server) ---------------- */
+
+interface Briefing { bullets: string[]; actions: { label: string; href: string }[]; generatedAt?: string; cached?: boolean; offline?: boolean; reply?: string; error?: string }
+type BriefingState = Briefing | 'loading' | null;
+
+function BriefingButton({ onResult, busy }: { onResult: (b: BriefingState) => void; busy: boolean }) {
+  const run = async () => {
+    onResult('loading');
+    try {
+      const token = loadSession()?.token;
+      const res = await fetch('/assist/briefing', { method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message ?? 'สรุปไม่ได้ในตอนนี้');
+      onResult(data as Briefing);
+    } catch (e) {
+      onResult({ bullets: [], actions: [], error: e instanceof Error ? e.message : 'สรุปไม่ได้ในตอนนี้' });
+    }
+  };
+  return (
+    <button type="button" className="btn briefing-btn" onClick={run} disabled={busy}>
+      {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <Sparkles size={16} aria-hidden />}
+      {busy ? 'AI กำลังดูข้อมูล…' : 'สรุปให้หน่อย'}
+    </button>
+  );
+}
+
+function BriefingCard({ b, onClose }: { b: Briefing; onClose: () => void }) {
+  const router = useRouter();
+  const problem = b.error ?? (b.offline ? b.reply : undefined);
+  const at = b.generatedAt ? new Date(b.generatedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '';
+  return (
+    <section className={`briefing${problem ? ' is-error' : ''}`} aria-label="สรุปวันนี้โดย AI" aria-live="polite">
+      <header>
+        <b><Sparkles size={16} aria-hidden /> สรุปวันนี้{at ? ` · ณ ${at} น.` : ''}</b>
+        <button type="button" className="btn-ghost" onClick={onClose} aria-label="ปิดสรุป"><X size={16} aria-hidden /></button>
+      </header>
+      {problem ? <p>{problem}</p> : (
+        <>
+          <ul>{b.bullets.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          {b.actions.length > 0 && (
+            <div className="bubble-actions">
+              {b.actions.filter((a) => safeHref(a.href)).map((a) => (
+                <button key={a.href} type="button" className="btn" onClick={() => router.push(a.href)}>{a.label}<ArrowRight size={14} aria-hidden /></button>
+              ))}
+            </div>
+          )}
+          <p className="muted" style={{ margin: '8px 0 0', fontSize: '.8rem' }}>AI อ่านข้อมูลตามสิทธิ์ของคุณเท่านั้น ไม่บันทึกอะไรแทนคุณ{b.cached ? ' · สรุปเดิม (อัปเดตได้ทุก 10 นาที)' : ''}</p>
+        </>
+      )}
+    </section>
   );
 }

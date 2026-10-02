@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { responseHeaders } from '@/lib/proxy-headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       body: body || undefined,
       cache: 'no-store',
     });
-    return new Response(res.body, { status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' } });
+    return new Response(res.body, { status: res.status, headers: responseHeaders(res.headers) });
   } catch {
     return Response.json({ error: { code: 'gateway_unreachable', message: 'เชื่อมต่อเซิร์ฟเวอร์ ERP ไม่ได้' } }, { status: 502 });
   }

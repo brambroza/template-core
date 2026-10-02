@@ -166,6 +166,15 @@ describe('LINE webhook', () => {
     expect(await say(key, 'Ureal', `ผูกบัญชี ${code}`)).toContain('ผูกบัญชีเรียบร้อย');
   });
 
+  it('SEC-09 (security review 0.3): stops guessing with many LINE accounts after 30 wrong codes per company', async () => {
+    const { tid, key } = await setup();
+    for (let i = 0; i < 30; i++) expect(await say(key, `Ubot${i}`, `ผูกบัญชี ${String(i).padStart(6, '0')}`)).toContain('ไม่ถูกต้อง');
+    const u = user(tid);
+    const code = (await t.api('POST', '/line/link-code', {}, { token: u.token })).body.code;
+    expect(await say(key, 'Ufresh', `ผูกบัญชี ${code}`)).toContain('พักการผูกบัญชีชั่วคราว');
+    expect((await t.api('GET', '/line/me', undefined, { token: u.token })).body.linked).toBe(false);
+  });
+
   it('answers commands: แจ้งเตือน, ช่วยเหลือ, ยกเลิกผูกบัญชี; ignores chit-chat; group id in groups; unfollow unlinks', async () => {
     const { tid, admin, key } = await setup();
     expect(await say(key, 'Ustranger', 'แจ้งเตือน')).toContain('ยังไม่ได้ผูก');
