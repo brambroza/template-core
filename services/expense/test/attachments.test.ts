@@ -62,3 +62,29 @@ describe('expense attachments', () => {
     expect((await t.api('POST', '/_attachments', { ref: `category:${adv.id}`, fileName: 'plan.pdf', dataBase64: Buffer.from('%PDF-1.4\n').toString('base64') })).status).toBe(400);
   });
 });
+
+describe('expense attachments — QA regressions (bugs-0.4)', () => {
+  it('EXP-06: once a claim is approved the claimant can no longer remove or swap its receipts; finance still can add the transfer slip', async () => {
+    const owner = t.token(STAFF, t.tenantId, { userId: randomUUID(), userName: 'สมศรี' });
+    const finance = t.token([...STAFF, 'expense.claim.approve', 'expense.claim.pay'], t.tenantId, { userId: randomUUID(), userName: 'การเงิน' });
+    const admin = t.token(['*'], t.tenantId, { userId: randomUUID(), userName: 'ผู้ดูแล' });
+    const cat = (await t.api('GET', '/categories')).body[0] ?? (await t.api('POST', '/categories', { code: 'TAXI', name: 'ค่าแท็กซี่' })).body;
+    const claim = (await t.api('POST', '/claims', { purpose: 'แท็กซี่ไปลูกค้า', submit: true, lines: [{ expenseDate: today, categoryId: cat.id, amount: 300 }] }, { token: owner })).body;
+    const ref = `claim:${claim.id}`;
+    const up = (await t.api('POST', '/_attachments', { ref, fileName: 'ใบเสร็จ.jpg', dataBase64: JPG.toString('base64') }, { token: owner })).body;
+    // still open (submitted): the owner may fix the evidence
+    const extra = (await t.api('POST', '/_attachments', { ref, fileName: 'ผิดไฟล์.jpg', dataBase64: JPG.toString('base64') }, { token: owner })).body;
+    expect((await t.api('DELETE', `/_attachments/${extra.id}`, undefined, { token: owner })).status).toBe(200);
+
+    await t.api('POST', `/claims/${claim.id}/approve`, {}, { token: finance });
+    await t.api('POST', `/claims/${claim.id}/pay`, { method: 'transfer' }, { token: finance });
+    const del = await t.api('DELETE', `/_attachments/${up.id}`, undefined, { token: owner });
+    expect(del.status).toBe(409);
+    expect(del.body.error.message).toContain('จ่ายแล้ว');
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'ใบใหม่.jpg', dataBase64: JPG.toString('base64') }, { token: owner })).status).toBe(409);
+    const list = (await t.api('GET', `/_attachments?ref=${ref}`, undefined, { token: owner })).body;
+    expect(list).toMatchObject([{ id: up.id, can_delete: false }]); // still readable, no delete button
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'สลิปโอน.jpg', dataBase64: JPG.toString('base64') }, { token: finance })).status).toBe(201);
+    expect((await t.api('DELETE', `/_attachments/${up.id}`, undefined, { token: admin })).status).toBe(200); // expense.attachment.delete
+  });
+});

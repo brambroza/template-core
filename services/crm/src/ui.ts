@@ -15,7 +15,7 @@ const customerLookup: Lookup = {
 };
 const ownerField: Field = {
   name: 'ownerId', label: 'ผู้รับผิดชอบ', type: 'lookup', help: 'เว้นว่าง = ตัวเอง',
-  lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { ownerId: 'id', ownerName: 'name' } },
+  lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { ownerId: 'id', ownerName: 'name' } },
 };
 
 const leadFields: Field[] = [

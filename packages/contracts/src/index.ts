@@ -188,6 +188,8 @@ export const events = {
   /** A receipt (RC-2569-0001) was issued: `payment` settles invoices (amount incl. WHT and deposits used), `deposit` = money received in advance. */
   'sales.payment_received': z.object({
     receiptId: id, receiptNo: z.string(), kind: z.enum(['payment', 'deposit']), customerId: id.nullable(), customerName: z.string(),
+    /** the receipt's own date (YYYY-MM-DD, Thai calendar day) — Accounting posts cash / WHT / AR on it (bugs-0.4 ACC-01); absent in old payloads */
+    receiptDate: z.string().optional(),
     method: z.enum(['cash', 'transfer', 'cheque', 'card']), total: money, whtAmount: money, depositApplied: money, received: money,
     invoices: z.array(z.object({ invoiceId: id, invoiceNo: z.string(), amount: money, outstanding: money })),
   }),

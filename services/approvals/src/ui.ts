@@ -11,7 +11,7 @@ const approverLines: LinesSpec = {
   name: 'approvers', label: 'ผู้อนุมัติ (เรียงตามลำดับขั้น)',
   fields: [{
     name: 'userId', label: 'ผู้อนุมัติ', type: 'lookup', required: true,
-    lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { userId: 'id', userName: 'name' } },
+    lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { userId: 'id', userName: 'name' } },
   }],
 };
 
@@ -185,7 +185,7 @@ export default defineUi({
       kind: 'form', title: 'มอบอำนาจอนุมัติแทน (ช่วงที่ไม่อยู่)', method: 'POST', endpoint: '/delegations', perm: 'approvals.request.approve', mobile: true,
       fields: [
         { name: 'toUserId', label: 'ผู้อนุมัติแทน', type: 'lookup', required: true,
-          lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { toUserId: 'id', toUserName: 'name' } } },
+          lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { toUserId: 'id', toUserName: 'name' } } },
         { name: 'startsOn', label: 'ตั้งแต่วันที่', type: 'date', required: true },
         { name: 'endsOn', label: 'ถึงวันที่', type: 'date', required: true },
         { name: 'note', label: 'หมายเหตุ', type: 'text', help: 'เช่น ลาพักร้อน' },

@@ -187,7 +187,8 @@ export function FieldInput(props: Props) {
         />
       );
     case 'multilookup':
-    case 'permissions': return <Text style={s.muted}>ตั้งค่ารายการนี้ได้จากหน้าเว็บ</Text>;
+    case 'permissions':
+    case 'image': return <Text style={s.muted}>ตั้งค่ารายการนี้ได้จากหน้าเว็บ</Text>;
     default:
       return (
         <TextInput

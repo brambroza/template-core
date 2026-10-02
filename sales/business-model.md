@@ -105,7 +105,7 @@
 | ซ่อมบำรุงอัจฉริยะ (`smart-maintenance`) * | โรงงาน | maintenance, inventory, automation | 69,000 | 55,000 | 20% | **70,000** |
 | โรงงานคุณภาพพร้อม audit (`factory-quality`) | โรงงาน | quality, production, inventory, purchasing, automation | 114,000 | 85,000 | 25% | 100,000 |
 | หลังบ้านโรงงาน (`factory-backoffice`) | โรงงาน (ขายต่อยอด) | hr, approvals, expense, assets, booking | 80,000 | 59,000 | 26% | 74,000 |
-| Factory OS ครบทุกโมดูล (`factory-os-complete`) | โรงงานขนาดกลาง | ทุก 16 โมดูล | 319,000 | 199,000 | 38% | 214,000 |
+| Factory OS ครบทุกโมดูล (`factory-os-complete`) | โรงงานขนาดกลาง | ทุก 19 โมดูล (รวมบัญชี เงินเดือน สัญญา MA ตั้งแต่ 3 ต.ค. 2569) | 399,000 | 259,000 | 35% | 274,000 |
 | อนุมัติ + เบิกจ่ายออนไลน์ (`office-starter`) | สำนักงาน (ประตูแรก) | approvals, expense | 30,000 | 25,000 | 17% | **40,000** |
 | สำนักงานไร้กระดาษ (`office-paperless`) | สำนักงาน | approvals, expense, hr, booking | 65,000 | 49,000 | 25% | **64,000** |
 | องค์กรครบวงจร (`office-complete`) | องค์กร 100+ คน | + assets, helpdesk, automation | 114,000 | 79,000 | 31% | 94,000 |
@@ -116,10 +116,13 @@
 | ผู้รับเหมาและงานติดตั้ง (`contractor`) | ก่อสร้าง | projects, purchasing, inventory, expense, approvals, assets | 105,000 | 75,000 | 29% | 90,000 |
 | บริหารอาคารและสถานที่ (`facility`) | โรงแรม/อาคาร | maintenance, helpdesk, assets, booking, automation | 84,000 | 62,000 | 26% | 77,000 |
 | หลังบ้านโรงเรียนและคลินิก (`campus`) | การศึกษา/สุขภาพ | hr, approvals, booking, helpdesk, assets, maintenance | 105,000 | 72,000 | 31% | 87,000 |
+| สำนักงานครบ + เงินเดือน (`office-payroll`) — ใหม่ 3 ต.ค. | สำนักงาน | approvals, expense, hr, booking, payroll | 90,000 | 65,000 | 28% | 80,000 |
+| บัญชีและการเงิน SME (`finance-sme`) — ใหม่ 3 ต.ค. | สำนักงาน/สำนักงานบัญชี | accounting, payroll, expense | 75,000 | 62,000 | 17% | 77,000 |
+| ธุรกิจบริการ + MA (`service-ma`) — ใหม่ 3 ต.ค. | บริการ MA | service-pro + contracts, helpdesk | 129,000 | 89,000 | 31% | 104,000 |
 
 \* มีอยู่ใน `catalog.json` ก่อนแล้ว ราคาเท่าเดิม · `factory-full` (129,000) และ `factory-maintenance` (42,000) ยังอยู่ใน catalog ตามเดิม
 
-**สถานะใน `catalog.json` (2 ต.ค. 2569):** ทั้ง 14 แพ็กอยู่ใน `bundles` แล้ว (มีฟิลด์ `segment` บอกกลุ่ม) `pnpm erp quote` และหน้าเว็บจึงเลือกแพ็กที่ถูกที่สุดให้อัตโนมัติ และพิมพ์ id แพ็กแทนรายชื่อโมดูลได้ เช่น `pnpm erp quote office-paperless,crm` · แก้ราคาแพ็กให้แก้ทั้ง `catalog.json` และ `industry-packs.json` พร้อมกัน (`pnpm site` จะไม่ build ถ้าสองไฟล์ไม่ตรงกัน) · ยังเปิดตัวเชิงรุกแค่ 3 แพ็กตามข้อ 9 แพ็กอื่นขายเมื่อมีลีดเข้ามา
+**สถานะใน `catalog.json` (3 ต.ค. 2569):** ทั้ง 17 แพ็กในตาราง (+ `factory-full`, `factory-maintenance` = 19 bundles) อยู่ใน `bundles` แล้ว พร้อมค่าเช่ารายเดือนใน `rental.bundles` (มีฟิลด์ `segment` บอกกลุ่ม) `pnpm erp quote` และหน้าเว็บจึงเลือกแพ็กที่ถูกที่สุดให้อัตโนมัติ และพิมพ์ id แพ็กแทนรายชื่อโมดูลได้ เช่น `pnpm erp quote office-paperless,crm` · แก้ราคาแพ็กให้แก้ทั้ง `catalog.json` และ `industry-packs.json` พร้อมกัน (`pnpm site` จะไม่ build ถ้าสองไฟล์ไม่ตรงกัน) · ยังเปิดตัวเชิงรุกแค่ 3 แพ็กตามข้อ 9 แพ็กอื่นขายเมื่อมีลีดเข้ามา
 
 **ราคาเทียบงบ SME ไทย:** ดีลเริ่มต้นทั่วไป = แพ็ก + แพลตฟอร์ม + ติดตั้ง 30,000 → **70,000–115,000 บาท** อยู่ในระดับที่ MD/เจ้าของอนุมัติเองได้โดยไม่ต้องเข้าบอร์ด (เป้า: ต่ำกว่า 150,000) และต่ำกว่า ERP ต่างประเทศหลายเท่า ส่วน `factory-os-complete` (ประมาณ 300,000 รวมติดตั้ง) คือดีลระดับโครงการ ต้องมี ROI ชัด
 

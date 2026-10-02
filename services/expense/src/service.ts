@@ -104,6 +104,18 @@ async function loadClaim(c: Client, id: string, a: AuthContext, lock = false) {
   return decorate(cl);
 }
 
+/**
+ * Attachments of a claim / advance can be added or removed by its owner only while it is still open; after approval the evidence is frozen
+ * (approvers and payers may still add files, deleting needs `expense.attachment.delete`).
+ */
+async function evidenceOpen(c: Client, a: AuthContext, table: 'claims' | 'advances', id: string, open: string[]) {
+  if (hasPerm(a, 'expense.claim.approve') || hasPerm(a, 'expense.claim.pay')) return;
+  const row = (await c.query(`select no, status from ${table} where id = $1`, [id])).rows[0];
+  if (row && !open.includes(row.status)) {
+    throw conflict(`${row.no} ${STATUS_TH[row.status] ?? row.status}แล้ว — เพิ่มหรือลบไฟล์แนบไม่ได้ (ติดต่อฝ่ายบัญชีถ้าต้องแก้หลักฐาน)`);
+  }
+}
+
 /** Segregation of duties: nobody approves their own claim or advance. */
 function refuseSelfApproval(owner: string, a: AuthContext, what: string) {
   if (owner === a.userId) throw forbidden(`อนุมัติ${what}ของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ`);
@@ -202,8 +214,9 @@ export const definition: ServiceDefinition = {
     read: 'expense.claim.read',
     write: 'expense.claim.write',
     entities: {
-      claim: { table: 'claims', access: (c, a, id) => loadClaim(c, id, a) },
-      advance: { table: 'advances', access: (c, a, id) => loadAdvance(c, id, a) },
+      // once approved, the claimant can no longer swap the evidence (bugs-0.4 EXP-06); finance may still add e.g. the transfer slip
+      claim: { table: 'claims', access: (c, a, id) => loadClaim(c, id, a), writable: (c, a, id) => evidenceOpen(c, a, 'claims', id, ['draft', 'submitted', 'returned']) },
+      advance: { table: 'advances', access: (c, a, id) => loadAdvance(c, id, a), writable: (c, a, id) => evidenceOpen(c, a, 'advances', id, ['requested']) },
     },
   },
   routes(app, k) {

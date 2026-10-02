@@ -80,15 +80,16 @@ const SELF_SERVICE = [
   'approvals.request.read', 'approvals.request.write', 'approvals.request.approve', 'expense.claim.read', 'expense.claim.write',
   'hr.leave.request', 'hr.attendance.self', 'booking.resource.read', 'booking.book.create', 'helpdesk.ticket.create', 'helpdesk.kb.read',
   'projects.project.read', 'projects.task.write', 'projects.timesheet.log', 'assets.asset.read', 'assets.repair.report',
-  'automation.notify.read',
+  'automation.notify.read', 'payroll.payslip.self',
 ];
 const SERVICE_TEAM = ['helpdesk.ticket.create', 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.read', 'helpdesk.kb.write'];
 const EXTRA_ROLES: [string, string[]][] = [
   ['พนักงาน (บริการตนเอง)', SELF_SERVICE],
-  ['ฝ่ายบุคคล', ['hr.*', 'identity.user.read']],
+  ['ฝ่ายบุคคล', ['hr.*', 'identity.user.read', 'payroll.profile.read', 'payroll.profile.write', 'payroll.run.read', 'payroll.run.write', 'payroll.setup.write']],
   ['ทีมบริการ (Helpdesk)', SERVICE_TEAM],
   ['ควบคุมคุณภาพ', ['quality.*', 'master.item.read', 'master.partner.read', 'inventory.stock.read']],
-  ['ฝ่ายขาย CRM', ['crm.*', 'master.item.read', 'master.partner.read']],
+  ['ฝ่ายขาย CRM', ['crm.*', 'master.item.read', 'master.partner.read', 'contracts.contract.read', 'contracts.contract.write', 'contracts.visit.read']],
+  ['ช่างบริการ MA', ['contracts.contract.read', 'contracts.visit.read', 'contracts.visit.work']],
   ['ผู้จัดการโครงการ', ['projects.*']],
 ];
 /**
@@ -97,7 +98,7 @@ const EXTRA_ROLES: [string, string[]][] = [
  */
 const TEMPLATE_ROLES: [string, string][] = [['accounting', 'บัญชีและการเงิน'], ['it', 'ไอที / helpdesk'], ['executive', 'ผู้บริหาร']];
 const EXTRA_BY_USER: Record<string, string[]> = {
-  'store@demo.co.th': [], 'buyer@demo.co.th': [], 'sales@demo.co.th': ['ฝ่ายขาย CRM'], 'tech@demo.co.th': ['ทีมบริการ (Helpdesk)'],
+  'store@demo.co.th': [], 'buyer@demo.co.th': [], 'sales@demo.co.th': ['ฝ่ายขาย CRM'], 'tech@demo.co.th': ['ทีมบริการ (Helpdesk)', 'ช่างบริการ MA'],
   'plan@demo.co.th': ['ผู้จัดการโครงการ'], 'hr@demo.co.th': ['ฝ่ายบุคคล'], 'acc@demo.co.th': ['บัญชีและการเงิน'],
   'it@demo.co.th': ['ไอที / helpdesk', 'ผู้จัดการโครงการ'], 'qc@demo.co.th': ['ควบคุมคุณภาพ', 'ทีมบริการ (Helpdesk)', 'ผู้จัดการโครงการ'],
 };
@@ -144,13 +145,19 @@ export async function seedQualityPlans(call: Call, items: Record<string, Item>):
 }
 
 export async function seedBusiness(base: BusinessCtx): Promise<void> {
-  const mods = ['hr', 'approvals', 'expense', 'booking', 'crm', 'helpdesk', 'projects', 'assets', 'quality', 'sales'].filter(base.has);
+  const mods = ['hr', 'approvals', 'expense', 'booking', 'crm', 'helpdesk', 'projects', 'assets', 'quality', 'sales', 'contracts'].filter(base.has);
+  // payroll's profiles come from HR's employee events
+  if (base.has('payroll') && base.has('hr')) mods.push('payroll');
   if (!mods.length) return;
   const t0 = Date.now();
   const ctx = await people(base);
+  const finance = await import('./demo-finance.ts');
+  const notes: string[] = [];
+  const note = (p: Promise<string>) => p.then((s) => { notes.push(s); });
   const seeders: Record<string, (x: Ctx) => Promise<unknown>> = {
     hr: seedHr, approvals: seedApprovals, expense: seedExpense, booking: seedBooking, crm: seedCrm,
     helpdesk: seedHelpdesk, projects: seedProjects, assets: seedAssets, quality: seedQualityWork, sales: seedReceivables,
+    payroll: (x) => note(finance.seedPayroll(x)), contracts: (x) => note(finance.seedContracts(x)),
   };
   const failed: string[] = [];
   const timings: string[] = [];
@@ -166,7 +173,13 @@ export async function seedBusiness(base: BusinessCtx): Promise<void> {
   }));
   // last, once the other modules' events have been delivered: a few personal flows, so they sit at the top of each person's bell
   await finale(ctx).catch((err) => { failed.push('finale'); console.error('demo seed: finale failed —', err instanceof Error ? err.message : err); });
+  // files on records of several modules, then the books: check them and close last month once every event has posted
+  await note(finance.seedAttachments(ctx)).catch((err) => { failed.push('attachments'); console.error('demo seed: attachments failed —', err instanceof Error ? err.message : err); });
+  if (base.has('accounting')) {
+    await note(finance.closeBooks(ctx)).catch((err) => { failed.push('accounting'); console.error('demo seed: accounting close failed —', err instanceof Error ? err.message : err); });
+  }
   console.log(`  business modules seeded in ${((Date.now() - t0) / 1000).toFixed(1)}s (${timings.join(', ')})`);
+  for (const n of notes) console.log(`  ${n}`);
   if (failed.length) console.error(`  demo seed: incomplete modules: ${failed.join(', ')}`);
 }
 

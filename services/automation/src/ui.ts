@@ -178,7 +178,9 @@ export default defineUi({
         { key: 'rotated_at', label: 'สร้าง URL ใหม่ล่าสุด', format: 'datetime' },
       ],
       actions: [
-        { id: 'test', label: 'ทดสอบส่งถึงฉัน', method: 'POST', endpoint: '/line/test', perm: 'automation.notify.read', toast: 'message', tone: 'primary' },
+        // the yellow button only once everything is configured; before that the test is a plain button (it shows what is missing)
+        { id: 'test', label: 'ทดสอบส่งถึงฉัน', method: 'POST', endpoint: '/line/test', perm: 'automation.notify.read', toast: 'message', tone: 'primary', when: { field: 'ready', in: [true] } },
+        { id: 'testIncomplete', label: 'ทดสอบส่งถึงฉัน', method: 'POST', endpoint: '/line/test', perm: 'automation.notify.read', toast: 'message', when: { field: 'ready', in: [false] } },
         { id: 'rotate', label: 'สร้าง Webhook URL ใหม่', method: 'POST', endpoint: '/line/settings/rotate', perm: 'automation.line.manage', toast: 'message',
           confirm: 'URL เดิมจะใช้ไม่ได้ทันที ต้องนำ URL ใหม่ไปวางใน LINE Developers — ดำเนินการต่อ?' },
       ],

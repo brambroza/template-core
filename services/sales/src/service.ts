@@ -68,7 +68,6 @@ const ReceiptInput = z.object({
 });
 
 const PAY_STATUS = `case when i.paid_amount >= i.gross then 'paid' when i.paid_amount > 0 then 'partially_paid' else 'outstanding' end`;
-const CUSTOMER_KEY = `coalesce(o.customer_id::text, o.customer_name)`;
 const INVOICE_SELECT = `select i.*, i.gross - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status,
   o.no as order_no, o.ref as order_ref, o.customer_id, o.customer_name, o.customer_tax_id, o.customer_branch, o.customer_address
   from invoices i join sales_orders o on o.id = i.order_id`;
@@ -89,12 +88,13 @@ interface NewOrder {
 
 async function insertOrder(c: Client, b: NewOrder, createdBy: string | null): Promise<string> {
   const t = orderTotals(b.lines, b.vatMode);
-  const no = await nextDocNo(c, 'SO', b.orderDate ? new Date(b.orderDate) : new Date());
+  const orderDate = b.orderDate ?? bangkokToday();
+  const no = await nextDocNo(c, 'SO', new Date(orderDate));
   const o = (await c.query(
     `insert into sales_orders (no, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, warehouse_code, order_date, vat_mode,
        subtotal, discount, net, vat, gross, note, created_by, ref, quotation_id, credit_days)
      values ($1,$2,$3,$4,$5,$6,$7,coalesce($8::date, current_date),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
-    [no, b.customerId ?? null, b.customerName, b.customerTaxId ?? null, b.customerBranch ?? null, b.customerAddress ?? null, b.warehouseCode, b.orderDate ?? null,
+    [no, b.customerId ?? null, b.customerName, b.customerTaxId ?? null, b.customerBranch ?? null, b.customerAddress ?? null, b.warehouseCode, orderDate,
       b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, createdBy, b.ref ?? null, b.quotationId ?? null, b.creditDays],
   )).rows[0];
   for (const [i, l] of b.lines.entries()) {
@@ -135,6 +135,17 @@ function sameCustomer(a: { customer_id?: string | null; customer_name: string },
 }
 
 const asOfQuery = z.object({ asOf: s.isoDate.optional() });
+/**
+ * Open invoices AS OF a date ($1): issued on or before it, less only the receipts dated on or before it — a report for the end of
+ * last month must not show invoices issued since, nor hide ones paid since (bugs-0.4 SAL-02). Columns: invoice `i` + order `o` + `open_amt`.
+ */
+const OPEN_AS_OF = `select i.*, o.customer_id, o.customer_name,
+    i.gross - coalesce((select sum(rl.amount) from receipt_lines rl join receipts p on p.id = rl.receipt_id where rl.invoice_id = i.id and p.receipt_date <= $1::date), 0) as open_amt
+  from invoices i join sales_orders o on o.id = i.order_id where i.issue_date <= $1::date`;
+/** deposits received on or before $1 with what remained unapplied on that date */
+const DEPOSITS_AS_OF = `select d.customer_id, d.customer_name,
+    d.total - coalesce((select sum(da.amount) from deposit_applications da join receipts p on p.id = da.receipt_id where da.deposit_id = d.id and p.receipt_date <= $1::date), 0) as remaining
+  from receipts d where d.kind = 'deposit' and d.receipt_date <= $1::date`;
 const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 export const definition: ServiceDefinition = {
@@ -248,15 +259,18 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       const b = parse(z.object({ issueDate: s.isoDate.optional(), dueDate: s.isoDate.optional() }), req.body ?? {});
       if (b.dueDate && b.issueDate && b.dueDate < b.issueDate) throw fieldError('dueDate', 'วันครบกำหนดต้องไม่ก่อนวันที่ใบกำกับ');
+      // the tax point is the Thai calendar day (the database runs in UTC: before 07:00 its current_date is yesterday) — bugs-0.4 SAL-03
+      const issueDate = b.issueDate ?? bangkokToday();
+      if (issueDate > bangkokToday()) throw fieldError('issueDate', 'ลงวันที่ใบกำกับภาษีล่วงหน้าไม่ได้');
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOrder(c, id, true);
         assertStatus(o, ['confirmed', 'delivered'], 'invoice');
-        const no = await nextDocNo(c, 'INV', b.issueDate ? new Date(b.issueDate) : new Date());
+        const no = await nextDocNo(c, 'INV', new Date(issueDate));
         const inv = (await c.query(
           `insert into invoices (no, order_id, issue_date, due_date, net, vat, gross)
            values ($1, $2, coalesce($3::date, current_date), coalesce($4::date, coalesce($3::date, current_date) + $5::int), $6, $7, $8) returning id, issue_date, due_date`,
-          [no, o.id, b.issueDate ?? null, b.dueDate ?? null, o.credit_days, o.net, o.vat, o.gross],
+          [no, o.id, issueDate, b.dueDate ?? null, o.credit_days, o.net, o.vat, o.gross],
         )).rows[0];
         await c.query(`update sales_orders set status = 'invoiced' where id = $1`, [id]);
         await k.emit(c, 'sales.invoiced', {
@@ -308,11 +322,14 @@ export const definition: ServiceDefinition = {
       if (isDeposit && b.whtPct) throw fieldError('whtPct', 'บันทึกหัก ณ ที่จ่ายตอนรับชำระใบกำกับ');
       if (new Set(b.lines.map((l) => l.invoiceId)).size !== b.lines.length) throw fieldError('lines', 'ใบกำกับซ้ำในใบเสร็จเดียวกัน');
       if (new Set(b.deposits.map((d) => d.depositId)).size !== b.deposits.length) throw fieldError('deposits', 'ใบมัดจำซ้ำ');
+      // Thai calendar day, not the database's UTC day; no future-dated receipts (bugs-0.4 SAL-01/SAL-03)
+      const receiptDate = b.receiptDate ?? bangkokToday();
+      if (receiptDate > bangkokToday()) throw fieldError('receiptDate', 'ลงวันที่ใบเสร็จล่วงหน้าไม่ได้');
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         let customer: { customer_id: string | null; customer_name: string; customer_tax_id: string | null; customer_branch: string | null; customer_address: string | null } | null =
           b.customerName ? { customer_id: b.customerId ?? null, customer_name: b.customerName, customer_tax_id: b.customerTaxId ?? null, customer_branch: b.customerBranch ?? null, customer_address: b.customerAddress ?? null } : null;
-        const no = await nextDocNo(c, 'RC', b.receiptDate ? new Date(b.receiptDate) : new Date());
+        const no = await nextDocNo(c, 'RC', new Date(receiptDate));
 
         if (isDeposit) {
           let orderId: string | null = null;
@@ -328,12 +345,12 @@ export const definition: ServiceDefinition = {
           const r = (await c.query(
             `insert into receipts (no, kind, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, order_id, receipt_date, method, reference,
                total, received, deposit_remaining, note, created_by, created_by_name)
-             values ($1,'deposit',$2,$3,$4,$5,$6,$7,coalesce($8::date, current_date),$9,$10,$11,$11,$11,$12,$13,$14) returning id`,
+             values ($1,'deposit',$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$11,$11,$12,$13,$14) returning id`,
             [no, customer.customer_id, customer.customer_name, customer.customer_tax_id, customer.customer_branch, customer.customer_address, orderId,
-              b.receiptDate ?? null, b.method, b.reference ?? null, amount, b.note ?? null, a.userId, a.userName ?? null],
+              receiptDate, b.method, b.reference ?? null, amount, b.note ?? null, a.userId, a.userName ?? null],
           )).rows[0];
           await k.emit(c, 'sales.payment_received', {
-            receiptId: r.id, receiptNo: no, kind: 'deposit', customerId: customer.customer_id, customerName: customer.customer_name, method: b.method,
+            receiptId: r.id, receiptNo: no, receiptDate, kind: 'deposit', customerId: customer.customer_id, customerName: customer.customer_name, method: b.method,
             total: amount, whtAmount: 0, depositApplied: 0, received: amount, invoices: [],
           });
           return printableReceipt(c, r.id);
@@ -343,6 +360,7 @@ export const definition: ServiceDefinition = {
         const settled: { invoiceId: string; invoiceNo: string; amount: number; whtBase: number; outstanding: number }[] = [];
         for (const l of b.lines) {
           const inv = await one(c, `${INVOICE_SELECT} where i.id = $1 for update of i`, [l.invoiceId], 'Invoice');
+          if (receiptDate < isoDay(inv.issue_date)) throw fieldError('receiptDate', `วันที่รับชำระต้องไม่ก่อนวันที่ใบกำกับ ${inv.no} (${formatThaiDate(inv.issue_date)})`);
           if (customer && !sameCustomer(customer, inv)) throw fieldError('lines', `${inv.no} เป็นของ ${inv.customer_name} ไม่ใช่ลูกค้าในใบเสร็จนี้`);
           customer ??= inv;
           const amount = round(l.amount);
@@ -372,8 +390,8 @@ export const definition: ServiceDefinition = {
         const r = (await c.query(
           `insert into receipts (no, kind, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, receipt_date, method, reference,
              total, wht_pct, wht_amount, deposit_applied, received, note, created_by, created_by_name)
-           values ($1,'payment',$2,$3,$4,$5,$6,coalesce($7::date, current_date),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) returning id`,
-          [no, cu.customer_id, cu.customer_name, cu.customer_tax_id, cu.customer_branch, cu.customer_address, b.receiptDate ?? null, b.method, b.reference ?? null,
+           values ($1,'payment',$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) returning id`,
+          [no, cu.customer_id, cu.customer_name, cu.customer_tax_id, cu.customer_branch, cu.customer_address, receiptDate, b.method, b.reference ?? null,
             total, b.whtPct, whtAmount, depositApplied, received, b.note ?? null, a.userId, a.userName ?? null],
         )).rows[0];
         for (const [i, l] of settled.entries()) {
@@ -385,7 +403,7 @@ export const definition: ServiceDefinition = {
           await c.query('update receipts set deposit_remaining = deposit_remaining - $2 where id = $1', [d.depositId, d.amount]);
         }
         await k.emit(c, 'sales.payment_received', {
-          receiptId: r.id, receiptNo: no, kind: 'payment', customerId: cu.customer_id, customerName: cu.customer_name, method: b.method,
+          receiptId: r.id, receiptNo: no, receiptDate, kind: 'payment', customerId: cu.customer_id, customerName: cu.customer_name, method: b.method,
           total, whtAmount, depositApplied, received,
           invoices: settled.map((l) => ({ invoiceId: l.invoiceId, invoiceNo: l.invoiceNo, amount: l.amount, outstanding: l.outstanding })),
         });
@@ -430,15 +448,14 @@ export const definition: ServiceDefinition = {
       const { asOf = bangkokToday() } = parse(asOfQuery, req.query);
       return k.db.tx(a.tenantId, async (c) => {
         const rows = (await c.query(
-          `select ${CUSTOMER_KEY} as key, (array_agg(o.customer_id))[1] as customer_id, max(o.customer_name) as customer_name,
-                  count(*)::int as invoices, sum(i.gross - i.paid_amount) as outstanding,
-                  coalesce(sum(i.gross - i.paid_amount) filter (where i.due_date < $1::date), 0) as overdue,
-                  min(i.due_date) as oldest_due, greatest(max($1::date - i.due_date), 0) as max_days_overdue
-           from invoices i join sales_orders o on o.id = i.order_id
-           where i.paid_amount < i.gross group by 1 order by overdue desc, outstanding desc`, [asOf])).rows;
+          `select coalesce(x.customer_id::text, x.customer_name) as key, (array_agg(x.customer_id))[1] as customer_id, max(x.customer_name) as customer_name,
+                  count(*)::int as invoices, sum(x.open_amt) as outstanding,
+                  coalesce(sum(x.open_amt) filter (where x.due_date < $1::date), 0) as overdue,
+                  min(x.due_date) as oldest_due, greatest(max($1::date - x.due_date), 0) as max_days_overdue
+           from (${OPEN_AS_OF}) x where x.open_amt > 0 group by 1 order by overdue desc, outstanding desc`, [asOf])).rows;
         const deposits = (await c.query(
-          `select coalesce(customer_id::text, customer_name) as key, (array_agg(customer_id))[1] as customer_id, max(customer_name) as customer_name, sum(deposit_remaining) as deposits
-           from receipts where kind = 'deposit' and deposit_remaining > 0 group by 1`)).rows;
+          `select coalesce(customer_id::text, customer_name) as key, (array_agg(customer_id))[1] as customer_id, max(customer_name) as customer_name, sum(remaining) as deposits
+           from (${DEPOSITS_AS_OF}) d where remaining > 0 group by 1`, [asOf])).rows;
         const byKey = new Map(rows.map((r) => [r.key, { ...r, deposits: 0 }]));
         for (const d of deposits) {
           const r = byKey.get(d.key);
@@ -458,8 +475,8 @@ export const definition: ServiceDefinition = {
       const { asOf = bangkokToday() } = parse(asOfQuery, req.query);
       return k.db.tx(a.tenantId, async (c) => {
         const rows = (await c.query(
-          `with x as (select ${CUSTOMER_KEY} as key, o.customer_id, o.customer_name, i.gross - i.paid_amount as amt, $1::date - i.due_date as days
-                      from invoices i join sales_orders o on o.id = i.order_id where i.paid_amount < i.gross)
+          `with x as (select coalesce(v.customer_id::text, v.customer_name) as key, v.customer_id, v.customer_name, v.open_amt as amt, $1::date - v.due_date as days
+                      from (${OPEN_AS_OF}) v where v.open_amt > 0)
            select key, (array_agg(customer_id))[1] as customer_id, max(customer_name) as customer_name,
                   coalesce(sum(amt) filter (where days <= 0), 0) as current,
                   coalesce(sum(amt) filter (where days between 1 and 30), 0) as d1_30,

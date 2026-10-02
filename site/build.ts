@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 const out = join(here, 'dist');
 
-/** Function counts from the 1,000-function roadmap — only numbers go into the page, never the rows. */
+/** Function counts from the 1,000+-function roadmap — only numbers go into the page, never the rows. */
 function roadmapStats(industries: { id: string; tags: string[] }[]) {
   const file = join(root, 'docs', 'roadmap', 'functions.json');
   const readme = join(root, 'docs', 'roadmap', 'README.md');
@@ -49,6 +49,8 @@ export function buildSite(): string {
   const modules = manifests.map((m) => ({
     id: m.id, name: m.name, nameTh: m.nameTh, tier: m.tier, requires: m.requires,
     pitch: site.modules?.[m.id]?.pitch ?? m.description, for: site.modules?.[m.id]?.for ?? '',
+    // "new": true in site.config.json → "ใหม่" badge on the module card (just-shipped modules)
+    isNew: site.modules?.[m.id]?.new === true,
   }));
   const featureIds = new Set(manifests.filter((m) => m.tier === 'feature').map((m) => m.id));
   const missing = [...featureIds].filter((id) => !catalog.modules[id]);

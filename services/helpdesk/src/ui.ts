@@ -11,7 +11,7 @@ const categoryField: Field = {
   name: 'categoryId', label: 'หมวดหมู่', type: 'lookup',
   lookup: { path: '/categories', label: ['code', 'name'], assign: { categoryId: 'id' } },
 };
-const userLookup = (id: string, name: string) => ({ module: 'identity', path: '/users', label: ['name', 'email'], assign: { [id]: 'id', [name]: 'name' } });
+const userLookup = (id: string, name: string) => ({ module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { [id]: 'id', [name]: 'name' } });
 
 const ticketFields: Field[] = [
   { name: 'title', label: 'เรื่อง', type: 'text', required: true },

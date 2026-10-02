@@ -135,7 +135,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-02');
     await page.getByRole('button', { name: 'บันทึกบทบาท' }).click();
     const row = page.getByRole('row', { name: /พนักงานคลัง/ });
-    await expect(row.innerText()).resolves.toMatch(/inventory\.\*.*master\.item\.read|master\.item\.read.*inventory\.\*/);
+    await expect(row.innerText()).resolves.toMatch(/inventory\.\*[\s\S]*master\.item\.read|master\.item\.read[\s\S]*inventory\.\*/); // chips may wrap onto separate lines
     await shot(page, 'UAT-02');
   });
 

@@ -49,13 +49,15 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
   t('accounting', 'บัญชีและการเงิน', 'อนุมัติและจ่ายใบเบิก/เงินทดรอง ทรัพย์สินและค่าเสื่อม ใบกำกับภาษี ใบเสร็จ ลูกหนี้ และต้นทุน', [
     'expense.claim.approve', 'expense.claim.pay', 'expense.category.write',
     'assets.asset.write', 'assets.asset.dispose', 'assets.audit.run', 'assets.finance.read',
-    'costing.cost.read', 'costing.cost.write', 'sales.order.read', 'sales.invoice.write', 'sales.receipt.write', 'sales.receivable.read',
+    // sales.order.write: billing staff confirm the MA installment orders Sales drafts from contracts before invoicing them (bugs-0.4 ID-02)
+    'costing.cost.read', 'costing.cost.write', 'sales.order.read', 'sales.order.write', 'sales.invoice.write', 'sales.receipt.write', 'sales.receivable.read',
     'purchasing.po.read', 'master.item.read', 'master.partner.read', 'inventory.stock.read', 'approvals.request.approve',
     'accounting.journal.read', 'accounting.journal.write', 'accounting.journal.post', 'accounting.account.write', 'accounting.period.close', 'accounting.report.read',
     'payroll.run.read', 'payroll.run.pay', 'contracts.contract.read', 'contracts.billing.read', 'contracts.billing.write',
   ]),
-  t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย และรับสินค้าตามใบสั่งซื้อ', [
-    'purchasing.po.read', 'purchasing.po.write', 'purchasing.po.receive', 'master.item.read', 'master.partner.read', 'master.partner.write',
+  t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย รับสินค้าตามใบสั่งซื้อ และส่งคืนผู้ขาย', [
+    // po.return: QC-rejected material in QC-HOLD goes back to the supplier (bugs-0.4 ID-03 — no suggested role could do it)
+    'purchasing.po.read', 'purchasing.po.write', 'purchasing.po.receive', 'purchasing.po.return', 'master.item.read', 'master.partner.read', 'master.partner.write',
     'inventory.stock.read', 'quality.inspection.read',
   ]),
   t('sales', 'ฝ่ายขาย', 'ลีด โอกาสขาย ใบเสนอราคา ใบสั่งขาย ลูกค้า และติดตามลูกหนี้', [

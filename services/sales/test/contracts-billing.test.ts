@@ -40,7 +40,7 @@ describe('sales ← contracts.installment_due', () => {
     expect(o.note).toContain('MA-2569-0007');
     // billing staff confirm and invoice it like any order; service-only → no delivery event
     expect((await x.api('POST', `/orders/${o.id}/confirm`)).status).toBe(200);
-    expect((await x.api('POST', `/orders/${o.id}/invoice`, { issueDate: '2026-12-01' })).status).toBe(201);
+    expect((await x.api('POST', `/orders/${o.id}/invoice`, { issueDate: '2026-09-01' })).status).toBe(201);
   });
 
   it('ignores a zero installment and stays inside the tenant', async () => {
@@ -57,9 +57,9 @@ describe('sales.invoiced (wave 5 fields)', () => {
     const x = tenant();
     const so = (await x.api('POST', '/orders', { customerName: 'ลูกค้า', vatMode: 'inclusive', lines: [{ description: 'ค่าบริการ', qty: 1, unitPrice: 1070 }] })).body;
     await x.api('POST', `/orders/${so.id}/confirm`);
-    const inv = (await x.api('POST', `/orders/${so.id}/invoice`, { issueDate: '2026-11-05' })).body;
+    const inv = (await x.api('POST', `/orders/${so.id}/invoice`, { issueDate: '2026-09-05' })).body;
     const ev = (await t.published('sales.invoiced')).map((e) => e.data).find((d) => d.invoiceId === inv.id);
-    expect(ev).toMatchObject({ issueDate: '2026-11-05', vatMode: 'inclusive', net: 1000, vat: 70, gross: 1070 });
+    expect(ev).toMatchObject({ issueDate: '2026-09-05', vatMode: 'inclusive', net: 1000, vat: 70, gross: 1070 });
     expect(() => parseEvent('sales.invoiced', ev)).not.toThrow();
   });
 });

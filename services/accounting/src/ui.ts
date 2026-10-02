@@ -173,9 +173,12 @@ export default defineUi({
         { name: 'active', label: 'สถานะ', type: 'select', options: yesNo },
       ],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อบัญชี' }, { key: 'type_label', label: 'หมวด' }, { key: 'category_label', label: 'กลุ่มในงบ' },
-        { key: 'is_group', label: 'บัญชีคุม', format: 'boolean' }, { key: 'role_label', label: 'ใช้เป็น' }, money('balance', 'ยอดคงเหลือ'), { key: 'active', label: 'ใช้งาน', format: 'boolean' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อบัญชี', indent: true }, { key: 'type_label', label: 'หมวด', phone: false },
+        { key: 'category_label', label: 'กลุ่มในงบ', phone: false }, { key: 'is_group', label: 'บัญชีคุม', format: 'boolean', phone: false },
+        { key: 'role_label', label: 'ใช้เป็น', phone: false }, money('balance', 'ยอดคงเหลือ'), { key: 'active', label: 'ใช้งาน', format: 'boolean', phone: false },
       ],
+      // the hierarchy: names indented by `level` (depth under the top group), group accounts as bold headings
+      report: { indentFrom: 'level', rowKind: 'row_kind', heading: ['group'] },
       create: 'accountNew', createLabel: 'เพิ่มบัญชี', rowLink: { screen: 'accountDetail' },
       actions: [{ id: 'setup', label: 'เติมผังบัญชีมาตรฐาน', method: 'POST', endpoint: '/accounts/setup', perm: ACCOUNT, confirm: 'เพิ่มบัญชีมาตรฐานและกฎลงบัญชีที่ยังไม่มี (ไม่แก้ของเดิม)?', toast: 'message' }],
       empty: 'ยังไม่มีผังบัญชี',

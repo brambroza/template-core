@@ -6061,7 +6061,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -6085,7 +6085,7 @@
    "all"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -6623,7 +6623,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -7190,7 +7190,7 @@
    "retail"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -7542,7 +7542,7 @@
    "factory"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -7810,7 +7810,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -7823,7 +7823,7 @@
    "service"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8098,7 +8098,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8274,7 +8274,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8286,7 +8286,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8310,7 +8310,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "L"
  },
  {
@@ -8322,7 +8322,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8334,7 +8334,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8382,7 +8382,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8406,7 +8406,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8418,7 +8418,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8469,7 +8469,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8481,7 +8481,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8493,7 +8493,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8721,38 +8721,38 @@
  },
  {
   "id": "F0670",
-  "module": "tax",
+  "module": "accounting",
   "area": "ภาษีมูลค่าเพิ่ม",
   "name": "รายงานภาษีขาย",
   "industries": [
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
   "id": "F0671",
-  "module": "tax",
+  "module": "accounting",
   "area": "ภาษีมูลค่าเพิ่ม",
   "name": "รายงานภาษีซื้อ",
   "industries": [
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
   "id": "F0672",
-  "module": "tax",
+  "module": "accounting",
   "area": "ภาษีมูลค่าเพิ่ม",
   "name": "เตรียมแบบ ภ.พ.30 รายเดือน",
   "industries": [
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8867,14 +8867,14 @@
  },
  {
   "id": "F0682",
-  "module": "tax",
+  "module": "accounting",
   "area": "ภาษีหัก ณ ที่จ่าย",
   "name": "ทะเบียนหนังสือรับรองที่ลูกค้าหักเรา (เครดิตภาษี)",
   "industries": [
    "all"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8972,7 +8972,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8984,7 +8984,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8996,7 +8996,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -9032,7 +9032,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -9044,7 +9044,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -9068,7 +9068,7 @@
    "all"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -9080,7 +9080,7 @@
    "all"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -9116,7 +9116,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -9152,7 +9152,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "L"
  },
  {
@@ -9164,7 +9164,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -9188,7 +9188,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -11000,7 +11000,7 @@
  },
  {
   "id": "F0851",
-  "module": "field-service",
+  "module": "contracts",
   "area": "สัญญาบริการ",
   "name": "สัญญาบริการ/MA พร้อมระยะเวลาและเงื่อนไข",
   "industries": [
@@ -11009,36 +11009,36 @@
    "office"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
   "id": "F0852",
-  "module": "field-service",
+  "module": "contracts",
   "area": "สัญญาบริการ",
   "name": "สร้างใบงานตรวจเช็กตามรอบในสัญญาอัตโนมัติ",
   "industries": [
    "service"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
   "id": "F0853",
-  "module": "field-service",
+  "module": "contracts",
   "area": "สัญญาบริการ",
   "name": "แจ้งเตือนสัญญาใกล้หมดและเสนอต่ออายุ",
   "industries": [
    "service"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
   "id": "F0854",
-  "module": "field-service",
+  "module": "contracts",
   "area": "สัญญาบริการ",
   "name": "ทะเบียนเครื่อง/อุปกรณ์ที่ติดตั้งให้ลูกค้าพร้อมประกัน",
   "industries": [
@@ -11046,12 +11046,12 @@
    "trading"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
   "id": "F0855",
-  "module": "field-service",
+  "module": "contracts",
   "area": "สัญญาบริการ",
   "name": "ตรวจสอบสิทธิ์ประกันจากเลขซีเรียล",
   "industries": [
@@ -11060,19 +11060,19 @@
    "retail"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
   "id": "F0856",
-  "module": "field-service",
+  "module": "contracts",
   "area": "งานภาคสนาม",
   "name": "ใบงานบริการนอกสถานที่ (on-site) พร้อมนัดหมาย",
   "industries": [
    "service"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -12778,7 +12778,7 @@
    "all"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -12890,6 +12890,255 @@
   ],
   "priority": "P3",
   "status": "planned",
+  "effort": "S"
+ },
+ {
+  "id": "F1001",
+  "module": "platform",
+  "area": "บันทึกการใช้งาน",
+  "name": "ประวัติการแก้ไขในหน้าเอกสาร: ใคร เมื่อไร ทำอะไร พร้อมข้อมูลที่ส่ง (ทุกโมดูล)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1002",
+  "module": "platform",
+  "area": "เอกสารและไฟล์",
+  "name": "แนบไฟล์/รูป (PDF Excel Word รูป ≤ 5 MB) กับเอกสารหลัก 10 โมดูล ลากวางบนเว็บ ถ่ายรูปจากมือถือ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1003",
+  "module": "identity",
+  "area": "ข้อมูลบริษัท",
+  "name": "ข้อมูลบริษัทผู้ขาย (ชื่อ ที่อยู่ เลขผู้เสียภาษี สาขา โลโก้ ช่องลายเซ็น) พิมพ์บนหัวเอกสารทุกใบตามมาตรา 86/4",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1004",
+  "module": "platform",
+  "area": "หน้าจอและการใช้งาน",
+  "name": "รายงานการเงินแบบงบ: หัวข้อ ยอดรวม เส้นคู่ ติดลบในวงเล็บ และงวดของรายงาน ทั้งบนจอและกระดาษ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1005",
+  "module": "automation",
+  "area": "แจ้งเตือนถึงตัวบุคคล",
+  "name": "แจ้งเตือนในแอปถึงตัวผู้เกี่ยวข้อง (ผู้อนุมัติ ผู้ขอ หัวหน้า ช่าง) แทนการแจ้งทุกคน",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1006",
+  "module": "automation",
+  "area": "แจ้งเตือนถึงตัวบุคคล",
+  "name": "ผู้ใช้ผูก LINE ส่วนตัวด้วยรหัส 6 หลัก แล้วรับแจ้งเตือนของตนเองทาง LINE",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1007",
+  "module": "hr",
+  "area": "ผังองค์กร",
+  "name": "กำหนดหัวหน้าโดยตรง/หัวหน้าแผนก แล้วใบลาวิ่งไปหาหัวหน้าตามผังองค์กรอัตโนมัติ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1008",
+  "module": "inventory",
+  "area": "คุณภาพในคลัง",
+  "name": "คลังกักกัน QC-HOLD: ของที่ QC ไม่ผ่านถูกกักอัตโนมัติ ห้ามเบิก/ขายจนกว่าผู้มีสิทธิ์ปล่อย",
+  "industries": [
+   "factory",
+   "trading"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1009",
+  "module": "inventory",
+  "area": "คุณภาพในคลัง",
+  "name": "รายการสต็อกติดลบที่เกิดจากเอกสารโมดูลอื่น ให้ตรวจสอบและบันทึกรับทราบ",
+  "industries": [
+   "factory",
+   "trading",
+   "retail"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1010",
+  "module": "accounting",
+  "area": "ลงบัญชีอัตโนมัติ",
+  "name": "รายการลงบัญชีอัตโนมัติไม่สำเร็จพร้อมสาเหตุภาษาไทย ลงซ้ำหลังแก้กฎหรือข้ามได้",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1011",
+  "module": "accounting",
+  "area": "บัญชีแยกประเภท",
+  "name": "กลับรายการสมุดรายวันที่ผ่านแล้วอัตโนมัติพร้อมเหตุผล",
+  "industries": [
+   "all"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1012",
+  "module": "accounting",
+  "area": "งบการเงิน",
+  "name": "งบกำไรขาดทุนรายเดือนและสะสมตั้งแต่ต้นปี",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1013",
+  "module": "payroll",
+  "area": "เงินเดือน",
+  "name": "เริ่มใช้ระบบกลางปีด้วยยอดสะสม (เงินได้ ภาษี ประกันสังคม กองทุนฯ)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1014",
+  "module": "payroll",
+  "area": "เงินเดือน",
+  "name": "นำเข้าข้อมูลเงินเดือนพนักงาน และ OT/วันลารายเดือน จาก Excel/CSV",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1015",
+  "module": "payroll",
+  "area": "เงินเดือน",
+  "name": "หักลาไม่รับค่าจ้างที่อนุมัติในโมดูล HR เข้ารอบเงินเดือนอัตโนมัติ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1016",
+  "module": "payroll",
+  "area": "รายงานและแบบยื่น",
+  "name": "รายการโอนเงินเดือนแยกตามธนาคาร และข้อมูล สปส.1-10 ส่งออก CSV",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1017",
+  "module": "payroll",
+  "area": "เงินเดือน",
+  "name": "ตั้งค่าอัตราประกันสังคม เพดาน ค่าลดหย่อน ขั้นภาษี และอัตรา OT เองโดยไม่แก้โปรแกรม",
+  "industries": [
+   "all"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1018",
+  "module": "contracts",
+  "area": "สัญญาบริการ",
+  "name": "งวดวางบิลสัญญา MA ตามแผน (รายเดือน/ไตรมาส/ปี) ส่งเป็นร่างใบสั่งขายให้ฝ่ายขาย",
+  "industries": [
+   "service",
+   "factory",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1019",
+  "module": "contracts",
+  "area": "งาน PM ตามสัญญา",
+  "name": "ช่างรับงาน PM บนมือถือ บันทึกผลตรวจทีละรายการ ผ่าน/ไม่ผ่าน แล้วปิดงานพร้อมชื่อผู้รับรอง",
+  "industries": [
+   "service",
+   "factory",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1020",
+  "module": "contracts",
+  "area": "สัญญาบริการ",
+  "name": "พิมพ์สัญญา MA และรายงานการบำรุงรักษาบนหัวกระดาษบริษัทพร้อมช่องลงนาม",
+  "industries": [
+   "service",
+   "factory",
+   "office"
+  ],
+  "priority": "P2",
+  "status": "done",
   "effort": "S"
  }
 ]

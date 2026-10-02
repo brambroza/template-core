@@ -230,7 +230,7 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
   const rules = await loadRules(c, type);
   const eventDay = todayTh(new Date(meta.occurredAt));
   /** the document's own date when the event carries one (wave 5), else the day the event happened (Bangkok) */
-  const date = isoDate(data.issueDate ?? data.paidDate ?? data.receivedDate ?? data.returnDate) ?? eventDay;
+  const date = isoDate(data.issueDate ?? data.paidDate ?? data.receivedDate ?? data.returnDate ?? data.receiptDate) ?? eventDay;
   const { sourceId, sourceNo } = sourceOf(type, data, meta.eventId);
   const header: JournalHeader = { entryDate: date, description: '', ref: sourceNo, sourceType: type, sourceId, sourceEventId: meta.eventId };
   const lines: LineInput[] = [];

@@ -422,3 +422,32 @@ describe('security', () => {
     expect((await t.api('GET', '/journals', undefined, { token: t.token(['*'], t.otherTenantId) })).body).toHaveLength(0);
   });
 });
+
+describe('QA regressions (bugs-0.4)', () => {
+  it('ACC-01: a receipt is posted on its own date (cash, WHT, AR land in the receipt month), not on the day it was keyed', async () => {
+    const x = tenant();
+    const inv = invoice({ invoiceNo: 'INV-2569-0101', net: 100000, vat: 7000, gross: 107000, issueDate: '2024-05-05' });
+    await x.deliver('sales.invoiced', inv);
+    await x.deliver('sales.payment_received', {
+      receiptId: randomUUID(), receiptNo: 'RC-2567-0101', receiptDate: '2024-05-31', kind: 'payment', customerId: inv.customerId, customerName: inv.customerName,
+      method: 'transfer', total: 107000, whtAmount: 3000, depositApplied: 0, received: 104000,
+      invoices: [{ invoiceId: inv.invoiceId, invoiceNo: inv.invoiceNo, amount: 107000, outstanding: 0 }],
+    });
+    const [rc] = await x.journals('sales.payment_received');
+    expect(rc.entry_date).toBe('2024-05-31');
+    // as of the receipt date the customer owes nothing and the 50 ทวิ to chase belongs to May
+    const tb = (await x.api('GET', '/reports/trial-balance?asOf=2024-05-31')).body;
+    expect(tb.totals.difference).toBe(0);
+    expect(tb.rows.find((r: any) => r.code === '11300')).toMatchObject({ debit: 0, credit: 0, debit_total: 107000, credit_total: 107000 });
+    expect(tb.rows.find((r: any) => r.code === '11600')).toMatchObject({ debit: 3000 });
+    const wht = (await x.api('GET', '/reports/wht-received?year=2024')).body;
+    expect(wht.months).toEqual([expect.objectContaining({ month: '2024-05', amount: 3000 })]);
+    // a receipt dated in a closed month is refused into posting errors (not silently moved to today's month)
+    await x.api('POST', '/periods/2024-06/close');
+    await x.deliver('sales.payment_received', {
+      receiptId: randomUUID(), receiptNo: 'RC-2567-0102', receiptDate: '2024-06-10', kind: 'deposit', customerId: null, customerName: 'ลูกค้า ค',
+      method: 'cash', total: 500, whtAmount: 0, depositApplied: 0, received: 500, invoices: [],
+    });
+    expect((await x.api('GET', '/posting-errors')).body).toEqual([expect.objectContaining({ source_no: 'RC-2567-0102' })]);
+  });
+});

@@ -12,7 +12,7 @@ const customerLookup: Lookup = {
   module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'],
   assign: { customerId: 'id', customerCode: 'code', customerName: 'name' },
 };
-const userLookup = (id: string, name: string): Lookup => ({ module: 'identity', path: '/users', label: ['name', 'email'], assign: { [id]: 'id', [name]: 'name' } });
+const userLookup = (id: string, name: string): Lookup => ({ module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { [id]: 'id', [name]: 'name' } });
 
 const contractFields: Field[] = [
   { name: 'customerId', label: 'ลูกค้า', type: 'lookup', required: true, lookup: customerLookup },

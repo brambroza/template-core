@@ -30,11 +30,11 @@ const supplier: Field = {
 };
 const inspector: Field = {
   name: 'inspectorId', label: 'ผู้ตรวจ', type: 'lookup',
-  lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { inspectorId: 'id', inspectorName: 'name' } },
+  lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { inspectorId: 'id', inspectorName: 'name' } },
 };
 const owner: Field = {
   name: 'ownerId', label: 'ผู้รับผิดชอบ', type: 'lookup',
-  lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { ownerId: 'id', ownerName: 'name' } },
+  lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { ownerId: 'id', ownerName: 'name' } },
 };
 const checkpointFields: Field[] = [
   { name: 'name', label: 'จุดตรวจ', type: 'text', required: true },

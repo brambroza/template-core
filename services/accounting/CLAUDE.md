@@ -35,7 +35,7 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
 - **Auto-posting** (`postEvent`, handlers): idempotent by event id (kernel inbox) **and** by source document; runs inside a savepoint and **never throws** —
   a missing / inactive / group account in a rule, a closed period or any DB error is stored in `posting_errors` (the event is acknowledged). Users fix the
   rule or reopen the period, then `retry` (re-runs the stored payload) or `dismiss` (book it by hand). Zero-amount events post nothing.
-  Posting date = the document date the event carries (`issueDate` / `paidDate` / `receivedDate` / `returnDate`), else the event's `occurredAt` in Asia/Bangkok.
+  Posting date = the document date the event carries (`issueDate` / `paidDate` / `receivedDate` / `returnDate` / `receiptDate`), else the event's `occurredAt` in Asia/Bangkok.
   Created-by name "ระบบ (ลงบัญชีอัตโนมัติ)".
 
 | event | journal (default accounts) |
@@ -59,7 +59,7 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
   `months[]` (6 × revenue, expense, net), `rows` (recent JVs with in-app `link`).
 
 ## API
-- `POST /accounts/setup` · `GET /accounts?q=&type=&category=&role=&active=&postable=&groups=` (+ `balance`, `line_count`) · `GET /accounts/:id` (+ usage, balances incl. children, `movements`, `children_list`)
+- `POST /accounts/setup` · `GET /accounts?q=&type=&category=&role=&active=&postable=&groups=` (+ `balance`, `line_count`, `level` = depth under the top group, `row_kind` group|account — the chart screen indents by `level`) · `GET /accounts/:id` (+ usage, balances incl. children, `movements`, `children_list`)
 - `POST /accounts` · `PUT /accounts/:id` (code/type change only when unused; group ↔ detail rules; can't deactivate/group an account used by a posting rule) · `DELETE /accounts/:id` (409 if used / has children / in a rule)
 - `GET /journals?q=&status=&source=&from=&to=&accountId=` · `GET /journals/:id` · `POST /journals { entryDate?, description, ref?, note?, lines[], post? }` (post needs `accounting.journal.post`)
 - `PUT /journals/:id` (header) · `PUT /journals/:id/lines { lines }` · `POST /journals/:id/post | cancel | reverse { entryDate?, reason? }`

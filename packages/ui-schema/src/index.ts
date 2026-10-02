@@ -9,7 +9,8 @@
  * This file must stay dependency-free and browser-safe (no node imports): web and mobile both import it.
  */
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'month' | 'select' | 'boolean' | 'lookup' | 'multilookup' | 'permissions' | 'password' | 'email';
+/** `image`: a picture kept as a data URL in a text field (company logo) — web shows preview + file picker; mobile leaves it to the web. */
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'month' | 'select' | 'boolean' | 'lookup' | 'multilookup' | 'permissions' | 'password' | 'email' | 'image';
 
 export interface Lookup {
   /** module that owns the list; omit = this module */

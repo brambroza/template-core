@@ -1,7 +1,8 @@
 /**
  * pnpm demo — run every module in this repo + gateway + web app with demo data.
  * Env: DATABASE_ADMIN_URL (default postgres://postgres:postgres@127.0.0.1:5432/postgres), DEMO_RESET=1, WEB=0 to skip the web app,
- *      DEMO_GATEWAY_PORT (default 8080) / DEMO_BASE_PORT (first module port, default 4100) to run a second stack beside the live one.
+ *      DEMO_GATEWAY_PORT (default 8080) / DEMO_BASE_PORT (first module port, default 4100) to run a second stack beside the live one,
+ *      DEMO_DB_PREFIX (default `demo`) so that second stack (and its DEMO_RESET) uses its own databases.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
@@ -19,7 +20,9 @@ for (const id of ids) defs.push((await import(join(dir, id, 'src', 'service.ts')
 
 console.log(`Starting ${ids.join(', ')}…`);
 const gatewayPort = Number(process.env.DEMO_GATEWAY_PORT ?? 8080);
-const stack = await startStack(defs, { reset: process.env.DEMO_RESET === '1', gatewayPort, basePort: Number(process.env.DEMO_BASE_PORT ?? 4100) });
+const stack = await startStack(defs, {
+  reset: process.env.DEMO_RESET === '1', gatewayPort, basePort: Number(process.env.DEMO_BASE_PORT ?? 4100), prefix: process.env.DEMO_DB_PREFIX || undefined,
+});
 const t0 = Date.now();
 const seed = await seedDemo(stack);
 console.log(seed.created ? `Demo data created in ${((Date.now() - t0) / 1000).toFixed(1)}s.` : 'Demo data already present (DEMO_RESET=1 to start over).');

@@ -19,7 +19,7 @@ const assetLookup = (name: string, target = 'id'): Field => ({
 });
 const custodian: Field = {
   name: 'custodianId', label: 'ผู้ถือครอง', type: 'lookup',
-  lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { custodianId: 'id', custodianName: 'name' } },
+  lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { custodianId: 'id', custodianName: 'name' } },
 };
 const repairFields: Field[] = [
   { name: 'description', label: 'อาการ/งานซ่อม', type: 'textarea', required: true },

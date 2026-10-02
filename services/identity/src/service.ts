@@ -68,6 +68,12 @@ const CompanyInput = z.object({
 
 /** "สำนักงานใหญ่" for 00000, "สาขาที่ 00012" otherwise — the wording the Revenue Department expects. */
 export const branchText = (code: string) => (code === '00000' ? 'สำนักงานใหญ่' : `สาขาที่ ${code}`);
+/** "0105559012342" -> "0-1055-59012-34-2", as printed on Thai documents (the company screen shows it this way) */
+export const taxIdText = (id: string | null | undefined) => {
+  const d = (id ?? '').replace(/\D/g, '');
+  return d.length === 13 ? `${d[0]}-${d.slice(1, 5)}-${d.slice(5, 10)}-${d.slice(10, 12)}-${d[12]}` : id ?? null;
+};
+const companyView = (row: any) => ({ configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code), tax_id_text: taxIdText(row.tax_id) });
 
 const companyCols = `legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_at`;
 
@@ -128,12 +134,12 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       return k.db.tx(a.tenantId, async (c) => {
         const row = (await c.query(`select ${companyCols} from company_profiles`)).rows[0];
-        if (row) return { configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code) };
+        if (row) return companyView(row);
         // not set up yet: the company name from provisioning, everything else empty
         const t = (await c.query<{ name: string }>('select name from tenants where id = $1', [a.tenantId])).rows[0];
         return {
           configured: false, legal_name: t?.name ?? '', name_en: null, branch_code: '00000', branch_label: null, branch_text: branchText('00000'),
-          address: null, tax_id: null, phone: null, email: null, website: null, logo: null, footer_note: null, signature_labels: [], updated_at: null,
+          address: null, tax_id: null, tax_id_text: null, phone: null, email: null, website: null, logo: null, footer_note: null, signature_labels: [], updated_at: null,
         };
       });
     });
@@ -154,8 +160,20 @@ export const definition: ServiceDefinition = {
           [b.legalName, b.nameEn ?? null, b.branchCode, b.branchLabel ?? null, b.address, b.taxId ?? null, b.phone ?? null, b.email ?? null,
             b.website ?? null, b.logo ?? null, b.footerNote ?? null, b.signatureLabels ?? [], a.userId],
         )).rows[0];
-        return { configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code) };
+        return companyView(row);
       });
+    });
+
+    /**
+     * People picker for every signed-in user (approver → delegate, contract technician, ticket assignee, asset custodian…):
+     * active users' id, name and work e-mail only — no roles, no admin data. `/users` stays behind identity.user.read (bugs-0.4 ID-04).
+     */
+    app.get('/users/directory', async (req) => {
+      const a = auth(req);
+      const q = parse(z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }), req.query);
+      const like = q.q ? `%${q.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select id, name, email from users where active and ($1::text is null or name ilike $1 or email ilike $1) order by name limit $2`, [like, q.limit])).rows);
     });
 
     app.get('/users', async (req) => {

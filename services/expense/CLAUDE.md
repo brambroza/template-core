@@ -27,6 +27,8 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
   `settle_amount > 0` company pays more; `< 0` employee returns cash (`settle_text` in Thai). The claim's `net_payable = total - advance_amount`.
 - Wrong status → 409.
 
+- Attachments (`claim`, `advance` via kernel `/_attachments`): visibility follows the record; the owner may add/remove files only while a claim is `draft|submitted|returned` (advance: `requested`) — afterwards 409 (bugs-0.4 EXP-06). Approvers/payers may still add (transfer slip); `expense.attachment.delete` may delete.
+
 ## API
 - `GET/POST /categories` (`?q`, `?active`) · `GET/PUT /categories/:id` (detail has `used_this_month` — company-wide for approvers/payers, the caller's own spend for staff)
 - `POST /claims { purpose, department?, claimantName? (nameless tokens only), claimDate?, lines[{ expenseDate, categoryId, description?, amount, vat?, receiptNo? }], submit? }` → includes `warnings`

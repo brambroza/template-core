@@ -9,10 +9,6 @@
     {
       "file": "UAT-02.jpg",
       "device": "desktop"
-    },
-    {
-      "file": "UAT-02-2.jpg",
-      "device": "desktop"
     }
   ],
   "UAT-03": [
@@ -490,6 +486,208 @@
     },
     {
       "file": "UAT-47-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-48": [
+    {
+      "file": "UAT-48.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-48-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-49": [
+    {
+      "file": "UAT-49.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-49-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-49-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-50": [
+    {
+      "file": "UAT-50.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-50-2.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-50-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-51": [
+    {
+      "file": "UAT-51.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-51-2.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-51-3.jpg",
+      "device": "phone"
+    }
+  ],
+  "UAT-52": [
+    {
+      "file": "UAT-52.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-52-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-52-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-53": [
+    {
+      "file": "UAT-53.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-53-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-53-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-54": [
+    {
+      "file": "UAT-54.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-54-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-55": [
+    {
+      "file": "UAT-55.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-55-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-55-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-56": [
+    {
+      "file": "UAT-56.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-56-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-57": [
+    {
+      "file": "UAT-57.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-57-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-57-3.jpg",
+      "device": "phone"
+    }
+  ],
+  "UAT-58": [
+    {
+      "file": "UAT-58.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-58-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-58-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-59": [
+    {
+      "file": "UAT-59.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-59-2.jpg",
+      "device": "phone"
+    }
+  ],
+  "UAT-60": [
+    {
+      "file": "UAT-60.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-60-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-61": [
+    {
+      "file": "UAT-61.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-62": [
+    {
+      "file": "UAT-62.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-62-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-62-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-63": [
+    {
+      "file": "UAT-63.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-63-2.jpg",
+      "device": "phone"
+    }
+  ],
+  "UAT-64": [
+    {
+      "file": "UAT-64.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-64-2.jpg",
       "device": "desktop"
     }
   ]

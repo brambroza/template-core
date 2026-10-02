@@ -17,7 +17,7 @@ const projectLookup: Field = {
 };
 const userLookup = (name: string, label: string, nameField: string, required = false): Field => ({
   name, label, type: 'lookup', required,
-  lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { [name]: 'id', [nameField]: 'name' } },
+  lookup: { module: 'identity', path: '/users/directory', label: ['name', 'email'], assign: { [name]: 'id', [nameField]: 'name' } },
 });
 
 const taskActions = (mobile: boolean): Action[] => [

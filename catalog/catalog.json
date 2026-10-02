@@ -165,9 +165,12 @@
         "helpdesk",
         "projects",
         "quality",
-        "booking"
+        "booking",
+        "accounting",
+        "payroll",
+        "contracts"
       ],
-      "price": 199000
+      "price": 259000
     },
     {
       "id": "office-starter",
@@ -285,6 +288,45 @@
         "maintenance"
       ],
       "price": 72000
+    },
+    {
+      "id": "office-payroll",
+      "nameTh": "สำนักงานครบ + เงินเดือน",
+      "segment": "office",
+      "modules": [
+        "approvals",
+        "expense",
+        "hr",
+        "booking",
+        "payroll"
+      ],
+      "price": 65000
+    },
+    {
+      "id": "finance-sme",
+      "nameTh": "บัญชีและการเงิน SME",
+      "segment": "office",
+      "modules": [
+        "accounting",
+        "payroll",
+        "expense"
+      ],
+      "price": 62000
+    },
+    {
+      "id": "service-ma",
+      "nameTh": "ธุรกิจบริการ + MA",
+      "segment": "service",
+      "modules": [
+        "crm",
+        "projects",
+        "sales",
+        "expense",
+        "automation",
+        "contracts",
+        "helpdesk"
+      ],
+      "price": 89000
     }
   ],
   "updatePlanPct": 20,
@@ -340,7 +382,7 @@
       "smart-maintenance": 2500,
       "factory-quality": 3590,
       "factory-backoffice": 2490,
-      "factory-os-complete": 7990,
+      "factory-os-complete": 10990,
       "office-starter": 990,
       "office-paperless": 2200,
       "office-complete": 3390,
@@ -349,7 +391,10 @@
       "trading-growth": 3190,
       "contractor": 3190,
       "facility": 2590,
-      "campus": 2990
+      "campus": 2990,
+      "office-payroll": 2790,
+      "finance-sme": 2690,
+      "service-ma": 3790
     },
     "minTermMonths": 12,
     "setupFee": 9900,

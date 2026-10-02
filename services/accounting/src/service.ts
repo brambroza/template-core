@@ -184,12 +184,17 @@ export const definition: ServiceDefinition = {
       const q = parse(AccountQuery, req.query);
       return k.db.tx(a.tenantId, async (c) => {
         await ensureChart(c);
+        // `level` = depth in the group hierarchy (0 = top group) — the chart screen indents the names by it
         const rows = (await c.query(
-          `select a.*, p.code as parent_code, p.name as parent_name,
+          `with recursive tree as (
+             select id, 0 as level from accounts where parent_id is null
+             union all select x.id, t.level + 1 from accounts x join tree t on x.parent_id = t.id where t.level < 10)
+           select a.*, p.code as parent_code, p.name as parent_name, coalesce(tr.level, 0)::int as level,
+             case when a.is_group then 'group' else 'account' end as row_kind,
              coalesce((select sum(l.debit - l.credit) from journal_lines l join journal_entries j on j.id = l.journal_id
                        where l.account_id = a.id and j.status in ${EFFECTIVE}), 0) as dr_balance,
              (select count(*) from journal_lines l where l.account_id = a.id)::int as line_count
-           from accounts a left join accounts p on p.id = a.parent_id
+           from accounts a left join accounts p on p.id = a.parent_id left join tree tr on tr.id = a.id
            where ($1::text is null or a.code ilike $1 || '%' or a.name ilike '%' || $1 || '%' or a.name_en ilike '%' || $1 || '%')
              and ($2::text is null or a.type = $2) and ($3::text is null or a.category = $3) and ($4::text is null or a.role = $4)
              and ($5::boolean is null or a.active = $5) and ($6::boolean is not true or not a.is_group) and ($8::boolean is not true or a.is_group)

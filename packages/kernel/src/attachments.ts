@@ -37,6 +37,11 @@ export interface AttachmentEntity {
    * When given, it replaces the plain existence check on `table`.
    */
   access?: (c: Client, a: AuthContext, id: string) => Promise<unknown>;
+  /**
+   * May files still be added to / removed from this record by this user? THROW (e.g. 409) to refuse — evidence of a paid claim is frozen.
+   * Runs after `access` on upload and on a delete by the uploader; holders of `<module>.attachment.delete` may always delete.
+   */
+  writable?: (c: Client, a: AuthContext, id: string) => Promise<unknown>;
 }
 
 export interface AttachmentsSpec {
@@ -194,9 +199,10 @@ export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOption
     }
   };
 
-  const view = (a: AuthContext) => (r: Record<string, any>) => {
+  /** `frozen` = the record's `writable` hook refuses changes now, so only `<module>.attachment.delete` may remove files */
+  const view = (a: AuthContext, frozen = false) => (r: Record<string, any>) => {
     const { ent } = resolve(r.ref);
-    return { ...r, can_delete: hasPerm(a, deletePerm) || (r.uploaded_by === a.userId && anyPerm(a, ent.write)) };
+    return { ...r, can_delete: hasPerm(a, deletePerm) || (!frozen && r.uploaded_by === a.userId && anyPerm(a, ent.write)) };
   };
 
   app.get('/_attachments', async (req) => {
@@ -207,7 +213,12 @@ export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOption
     return o.db.tx(a.tenantId, async (c) => {
       await checkRecord(c, a, ent, entityId);
       const rows = (await c.query(`select ${COLUMNS} from _attachments where ref = $1 order by created_at, id`, [ref])).rows;
-      return rows.map(view(a));
+      let frozen = false;
+      if (ent.writable && rows.length) {
+        await c.query('savepoint att_writable');
+        try { await ent.writable(c, a, entityId); await c.query('release savepoint att_writable'); } catch { frozen = true; await c.query('rollback to savepoint att_writable'); }
+      }
+      return rows.map(view(a, frozen));
     });
   });
 
@@ -223,6 +234,7 @@ export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOption
     req.auditEntityId = entityId;
     return o.db.tx(a.tenantId, async (c) => {
       await checkRecord(c, a, ent, entityId);
+      if (ent.writable) await ent.writable(c, a, entityId);
       // serialize uploads to one record so the per-record cap holds under concurrency
       await c.query('select pg_advisory_xact_lock(hashtext($1))', [`_attachments:${b.ref}`]);
       const count = Number((await c.query('select count(*)::int as n from _attachments where ref = $1', [b.ref])).rows[0].n);
@@ -295,6 +307,7 @@ export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOption
       if (!hasPerm(a, deletePerm)) {
         if (row.uploaded_by !== a.userId || !anyPerm(a, ent.write)) throw forbidden(`ลบได้เฉพาะผู้แนบไฟล์ หรือผู้มีสิทธิ์ ${deletePerm}`);
         await checkRecord(c, a, ent, entityId);
+        if (ent.writable) await ent.writable(c, a, entityId);
       }
       await c.query('delete from _attachments where id = $1', [id]);
       return { id, ref: row.ref, file_name: row.file_name, deleted: true };

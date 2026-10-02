@@ -1002,6 +1002,20 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, (c) => certificateRows(c, year, like(q.q), null));
     });
 
+    /** Self-service: my own 50 ทวิ per tax year (paid runs only) — the list the phone opens (bugs-0.4 PAY-02). */
+    app.get('/my-certificates', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'payroll.payslip.self');
+      const q = parse(ListQuery.extend({ year: z.coerce.number().int().optional() }), req.query);
+      const year = q.year ? (q.year > 2400 ? q.year - 543 : q.year) : Number(bangkokToday().slice(0, 4));
+      return k.db.tx(a.tenantId, async (c) => {
+        const mine = (await c.query('select id from pay_profiles where user_id = $1', [a.userId])).rows;
+        const rows = [];
+        for (const p of mine) rows.push(...(await certificateRows(c, year, null, p.id)));
+        return rows;
+      });
+    });
+
     /** `:id` = `<profileId>_<year>` (ค.ศ.); the employee may open their own certificate with payroll.payslip.self. */
     app.get('/certificates/:id', async (req) => {
       const a = auth(req);

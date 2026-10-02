@@ -67,7 +67,8 @@ endpoint ต้องรับค่าเป็นข้อความ (แป
 - web: รายการไฟล์พร้อมไอคอน/รูปย่อ (jpg/png/webp), ปุ่ม "แนบไฟล์" (เลือกได้หลายไฟล์) หรือ **ลากไฟล์มาวาง**, เปิดในแท็บใหม่ (รูป/PDF), ดาวน์โหลด, ลบ (เฉพาะไฟล์ที่ `can_delete`)
   ตรวจขนาด (≤ 5 MB) และนามสกุลก่อนส่ง เซิร์ฟเวอร์ตรวจซ้ำรวมถึงเนื้อไฟล์
 - mobile: รายการไฟล์พร้อมรูปย่อ แตะ = เปิดในตัวดูของเครื่องผ่านลิงก์ชั่วคราว (`/_attachments/:id/link`) —
-  การถ่ายรูป/เลือกไฟล์จากมือถือต้องเพิ่ม `expo-image-picker` + `expo-document-picker` ใน apps/mobile ก่อน (ยังไม่ได้ติดตั้ง)
+  ปุ่ม **ถ่ายรูป** / **เลือกรูป** (หลายรูป) / **แนบไฟล์** (PDF, Excel, Word, CSV) ส่งเป็น base64 ไป `POST /_attachments` (ตรวจ 5 MB ก่อนส่ง) —
+  ใช้ `expo-image-picker`, `expo-document-picker`, `expo-file-system` ซึ่งติดตั้งใน apps/mobile แล้ว (apps/mobile/src/components/Attachments.tsx)
 - `entity` ต้องเป็นชื่อที่โมดูลเปิดใช้ใน `ServiceDefinition.attachments.entities` และ endpoint ของหน้าต้องมี `:param` (id ของเรคคอร์ด) —
   `tests/ui/descriptors.test.ts` ตรวจให้; สิทธิ์จริงอยู่ที่ฝั่ง server (ดู docs/architecture.md "ไฟล์แนบและประวัติการแก้ไข")
 
@@ -165,6 +166,8 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 `text` `textarea` `number` `date` `month` (เดือน YYYY-MM; มือถือเป็นช่องพิมพ์) `select` `boolean` `email` `password`
 `lookup` — ค้นหาจากโมดูลอื่นแล้วเติมหลายช่อง: `assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }`, `scanField: 'code'` = มือถือสแกน QR/บาร์โค้ดได้
 `multilookup` — เลือกหลายรายการ (เช่น บทบาท) · `permissions` — เลือกสิทธิ์จาก manifest ของโมดูลที่ติดตั้ง
+`image` — รูปเก็บเป็น data URL ในช่องข้อความ (โลโก้บริษัท): web แสดงรูปตัวอย่าง + ปุ่มเลือกไฟล์/ลบรูป (PNG/JPEG/SVG/WebP ≤ 300 KB) · มือถือให้ตั้งค่าจากหน้าเว็บ
+  (textarea เดิมที่ค่าเป็น `data:image/…` หรือ help พูดถึง data:image ยังได้ตัวเลือกไฟล์เหมือนเดิม)
 
 ## Formats (columns / fields)
 

@@ -249,4 +249,11 @@ describe('audit log', () => {
     expect(big._truncated).toBe(true);
     expect(auditSummary({})).toBeNull();
   });
+
+  it('keeps only the last 4 digits of bank account / ID numbers (bugs-0.4 PAY-01)', () => {
+    expect(redact({ bankAccount: '123-4-56789-0', bank_account: '1234567890', accountNo: '9876543210', idCard: '1-1037-02345-67-8', bankName: 'กสิกร', empty: null }))
+      .toEqual({ bankAccount: '••••7890', bank_account: '••••7890', accountNo: '••••3210', idCard: '••••5678', bankName: 'กสิกร', empty: null });
+    // inside imported rows too
+    expect(redact({ rows: [{ employeeCode: 'E1', bankAccount: '111-2-33333-4' }] })).toEqual({ rows: [{ employeeCode: 'E1', bankAccount: '••••3334' }] });
+  });
 });

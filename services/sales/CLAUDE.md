@@ -23,7 +23,8 @@ Invoice payment status (computed): `outstanding` → `partially_paid` → `paid`
   `deposits [{ depositId, amount? }]` (or form shorthand `applyDepositId` + `applyDepositAmount?`) reduce cash due; no amount = as much as remains and is due.
   `received = total − wht − deposits` must be ≥ 0 (else 400).
 - Deposit (`depositAmount`, optional `orderId` → customer from the order): no invoice, no WHT (record WHT when it is applied), `deposit_remaining` until used.
-- Receivables group by `coalesce(customer_id, customer_name)`; aging buckets by days past due as of `asOf` (default today, Asia/Bangkok): `current` (not yet due), `d1_30`, `d31_60`, `d61_90`, `over_90`.
+- Dates (bugs-0.4): order / invoice / receipt dates default to today in Asia/Bangkok (the DB runs in UTC); invoice and receipt dates may not be in the future; a receipt may not be dated before any invoice it settles (400). `sales.payment_received` carries `receiptDate`.
+- Receivables group by `coalesce(customer_id, customer_name)`; aging buckets by days past due as of `asOf` (invoices issued on/before `asOf`, less receipts dated on/before it; deposits likewise) (default today, Asia/Bangkok): `current` (not yet due), `d1_30`, `d31_60`, `d61_90`, `over_90`.
 - Handler `crm.quotation_accepted` (CRM is `enhancedBy`): if the payload has `lines`, drafts an order (warehouse MAIN, credit 0, `ref` = quotation no., `created_by` null) — once per quotation id; old payloads without lines are ignored.
 - Handler `contracts.installment_due` (contracts is `enhancedBy`; `draftInstallmentOrder`): one draft order per installment (`sales_orders.contract_installment_id`, unique — migration 003):
   customer snapshot, VAT exclusive (contract amounts are before VAT), one service line "ค่าบริการบำรุงรักษา (MA) <title> ตามสัญญา <no> งวดที่ n/N ช่วง …" × 1 at `amount`,

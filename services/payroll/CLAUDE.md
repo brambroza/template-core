@@ -63,6 +63,7 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
 - `POST /inputs/import { rows, dryRun }` — columns period, employeeCode, workDays, ot1/ot15/ot2/ot3Hours, unpaidLeaveDays, bonus, otherIncome, otherDeduction, note
 - `GET /my-payslips` (`year`, `q`) · `GET /my-payslips/:id` — `payroll.payslip.self`, own + paid only
 - `GET /runs/:id/bank-transfer` (rows + per-bank totals) · `GET /runs/:id/sso` (สปส.1-10 data) · `GET /runs/:id/pnd1` (`withheldOnly`)
+- `GET /my-certificates?year=` — `payroll.payslip.self`, my own 50 ทวิ rows (screens `myCertificates` → `myCertificate`, printable)
 - `GET /certificates?year=` · `GET /certificates/:profileId_year` (50 ทวิ; the employee may open their own with `payroll.payslip.self`)
 - `GET /leave-inputs` (`period`, `status`, `q`) — unpaid leave received from HR and where it went (`payroll.run.read`)
 - `GET /summary` (kpis, `months` = last 6 months net/gross/cost, `rows` = runs)

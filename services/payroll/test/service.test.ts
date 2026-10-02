@@ -274,6 +274,30 @@ describe('payroll run', () => {
     expect((await t.api('GET', '/certificates/not-an-id', undefined, as('hr'))).status).toBe(400);
   });
 
+  it('PAY-02 (bugs-0.4): the employee finds their own 50 ทวิ through /my-certificates (and nobody else\'s)', async () => {
+    const mine = await t.api('GET', '/my-certificates?year=2569', undefined, as('somchai'));
+    expect(mine.status).toBe(200);
+    expect(mine.body.map((c: any) => c.employee_code)).toEqual(['EMP-001']);
+    expect((await t.api('GET', `/certificates/${mine.body[0].id}`, undefined, as('somchai'))).status).toBe(200);
+    expect((await t.api('GET', '/my-certificates?year=2026', undefined, as('malee'))).body.map((c: any) => c.employee_code)).toEqual(['EMP-002']);
+    expect((await t.api('GET', '/my-certificates', undefined, { token: t.token(['payroll.payslip.self'], t.tenantId, { userId: randomUUID() }) })).body).toEqual([]);
+    expect((await t.api('GET', '/my-certificates', undefined, as('hr'))).status).toBe(403);
+  });
+
+  it('PAY-01 (bugs-0.4): the audit log never keeps a full bank account number', async () => {
+    const tid = randomUUID(); // own company, so the other scenarios' counts are untouched
+    const hr = { token: t.token(HR_PERMS, tid, { userName: 'ฝ่ายบุคคล' }) };
+    const auditor = { token: t.token(['payroll.audit.read'], tid) };
+    const p = (await t.api('POST', '/profiles', { employeeCode: 'EMP-AUD', employeeName: 'ทดสอบ ประวัติ', baseSalary: 20000, bankName: 'กสิกรไทย', bankAccount: '123-4-56789-0' }, hr)).body;
+    await t.api('PATCH', `/profiles/${p.id}`, { bankAccount: '987-6-54321-0' }, hr);
+    await t.api('POST', '/profiles/import', { rows: [{ employeeCode: 'EMP-AUD', bankAccount: '555-5-55555-1' }] }, hr);
+    const log = (await t.api('GET', '/_audit?q=EMP-AUD', undefined, auditor)).body;
+    const all = JSON.stringify((await t.api('GET', '/_audit?limit=500', undefined, auditor)).body);
+    expect(JSON.parse(all)).toHaveLength(3);
+    expect(all).not.toMatch(/56789|54321|55555/);
+    expect(JSON.stringify(log)).toContain('••••7890');
+  });
+
   it('summarises for the dashboard', async () => {
     const s = await t.api('GET', '/summary', undefined, as('hr'));
     expect(s.body).toMatchObject({ activeProfiles: 3, toApprove: 0, drafts: 1 });

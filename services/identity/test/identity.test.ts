@@ -59,6 +59,23 @@ describe('identity', () => {
     expect((await login('beta', 'store@x.co', 'password123')).status).toBe(401);
   });
 
+  it('ID-04 (bugs-0.4): every signed-in user can pick colleagues from the directory (id, name, e-mail only), not the admin user list', async () => {
+    await createTenant('gamma');
+    const admin = { token: (await login('gamma', 'admin@x.co', 'password123')).body.token };
+    const role = (await t.api('POST', '/roles', { name: 'หัวหน้างาน', permissions: ['approvals.request.approve'] }, admin)).body;
+    await t.api('POST', '/users', { email: 'sup@x.co', name: 'วิชัย หัวหน้า', password: 'password123', roleIds: [role.id] }, admin);
+    const gone = (await t.api('POST', '/users', { email: 'old@x.co', name: 'วิชัย ลาออก', password: 'password123' }, admin)).body;
+    await t.api('POST', `/users/${gone.id}/deactivate`, undefined, admin);
+    const sup = { token: (await login('gamma', 'sup@x.co', 'password123')).body.token };
+    expect((await t.api('GET', '/users', undefined, sup)).status).toBe(403);
+    const dir = await t.api('GET', '/users/directory?q=วิชัย', undefined, sup);
+    expect(dir.status).toBe(200);
+    expect(dir.body).toEqual([{ id: expect.any(String), name: 'วิชัย หัวหน้า', email: 'sup@x.co' }]);
+    expect((await t.api('GET', '/users/directory', undefined, sup)).body).toHaveLength(2); // admin + sup, not the deactivated one
+    expect((await t.api('GET', '/users/directory', undefined, { token: t.token([], t.otherTenantId) })).body).toEqual([]);
+    expect((await t.api('GET', '/users/directory')).status).toBe(200);
+  });
+
   it('keeps tenants apart', async () => {
     const acme = await login('acme', 'admin@x.co', 'password123');
     const users = await t.api('GET', '/users', undefined, { token: acme.body.token });
@@ -205,6 +222,14 @@ describe('role templates', () => {
     expect(r.status).toBe(201);
     expect(r.body.permissions).toContain('assets.finance.read');
     expect(r.body.skipped).toEqual([]);
+  });
+
+  it('ID-02 (bugs-0.4): the accounting role can confirm the MA installment orders it must invoice', async () => {
+    const tpl = (await t.api('GET', '/role-templates?q=accounting', undefined, admin())).body[0];
+    expect(tpl.permissions).toEqual(expect.arrayContaining(['sales.order.write', 'sales.invoice.write', 'contracts.billing.write']));
+    // ID-03: purchasing can send QC-rejected goods back to the supplier
+    const buyer = (await t.api('GET', '/role-templates?q=purchasing', undefined, admin())).body[0];
+    expect(buyer.permissions).toContain('purchasing.po.return');
   });
 
   it('needs identity.role.write to create and identity.user.read to list', async () => {

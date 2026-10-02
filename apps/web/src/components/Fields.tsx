@@ -197,7 +197,8 @@ function ImageDataInput({ field, values, onChange }: FieldProps) {
   );
 }
 
-const isImageData = (field: Field, v: unknown) => field.type === 'textarea' && (String(v ?? '').startsWith('data:image/') || /data:image/.test(field.help ?? ''));
+const isImageData = (field: Field, v: unknown) => field.type === 'image'
+  || (field.type === 'textarea' && (String(v ?? '').startsWith('data:image/') || /data:image/.test(field.help ?? '')));
 
 export function FieldInput(props: FieldProps) {
   const { field, values, onChange, error, compact } = props;
@@ -207,6 +208,7 @@ export function FieldInput(props: FieldProps) {
     case 'lookup': return <LookupInput {...props} />;
     case 'multilookup': return <MultiLookup {...props} />;
     case 'permissions': return <PermissionsInput {...props} />;
+    case 'image': return <ImageDataInput {...props} />;
     case 'textarea': if (isImageData(field, v)) return <ImageDataInput {...props} />;
       return <textarea {...common} rows={3} value={String(v ?? '')} onChange={(e) => onChange({ [field.name]: e.target.value })} />;
     case 'boolean':

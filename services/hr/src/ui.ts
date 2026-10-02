@@ -343,7 +343,8 @@ export default defineUi({
       kind: 'list', title: 'ประเภทการลาและสิทธิ์ต่อปี', endpoint: '/leave-types', perm: 'hr.employee.read',
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ประเภท' }, { key: 'days_per_year', label: 'สิทธิ์ต่อปี (วัน, ว่าง = ไม่จำกัด)', format: 'qty' },
-        { key: 'allow_half_day', label: 'ลาครึ่งวันได้', format: 'boolean' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
+        { key: 'allow_half_day', label: 'ลาครึ่งวันได้', format: 'boolean' }, { key: 'unpaid', label: 'ไม่รับค่าจ้าง', format: 'boolean' },
+        { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'leaveTypeNew', createLabel: 'เพิ่มประเภทการลา', rowLink: { screen: 'leaveTypeEdit' }, empty: 'ยังไม่มีประเภทการลา — กด "เพิ่มตามกฎหมายแรงงาน"',
       actions: [{ id: 'defaults', label: 'เพิ่มตามกฎหมายแรงงาน', method: 'POST', endpoint: '/leave-types/defaults', perm: 'hr.setup.write', toast: 'message',
@@ -355,6 +356,7 @@ export default defineUi({
         { name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อ', type: 'text', required: true },
         { name: 'daysPerYear', label: 'สิทธิ์ต่อปี (วัน) — เว้นว่าง = ไม่จำกัด', type: 'number', step: 0.5 },
         { name: 'allowHalfDay', label: 'ลาครึ่งวันได้', type: 'boolean', default: true },
+        { name: 'unpaid', label: 'ลาไม่รับค่าจ้าง', type: 'boolean', default: false, help: 'วันลาที่อนุมัติแล้วจะถูกหักเงินเดือนในรอบเงินเดือนของเดือนนั้น' },
       ],
       submitLabel: 'บันทึก', after: { screen: 'leaveTypes' },
     },
@@ -363,7 +365,9 @@ export default defineUi({
       fields: [
         { name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อ', type: 'text', required: true },
         { name: 'daysPerYear', label: 'สิทธิ์ต่อปี (วัน)', type: 'number', step: 0.5 },
-        { name: 'allowHalfDay', label: 'ลาครึ่งวันได้', type: 'boolean' }, { name: 'active', label: 'ใช้งาน', type: 'boolean' },
+        { name: 'allowHalfDay', label: 'ลาครึ่งวันได้', type: 'boolean' },
+        { name: 'unpaid', label: 'ลาไม่รับค่าจ้าง', type: 'boolean', help: 'วันลาที่อนุมัติแล้วจะถูกหักเงินเดือนในรอบเงินเดือนของเดือนนั้น' },
+        { name: 'active', label: 'ใช้งาน', type: 'boolean' },
       ],
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'leaveTypes' },
     },

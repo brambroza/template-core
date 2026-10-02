@@ -121,7 +121,7 @@ describe('sales receivables — reports, permissions, tenants', () => {
     await invoice(c2, 400, '2026-06-25', {}, tok); // due 07-25 → 69 days → 61–90
     await invoice(c2, 500, '2026-05-01', {}, tok); // due 05-31 → 124 days → >90
     await invoice(c2, 1, '2026-08-03', {}, tok); //  due 09-02 → 30 days → 1–30 (edge)
-    await t.api('POST', '/receipts', { ...c2, depositAmount: 50, method: 'cash' }, { token: tok });
+    await t.api('POST', '/receipts', { ...c2, depositAmount: 50, method: 'cash', receiptDate: '2026-10-01' }, { token: tok });
     const aging = (await t.api('GET', '/receivables/aging?asOf=2026-10-02', undefined, { token: tok })).body;
     expect(aging.totals).toEqual({ current: 107, d1_30: 215.07, d31_60: 321, d61_90: 428, over_90: 535, total: 1606.07 });
     expect(aging.rows[0]).toMatchObject({ customer_name: c2.customerName, customer_id: null, d1_30: 1.07, d61_90: 428, over_90: 535, total: 964.07 });
@@ -174,5 +174,45 @@ describe('sales receivables — reports, permissions, tenants', () => {
     // numbering is per tenant
     const o = (await t.api('POST', '/orders', { ...custA, lines: [{ ...svc, unitPrice: 5 }] }, { token: other })).body;
     expect((await t.api('POST', '/receipts', { orderId: o.id, depositAmount: 5, method: 'cash' }, { token: other })).body.no).toBe('RC-2569-0001');
+  });
+});
+
+describe('QA regressions (bugs-0.4)', () => {
+  it('SAL-01/SAL-03: receipts and invoices are dated on the Thai calendar, never in the future, and a receipt is not dated before its invoice', async () => {
+    const c = { customerId: randomUUID(), customerName: 'ลูกค้า วันที่' };
+    const { inv } = await invoice(c, 1000, '2026-09-20');
+    const early = await t.api('POST', '/receipts', { method: 'cash', receiptDate: '2026-09-01', lines: [{ invoiceId: inv.id, amount: 100 }] });
+    expect(early.status).toBe(400);
+    expect(early.body.error.details.fieldErrors.receiptDate[0]).toContain(inv.no);
+    expect((await t.api('POST', '/receipts', { method: 'cash', receiptDate: '2099-01-01', lines: [{ invoiceId: inv.id, amount: 100 }] })).status).toBe(400);
+    expect((await t.api('POST', '/receipts', { ...c, depositAmount: 10, method: 'cash', receiptDate: '2099-01-01' })).status).toBe(400);
+    const o = (await t.api('POST', '/orders', { ...c, lines: [{ ...svc, unitPrice: 10 }] })).body;
+    await t.api('POST', `/orders/${o.id}/confirm`);
+    expect((await t.api('POST', `/orders/${o.id}/invoice`, { issueDate: '2099-01-01' })).status).toBe(400);
+    // no date given → today in Thailand (the database runs in UTC), carried to Accounting with the event
+    const bkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const inv2 = (await t.api('POST', `/orders/${o.id}/invoice`)).body;
+    expect(inv2.issue_date).toBe(bkk);
+    const rc = (await t.api('POST', '/receipts', { method: 'transfer', receiptDate: '2026-09-30', lines: [{ invoiceId: inv.id, amount: 1070 }] })).body;
+    expect(rc.receipt_date).toBe('2026-09-30');
+    expect((await t.published('sales.payment_received')).find((e) => e.data.receiptId === rc.id)!.data).toMatchObject({ receiptDate: '2026-09-30' });
+    const rc2 = (await t.api('POST', '/receipts', { method: 'cash', lines: [{ invoiceId: inv2.id, amount: 1 }] })).body;
+    expect(rc2.receipt_date).toBe(bkk);
+  });
+
+  it('SAL-02: receivables and aging AS OF a past date ignore later invoices and later receipts', async () => {
+    const tid = randomUUID();
+    const tok = t.token(['*'], tid);
+    const c = { customerId: randomUUID(), customerName: 'ลูกค้า ย้อนหลัง' };
+    const { inv: sep5 } = await invoice(c, 100000, '2026-09-05', {}, tok); // 107,000 due 10-05
+    await invoice(c, 10000, '2026-09-20', {}, tok); // 10,700 — issued after the as-of date
+    await t.api('POST', '/receipts', { method: 'transfer', receiptDate: '2026-09-30', whtPct: 3, lines: [{ invoiceId: sep5.id, amount: 107000 }] }, { token: tok });
+    await t.api('POST', '/receipts', { ...c, depositAmount: 500, method: 'cash', receiptDate: '2026-09-25' }, { token: tok });
+    const before = (await t.api('GET', '/receivables/aging?asOf=2026-09-10', undefined, { token: tok })).body;
+    expect(before.totals).toMatchObject({ current: 107000, total: 107000 });
+    const ar10 = (await t.api('GET', '/receivables?asOf=2026-09-10', undefined, { token: tok })).body;
+    expect(ar10.totals).toEqual({ outstanding: 107000, overdue: 0, deposits: 0, customers: 1 });
+    const end = (await t.api('GET', '/receivables?asOf=2026-09-30', undefined, { token: tok })).body;
+    expect(end.totals).toEqual({ outstanding: 10700, overdue: 0, deposits: 500, customers: 1 });
   });
 });

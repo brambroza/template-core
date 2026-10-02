@@ -152,6 +152,19 @@ const pickRun = (title: string, screen: string) => ({
   rowLink: { screen }, empty: 'ยังไม่มีรอบเงินเดือน',
 });
 
+/** 50 ทวิ — the same document for HR (certificate) and the employee (myCertificate). */
+const CERT_FIELDS: Column[] = [
+        { key: 'employee_name', label: 'ผู้ถูกหักภาษี ณ ที่จ่าย' }, { key: 'payee_tax_id', label: 'เลขประจำตัวผู้เสียภาษีอากร' }, { key: 'employee_code', label: 'รหัสพนักงาน' },
+        { key: 'year_be', label: 'ปีภาษี' }, { key: 'form', label: 'ลำดับที่ในแบบ' }, { key: 'income_type', label: 'ประเภทเงินได้' },
+        { key: 'income', label: 'จำนวนเงินที่จ่าย', format: 'money' }, { key: 'tax', label: 'ภาษีที่หักและนำส่งไว้', format: 'money' }, { key: 'tax_text', label: 'รวมเงินภาษีที่หักนำส่ง (ตัวอักษร)' },
+        { key: 'sso', label: 'เงินสมทบกองทุนประกันสังคม', format: 'money' }, { key: 'pvd', label: 'เงินสะสมกองทุนสำรองเลี้ยงชีพ', format: 'money' },
+        { key: 'payer_condition', label: 'ผู้จ่ายเงิน' },
+      ];
+const CERT_LINES: { path: string; label: string; columns: Column[] }[] = [{ path: 'months', label: 'รายละเอียดรายเดือน', columns: [
+        { key: 'period_label', label: 'เดือน' }, { key: 'income', label: 'เงินได้', format: 'accounting', total: true }, { key: 'wht', label: 'ภาษี', format: 'accounting', total: true },
+        { key: 'sso_employee', label: 'ประกันสังคม', format: 'accounting', total: true }, { key: 'pvd_employee', label: 'กองทุนฯ', format: 'accounting', total: true },
+      ] }];
+
 export default defineUi({
   module: 'payroll',
   label: 'เงินเดือน',
@@ -161,6 +174,7 @@ export default defineUi({
   statusLabels: { calculated: 'คำนวณแล้ว', earning: 'รายได้', deduction: 'รายการหัก' },
   menu: [
     { label: 'สลิปเงินเดือนของฉัน', screen: 'myPayslips' },
+    { label: 'หนังสือรับรอง 50 ทวิ ของฉัน', screen: 'myCertificates' },
     { label: 'รอบเงินเดือน', screen: 'runs' },
     { label: 'สลิปเงินเดือนทุกคน', screen: 'payslips' },
     { label: 'ข้อมูลเงินเดือนพนักงาน', screen: 'profiles' },
@@ -198,6 +212,21 @@ export default defineUi({
       kind: 'detail', title: 'สลิปเงินเดือน', endpoint: '/my-payslips/:id', perm: SELF, heading: 'period_label', mobile: true,
       print: { title: 'สลิปเงินเดือน / ใบแจ้งเงินเดือน', signatures: ['ผู้จ่ายเงิน', { label: 'ผู้รับเงิน', name: 'employee_name' }] },
       fields: slipFields, lines: slipLines,
+    },
+
+    myCertificates: {
+      kind: 'list', title: 'หนังสือรับรอง 50 ทวิ ของฉัน', endpoint: '/my-certificates', perm: SELF, mobile: true,
+      filters: [{ name: 'year', label: 'ปีภาษี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ปีนี้)', type: 'number' }],
+      columns: [
+        { key: 'year_be', label: 'ปีภาษี' }, { key: 'months', label: 'จำนวนเดือน', format: 'qty' },
+        { key: 'income', label: 'เงินได้ทั้งปี', format: 'money' }, { key: 'tax', label: 'ภาษีที่หัก', format: 'money' }, { key: 'sso', label: 'ประกันสังคม', format: 'money' },
+      ],
+      rowLink: { screen: 'myCertificate' }, empty: 'ยังไม่มีหนังสือรับรองของปีนี้ (ออกให้เมื่อบริษัทบันทึกจ่ายเงินเดือนแล้ว)',
+    },
+    myCertificate: {
+      kind: 'detail', title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย ตามมาตรา 50 ทวิ', endpoint: '/certificates/:id', perm: SELF, heading: 'heading', mobile: true,
+      print: { title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)', copyLabel: true, signatures: ['ผู้จ่ายเงิน (ผู้มีหน้าที่หักภาษี ณ ที่จ่าย)'] },
+      fields: CERT_FIELDS, lines: CERT_LINES,
     },
 
     /* ---- runs ---- */
@@ -447,17 +476,7 @@ export default defineUi({
     certificate: {
       kind: 'detail', title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย ตามมาตรา 50 ทวิ', endpoint: '/certificates/:id', perm: READ, heading: 'heading',
       print: { title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)', copyLabel: true, signatures: ['ผู้จ่ายเงิน (ผู้มีหน้าที่หักภาษี ณ ที่จ่าย)'] },
-      fields: [
-        { key: 'employee_name', label: 'ผู้ถูกหักภาษี ณ ที่จ่าย' }, { key: 'payee_tax_id', label: 'เลขประจำตัวผู้เสียภาษีอากร' }, { key: 'employee_code', label: 'รหัสพนักงาน' },
-        { key: 'year_be', label: 'ปีภาษี' }, { key: 'form', label: 'ลำดับที่ในแบบ' }, { key: 'income_type', label: 'ประเภทเงินได้' },
-        { key: 'income', label: 'จำนวนเงินที่จ่าย', format: 'money' }, { key: 'tax', label: 'ภาษีที่หักและนำส่งไว้', format: 'money' }, { key: 'tax_text', label: 'รวมเงินภาษีที่หักนำส่ง (ตัวอักษร)' },
-        { key: 'sso', label: 'เงินสมทบกองทุนประกันสังคม', format: 'money' }, { key: 'pvd', label: 'เงินสะสมกองทุนสำรองเลี้ยงชีพ', format: 'money' },
-        { key: 'payer_condition', label: 'ผู้จ่ายเงิน' },
-      ],
-      lines: [{ path: 'months', label: 'รายละเอียดรายเดือน', columns: [
-        { key: 'period_label', label: 'เดือน' }, { key: 'income', label: 'เงินได้', format: 'accounting', total: true }, { key: 'wht', label: 'ภาษี', format: 'accounting', total: true },
-        { key: 'sso_employee', label: 'ประกันสังคม', format: 'accounting', total: true }, { key: 'pvd_employee', label: 'กองทุนฯ', format: 'accounting', total: true },
-      ] }],
+      fields: CERT_FIELDS, lines: CERT_LINES,
     },
 
     /* ---- settings ---- */

@@ -9,8 +9,8 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
 - `emit`, `dispatchOutbox`, `receiveEvent` — transactional outbox, at-least-once delivery, inbox de-dup.
 - `checkLicense`, `issueLicense`, `readLicense` — Ed25519-signed module licenses.
 - `attachments.ts` — opt-in file attachments per module (`ServiceDefinition.attachments` → `/_attachments` routes, `_attachments` table with RLS,
-  5 MB, type by extension + magic bytes, signed links). `audit.ts` — `_audit` table (RLS) written by the `onSend` hook for every successful
-  non-GET request of a signed-in user (redacted body ≤ 2 KB), `GET /_audit` behind `<module>.audit.read` (added to every served manifest).
+  5 MB, type by extension + magic bytes, signed links; optional per-entity `writable` hook freezes a record's files, e.g. a paid claim). `audit.ts` — `_audit` table (RLS) written by the `onSend` hook for every successful
+  non-GET request of a signed-in user (redacted body ≤ 2 KB; secrets/files dropped, account / card / ID numbers kept as `••••<last 4>`), `GET /_audit` behind `<module>.audit.read` (added to every served manifest).
   Kernel tenant tables are listed in `KERNEL_TENANT_TABLES` (db.ts) and get the same RLS policy as `-- @tenant` tables.
 - `testing.ts` — `bootTestService`, `createTestDatabase`; `t.raw()` for binary responses / requests without a token.
 

@@ -182,6 +182,7 @@ section.block { padding: 96px 0; }
 .pk small { font-size: .74rem; color: var(--ink-3); }
 .pk[aria-pressed='true'] { border-color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .mods { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.mod-total { font-size: .86rem; color: var(--ink-3); margin: 0 0 12px; }
 .area + .area { margin-top: 30px; }
 .area-h { display: flex; align-items: baseline; gap: 10px; font-size: 1.02rem; margin: 0 0 12px; }
 .area-h small { font-size: .8rem; font-weight: 500; color: var(--ink-3); }
@@ -368,7 +369,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       <a href="#command">สั่งงานภาษาไทย</a>
       <a href="#bots">บอทอัตโนมัติ</a>
       <a href="#pricing">ชุดและราคา</a>
-      <a href="#roadmap">1,000 ฟังก์ชัน</a>
+      <a href="#roadmap">1,000+ ฟังก์ชัน</a>
       <a href="#partners">พาร์ทเนอร์</a>
       <a href="#faq">คำถาม</a>
     </nav>
@@ -388,7 +389,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
         <a class="btn primary" href="#contact">นัดดูเดโม 30 นาที</a>
         <a class="btn" href="#pricing">เลือกชุด ดูราคาทันที</a>
       </div>
-      <div class="proof"><span>ซื้อขาด ได้ source code</span><span>ไม่คิดรายหัวผู้ใช้</span><span>เลือกซื้อทีละโมดูล</span><span>ใบกำกับภาษีถูกต้องตามสรรพากร</span><span>ใช้บนมือถือได้</span></div>
+      <div class="proof"><span>ซื้อขาด ได้ source code</span><span>ไม่คิดรายหัวผู้ใช้</span><span id="modCount">21 โมดูล เลือกซื้อทีละตัว</span><span>บัญชี + เงินเดือนไทย</span><span>ใบกำกับภาษีถูกต้องตามสรรพากร</span><span>ใช้บนมือถือได้</span></div>
     </div>
     <div class="stage" id="stage" aria-label="ภาพจำลองผังพื้นที่ทำงาน 3 มิติ: อุปกรณ์แต่ละเครื่องมีไฟสถานะ ตัวที่เสียเป็นสีแดง พร้อมการแจ้งเตือนตามธุรกิจที่เลือก">
       <div class="fallback" id="fallback">กำลังโหลดผัง 3 มิติ…</div>
@@ -484,7 +485,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       <div class="packs" id="packs" role="group" aria-label="ชุดแนะนำ"></div>
     </div>
     <div class="mods">
-      <div id="modGrid"></div>
+      <div><p class="note mod-total" id="modTotal"></p><div id="modGrid"></div></div>
       <aside class="quote" id="quote" aria-live="polite">
         <h3>ใบเสนอราคาของคุณ</h3>
         <div class="switch paymode"><div class="seg" data-pay-switch role="group" aria-label="วิธีจ่าย"><button type="button" data-pay="buy" aria-pressed="true">ซื้อขาด</button><button type="button" data-pay="rent" aria-pressed="false">เช่ารายเดือน</button></div></div>
@@ -515,13 +516,13 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
   <div class="wrap">
     <div class="head" data-up>
       <p class="eyebrow">แผนพัฒนาแบบเปิดเผย</p>
-      <h2><span id="rmTotal">1,000</span> ฟังก์ชัน — บอกตรงๆ ว่าอะไรมีแล้ว อะไรกำลังมา</h2>
+      <h2><span id="rmTotal">1,020</span> ฟังก์ชัน — บอกตรงๆ ว่าอะไรมีแล้ว อะไรกำลังมา</h2>
       <p>เราเก็บทุกสิ่งที่ผู้ใช้ทำได้เป็นรายการเดียว ตอบได้ทันทีว่า “ระบบทำ X ได้ไหม” และเมื่อไหร่ ตัวเลขด้านล่างนับจากรายการจริงทุกครั้งที่สร้างหน้านี้</p>
     </div>
     <div data-up>
       <div class="big" id="rmBig"></div>
       <div class="bar main" id="rmBar" aria-hidden="true"><i class="d"></i><i class="b"></i><i class="p"></i></div>
-      <div class="bar-legend"><span style="--c:#3DC48D">พร้อมใช้</span><span style="--c:#F5C518">กำลังสร้าง</span><span style="--c:#4A5862">ในแผน</span></div>
+      <div class="bar-legend" id="rmLegend"><span style="--c:#3DC48D">พร้อมใช้</span><span style="--c:#F5C518" data-building>กำลังสร้าง</span><span style="--c:#4A5862">ในแผน</span></div>
     </div>
     <h3 class="sub-h" data-up>นับตามโมดูล</h3>
     <div class="fnl" id="rmMods" data-up></div>
@@ -554,7 +555,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
         <li><span><b>หน้าจอเป็นข้อมูล</b> ประกาศหน้าจอใน ui.ts ไฟล์เดียว เว็บและมือถือแสดงให้เอง</span></li>
         <li><span><b>แต่ละโมดูลมีฐานข้อมูลของตัวเอง</b> คุยกันผ่านเหตุการณ์ (event) เท่านั้น</span></li>
         <li><span><b>ข้อมูลแยกบริษัทระดับฐานข้อมูล</b> (row-level security) และสิทธิ์รายฟังก์ชัน</span></li>
-        <li><span><b>ทดสอบอัตโนมัติ 130+ เคส</b> รวมเบราว์เซอร์จริงและ UAT</span></li>
+        <li><span><b>ทดสอบอัตโนมัติ 500+ เคส</b> รวมเบราว์เซอร์จริงและ UAT 47 กรณี</span></li>
       </ul>
     </div>
     <pre class="code" data-up aria-label="ตัวอย่างโค้ด"><span class="c">// services/training/src/ui.ts — โมดูลเฉพาะบริษัทที่ลูกค้าสร้างเอง</span>
@@ -578,17 +579,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
   <div class="wrap">
     <div class="head" data-up><p class="eyebrow">คำถามที่พบบ่อย</p><h2>ก่อนตัดสินใจ</h2></div>
     <div class="faq">
-      <details data-up><summary>ไม่ใช่โรงงาน ใช้ได้ไหม</summary><p>ได้ ชื่อ Factory OS มาจากจุดเริ่มต้นที่โรงงาน แต่วันนี้มีโมดูลสำหรับสำนักงาน (อนุมัติ เบิกจ่าย ลา/ลงเวลา จองห้อง/รถ ทรัพย์สิน) ธุรกิจบริการ (CRM ใบเสนอราคา โครงการ timesheet helpdesk) ค้าส่ง ผู้รับเหมา อาคารและโรงเรียน เลือกชุดตามธุรกิจด้านบนได้เลย</p></details>
+      <details data-up><summary>ไม่ใช่โรงงาน ใช้ได้ไหม</summary><p>ได้ ชื่อ Factory OS มาจากจุดเริ่มต้นที่โรงงาน แต่วันนี้มีโมดูลสำหรับสำนักงาน (อนุมัติ เบิกจ่าย ลา/ลงเวลา เงินเดือน จองห้อง/รถ ทรัพย์สิน) บัญชี ธุรกิจบริการ (CRM ใบเสนอราคา โครงการ timesheet สัญญา MA helpdesk) ค้าส่ง ผู้รับเหมา อาคารและโรงเรียน เลือกชุดตามธุรกิจด้านบนได้เลย</p></details>
       <details data-up><summary>ต้องจ่ายรายเดือนไหม คิดรายหัวไหม</summary><p id="faqPay">เลือกได้ ซื้อขาด source code ต่อ 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้ แล้วต่อแผนอัปเดตและซัพพอร์ตรายปีหรือไม่ก็ได้ (ประมาณ 20% ของราคาต่อปี) หรือเช่ารายเดือนบนคลาวด์ที่เราดูแล ไม่ต้องจ่ายก้อน ทั้งสองแบบไม่คิดรายหัว</p></details>
-      <details data-up><summary>มีบัญชี ภาษี และเงินเดือนไหม</summary><p>ยังไม่มีในรุ่นนี้ บัญชีแยกประเภท ภาษีซื้อ-ขาย ภ.พ.30 หัก ณ ที่จ่าย และเงินเดือน/ประกันสังคม อยู่ในรุ่น 0.4 (เป้า มี.ค. 2570) ระหว่างนี้ใช้คู่กับโปรแกรมบัญชีและเงินเดือนเดิมของคุณได้ และส่งข้อมูลใบกำกับภาษีออกทาง webhook ได้</p></details>
+      <details data-up><summary>มีบัญชี ภาษี และเงินเดือนไหม</summary><p>มีแล้วระดับ MVP (รุ่น 0.3.0) · <b>บัญชี:</b> ผังบัญชี SME ไทยพร้อมใช้ ใบกำกับ ใบรับเงิน รับของ คืนของ ใบเบิก และเงินเดือน ลงบัญชีให้เอง ปิดงวดรายเดือน งบทดลอง แยกประเภท กำไรขาดทุน ฐานะการเงิน รายงานภาษีขาย/ซื้อและสรุป ภ.พ.30 · <b>เงินเดือน:</b> รายเดือน/รายวัน OT ประกันสังคม กองทุนสำรองฯ ภาษีหัก ณ ที่จ่ายแบบประมาณทั้งปี สรุป ภ.ง.ด.1 สลิปและ 50 ทวิ บนมือถือ · <b>ยังไม่มี (รุ่น 0.4 เป้า มี.ค. 2570):</b> ยื่นแบบ e-Filing และ e-Tax Invoice จากระบบ ฝั่งเจ้าหนี้กับ ภ.ง.ด.3/53 กระทบยอดธนาคาร และไฟล์โอนเงินเดือนรูปแบบธนาคาร — ระหว่างนี้พิมพ์รายงานจากระบบไปยื่นเองหรือให้สำนักงานบัญชียื่น</p></details>
       <details data-up><summary>ติดตั้งที่ไหน</summary><p>ซื้อขาด: บนเซิร์ฟเวอร์ของคุณเอง หรือคลาวด์ที่คุณเลือก ใช้ Docker คำสั่งเดียว ข้อมูลอยู่กับคุณทั้งหมด · เช่ารายเดือน: บนคลาวด์ที่ GO Along ดูแล สำรองข้อมูลทุกวัน และย้ายออกไปเป็นซื้อขาดพร้อมข้อมูลได้ทุกเมื่อ</p></details>
       <details data-up><summary>ผู้ช่วย AI เอาข้อมูลเราไปไหน</summary><p>ผู้ช่วยใช้ API key ของบริษัทคุณเอง อ่านข้อมูลด้วยสิทธิ์ของผู้ใช้ที่ถามเท่านั้น และทำได้แค่อ่านกับเปิดหน้าจอ บันทึกหรืออนุมัติแทนไม่ได้ ถ้าไม่ใส่ key ระบบส่วนอื่นยังใช้ได้ครบ</p></details>
       <details data-up><summary>ซื้อแค่โมดูลเดียวได้ไหม</summary><p>ได้ ทุกการติดตั้งมีแพลตฟอร์มหลัก (ผู้ใช้/สิทธิ์ + ข้อมูลสินค้าและคู่ค้า) แล้วเลือกโมดูลอะไรก็ได้ เช่น อนุมัติออนไลน์อย่างเดียว หรือซ่อมบำรุงอย่างเดียว ซื้อเพิ่มทีหลังได้ ระบบคิดราคาชุดที่ถูกที่สุดให้เอง</p></details>
-      <details data-up><summary>โมดูลสำนักงานและบริการใหม่ใช้จริงได้แค่ไหน</summary><p>9 โมดูลใหม่ (อนุมัติ เบิกจ่าย HR จองห้อง/รถ CRM helpdesk โครงการ ทรัพย์สิน คุณภาพ) ใช้งานได้ครบทั้งเว็บและมือถือ และกำลังเปิดรอบ pilot กับลูกค้ากลุ่มแรก และบอทแจ้งเตือน LINE รองรับเหตุการณ์ของทุกโมดูลใหม่แล้ว (ขออนุมัติ ลา เบิกเกินวงเงิน ticket ด่วน ลีดใหม่ QC ไม่ผ่าน ฯลฯ) มีสูตรสำเร็จรูปรวม 19 สูตร</p></details>
+      <details data-up><summary>โมดูลใหม่ใช้จริงได้แค่ไหน</summary><p>ทั้ง 21 โมดูลใช้งานได้ทั้งเว็บและมือถือ ผ่านชุดทดสอบอัตโนมัติและ UAT 47 กรณีในเบราว์เซอร์จริง โมดูลสำนักงานและบริการเปิดรอบ pilot กับลูกค้ากลุ่มแรกแล้ว ส่วนบัญชี เงินเดือน และสัญญา MA เป็นรุ่นแรก (MVP) ที่เหมาะกับลูกค้าร่วมพัฒนา บอทมีสูตรสำเร็จรูป 26 สูตรครอบคลุมทุกโมดูล (ขออนุมัติ ลา เบิก ticket NCR นัด PM สัญญาใกล้หมด ฯลฯ)</p></details>
+      <details data-up><summary>แจ้งเตือนทาง LINE ถึงตัวแต่ละคนได้ไหม</summary><p>ได้ พนักงานผูก LINE ของตัวเองกับบัญชีในระบบด้วยรหัส 6 หลัก (ครั้งเดียว) แล้วได้รับเฉพาะเรื่องของตัวเอง: ผู้อนุมัติได้คำขอที่รอตัวเอง ผู้ขอได้ผลอนุมัติ หัวหน้าได้ใบลาลูกทีม ช่างได้นัด PM พร้อมลิงก์เปิดเอกสาร ส่งเข้ากลุ่ม LINE ก็ได้ ใช้ LINE OA ของบริษัทคุณเอง ส่วนการกดอนุมัติจากในแชต LINE อยู่ในรุ่น 0.3.x (เป้า ธ.ค. 2569)</p></details>
+      <details data-up><summary>บริษัทบริการ: มีสัญญา MA และนัด PM ไหม</summary><p>มี โมดูลสัญญาบริการ MA เก็บอุปกรณ์/Serial และ SLA ต่อสัญญา สร้างนัด PM ตามรอบ ช่างตรวจเช็คทีละรายการบนมือถือ พิมพ์รายงานให้ลูกค้าเซ็น งวดวางบิลส่งเป็นร่างใบสั่งขายให้ฝ่ายขาย และเตือนก่อนหมดอายุ ส่วนแอปช่างเต็มรูป (เช็กอิน รูป ลายเซ็นบนจอ เบิกอะไหล่ติดรถ) อยู่ในรุ่น 0.5</p></details>
       <details data-up><summary>ผู้รับเหมา: มี BOQ และวางบิลตามงวดไหม</summary><p>ยังไม่มี วันนี้คุมงบโครงการ timesheet ขอซื้อ/อนุมัติ เงินทดรอง และทะเบียนเครื่องมือได้แล้ว ส่วน BOQ และวางบิลตามงวดงานอยู่ในแผนถัดจากรุ่น 0.5 ถ้าต้องการเร็วกว่านั้นทำเป็นงานพัฒนาร่วมได้</p></details>
       <details data-up><summary>โรงเรียน คลินิก โรงแรม มีระบบนักเรียน/ผู้ป่วย/ห้องพักไหม</summary><p>ไม่มี Factory OS ดูแลงานหลังบ้าน: ลา ลงเวลา อนุมัติ จองห้อง/รถ แจ้งซ่อมอาคาร ทรัพย์สินและครุภัณฑ์ ใช้คู่กับระบบทะเบียนนักเรียน ระบบผู้ป่วย หรือ PMS ที่มีอยู่</p></details>
-      <details data-up><summary>ใบกำกับภาษีถูกต้องไหม</summary><p>ใบกำกับภาษีมี VAT 7% จำนวนเงินตัวอักษรภาษาไทย วันที่ พ.ศ. เลขผู้เสียภาษี/สาขา และ QR พร้อมเพย์ สามารถปรับแบบฟอร์มให้ตรงกับของบริษัทได้</p></details>
-      <details data-up><summary>ใช้บนมือถือได้ไหม</summary><p>ได้ทั้งเว็บบนมือถือและแอป (iOS/Android) พนักงานลงเวลาด้วย GPS ยื่นลาและเบิกเงิน ผู้บริหารอนุมัติ ช่างสแกน QR ที่เครื่องหรือหน้าห้องเพื่อแจ้งซ่อม พนักงานคลังสแกนบาร์โค้ดรับ-จ่ายของได้</p></details>
+      <details data-up><summary>ใบกำกับภาษีถูกต้องไหม</summary><p>ใบกำกับภาษีมีข้อมูลผู้ขายตามมาตรา 86/4 (ชื่อ ที่อยู่ เลขผู้เสียภาษี สาขา) จากหน้าข้อมูลบริษัท พร้อมโลโก้ VAT 7% จำนวนเงินตัวอักษรภาษาไทย วันที่ พ.ศ. ต้นฉบับ/สำเนา และ QR พร้อมเพย์ e-Tax Invoice อยู่ในรุ่น 0.4</p></details>
+      <details data-up><summary>ใช้บนมือถือได้ไหม</summary><p>ได้ทั้งเว็บบนมือถือและแอป (iOS/Android) พนักงานลงเวลาด้วย GPS ยื่นลาและเบิกเงิน ผู้บริหารอนุมัติ ช่างสแกน QR ที่เครื่องหรือหน้าห้องเพื่อแจ้งซ่อม พนักงานคลังสแกนบาร์โค้ดรับ-จ่ายของได้ ถ่ายรูปหรือแนบไฟล์เข้าเอกสารจากกล้องได้ทันที พนักงานเปิดสลิปเงินเดือนของตัวเอง และแอปเปลี่ยนเป็นโหมดมืดตามเครื่อง</p></details>
     </div>
   </div>
 </section>
@@ -646,6 +649,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
   document.querySelectorAll('[data-bind]').forEach((el) => { el.textContent = D.site[el.dataset.bind] ?? el.textContent; });
 
   const IND = D.site.industries || [];
+  $('modCount').textContent = `${D.modules.length} โมดูล เลือกซื้อทีละตัว`;
+  $('modTotal').textContent = `ทั้งหมด ${D.modules.length} โมดูล: แพลตฟอร์มหลัก ${D.modules.filter((m) => m.tier === 'core').length} + เลือกซื้อ ${D.modules.filter((m) => m.tier === 'feature').length}`;
   const RM = D.roadmap;
   const byId = Object.fromEntries(D.modules.map((m) => [m.id, m]));
   const bundles = D.catalog.bundles;
@@ -848,7 +853,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'mod'; b.dataset.id = m.id; b.setAttribute('aria-pressed', 'false');
       const needs = m.requires.filter((r) => byId[r]?.tier === 'feature');
-      const isNew = RM?.byModule?.[id] && !RM.byModule[id].done && RM.byModule[id].building;
+      const isNew = m.isNew || (RM?.byModule?.[id] && !RM.byModule[id].done && RM.byModule[id].building);
       b.innerHTML = `<span class="for">${esc(m.for)}${isNew ? '<span class="new">ใหม่</span>' : ''}</span><h3>${esc(m.nameTh)}</h3><p>${esc(m.pitch)}</p>${needs.length ? `<span class="for">ต้องมี: ${needs.map((r) => esc(byId[r].nameTh)).join(', ')}</span>` : ''}<div class="foot"><span class="price" data-price="${m.id}">${baht(D.catalog.modules[m.id]?.price ?? 0)}</span><span class="fn">${esc(fnLine(id))}</span></div>`;
       b.onclick = () => { touched = true; picked.has(m.id) ? picked.delete(m.id) : picked.add(m.id); update(); };
       g.append(b);
@@ -971,15 +976,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     const readyMods = featIds.filter((id) => RM.byModule[id]?.done).length;
     const newMods = featIds.filter((id) => RM.byModule[id] && !RM.byModule[id].done && RM.byModule[id].building);
     const futureMods = Object.entries(RM.byModule).filter(([id, c]) => !c.done && !c.building && !byId[id]);
+    const nextRel = Object.values(RM.releases || {}).reduce((a, n) => a + n, 0);
+    if (!T.building) $('rmLegend').querySelector('[data-building]')?.remove();
     $('rmBig').innerHTML = [
       ['d', T.done, 'พร้อมใช้วันนี้', `แพลตฟอร์ม + ${readyMods} โมดูลที่ใช้งานจริง`],
-      ['b', T.building, 'กำลังสร้าง', `${newMods.length} โมดูลใหม่: ${newMods.slice(0, 4).map(modName).join(' ')}…`],
+      T.building
+        ? ['b', T.building, 'กำลังสร้าง', `${newMods.length} โมดูลใหม่: ${newMods.slice(0, 4).map(modName).join(' ')}…`]
+        : ['b', nextRel, 'มาใน 3 รุ่นถัดไป', `รุ่น ${Object.keys(RM.releases || {}).join(' · ')} — วันที่เป้าหมายอยู่ด้านล่าง`],
       ['p', T.planned, 'อยู่ในแผน', `รวม ${futureMods.length} โมดูลใหม่ เช่น ${futureMods.slice(0, 3).map(([id]) => modName(id)).join(' ')}`],
     ].map(([k, n, t, s]) => `<div class="t ${k}"><span class="num" data-n="${n}">0</span><b>${t}</b><span class="sub">${esc(s)}</span></div>`).join('');
     const bar = (c, total) => `<i class="d" style="width:${(c.done / total) * 100}%"></i><i class="b" style="width:${(c.building / total) * 100}%"></i><i class="p" style="width:${(c.planned / total) * 100}%"></i>`;
     const order = [...areas.flatMap((a) => a.modules), 'platform', 'ai'].filter((id) => RM.byModule[id]);
     const maxT = Math.max(...order.map((id) => { const c = RM.byModule[id]; return c.done + c.building + c.planned; }));
-    $('rmMods').innerHTML = order.map((id) => { const c = RM.byModule[id], t = c.done + c.building + c.planned; return `<div class="r"><span>${esc(id === 'platform' ? 'แพลตฟอร์ม เว็บ มือถือ' : id === 'ai' ? 'AI ข้ามโมดูล' : modName(id))}</span><span>${c.done ? `${c.done} พร้อม` : `${c.building} กำลังสร้าง`} / ${t}</span><div class="bar" style="width:${Math.max(18, (t / maxT) * 100)}%">${bar(c, t)}</div></div>`; }).join('');
+    $('rmMods').innerHTML = order.map((id) => { const c = RM.byModule[id], t = c.done + c.building + c.planned; return `<div class="r"><span>${esc(id === 'platform' ? 'แพลตฟอร์ม เว็บ มือถือ' : id === 'ai' ? 'AI ข้ามโมดูล' : modName(id))}</span><span>${c.done ? `${c.done} พร้อม` : c.building ? `${c.building} กำลังสร้าง` : 'ในแผน'} / ${t}</span><div class="bar" style="width:${Math.max(18, (t / maxT) * 100)}%">${bar(c, t)}</div></div>`; }).join('');
     $('rmRel').innerHTML = (D.site.roadmap || []).map((r) => `<article><div class="v"><b>รุ่น ${esc(r.v)}</b><span>เป้า ${esc(r.target)}${RM.releases?.[r.v] ? ` · ${RM.releases[r.v]} ฟังก์ชัน` : ''}</span></div><h4>${esc(r.title)}</h4><ul>${r.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></article>`).join('');
     $('rmUpcoming').innerHTML = `<span style="border:0;padding-left:0;color:#9AA7B1">โมดูลที่วางแผนไว้:</span>` + futureMods.map(([id, c]) => `<span>${esc(modName(id))}<small>${c.planned}</small></span>`).join('');
     const mainBar = $('rmBar').children;

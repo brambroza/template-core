@@ -16,6 +16,15 @@ export const AUDIT_SUMMARY_MAX = 2048;
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /** body fields never written to the log: credentials and file contents */
 const DROP_KEY = /(password|passwd|secret|token|base64$|^logo)/i;
+/**
+ * body fields kept only as their last 4 characters: bank account / card / national-ID numbers. Modules that promise never to store a full
+ * number (payroll keeps `bank_account_last4`) must not have it written in full to the audit log either (bugs-0.4 PAY-01).
+ */
+const MASK_KEY = /(bank_?account|account_?(no|number)|card_?(no|number)|national_?id|id_?card|citizen_?id)/i;
+const mask = (v: unknown) => {
+  const digits = String(v).replace(/[^0-9A-Za-z]/g, '');
+  return digits ? `••••${digits.slice(-4)}` : null;
+};
 const MAX_STRING = 200;
 const MAX_ITEMS = 20;
 const MAX_DEPTH = 4;
@@ -31,7 +40,10 @@ export function redact(value: unknown, depth = 0): unknown {
     return value.length > MAX_ITEMS ? [...items, `…(+${value.length - MAX_ITEMS})`] : items;
   }
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) if (!DROP_KEY.test(k)) out[k] = redact(v, depth + 1);
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (DROP_KEY.test(k)) continue;
+    out[k] = MASK_KEY.test(k) && v !== null && v !== undefined && typeof v !== 'object' ? mask(v) : redact(v, depth + 1);
+  }
   return out;
 }
 

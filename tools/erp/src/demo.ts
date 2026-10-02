@@ -164,6 +164,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   // ---------------- company profile (letterhead + seller details on every printed document) ----------------
   await call('PUT', '/api/identity/company', DEMO_COMPANY);
 
+  // chart of accounts, posting rules and category mappings before the first purchase / sale, so every event posts to the right account
+  if (has('accounting')) await (await import('./demo-finance.ts')).setupAccounting(call);
+
   // rules first, so they fire on everything below (the bell then shows real notifications)
   if (has('automation')) {
     const { seedAutomation } = await import('./demo-automation.ts');
