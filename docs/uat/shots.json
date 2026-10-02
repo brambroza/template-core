@@ -171,6 +171,52 @@
       "device": "desktop"
     }
   ],
+  "UAT-23": [
+    {
+      "file": "UAT-23.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-24": [
+    {
+      "file": "UAT-24.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-24-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-25": [
+    {
+      "file": "UAT-25.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-25-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-26": [
+    {
+      "file": "UAT-26.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-26-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-27": [
+    {
+      "file": "UAT-27.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-27-2.jpg",
+      "device": "desktop"
+    }
+  ],
   "UAT-22": [
     {
       "file": "UAT-22.jpg",

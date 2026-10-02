@@ -9,8 +9,8 @@ const NEXT_BIN = fileURLToPath(new URL('../../apps/web/node_modules/next/dist/bi
 export const CHROMIUM = process.env.CHROMIUM_PATH ?? (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
 
 /** Start the built web app in its own process group so stopWeb() also ends next's workers. */
-export async function startWeb(gatewayUrl: string, port: number): Promise<ChildProcess> {
-  const proc = spawn(process.execPath, [NEXT_BIN, 'start', '-p', String(port)], { cwd: WEB_DIR, env: { ...process.env, GATEWAY_URL: gatewayUrl, NEXT_TELEMETRY_DISABLED: '1' }, stdio: 'ignore', detached: true });
+export async function startWeb(gatewayUrl: string, port: number, env: Record<string, string> = {}): Promise<ChildProcess> {
+  const proc = spawn(process.execPath, [NEXT_BIN, 'start', '-p', String(port)], { cwd: WEB_DIR, env: { ...process.env, GATEWAY_URL: gatewayUrl, NEXT_TELEMETRY_DISABLED: '1', ...env }, stdio: 'ignore', detached: true });
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${port}/login`)).ok) return proc; } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 500));

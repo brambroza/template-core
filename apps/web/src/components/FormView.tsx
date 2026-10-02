@@ -62,6 +62,8 @@ export function FormView({ module, screen, id }: { module: string; screen: FormS
     setError('');
     try {
       const result = await api<Record<string, unknown>>(module, fillPath(screen.endpoint, values, params), { method: screen.method, body: toBody(screen.fields, values, screen.lines, used) });
+      // automation rules may have reacted to what was just saved: refresh the bell shortly
+      setTimeout(() => window.dispatchEvent(new CustomEvent('erp:notifications')), 1500);
       const after = screen.after;
       router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : '/');
     } catch (err) {

@@ -17,6 +17,8 @@ import { definition as sales } from '@erp/svc-sales';
 import { definition as production } from '@erp/svc-production';
 import { definition as maintenance } from '@erp/svc-maintenance';
 import { definition as costing } from '@erp/svc-costing';
+import { definition as automation } from '@erp/svc-automation';
+import { createServer, type Server } from 'node:http';
 import { install, type Installation } from '../e2e/helpers.ts';
 import { CHROMIUM, login, logout, pick, startWeb, stopWeb } from '../ui-e2e/browser.ts';
 
@@ -42,12 +44,44 @@ let web: ChildProcess;
 let page: Page;
 let phone: Page;
 const base = 'http://127.0.0.1:3931';
+let uatToken = '';
+let ai: { server: Server; url: string; questions: string[] };
+
+/**
+ * Stand-in for the Claude API so the assistant runs end-to-end without a key: it asks the ERP for the
+ * maintenance summary, offers a button to the work-order list, then answers with the number it read.
+ */
+function fakeModel(): Promise<{ server: Server; url: string; questions: string[] }> {
+  const questions: string[] = [];
+  let open = 0;
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const body = JSON.parse(raw);
+      const last = body.messages.at(-1);
+      let msg: unknown;
+      if (typeof last.content === 'string') {
+        questions.push(last.content);
+        msg = { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'r1', name: 'read_data', input: { module: 'maintenance', path: '/summary' } }] };
+      } else if (last.content[0].tool_use_id === 'r1') {
+        open = JSON.parse(last.content[0].content).openWorkOrders;
+        msg = { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'o1', name: 'open_screen', input: { module: 'maintenance', screen: 'woList', values: { status: 'open' }, label: 'เปิดงานซ่อมที่ค้าง' } }] };
+      } else {
+        msg = { stop_reason: 'end_turn', content: [{ type: 'text', text: `ตอนนี้มีงานซ่อมค้าง ${open} งานครับ` }] };
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(msg));
+    });
+  });
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, url: `http://127.0.0.1:${(server.address() as any).port}`, questions })));
+}
 
 beforeAll(async () => {
   browser = await chromium.launch({ executablePath: CHROMIUM });
-  erp = await install([identity, masterData, inventory, purchasing, sales, production, maintenance, costing], { PROMPTPAY_ID: '0105536000313' });
-  await erp.provision('uat-factory');
-  web = await startWeb(erp.url, 3931);
+  erp = await install([identity, masterData, inventory, purchasing, sales, production, maintenance, costing, automation], { PROMPTPAY_ID: '0105536000313' });
+  uatToken = (await erp.provision('uat-factory')).token;
+  ai = await fakeModel();
+  web = await startWeb(erp.url, 3931, { ANTHROPIC_API_KEY: 'uat-key', ANTHROPIC_BASE_URL: ai.url });
   page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 });
@@ -56,6 +90,7 @@ afterAll(async () => {
   writeFileSync(SHOTS_INDEX, JSON.stringify(shots, null, 2) + '\n');
   await browser?.close();
   stopWeb(web);
+  ai?.server.close();
   await erp?.close();
 });
 
@@ -404,6 +439,75 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-20');
   });
 
+  it('UAT-23 ภาพรวมโรงงาน: ผัง 3 มิติและตัวเลขทุกฝ่าย', async () => {
+    await page.goto(`${base}/`);
+    await page.getByRole('heading', { name: 'ภาพรวมโรงงาน' }).waitFor();
+    await page.locator('.floor canvas').waitFor();
+    await page.locator('.floor').getByText('PRESS-01').first().waitFor();
+    for (const w of ['ขาย', 'จัดซื้อ', 'คลังสินค้า', 'ซ่อมบำรุง']) await page.getByRole('region', { name: w }).first().waitFor();
+    await page.waitForTimeout(1500); // let the count-up finish
+    await shot(page, 'UAT-23');
+  });
+
+  it('UAT-24 เปิดสูตรบอท "เครื่องเสีย แจ้งช่างทันที" ในคลิกเดียว', async () => {
+    await nav('สูตรสำเร็จรูป');
+    const card = page.locator('.gcard', { hasText: 'เครื่องเสีย แจ้งช่างทันที' });
+    await shot(page, 'UAT-24');
+    await card.getByRole('button', { name: 'เปิดใช้' }).click();
+    await page.getByRole('heading', { name: 'เครื่องเสีย แจ้งช่างทันที' }).waitFor();
+    expect(await fact(page, 'เปิดใช้')).toContain('ใช่');
+    await page.getByRole('button', { name: 'ลองรัน (ไม่ส่งจริง)' }).click();
+    await expect(page.locator('.toast').filter({ hasText: 'จะส่ง' }).first().innerText()).resolves.toContain('เครื่อง');
+    await shot(page, 'UAT-24');
+  });
+
+  it('UAT-25 สั่งงานภาษาไทยด้วย ⌘K: แจ้งซ่อม PRESS-01 สายพานขาด', async () => {
+    await page.keyboard.press('Control+k');
+    const box = page.getByRole('combobox', { name: 'คำสั่งหรือคำถาม' });
+    await box.fill('แจ้งซ่อม PRESS-01 สายพานขาด');
+    await page.getByRole('option', { name: /แจ้งซ่อมเครื่องจักร.*PRESS-01.*สายพานขาด/ }).waitFor();
+    await shot(page, 'UAT-25');
+    await box.press('Enter');
+    await page.waitForURL(/\/m\/maintenance\/woNew/);
+    expect(await page.getByRole('combobox', { name: 'เครื่องจักร' }).inputValue()).toContain('PRESS-01');
+    expect(await page.getByLabel('อาการ', { exact: true }).inputValue()).toBe('สายพานขาด');
+    await shot(page, 'UAT-25');
+    await page.getByRole('button', { name: 'แจ้งซ่อม' }).click();
+    await page.locator('.status', { hasText: 'รอดำเนินการ' }).waitFor();
+  });
+
+  it('UAT-26 บอทแจ้งเตือนในแอปเมื่อเครื่องเสีย', async () => {
+    const wo = await page.getByRole('heading', { level: 1 }).innerText();
+    await erp.settle();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('erp:notifications')));
+    const bell = page.getByRole('button', { name: /การแจ้งเตือน \(\d+ ยังไม่อ่าน\)/ });
+    await bell.waitFor();
+    await bell.click();
+    const item = page.getByRole('dialog', { name: 'การแจ้งเตือน' }).getByRole('button', { name: new RegExp(`เครื่องเสีย แจ้งช่างทันที.*PRESS-01.*${wo}`) });
+    await item.waitFor();
+    await shot(page, 'UAT-26');
+    await item.click();
+    await page.getByRole('heading', { name: wo }).waitFor();
+    await page.goto(`${base}/m/automation/notifications`);
+    await expect(page.getByRole('row').filter({ hasText: wo }).first().innerText()).resolves.toMatch(/\d{4}/); // read_at filled
+    await shot(page, 'UAT-26');
+  });
+
+  it('UAT-27 ถามผู้ช่วย AI จากข้อมูลจริง', async () => {
+    const open = (await erp.call('GET', '/api/maintenance/summary', undefined, uatToken)).body.openWorkOrders;
+    await page.keyboard.press('Control+k');
+    const box = page.getByRole('combobox', { name: 'คำสั่งหรือคำถาม' });
+    await box.fill('ตอนนี้มีงานซ่อมค้างกี่งาน');
+    await page.getByRole('option', { name: /ถาม AI/ }).click();
+    await page.getByText(`ตอนนี้มีงานซ่อมค้าง ${open} งานครับ`).waitFor();
+    expect(ai.questions).toContain('ตอนนี้มีงานซ่อมค้างกี่งาน');
+    await shot(page, 'UAT-27');
+    await page.getByRole('button', { name: 'เปิดงานซ่อมที่ค้าง' }).click();
+    await page.waitForURL(/\/m\/maintenance\/woList\?status=open/);
+    await page.getByRole('cell', { name: 'สายพานขาด' }).waitFor();
+    await shot(page, 'UAT-27');
+  });
+
   it('UAT-22 ข้อมูลแต่ละบริษัทแยกกัน', async () => {
     const other = await erp.provision('other-co');
     const sup = (await erp.call('POST', '/api/master-data/partners', { code: 'X-1', name: 'ผู้ขายของบริษัทอื่น', kind: 'supplier' }, other.token)).body;
@@ -438,7 +542,7 @@ describe('UAT — partial installation (small-factory: Core + Maintenance)', () 
   it('UAT-21 ลูกค้าที่ซื้อบางโมดูลเห็นเฉพาะที่ซื้อ', async () => {
     await login(p, smallBase, 'small-factory');
     const groups = await p.getByRole('navigation').locator('.nav-group-title').allInnerTexts();
-    expect(groups.map((g) => g.replace(/^\S\s*/, '').trim())).toEqual(['ซ่อมบำรุง', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']);
+    expect(groups.map((g) => g.trim())).toEqual(['ซ่อมบำรุง', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']);
     await shot(p, 'UAT-21');
     await p.goto(`${smallBase}/m/sales/soList`);
     await p.getByRole('heading', { name: 'ยังไม่ได้ติดตั้งโมดูลนี้' }).waitFor();
