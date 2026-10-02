@@ -1,0 +1,25 @@
+{
+  "id": "accounting",
+  "name": "Accounting",
+  "nameTh": "บัญชี",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Accounting module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "accounting.record.read",
+      "label": "ดูบัญชี"
+    },
+    {
+      "key": "accounting.record.write",
+      "label": "จัดการบัญชี"
+    }
+  ]
+}

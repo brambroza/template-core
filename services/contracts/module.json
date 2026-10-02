@@ -1,0 +1,25 @@
+{
+  "id": "contracts",
+  "name": "Service Contracts",
+  "nameTh": "สัญญาบริการ MA",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Service Contracts module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "contracts.record.read",
+      "label": "ดูสัญญาบริการ MA"
+    },
+    {
+      "key": "contracts.record.write",
+      "label": "จัดการสัญญาบริการ MA"
+    }
+  ]
+}

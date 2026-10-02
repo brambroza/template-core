@@ -345,12 +345,13 @@ export interface ModuleUi {
 
 /* ---------------- areas: how 18+ modules are grouped in the menu and on the home dashboard ---------------- */
 
-export type AreaId = 'operations' | 'commercial' | 'office' | 'service' | 'settings';
+export type AreaId = 'operations' | 'commercial' | 'finance' | 'office' | 'service' | 'settings';
 
 /** Business areas in display order. */
 export const AREAS: readonly { id: AreaId; label: string }[] = [
   { id: 'operations', label: 'การผลิต & คลัง' },
   { id: 'commercial', label: 'ขาย & ลูกค้า' },
+  { id: 'finance', label: 'บัญชี & การเงิน' },
   { id: 'office', label: 'สำนักงาน & บุคคล' },
   { id: 'service', label: 'บริการ & โครงการ' },
   { id: 'settings', label: 'ตั้งค่า' },
@@ -360,7 +361,8 @@ const MODULE_AREA: Record<string, AreaId> = {
   inventory: 'operations', purchasing: 'operations', production: 'operations', quality: 'operations', maintenance: 'operations', costing: 'operations',
   crm: 'commercial', sales: 'commercial',
   approvals: 'office', expense: 'office', hr: 'office', booking: 'office', assets: 'office',
-  helpdesk: 'service', projects: 'service',
+  helpdesk: 'service', projects: 'service', contracts: 'service',
+  accounting: 'finance', payroll: 'finance',
   automation: 'settings', 'master-data': 'settings', identity: 'settings',
 };
 
@@ -380,7 +382,7 @@ export function groupByArea<T>(items: T[], moduleOf: (item: T) => { module: stri
 
 /** Icon names the apps know how to draw (lucide names). */
 export const ICONS = ['users', 'database', 'boxes', 'shopping-cart', 'receipt', 'factory', 'wrench', 'calculator', 'zap', 'bot', 'gauge',
-  'stamp', 'id-card', 'wallet', 'package', 'handshake', 'life-buoy', 'kanban', 'shield-check', 'calendar'] as const;
+  'stamp', 'id-card', 'wallet', 'package', 'handshake', 'life-buoy', 'kanban', 'shield-check', 'calendar', 'book', 'banknote', 'file-signature'] as const;
 export type Icon = (typeof ICONS)[number];
 
 export function defineUi(ui: ModuleUi): ModuleUi {

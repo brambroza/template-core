@@ -1,0 +1,25 @@
+{
+  "id": "payroll",
+  "name": "Payroll",
+  "nameTh": "เงินเดือน",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Payroll module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "payroll.record.read",
+      "label": "ดูเงินเดือน"
+    },
+    {
+      "key": "payroll.record.write",
+      "label": "จัดการเงินเดือน"
+    }
+  ]
+}

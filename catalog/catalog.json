@@ -5,7 +5,10 @@
     "id": "core",
     "name": "ERP Core Platform",
     "nameTh": "แพลตฟอร์มหลัก",
-    "modules": ["identity", "master-data"],
+    "modules": [
+      "identity",
+      "master-data"
+    ],
     "price": 15000,
     "description": "Gateway, login/roles, items & partners, Thai pack, AI-ready docs. Required once per installation."
   },
@@ -57,6 +60,15 @@
     },
     "booking": {
       "price": 10000
+    },
+    "accounting": {
+      "price": 35000
+    },
+    "payroll": {
+      "price": 25000
+    },
+    "contracts": {
+      "price": 20000
     }
   },
   "bundles": [
@@ -64,112 +76,214 @@
       "id": "trading",
       "nameTh": "ซื้อมาขายไป",
       "segment": "trading",
-      "modules": ["purchasing", "sales", "inventory"],
+      "modules": [
+        "purchasing",
+        "sales",
+        "inventory"
+      ],
       "price": 49000
     },
     {
       "id": "factory-maintenance",
       "nameTh": "โรงงาน: ซ่อมบำรุง + สต็อกอะไหล่",
       "segment": "factory",
-      "modules": ["maintenance", "inventory"],
+      "modules": [
+        "maintenance",
+        "inventory"
+      ],
       "price": 42000
     },
     {
       "id": "factory-full",
       "nameTh": "โรงงานครบวงจร",
       "segment": "factory",
-      "modules": ["inventory", "purchasing", "sales", "production", "maintenance", "costing", "automation"],
+      "modules": [
+        "inventory",
+        "purchasing",
+        "sales",
+        "production",
+        "maintenance",
+        "costing",
+        "automation"
+      ],
       "price": 129000
     },
     {
       "id": "smart-maintenance",
       "nameTh": "ซ่อมบำรุงอัจฉริยะ: ซ่อมบำรุง + สต็อกอะไหล่ + แจ้งเตือน LINE",
       "segment": "factory",
-      "modules": ["maintenance", "inventory", "automation"],
+      "modules": [
+        "maintenance",
+        "inventory",
+        "automation"
+      ],
       "price": 55000
     },
     {
       "id": "factory-quality",
       "nameTh": "โรงงานคุณภาพพร้อม audit",
       "segment": "factory",
-      "modules": ["quality", "production", "inventory", "purchasing", "automation"],
+      "modules": [
+        "quality",
+        "production",
+        "inventory",
+        "purchasing",
+        "automation"
+      ],
       "price": 85000
     },
     {
       "id": "factory-backoffice",
       "nameTh": "หลังบ้านโรงงาน",
       "segment": "factory",
-      "modules": ["hr", "approvals", "expense", "assets", "booking"],
+      "modules": [
+        "hr",
+        "approvals",
+        "expense",
+        "assets",
+        "booking"
+      ],
       "price": 59000
     },
     {
       "id": "factory-os-complete",
       "nameTh": "Factory OS ครบทุกโมดูล",
       "segment": "factory",
-      "modules": ["inventory", "purchasing", "sales", "production", "maintenance", "costing", "automation", "approvals", "hr", "expense", "assets", "crm", "helpdesk", "projects", "quality", "booking"],
+      "modules": [
+        "inventory",
+        "purchasing",
+        "sales",
+        "production",
+        "maintenance",
+        "costing",
+        "automation",
+        "approvals",
+        "hr",
+        "expense",
+        "assets",
+        "crm",
+        "helpdesk",
+        "projects",
+        "quality",
+        "booking"
+      ],
       "price": 199000
     },
     {
       "id": "office-starter",
       "nameTh": "อนุมัติ + เบิกจ่ายออนไลน์",
       "segment": "office",
-      "modules": ["approvals", "expense"],
+      "modules": [
+        "approvals",
+        "expense"
+      ],
       "price": 25000
     },
     {
       "id": "office-paperless",
       "nameTh": "สำนักงานไร้กระดาษ",
       "segment": "office",
-      "modules": ["approvals", "expense", "hr", "booking"],
+      "modules": [
+        "approvals",
+        "expense",
+        "hr",
+        "booking"
+      ],
       "price": 49000
     },
     {
       "id": "office-complete",
       "nameTh": "องค์กรครบวงจร",
       "segment": "office",
-      "modules": ["approvals", "expense", "hr", "booking", "assets", "helpdesk", "automation"],
+      "modules": [
+        "approvals",
+        "expense",
+        "hr",
+        "booking",
+        "assets",
+        "helpdesk",
+        "automation"
+      ],
       "price": 79000
     },
     {
       "id": "service-pro",
       "nameTh": "ธุรกิจบริการมืออาชีพ",
       "segment": "service",
-      "modules": ["crm", "projects", "sales", "expense", "automation"],
+      "modules": [
+        "crm",
+        "projects",
+        "sales",
+        "expense",
+        "automation"
+      ],
       "price": 69000
     },
     {
       "id": "service-desk",
       "nameTh": "ศูนย์บริการหลังการขาย",
       "segment": "service",
-      "modules": ["helpdesk", "crm", "sales", "inventory", "automation"],
+      "modules": [
+        "helpdesk",
+        "crm",
+        "sales",
+        "inventory",
+        "automation"
+      ],
       "price": 72000
     },
     {
       "id": "trading-growth",
       "nameTh": "ค้าส่งเติบโต",
       "segment": "trading",
-      "modules": ["purchasing", "sales", "inventory", "crm", "automation"],
+      "modules": [
+        "purchasing",
+        "sales",
+        "inventory",
+        "crm",
+        "automation"
+      ],
       "price": 75000
     },
     {
       "id": "contractor",
       "nameTh": "ผู้รับเหมาและงานติดตั้ง",
       "segment": "construction",
-      "modules": ["projects", "purchasing", "inventory", "expense", "approvals", "assets"],
+      "modules": [
+        "projects",
+        "purchasing",
+        "inventory",
+        "expense",
+        "approvals",
+        "assets"
+      ],
       "price": 75000
     },
     {
       "id": "facility",
       "nameTh": "บริหารอาคารและสถานที่",
       "segment": "hospitality",
-      "modules": ["maintenance", "helpdesk", "assets", "booking", "automation"],
+      "modules": [
+        "maintenance",
+        "helpdesk",
+        "assets",
+        "booking",
+        "automation"
+      ],
       "price": 62000
     },
     {
       "id": "campus",
       "nameTh": "หลังบ้านโรงเรียนและคลินิก",
       "segment": "healthcare-education",
-      "modules": ["hr", "approvals", "booking", "helpdesk", "assets", "maintenance"],
+      "modules": [
+        "hr",
+        "approvals",
+        "booking",
+        "helpdesk",
+        "assets",
+        "maintenance"
+      ],
       "price": 72000
     }
   ],
@@ -214,7 +328,10 @@
       "helpdesk": 590,
       "projects": 790,
       "quality": 790,
-      "booking": 390
+      "booking": 390,
+      "accounting": 1590,
+      "payroll": 1190,
+      "contracts": 890
     },
     "bundles": {
       "trading": 1990,
@@ -294,7 +411,10 @@
           "demoTenant": true,
           "noteTh": "บัญชีเดโมบนเดโมเซิร์ฟเวอร์กลาง"
         },
-        "requirements": ["เซ็นสัญญาแนะนำ", "ลงทะเบียนดีลใน CRM ของ GO Along ก่อนนัดเดโม"]
+        "requirements": [
+          "เซ็นสัญญาแนะนำ",
+          "ลงทะเบียนดีลใน CRM ของ GO Along ก่อนนัดเดโม"
+        ]
       },
       {
         "id": "reseller",
@@ -305,11 +425,19 @@
         "rentalSharePct": 20,
         "rentalShareMonths": 0,
         "nfr": {
-          "modules": ["maintenance", "inventory", "automation"],
+          "modules": [
+            "maintenance",
+            "inventory",
+            "automation"
+          ],
           "demoTenant": true,
           "noteTh": "ใช้ภายในฟรีสำหรับชุดที่ขาย + เดโมเซิร์ฟเวอร์ของตัวเอง (ล้างข้อมูลได้เอง)"
         },
-        "requirements": ["ผ่านอบรมการขาย + เดโม 1 วัน อย่างน้อย 1 คน", "ขายอย่างน้อย 2 ดีลต่อปี", "ลงทะเบียนดีลทุกดีล"]
+        "requirements": [
+          "ผ่านอบรมการขาย + เดโม 1 วัน อย่างน้อย 1 คน",
+          "ขายอย่างน้อย 2 ดีลต่อปี",
+          "ลงทะเบียนดีลทุกดีล"
+        ]
       },
       {
         "id": "implementer",
@@ -330,7 +458,15 @@
         "rentalSharePct": 30,
         "rentalShareMonths": 0,
         "nfr": {
-          "modules": ["crm", "sales", "helpdesk", "projects", "expense", "automation", "inventory"],
+          "modules": [
+            "crm",
+            "sales",
+            "helpdesk",
+            "projects",
+            "expense",
+            "automation",
+            "inventory"
+          ],
           "demoTenant": true,
           "noteTh": "ไลเซนส์ใช้ภายในฟรีไม่เกิน 7 โมดูล + เดโมเซิร์ฟเวอร์ข้อมูลโรงงานและบริษัทบริการ"
         },

@@ -1,0 +1,22 @@
+{
+  "name": "@erp/svc-accounting",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/service.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "scripts": {
+    "start": "node --import tsx src/main.ts",
+    "dev": "node --watch --import tsx src/main.ts",
+    "test": "vitest run --root ../.. services/accounting"
+  },
+  "dependencies": {
+    "@erp/contracts": "workspace:*",
+    "@erp/kernel": "workspace:*",
+    "@erp/thai": "workspace:*",
+    "@erp/ui-schema": "workspace:*",
+    "tsx": "^4.19.2"
+  }
+}
