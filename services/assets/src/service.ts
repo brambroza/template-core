@@ -174,6 +174,12 @@ async function loadAudit(c: Client, id: string, lock = false) {
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // photos, invoices, warranty cards of assets
+  attachments: {
+    read: 'assets.asset.read',
+    write: 'assets.asset.write',
+    entities: { asset: 'assets' },
+  },
   routes(app, k) {
     /* ---------------- categories ---------------- */
 

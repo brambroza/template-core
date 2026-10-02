@@ -120,7 +120,7 @@ export default defineUi({
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'assetDetail', idFrom: 'id' },
     },
     assetDetail: {
-      kind: 'detail', title: 'ทรัพย์สิน', endpoint: '/assets/:id', perm: 'assets.asset.read', heading: 'code', mobile: true, printable: true, edit: 'assetEdit',
+      kind: 'detail', title: 'ทรัพย์สิน', endpoint: '/assets/:id', perm: 'assets.asset.read', heading: 'code', attachments: { entity: 'asset', label: 'รูปถ่าย / ใบกำกับ / ใบรับประกัน' }, mobile: true, printable: true, edit: 'assetEdit',
       fields: [
         { key: 'code', label: 'QR', format: 'qr' }, { key: 'name', label: 'ชื่อ' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'category_name', label: 'หมวด' }, { key: 'serial_no', label: 'Serial No.' }, { key: 'brand', label: 'ยี่ห้อ' }, { key: 'model', label: 'รุ่น' },

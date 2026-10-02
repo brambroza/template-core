@@ -81,3 +81,17 @@ pnpm erp compose maintenance,inventory --out deploy/factory-a
 cd deploy/factory-a && cp .env.example .env && docker compose up -d --build
 # web: http://localhost:3000  ·  API gateway: http://localhost:8080
 ```
+
+### ตั้งค่า LINE OA (โมดูล automation — แจ้งเตือนส่วนตัวทาง LINE)
+
+1. สร้าง LINE Official Account ของบริษัท แล้วเปิด Messaging API (LINE Developers → channel ของ OA นั้น) — แนะนำ OA สำหรับพนักงานแยกจาก OA ลูกค้า
+2. ตั้ง env ของ service `automation`: `LINE_CHANNEL_SECRET` (Basic settings → Channel secret), `LINE_CHANNEL_ACCESS_TOKEN` (Messaging API → long-lived token),
+   `PUBLIC_BASE_URL` = ที่อยู่ **https สาธารณะของ API gateway** (เช่น `https://erp-api.บริษัท.co.th`), ไม่บังคับ: `LINE_OA_ID` (เช่น `@123abcd` → QR เพิ่มเพื่อน),
+   `PUBLIC_APP_URL` (ที่อยู่เว็บ ERP → ลิงก์ "เปิดดู" ในข้อความ LINE)
+3. ในระบบ: ระบบอัตโนมัติ → **ตั้งค่า LINE OA** → คัดลอก Webhook URL ไปวางที่ LINE Developers → Messaging API → Webhook URL → กด Verify → เปิด **Use webhook**
+   (ปิด Auto-reply messages ใน LINE OA Manager เพื่อไม่ให้ตอบซ้ำ)
+4. พนักงานแต่ละคน: เพิ่มเพื่อน OA → เมนู **ผูก LINE ของฉัน** → "ขอรหัสผูกบัญชี" → พิมพ์ `ผูกบัญชี 123456` ในแชต OA (ภายใน 10 นาที)
+5. เปิดสูตรสำเร็จรูปที่ส่งถึงตัวบุคคล (คำขออนุมัติ ผลอนุมัติ ใบลา ใบเบิก เรื่องแจ้งปัญหา) — ส่งทั้งในแอปและ LINE ส่วนตัวของคนที่ผูกไว้
+   · ส่งเข้ากลุ่ม: เชิญบอทเข้ากลุ่ม LINE แล้วพิมพ์ `ไอดีกลุ่ม` เอารหัสไปใส่ช่อง LINE group ID ของกฎ
+
+Webhook ต้องชี้ไปที่ gateway โดยตรง (gateway ส่ง body ไปแบบไบต์ต่อไบต์พร้อม `x-line-signature`; automation ตรวจลายเซ็นทุกครั้ง)

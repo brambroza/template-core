@@ -312,6 +312,16 @@ export const handlers: EventHandlers = {
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // defect photos, measurement sheets, customer complaints, 8D reports
+  attachments: {
+    read: 'quality.ncr.read',
+    write: 'quality.ncr.write',
+    entities: {
+      inspection: { table: 'inspections', read: 'quality.inspection.read', write: 'quality.inspection.record' },
+      ncr: 'ncrs',
+      ca: 'corrective_actions',
+    },
+  },
   handlers,
   routes(app, k) {
     /* ----- inspection plans ----- */

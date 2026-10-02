@@ -8,6 +8,8 @@ import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
+import { AttachmentsPanel } from './AttachmentsPanel';
+import { AuditTrail } from './AuditTrail';
 import { FlowStepper } from './FlowStepper';
 import { loadCompany } from './print/company';
 import { BuyerBlock, Letterhead, PrintFooter, Signatures } from './print/PrintParts';
@@ -115,6 +117,9 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
           </section>
         );
       })}
+
+      {screen.attachments && id && <AttachmentsPanel module={module} spec={screen.attachments} recordId={id} />}
+      {id && <AuditTrail module={module} recordId={id} />}
 
       {print && <Signatures boxes={signatureBoxes(print, record)} />}
       {print && <PrintFooter note={company?.footer_note} />}

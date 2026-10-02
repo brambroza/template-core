@@ -135,6 +135,12 @@ async function addComment(c: Client, ticketId: string, a: AuthContext, body: str
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // screenshots / photos on tickets; requesters only reach their own tickets (same rule as GET /tickets/:id)
+  attachments: {
+    read: ['helpdesk.ticket.read', 'helpdesk.ticket.create'],
+    write: ['helpdesk.ticket.create', 'helpdesk.ticket.work'],
+    entities: { ticket: { table: 'tickets', access: (c, a, id) => loadTicket(c, a, id) } },
+  },
   routes(app, k) {
     /* ================= categories ================= */
 

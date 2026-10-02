@@ -151,7 +151,7 @@ describe('company profile', () => {
     const visible = (perms: string[]) => ui.menu.filter((i) => hasPerm(perms, ui.screens[i.screen]?.perm)).map((i) => i.screen);
     expect(visible(['approvals.request.write', 'expense.claim.write', 'hr.leave.request'])).toEqual([]);
     expect(visible(['identity.company.write'])).toEqual(['company']);
-    expect(visible(['identity.*'])).toEqual(['users', 'roles', 'company']);
+    expect(visible(['identity.*'])).toEqual(['users', 'roles', 'company', 'audit']);
   });
 });
 
@@ -170,7 +170,7 @@ describe('role templates', () => {
       'booking.book.create', 'helpdesk.ticket.create', 'automation.notify.read',
     ]));
     // self-service only: no approving, paying, other people's data or company money
-    expect(staff.permissions.filter((p: string) => /approve|pay|finance|admin|\.read$/.test(p) && !['approvals.request.read', 'expense.claim.read', 'booking.resource.read', 'helpdesk.kb.read', 'assets.asset.read', 'maintenance.machine.read', 'automation.notify.read'].includes(p))).toEqual([]);
+    expect(staff.permissions.filter((p: string) => /approve|pay|finance|admin|\.read$/.test(p) && !['approvals.request.read', 'expense.claim.read', 'booking.resource.read', 'helpdesk.kb.read', 'assets.asset.read', 'maintenance.machine.read', 'automation.notify.read', 'payroll.payslip.self'].includes(p))).toEqual([]);
 
     const office = (await t.api('GET', `/role-templates?modules=${OFFICE.join(',')}`, undefined, admin())).body;
     const sales = office.find((x: any) => x.id === 'sales');

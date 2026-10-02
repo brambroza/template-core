@@ -40,6 +40,10 @@
     {
       "key": "purchasing.po.return",
       "label": "ส่งคืนสินค้าให้ผู้ขาย"
+    },
+    {
+      "key": "purchasing.attachment.delete",
+      "label": "ลบไฟล์แนบของผู้อื่น"
     }
   ]
 }

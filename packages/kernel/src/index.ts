@@ -1,3 +1,5 @@
+export * from './attachments.ts';
+export * from './audit.ts';
 export * from './auth.ts';
 export * from './db.ts';
 export * from './errors.ts';

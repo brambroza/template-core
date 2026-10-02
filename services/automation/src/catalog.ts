@@ -136,8 +136,9 @@ export interface ActionSpec {
   target?: string;
   message?: string;
   /**
-   * notify only — who gets the in-app alert: 'all' (default; everyone with automation.notify.read),
+   * notify — who gets the in-app alert: 'all' (default; everyone with automation.notify.read),
    * 'field:<userField>[,<userField>]' (user ids carried by the event, e.g. nextApproverId), or 'user:<uuid>'.
+   * line — personal LINE instead of a group `target`: 'field:…' or 'user:…' → each person's linked LINE (see src/line.ts).
    */
   to?: string;
 }
@@ -153,22 +154,29 @@ export const TEMPLATES: Template[] = [
   { id: 'long-downtime', name: 'เครื่องหยุดนานเกิน 2 ชั่วโมง', description: 'แจ้งเมื่อปิดงานซ่อมที่เครื่องหยุดเกิน 120 นาที', eventType: 'maintenance.work_completed', conditions: [{ field: 'downtimeMinutes', op: 'gt', value: 120 }], actions: [{ type: 'notify', message: '{{machineCode}} หยุด {{downtimeMinutes}} นาที ({{workOrderNo}}) ควรทบทวนแผน PM' }] },
 
   /* ---- office / service businesses ---- */
-  { id: 'approval-to-approver', name: 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ', description: 'แจ้งในแอปและส่ง LINE ทุกครั้งที่คำขอถึงคิวผู้อนุมัติคนถัดไป', eventType: 'approvals.request_submitted', conditions: [],
-    actions: [{ type: 'notify', to: 'field:nextApproverId,delegateId', message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอคุณอนุมัติ (ขั้นที่ {{step}}/{{stepCount}})' }, { type: 'line', target: '' }] },
-  { id: 'approval-approved', name: 'คำขอได้รับการอนุมัติ แจ้งผู้ขอ', description: 'แจ้งเมื่อคำขออนุมัติครบทุกขั้นแล้ว', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'eq', value: 'approved' }],
-    actions: [{ type: 'notify', to: 'field:requesterId', message: '✅ คำขอ {{no}} "{{title}}" ของคุณได้รับการอนุมัติแล้ว (โดย {{byName}})' }] },
-  { id: 'approval-not-approved', name: 'คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ', description: 'แจ้งผู้ขอพร้อมเหตุผลเมื่อคำขอถูกปฏิเสธหรือส่งกลับให้แก้ไข', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'ne', value: 'approved' }],
-    actions: [{ type: 'notify', to: 'field:requesterId', message: 'คำขอ {{no}} "{{title}}" ของคุณไม่ผ่านหรือถูกส่งกลับแก้ไข โดย {{byName}} เหตุผล: {{note}}' }] },
+  { id: 'approval-to-approver', name: 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ', description: 'แจ้งในแอปและส่ง LINE ทุกครั้งที่คำขอถึงคิวผู้อนุมัติคนถัดไป — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'approvals.request_submitted', conditions: [],
+    actions: [{ type: 'notify', to: 'field:nextApproverId,delegateId', message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอคุณอนุมัติ (ขั้นที่ {{step}}/{{stepCount}})' }, { type: 'line', target: '' },
+      { type: 'line', to: 'field:nextApproverId,delegateId', message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอคุณอนุมัติ (ขั้นที่ {{step}}/{{stepCount}})' }] },
+  { id: 'approval-approved', name: 'คำขอได้รับการอนุมัติ แจ้งผู้ขอ', description: 'แจ้งเมื่อคำขออนุมัติครบทุกขั้นแล้ว — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'eq', value: 'approved' }],
+    actions: [{ type: 'notify', to: 'field:requesterId', message: '✅ คำขอ {{no}} "{{title}}" ของคุณได้รับการอนุมัติแล้ว (โดย {{byName}})' },
+      { type: 'line', to: 'field:requesterId', message: '✅ คำขอ {{no}} "{{title}}" ของคุณได้รับการอนุมัติแล้ว (โดย {{byName}})' }] },
+  { id: 'approval-not-approved', name: 'คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ', description: 'แจ้งผู้ขอพร้อมเหตุผลเมื่อคำขอถูกปฏิเสธหรือส่งกลับให้แก้ไข — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'ne', value: 'approved' }],
+    actions: [{ type: 'notify', to: 'field:requesterId', message: 'คำขอ {{no}} "{{title}}" ของคุณไม่ผ่านหรือถูกส่งกลับแก้ไข โดย {{byName}} เหตุผล: {{note}}' },
+      { type: 'line', to: 'field:requesterId', message: 'คำขอ {{no}} "{{title}}" ของคุณ: {{decision:th}} โดย {{byName}} เหตุผล: {{note}}' }] },
   { id: 'expense-over-limit', name: 'เบิกเกินวงเงิน แจ้งบัญชี', description: 'แจ้งฝ่ายบัญชีเมื่อมีใบเบิกที่เกินวงเงินรายเดือนของหมวดค่าใช้จ่าย', eventType: 'expense.claim_submitted', conditions: [{ field: 'overLimit', op: 'eq', value: 'true' }],
     actions: [{ type: 'notify', message: '⚠️ ใบเบิก {{no}} ของ {{claimantName}} ยอด {{total}} บาท เกินวงเงินรายเดือน ตรวจสอบก่อนอนุมัติ' }] },
-  { id: 'leave-to-manager', name: 'มีคนขอลา แจ้งหัวหน้า', description: 'แจ้งหัวหน้าตามผังองค์กร (ในแอป) และส่ง LINE เมื่อพนักงานยื่นใบลา', eventType: 'hr.leave_requested', conditions: [],
-    actions: [{ type: 'notify', to: 'field:approverUserId', message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รอคุณอนุมัติ' }, { type: 'line', target: '' }] },
-  { id: 'leave-decided-to-employee', name: 'ใบลามีผลแล้ว แจ้งพนักงาน', description: 'แจ้งพนักงานผู้ลาเมื่อหัวหน้าหรือฝ่ายบุคคลอนุมัติ/ไม่อนุมัติใบลา', eventType: 'hr.leave_decided', conditions: [],
-    actions: [{ type: 'notify', to: 'field:employeeUserId', message: 'ใบลา {{no}} ({{typeName}}) ของคุณ: {{decision:th}} โดย {{byName}} หมายเหตุ: {{note}}' }] },
-  { id: 'expense-paid-to-claimant', name: 'จ่ายเงินใบเบิกแล้ว แจ้งผู้เบิก', description: 'แจ้งผู้เบิกเมื่อฝ่ายบัญชีจ่ายเงินตามใบเบิกแล้ว', eventType: 'expense.claim_paid', conditions: [],
-    actions: [{ type: 'notify', to: 'field:claimantId', message: '💸 ใบเบิก {{no}} ของคุณ ยอด {{total}} บาท จ่ายเงินแล้ว' }] },
-  { id: 'ticket-resolved-to-requester', name: 'แก้ปัญหาเสร็จ แจ้งผู้แจ้ง', description: 'แจ้งผู้แจ้งปัญหาเมื่อทีมแก้ไขเรื่องเสร็จแล้ว', eventType: 'helpdesk.ticket_resolved', conditions: [],
-    actions: [{ type: 'notify', to: 'field:requesterUserId', message: '✅ เรื่อง {{no}} "{{title}}" ที่คุณแจ้งแก้ไขแล้ว: {{resolution}}' }] },
+  { id: 'leave-to-manager', name: 'มีคนขอลา แจ้งหัวหน้า', description: 'แจ้งหัวหน้าตามผังองค์กร (ในแอป) และส่ง LINE เมื่อพนักงานยื่นใบลา — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'hr.leave_requested', conditions: [],
+    actions: [{ type: 'notify', to: 'field:approverUserId', message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รอคุณอนุมัติ' }, { type: 'line', target: '' },
+      { type: 'line', to: 'field:approverUserId', message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รอคุณอนุมัติ' }] },
+  { id: 'leave-decided-to-employee', name: 'ใบลามีผลแล้ว แจ้งพนักงาน', description: 'แจ้งพนักงานผู้ลาเมื่อหัวหน้าหรือฝ่ายบุคคลอนุมัติ/ไม่อนุมัติใบลา — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'hr.leave_decided', conditions: [],
+    actions: [{ type: 'notify', to: 'field:employeeUserId', message: 'ใบลา {{no}} ({{typeName}}) ของคุณ: {{decision:th}} โดย {{byName}} หมายเหตุ: {{note}}' },
+      { type: 'line', to: 'field:employeeUserId', message: 'ใบลา {{no}} ({{typeName}}) ของคุณ: {{decision:th}} โดย {{byName}} หมายเหตุ: {{note}}' }] },
+  { id: 'expense-paid-to-claimant', name: 'จ่ายเงินใบเบิกแล้ว แจ้งผู้เบิก', description: 'แจ้งผู้เบิกเมื่อฝ่ายบัญชีจ่ายเงินตามใบเบิกแล้ว — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'expense.claim_paid', conditions: [],
+    actions: [{ type: 'notify', to: 'field:claimantId', message: '💸 ใบเบิก {{no}} ของคุณ ยอด {{total}} บาท จ่ายเงินแล้ว' },
+      { type: 'line', to: 'field:claimantId', message: '💸 ใบเบิก {{no}} ของคุณ ยอด {{total}} บาท จ่ายเงินแล้ว' }] },
+  { id: 'ticket-resolved-to-requester', name: 'แก้ปัญหาเสร็จ แจ้งผู้แจ้ง', description: 'แจ้งผู้แจ้งปัญหาเมื่อทีมแก้ไขเรื่องเสร็จแล้ว — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'helpdesk.ticket_resolved', conditions: [],
+    actions: [{ type: 'notify', to: 'field:requesterUserId', message: '✅ เรื่อง {{no}} "{{title}}" ที่คุณแจ้งแก้ไขแล้ว: {{resolution}}' },
+      { type: 'line', to: 'field:requesterUserId', message: '✅ เรื่อง {{no}} "{{title}}" ที่คุณแจ้งแก้ไขแล้ว: {{resolution}}' }] },
   { id: 'urgent-ticket', name: 'ตั๋วด่วนมาก แจ้งทีม IT', description: 'ส่ง LINE กลุ่มทีม IT ทันทีเมื่อมีเรื่องแจ้งปัญหาระดับด่วนมาก', eventType: 'helpdesk.ticket_created', conditions: [{ field: 'priority', op: 'eq', value: 'urgent' }],
     actions: [{ type: 'notify', message: '🚨 ด่วนมาก {{no}}: {{title}} ผู้แจ้ง {{requesterName}} (หมวด {{categoryName}})' }, { type: 'line', target: '' }] },
   { id: 'new-lead', name: 'ลีดใหม่ แจ้งเซลส์', description: 'แจ้งทีมขายทันทีที่มีลีดเข้ามา จะได้โทรกลับเร็ว', eventType: 'crm.lead_created', conditions: [],

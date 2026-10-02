@@ -48,6 +48,15 @@ async function loadReturn(c: Client, id: string) {
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // supplier quotations on POs, delivery-note photos at receiving, evidence on returns
+  attachments: {
+    read: 'purchasing.po.read',
+    write: ['purchasing.po.write', 'purchasing.po.receive'],
+    entities: {
+      po: 'purchase_orders',
+      return: { table: 'purchase_returns', write: ['purchasing.po.return', 'purchasing.po.write'] },
+    },
+  },
   routes(app, k) {
     app.post('/purchase-orders', async (req, reply) => {
       const a = auth(req);

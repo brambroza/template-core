@@ -10,6 +10,9 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
 
+/** module response headers passed through to the client */
+export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy'] as const;
+
 export interface GatewayOptions {
   /** module id -> base URL, e.g. { sales: 'http://sales:3000' } */
   modules: Record<string, string>;
@@ -41,7 +44,8 @@ export interface Gateway {
 }
 
 export function createGateway(opts: GatewayOptions): Gateway {
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
+  // 8 MB: a 5 MB attachment travels as base64 JSON (~6.7 MB); modules enforce their own, smaller limits
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 8 * 1024 * 1024 });
   let manifests: ModuleManifest[] = [];
 
   async function fetchManifest(id: string, url: string, retries: number, delayMs: number): Promise<ModuleManifest> {
@@ -98,6 +102,29 @@ export function createGateway(opts: GatewayOptions): Gateway {
     return { delivered: results };
   });
 
+  // LINE webhook: LINE signs the exact bytes (x-line-signature) and the proxy below re-serialises JSON, so this one
+  // public path is forwarded byte for byte with its signature; automation verifies it.
+  app.register(async (raw) => {
+    raw.removeAllContentTypeParsers();
+    raw.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: 1024 * 1024 }, (_req, body, done) => done(null, body));
+    raw.post('/api/automation/line/webhook/:key', async (req, reply) => {
+      const base = opts.modules.automation;
+      if (!base) {
+        reply.code(404);
+        return { error: { code: 'module_not_installed', message: 'Module "automation" is not installed in this ERP' } };
+      }
+      const headers: Record<string, string> = {};
+      for (const h of ['content-type', 'x-line-signature']) {
+        const v = req.headers[h];
+        if (typeof v === 'string') headers[h] = v;
+      }
+      const { key } = req.params as { key: string };
+      const res = await fetch(`${base}/line/webhook/${encodeURIComponent(key)}`, { method: 'POST', headers, body: Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : undefined });
+      reply.code(res.status).header('content-type', res.headers.get('content-type') ?? 'application/json');
+      return reply.send(Buffer.from(await res.arrayBuffer()));
+    });
+  });
+
   app.all('/api/:module/*', async (req, reply) => {
     const { module } = req.params as { module: string; '*': string };
     const base = opts.modules[module];
@@ -114,11 +141,17 @@ export function createGateway(opts: GatewayOptions): Gateway {
     }
     // which modules this installation has (e.g. identity builds roles from templates with only installed perms)
     headers['x-erp-modules'] = Object.keys(opts.modules).join(',');
+    // the public address the client used (e.g. automation shows the LINE webhook URL built from it)
+    headers['x-forwarded-host'] = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '');
+    headers['x-forwarded-proto'] = String(req.headers['x-forwarded-proto'] ?? req.protocol);
     const hasBody = !['GET', 'HEAD'].includes(req.method) && req.body !== undefined;
     const res = await fetch(`${base}/${rest}${qs}`, { method: req.method, headers, body: hasBody ? JSON.stringify(req.body) : undefined });
     reply.code(res.status);
-    const type = res.headers.get('content-type');
-    if (type) reply.header('content-type', type);
+    // binary responses (attachments) need their file name and safety headers, not only the type
+    for (const h of FORWARDED_RESPONSE_HEADERS) {
+      const v = res.headers.get(h);
+      if (v) reply.header(h, v);
+    }
     return reply.send(Buffer.from(await res.arrayBuffer()));
   });
 

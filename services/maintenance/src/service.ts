@@ -33,6 +33,15 @@ async function loadWo(c: Client, id: string, lock = false) {
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // photos of breakdowns / repairs and machine documents (manuals, certificates)
+  attachments: {
+    read: 'maintenance.machine.read',
+    write: ['maintenance.wo.report', 'maintenance.wo.work', 'maintenance.machine.write'],
+    entities: {
+      'work-order': 'work_orders',
+      machine: { table: 'machines', write: ['maintenance.machine.write', 'maintenance.wo.work'] },
+    },
+  },
   routes(app, k) {
     app.post('/machines', async (req, reply) => {
       const a = auth(req);

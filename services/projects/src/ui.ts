@@ -105,7 +105,7 @@ export default defineUi({
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'projectDetail', idFrom: 'id' },
     },
     projectDetail: {
-      kind: 'detail', title: 'โครงการ', endpoint: '/projects/:id', perm: 'projects.project.read', heading: 'no', mobile: true, printable: true, edit: 'projectEdit',
+      kind: 'detail', title: 'โครงการ', endpoint: '/projects/:id', perm: 'projects.project.read', heading: 'no', attachments: { entity: 'project' }, mobile: true, printable: true, edit: 'projectEdit',
       flow: {
         field: 'status',
         steps: [{ value: 'planning', label: 'วางแผน' }, { value: 'active', label: 'ดำเนินการ' }, { value: 'done', label: 'เสร็จ' }],
@@ -225,7 +225,7 @@ export default defineUi({
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'taskDetail', idFrom: 'id' },
     },
     taskDetail: {
-      kind: 'detail', title: 'งาน', endpoint: '/tasks/:id', perm: 'projects.project.read', heading: 'title', mobile: true, edit: 'taskEdit',
+      kind: 'detail', title: 'งาน', endpoint: '/tasks/:id', perm: 'projects.project.read', heading: 'title', attachments: { entity: 'task' }, mobile: true, edit: 'taskEdit',
       flow: { field: 'status', steps: taskStatuses },
       fields: [
         { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' }, { key: 'status', label: 'สถานะ', format: 'status' },

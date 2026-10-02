@@ -40,6 +40,43 @@
 - permission รูปแบบ `<module>.<thing>.<action>` รองรับ `<module>.*` และ `*`
 - แต่ละโมดูลประกาศ permission ของตัวเองใน `module.json` → UI ดึงจาก `/api/_catalog` ไปสร้างหน้าตั้งค่าบทบาท
 
+## ไฟล์แนบและประวัติการแก้ไข (ความสามารถของ kernel)
+
+ทุกโมดูลได้สองอย่างนี้จาก kernel โดยไม่ต้องเขียนโค้ดในโมดูล — ข้อมูลอยู่ใน **ฐานข้อมูลของโมดูลเอง** (ไม่มีตารางกลาง จึงยังขายแยกได้)
+และเป็นข้อมูลของบริษัท: ตาราง `_attachments` / `_audit` มี `tenant_id` + RLS แบบเดียวกับตาราง `-- @tenant` (kernel สร้างใน `migrate()`)
+
+**ไฟล์แนบ** — โมดูลเปิดใช้ด้วย `ServiceDefinition.attachments`:
+
+```ts
+attachments: {
+  read: 'expense.claim.read',                 // สิทธิ์ดู/เปิดไฟล์ (string หรือ array = มีตัวใดตัวหนึ่งก็พอ)
+  write: 'expense.claim.write',               // สิทธิ์แนบ; ผู้แนบลบไฟล์ของตัวเองได้, ลบของคนอื่น = `<module>.attachment.delete`
+  entities: {
+    claim: { table: 'claims', access: (c, a, id) => loadClaim(c, id, a) },  // access = กฎการมองเห็นแถว (โยน 403/404 = ไม่ให้)
+    machine: 'machines',                      // แค่ตรวจว่าเรคคอร์ดมีจริงในบริษัทนี้
+  },
+}
+```
+
+| route | |
+| --- | --- |
+| `GET /_attachments?ref=<entity>:<id>` | รายการไฟล์ (ไม่มีเนื้อไฟล์) + `can_delete` |
+| `POST /_attachments { ref, fileName, contentType?, dataBase64 }` | ≤ 5 MB หลัง decode, ≤ 30 ไฟล์ต่อเรคคอร์ด; jpg/png/webp/heic/pdf/xlsx/docx/csv/txt — ตรวจทั้งนามสกุลและ **magic bytes** (ไม่เชื่อ content type ที่ client ส่ง), ชื่อไฟล์ตัด path/อักขระต้องห้าม |
+| `GET /_attachments/:id/content` | ส่งไฟล์ (`content-disposition` ชื่อไทยแบบ RFC 6266, `nosniff`, CSP sandbox) — ใช้ Bearer token หรือ signed link |
+| `GET /_attachments/:id/link` | ลิงก์ที่เซ็นด้วย HMAC (`JWT_SECRET`) อายุ 5 นาที สำหรับแอปมือถือเปิดไฟล์ในตัวดูของเครื่อง |
+| `DELETE /_attachments/:id` | ผู้แนบ (ที่ยังมีสิทธิ์ write) หรือ `<module>.attachment.delete` |
+
+ทุก perm ใน `attachments` และ `<module>.attachment.delete` ต้องประกาศใน module.json (createService ตรวจ) โมดูลที่ไม่เปิดใช้ไม่มี route เหล่านี้
+ไฟล์เก็บเป็น `bytea` — พอสำหรับ SME (ใบเสร็จ รูปถ่าย PDF); ถ้าปริมาณมากให้ย้ายเนื้อไฟล์ไป object storage ใน kernel โดยไม่เปลี่ยน API
+gateway รับ body ได้ 8 MB และส่งต่อ `content-disposition` / `cache-control` / `x-content-type-options` / `content-security-policy`
+
+**ประวัติการแก้ไข (audit log)** — ทุก request ที่ไม่ใช่ GET ของผู้ใช้ที่ login (สถานะ < 400) ถูกบันทึกลง `_audit` ของโมดูลนั้น:
+เวลา, user id + ชื่อจาก token, method, route template (`/claims/:id/approve`), รหัสเรคคอร์ด (`:id` → param แรก → `id` ใน response ของการสร้าง;
+แนบ/ลบไฟล์ = เรคคอร์ดเจ้าของไฟล์), status, body ที่ตัดข้อมูลลับแล้ว (ตัดฟิลด์ที่ชื่อมี password/secret/token, ลงท้าย Base64, ขึ้นต้น logo; ไม่เกิน 2 KB)
+บันทึกใน hook `onSend` หลัง transaction ธุรกิจ commit แล้ว (ถ้าบันทึก audit ล้ม จะ log error แต่ไม่ทำให้รายการล้ม) — event handler และ route internal/public ไม่บันทึก
+อ่านด้วย `GET /_audit?from=&to=&userId=&ref=&q=&limit=` (วันที่ล้วน = วันตามเวลาไทย, `to` รวมวันนั้น) ต้องมีสิทธิ์ **`<module>.audit.read`**
+(หรือ `<module>.*` / `*`) — kernel เติม permission นี้ให้ทุกโมดูลใน `/_manifest` เอง ไม่ต้องประกาศใน module.json
+
 ## License
 
 - ใบอนุญาต = JSON ที่เซ็นด้วย Ed25519 (private key อยู่ที่ GO Along เท่านั้น) ระบุลูกค้า + โมดูล + วันหมดอายุ
@@ -49,6 +86,7 @@
 ## ข้อจำกัดที่รู้อยู่ (เวอร์ชันนี้)
 
 - เงินใช้ `numeric(18,4)` ใน DB แต่คำนวณเป็น JS number + ปัดทศนิยม — พอสำหรับ SME ถ้าต้องแม่นระดับบัญชีให้เปลี่ยนเป็น decimal library ใน `@erp/thai`
-- gateway proxy เฉพาะ JSON (ยังไม่รองรับ upload ไฟล์)
+- อัปโหลดไฟล์ส่งเป็น base64 ใน JSON (ใหญ่ขึ้น ~33%, จำกัด 5 MB ต่อไฟล์) — ยังไม่รองรับ multipart/streaming
+- audit log ไม่มี "ค่าก่อนแก้" (บันทึกสิ่งที่ส่งมา ไม่ใช่ diff) และยังไม่มีการลบ/เก็บถาวรอัตโนมัติ
 - dispatcher ถือ transaction ระหว่างส่ง HTTP — พอสำหรับปริมาณ SME
 - Docker image ใช้ไฟล์เดียวกันทุก service (`pnpm install` ทั้ง repo) — image ใหญ่กว่าที่จำเป็น ปรับเป็น multi-stage/`pnpm deploy` ได้เมื่อขึ้น production จริง

@@ -20,6 +20,7 @@
     { "key": "hr.leave.approve-all", "label": "อนุมัติ/ไม่อนุมัติใบลาของทุกคนแทนหัวหน้า (ฝ่ายบุคคล)" },
     { "key": "hr.attendance.self", "label": "ลงเวลาเข้า-ออกงานของตนเอง" },
     { "key": "hr.attendance.read", "label": "ดูเวลาทำงานรายวันและสรุปรายเดือน" },
-    { "key": "hr.attendance.manage", "label": "บันทึกเวลาแทนพนักงาน/ย้อนหลัง" }
+    { "key": "hr.attendance.manage", "label": "บันทึกเวลาแทนพนักงาน/ย้อนหลัง" },
+    { "key": "hr.attachment.delete", "label": "ลบไฟล์แนบของผู้อื่น" }
   ]
 }

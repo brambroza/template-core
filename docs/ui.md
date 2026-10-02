@@ -61,6 +61,20 @@ print: {
 endpoint ต้องรับค่าเป็นข้อความ (แปลงเอง) และตอบ `{ dryRun, total, created, updated, errors: [{ row, field?, message }] }` (`row` นับจาก 1 ตามลำดับใน `rows`)
 ดูตัวอย่างจริงที่ `POST /items/import` ใน services/master-data (upsert ตาม `code`, ทั้งไฟล์ในธุรกรรมเดียว, ไม่เกิน 2000 แถว) · `template` = ชื่อไฟล์แบบฟอร์มเปล่า (หัวคอลัมน์)
 
+### ไฟล์แนบ (`attachments`) และประวัติการแก้ไข
+
+หน้า `detail` ใส่ `attachments: { entity: 'claim', label?: 'ใบเสร็จ / หลักฐาน', perm? }` แล้วได้แผง **ไฟล์แนบ** ใต้รายการ:
+- web: รายการไฟล์พร้อมไอคอน/รูปย่อ (jpg/png/webp), ปุ่ม "แนบไฟล์" (เลือกได้หลายไฟล์) หรือ **ลากไฟล์มาวาง**, เปิดในแท็บใหม่ (รูป/PDF), ดาวน์โหลด, ลบ (เฉพาะไฟล์ที่ `can_delete`)
+  ตรวจขนาด (≤ 5 MB) และนามสกุลก่อนส่ง เซิร์ฟเวอร์ตรวจซ้ำรวมถึงเนื้อไฟล์
+- mobile: รายการไฟล์พร้อมรูปย่อ แตะ = เปิดในตัวดูของเครื่องผ่านลิงก์ชั่วคราว (`/_attachments/:id/link`) —
+  การถ่ายรูป/เลือกไฟล์จากมือถือต้องเพิ่ม `expo-image-picker` + `expo-document-picker` ใน apps/mobile ก่อน (ยังไม่ได้ติดตั้ง)
+- `entity` ต้องเป็นชื่อที่โมดูลเปิดใช้ใน `ServiceDefinition.attachments.entities` และ endpoint ของหน้าต้องมี `:param` (id ของเรคคอร์ด) —
+  `tests/ui/descriptors.test.ts` ตรวจให้; สิทธิ์จริงอยู่ที่ฝั่ง server (ดู docs/architecture.md "ไฟล์แนบและประวัติการแก้ไข")
+
+ทุกหน้า `detail` ที่เปิดด้วย id (web) มีส่วน **ประวัติการแก้ไข** (พับไว้, โหลดเมื่อเปิด) แสดงใคร ทำอะไร เมื่อไร กับเรคคอร์ดนี้
+จาก `GET /_audit?ref=<id>` ของโมดูล — เห็นเฉพาะผู้มีสิทธิ์ `<module>.audit.read` (`auditPerm()` ใน ui-schema; `*` และ `<module>.*` รวมอยู่แล้ว)
+หน้า list ทั่วไปของ log ใช้ `endpoint: '/_audit'` ได้ทุกโมดูล (ตัวอย่าง: identity `audit` — ผู้ใช้และสิทธิ์ → ประวัติการแก้ไข, ฟิลด์ `action`, `summary_text`)
+
 Action: `then` = เปิดหน้าอื่นด้วยผลลัพธ์ (`idFrom` ไม่ใส่ก็ได้), `toast` = แสดงค่าจาก response เป็นข้อความมุมจอ (เช่น ผลลองรันกฎ), `confirm`, `fields`/`lines` = ถามข้อมูลก่อน
 
 ## ภาพรวมวันนี้ (widgets)

@@ -13,6 +13,7 @@ const SERVICES = fileURLToPath(new URL('../../services', import.meta.url));
 const ids = readdirSync(SERVICES).filter((d) => existsSync(`${SERVICES}/${d}/src/service.ts`)).sort();
 const services = new Map<string, Service>();
 const uis = new Map<string, ModuleUi>();
+const defs = new Map<string, ServiceDefinition>();
 
 beforeAll(async () => {
   for (const id of ids) {
@@ -20,6 +21,7 @@ beforeAll(async () => {
     const svc = createService(definition, { DATABASE_URL: 'postgres://unused@127.0.0.1:1/x', JWT_SECRET: 'x', INTERNAL_TOKEN: 'x' });
     await svc.app.ready();
     services.set(id, svc);
+    defs.set(id, definition);
     if (existsSync(`${SERVICES}/${id}/src/ui.ts`)) uis.set(id, (await import(`${SERVICES}/${id}/src/ui.ts`)).default as ModuleUi);
   }
 });
@@ -46,7 +48,7 @@ describe.each(ids)('%s screens', (id) => {
     const ui = uis.get(id);
     if (!ui) return;
     const declared = new Set(services.get(id)!.manifest.permissions.map((p) => p.key));
-    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? [...(s.rowActions ?? []).map((a) => a.perm), s.import?.perm] : [])]);
+    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? [...(s.rowActions ?? []).map((a) => a.perm), s.import?.perm] : []), s.kind === 'detail' ? s.attachments?.perm : undefined]);
     expect(used.filter((p) => p && !declared.has(p))).toEqual([]);
   });
 
@@ -57,6 +59,20 @@ describe.each(ids)('%s screens', (id) => {
     const bad = Object.entries(ui.screens).flatMap(([sid, s]) => (s.kind === 'list' && s.import ? [[sid, s.import] as const] : []))
       .filter(([, imp]) => !imp.endpoint.startsWith('/') || !svc.app.hasRoute({ method: 'POST', url: imp.endpoint }))
       .map(([sid, imp]) => `${id}.${sid}.import: POST /${id}${imp.endpoint}`);
+    expect(bad).toEqual([]);
+  });
+
+  it('shows attachments only for entities the module opted in to', () => {
+    const ui = uis.get(id);
+    if (!ui) return;
+    const entities = Object.keys(defs.get(id)!.attachments?.entities ?? {});
+    const bad = Object.entries(ui.screens).flatMap(([sid, s]) => {
+      if (s.kind !== 'detail' || !s.attachments) return [];
+      if (!entities.includes(s.attachments.entity)) return [`${id}.${sid}: entity "${s.attachments.entity}" is not in the service's attachments.entities [${entities.join(', ')}]`];
+      // the record id comes from the screen's id, which fills the endpoint's first :param
+      if (!/:[A-Za-z]/.test(s.endpoint)) return [`${id}.${sid}: attachments need an endpoint with a :param (the record id)`];
+      return [];
+    });
     expect(bad).toEqual([]);
   });
 

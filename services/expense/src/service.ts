@@ -197,6 +197,15 @@ async function loadAdvance(c: Client, id: string, a: AuthContext, lock = false) 
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // receipts and other evidence on claims and advances; visibility follows the claim's own rule (staff: own records only)
+  attachments: {
+    read: 'expense.claim.read',
+    write: 'expense.claim.write',
+    entities: {
+      claim: { table: 'claims', access: (c, a, id) => loadClaim(c, id, a) },
+      advance: { table: 'advances', access: (c, a, id) => loadAdvance(c, id, a) },
+    },
+  },
   routes(app, k) {
     /* ----- categories ----- */
 

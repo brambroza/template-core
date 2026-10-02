@@ -25,6 +25,7 @@
     { "key": "quality.inspection.record", "label": "สร้างงานตรวจและบันทึกผลตรวจ" },
     { "key": "quality.ncr.read", "label": "ดู NCR และการแก้ไข" },
     { "key": "quality.ncr.write", "label": "ออก NCR และวิเคราะห์สาเหตุ" },
-    { "key": "quality.ncr.close", "label": "ปิด NCR และทวนสอบการแก้ไข" }
+    { "key": "quality.ncr.close", "label": "ปิด NCR และทวนสอบการแก้ไข" },
+    { "key": "quality.attachment.delete", "label": "ลบไฟล์แนบของผู้อื่น" }
   ]
 }

@@ -24,6 +24,9 @@ export default defineUi({
     { label: 'กฎของฉัน', screen: 'rules' },
     { label: 'การแจ้งเตือน', screen: 'notifications' },
     { label: 'ประวัติการทำงาน', screen: 'runs' },
+    { label: 'ผูก LINE ของฉัน', screen: 'lineMe' },
+    { label: 'ตั้งค่า LINE OA', screen: 'lineSetup' },
+    { label: 'ผู้ใช้ที่ผูก LINE', screen: 'lineLinks' },
   ],
   notifications: {
     endpoint: '/notifications', readEndpoint: '/notifications/:id/read', readAllEndpoint: '/notifications/read-all', perm: 'automation.notify.read',
@@ -46,6 +49,7 @@ export default defineUi({
   commands: [
     { id: 'rule', label: 'สร้างกฎอัตโนมัติ', example: 'ตั้งเตือน', keywords: ['ตั้งเตือน', 'สร้างกฎ', 'บอท', 'อัตโนมัติ'], screen: 'ruleNew', perm: 'automation.rule.write' },
     { id: 'templates', label: 'สูตรอัตโนมัติสำเร็จรูป', example: 'สูตร', keywords: ['สูตร', 'template'], screen: 'templates', perm: 'automation.rule.read' },
+    { id: 'lineMe', label: 'ผูก LINE ของฉัน (รับแจ้งเตือนส่วนตัวทาง LINE)', example: 'ผูกไลน์', keywords: ['ผูกไลน์', 'ผูก line'], screen: 'lineMe', perm: 'automation.notify.read' },
     { id: 'inbox', label: 'การแจ้งเตือนทั้งหมด', example: 'แจ้งเตือน', keywords: ['แจ้งเตือน', 'noti'], screen: 'notifications', perm: 'automation.notify.read' },
   ],
   screens: {
@@ -96,11 +100,11 @@ export default defineUi({
         { name: 'actionType', label: 'ให้…', type: 'select', required: true, default: 'notify', options: [
           { value: 'notify', label: 'แจ้งเตือนในแอป' }, { value: 'line', label: 'ส่ง LINE' }, { value: 'webhook', label: 'เรียก Webhook' },
         ] },
-        { name: 'to', label: 'แจ้งในแอปถึงใคร', type: 'select', default: 'all', options: RECIPIENTS,
-          help: 'ช่องผู้รับต้องมีในเหตุการณ์ที่เลือก (เช่น คำขออนุมัติ → ผู้อนุมัติ/ผู้ขอ, ใบลา → หัวหน้า/พนักงาน)' },
+        { name: 'to', label: 'ส่งถึงใคร', type: 'select', default: 'all', options: RECIPIENTS,
+          help: 'ช่องผู้รับต้องมีในเหตุการณ์ที่เลือก (เช่น คำขออนุมัติ → ผู้อนุมัติ/ผู้ขอ, ใบลา → หัวหน้า/พนักงาน) · ส่ง LINE + เลือกผู้รับ + เว้นช่อง group ID = LINE ส่วนตัวของคนนั้น (ถ้าผูก LINE ไว้)' },
         { name: 'toUserId', label: 'หรือส่งถึงผู้ใช้คนเดียว', type: 'lookup',
           lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { toUserId: 'id' } } },
-        { name: 'target', label: 'LINE group/user ID หรือ URL webhook', type: 'text', help: 'ไม่ต้องกรอกถ้าแจ้งเตือนในแอป' },
+        { name: 'target', label: 'LINE group ID หรือ URL webhook', type: 'text', help: 'ไม่ต้องกรอกถ้าแจ้งเตือนในแอปหรือ LINE ส่วนตัว · รหัสกลุ่ม: เชิญบอทเข้ากลุ่มแล้วพิมพ์ "ไอดีกลุ่ม"' },
         { name: 'message', label: 'ข้อความ (ใช้ {{ชื่อช่อง}} ได้ — เว้นว่างใช้ข้อความมาตรฐาน)', type: 'textarea' },
       ],
       submitLabel: 'บันทึกและเปิดใช้', after: { screen: 'rule', idFrom: 'id' },
@@ -140,6 +144,56 @@ export default defineUi({
       actions: [{ id: 'readAll', label: 'อ่านทั้งหมด', method: 'POST', endpoint: '/notifications/read-all', perm: 'automation.notify.read', mobile: true }],
       rowActions: [{ id: 'read', label: 'อ่านแล้ว', method: 'POST', endpoint: '/notifications/:id/read', perm: 'automation.notify.read', when: { field: 'read_at', in: [null] }, mobile: true }],
       empty: 'ไม่มีการแจ้งเตือน',
+    },
+    lineMe: {
+      kind: 'detail', title: 'ผูก LINE ของฉัน', endpoint: '/line/me', perm: 'automation.notify.read', heading: 'status', mobile: true,
+      fields: [
+        { key: 'instructions', label: 'วิธีใช้' },
+        { key: 'code', label: 'รหัสผูกบัญชี (6 หลัก)' },
+        { key: 'send_text', label: 'พิมพ์ข้อความนี้ในแชต LINE OA' },
+        { key: 'code_expires_at', label: 'รหัสหมดอายุ', format: 'datetime' },
+        { key: 'add_friend_url', label: 'เพิ่มเพื่อน LINE OA ของบริษัท (สแกน)', format: 'qr' },
+        { key: 'oa_id', label: 'LINE OA' },
+        { key: 'line_name', label: 'ชื่อใน LINE' },
+        { key: 'linked_at', label: 'ผูกเมื่อ', format: 'datetime' },
+      ],
+      actions: [
+        { id: 'code', label: 'ขอรหัสผูกบัญชี', method: 'POST', endpoint: '/line/link-code', perm: 'automation.notify.read', tone: 'primary', toast: 'message', when: { field: 'linked', in: [false] }, mobile: true },
+        { id: 'test', label: 'ทดสอบส่งถึงฉัน', method: 'POST', endpoint: '/line/test', perm: 'automation.notify.read', toast: 'message', when: { field: 'linked', in: [true] }, mobile: true },
+        { id: 'relink', label: 'ผูก LINE อื่นแทน', method: 'POST', endpoint: '/line/link-code', perm: 'automation.notify.read', toast: 'message', when: { field: 'linked', in: [true] }, mobile: true },
+        { id: 'unlink', label: 'ยกเลิกการผูก LINE', method: 'POST', endpoint: '/line/unlink', perm: 'automation.notify.read', tone: 'danger', confirm: 'หยุดรับแจ้งเตือนส่วนตัวทาง LINE?', toast: 'message', when: { field: 'linked', in: [true] }, mobile: true },
+      ],
+    },
+    lineSetup: {
+      kind: 'detail', title: 'ตั้งค่า LINE OA', endpoint: '/line/settings', perm: 'automation.line.manage', heading: 'status',
+      fields: [
+        { key: 'webhook_url', label: 'Webhook URL (วางใน LINE Developers → Messaging API)' },
+        { key: 'webhook_note', label: 'หมายเหตุ' },
+        { key: 'channel_secret_set', label: 'ตั้ง LINE_CHANNEL_SECRET แล้ว', format: 'boolean' },
+        { key: 'access_token_set', label: 'ตั้ง LINE_CHANNEL_ACCESS_TOKEN แล้ว', format: 'boolean' },
+        { key: 'public_base_url_set', label: 'ตั้ง PUBLIC_BASE_URL แล้ว', format: 'boolean' },
+        { key: 'oa_id', label: 'LINE OA (LINE_OA_ID)' },
+        { key: 'add_friend_url', label: 'QR เพิ่มเพื่อน (ให้พนักงานสแกน)', format: 'qr' },
+        { key: 'linked_users', label: 'ผู้ใช้ที่ผูก LINE แล้ว (คน)', format: 'qty' },
+        { key: 'rotated_at', label: 'สร้าง URL ใหม่ล่าสุด', format: 'datetime' },
+      ],
+      actions: [
+        { id: 'test', label: 'ทดสอบส่งถึงฉัน', method: 'POST', endpoint: '/line/test', perm: 'automation.notify.read', toast: 'message', tone: 'primary' },
+        { id: 'rotate', label: 'สร้าง Webhook URL ใหม่', method: 'POST', endpoint: '/line/settings/rotate', perm: 'automation.line.manage', toast: 'message',
+          confirm: 'URL เดิมจะใช้ไม่ได้ทันที ต้องนำ URL ใหม่ไปวางใน LINE Developers — ดำเนินการต่อ?' },
+      ],
+    },
+    lineLinks: {
+      kind: 'list', title: 'ผู้ใช้ที่ผูก LINE', endpoint: '/line/links', perm: 'automation.line.manage',
+      columns: [
+        { key: 'user_name', label: 'ผู้ใช้ ERP' },
+        { key: 'line_name', label: 'ชื่อใน LINE' },
+        { key: 'linked_at', label: 'ผูกเมื่อ', format: 'datetime' },
+      ],
+      rowActions: [
+        { id: 'unlink', label: 'ยกเลิกการผูก', method: 'DELETE', endpoint: '/line/links/:id', perm: 'automation.line.manage', tone: 'danger', confirm: 'ยกเลิกการผูก LINE ของผู้ใช้นี้? (เช่น พนักงานลาออก)' },
+      ],
+      empty: 'ยังไม่มีใครผูก LINE — ให้พนักงานเปิดเมนู "ผูก LINE ของฉัน"',
     },
     runs: {
       kind: 'list', title: 'ประวัติการทำงาน', endpoint: '/runs', perm: 'automation.rule.read',

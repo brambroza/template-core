@@ -11,8 +11,27 @@ export default defineUi({
     { label: 'ผู้ใช้', screen: 'users' },
     { label: 'บทบาทและสิทธิ์', screen: 'roles' },
     { label: 'ข้อมูลบริษัท', screen: 'company' },
+    { label: 'ประวัติการแก้ไข', screen: 'audit' },
   ],
   screens: {
+    audit: {
+      // kernel route every module has (GET /_audit); this one lists identity's own log: users, roles, company profile
+      kind: 'list', title: 'ประวัติการแก้ไข (ผู้ใช้และสิทธิ์)', endpoint: '/_audit', perm: 'identity.audit.read',
+      columns: [
+        { key: 'at', label: 'เวลา', format: 'datetime' },
+        { key: 'user_name', label: 'ผู้ทำรายการ' },
+        { key: 'action', label: 'รายการ' },
+        { key: 'entity_id', label: 'รหัสเรคคอร์ด' },
+        { key: 'summary_text', label: 'ข้อมูลที่ส่ง' },
+      ],
+      filters: [
+        { name: 'from', label: 'ตั้งแต่วันที่', type: 'date' },
+        { name: 'to', label: 'ถึงวันที่', type: 'date' },
+        { name: 'userId', label: 'ผู้ใช้', type: 'lookup', lookup: { path: '/users', label: ['name', 'email'], assign: { userId: 'id' } } },
+        { name: 'q', label: 'ค้นหา', type: 'text' },
+      ],
+      empty: 'ยังไม่มีการแก้ไขในช่วงนี้',
+    },
     company: {
       // GET /company stays open to every signed-in user (printing needs it); the settings screen is for whoever sets it up,
       // otherwise every staff member would get an admin "ผู้ใช้และสิทธิ์" menu group (bugs-0.3 ID-01)

@@ -28,6 +28,9 @@
 | `purchasing.goods_returned` | purchasing | inventory | ใบส่งคืนผู้ขาย (RT-…) → ตัดสต็อกจากคลังที่ส่งคืน (มัก `QC-HOLD`) และปิดรายการกักกันของสินค้านั้น |
 | `booking.requested` | booking | automation | การจองที่ต้องอนุมัติ — optional `requesterId` |
 | `assets.repair_reported` | assets | automation | ทรัพย์สินแจ้งซ่อม |
+| `contracts.visit_due` | contracts | — (ยังไม่มีผู้รับ — แนะนำ automation, helpdesk) | สร้างนัดเข้า PM (`PMV-…`) จากสัญญา MA ที่มีผลแล้ว (`POST /visits/generate`, ครั้งเดียวต่อสัญญา+วันครบกำหนด) — `visitId`, `no`, `contractNo`, ลูกค้า, `dueDate`, `scheduledDate`, `technicianId`/`technicianName` (ช่างที่ได้รับมอบหมาย), `itemsText`, `coverage` → แจ้งช่าง / helpdesk เปิด ticket PM ได้ |
+| `contracts.contract_expiring` | contracts | — (ยังไม่มีผู้รับ — แนะนำ automation) | สัญญา MA ที่ยังไม่ต่ออายุจะหมดภายใน N วัน (`POST /contracts/expiring/notify`, เรียกวันละครั้งได้ ส่งไม่เกินเดือนละครั้งต่อสัญญา) — `no`, ลูกค้า, `title`, `endDate`, `daysLeft`, `value` → แจ้งเซลส์ให้เสนอต่อสัญญา |
+| `payroll.run_paid` | payroll | — (ยังไม่มีผู้รับ — แนะนำ accounting, automation) | จ่ายเงินเดือนรอบ `PR-2569-10` แล้ว — ยอดรวมทั้งบริษัท (ไม่มีข้อมูลรายคน): `totals` (gross, salary, overtime, allowances, bonus, ssoEmployee/ssoEmployer, pvdEmployee/pvdEmployer, wht, otherDeductions, net) และ `postings[]` เดบิต/เครดิตที่สมดุลตามหมวดบัญชี (`salary_expense`, `sso_payable`, `wht_payable`, `pvd_payable`, `net_pay_payable` …) → บัญชีลงรายการค่าแรง/ภาษีค้างจ่ายได้ |
 
 ฟิลด์ที่เป็น user id (identity) ใช้ระบุผู้รับการแจ้งเตือนในแอปของ automation ได้ (`to: 'field:<ชื่อฟิลด์>'`) — ประกาศไว้ใน `userFields` ของแต่ละ event ใน `services/automation/src/catalog.ts`
 

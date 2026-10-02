@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { EventData, EventType } from '@erp/contracts';
+import { attachmentPerms, mountAttachments, type AttachmentsSpec } from './attachments.ts';
+import { mountAudit, recordAudit } from './audit.ts';
 import { verifyToken, type AuthContext } from './auth.ts';
 import { createDb, migrate, type Client, type Db } from './db.ts';
 import { toErrorBody, unauthorized } from './errors.ts';
@@ -32,6 +34,21 @@ export interface ServiceDefinition {
   migrationsDir: string;
   routes: (app: FastifyInstance, k: Kernel) => void | Promise<void>;
   handlers?: EventHandlers;
+  /**
+   * Opt in to file attachments (`/_attachments` routes, see attachments.ts). Without it the module has no attachment routes.
+   * Every permission named here, and `<module>.attachment.delete`, must be declared in module.json.
+   */
+  attachments?: AttachmentsSpec;
+}
+
+/** Permission prefix of a module ("master" for master-data) — the prefix kernel-provided permissions use. */
+export function permPrefix(moduleId: string): string {
+  return moduleId.split('-')[0];
+}
+
+/** Permissions every module gets from the kernel; added to the served manifest when module.json does not declare them. */
+export function kernelPermissions(moduleId: string): { key: string; label: string }[] {
+  return [{ key: `${permPrefix(moduleId)}.audit.read`, label: 'ดูประวัติการแก้ไข (audit log)' }];
 }
 
 export interface Service {
@@ -58,7 +75,13 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = process.env): Service {
-  const { manifest } = def;
+  const own = new Set(def.manifest.permissions.map((p) => p.key));
+  const manifest: ModuleManifest = { ...def.manifest, permissions: [...def.manifest.permissions, ...kernelPermissions(def.manifest.id).filter((p) => !own.has(p.key))] };
+  const prefix = permPrefix(manifest.id);
+  if (def.attachments) {
+    const missing = attachmentPerms(def.attachments, `${prefix}.attachment.delete`).filter((p) => !own.has(p));
+    if (missing.length) throw new Error(`${manifest.id}: attachments use permissions not declared in module.json: ${missing.join(', ')}`);
+  }
   const handlers = def.handlers ?? {};
   const handled = Object.keys(handlers).sort().join(',');
   const declared = [...manifest.subscribes].sort().join(',');
@@ -71,6 +94,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 
   const app = Fastify({ logger: env.LOG_LEVEL ? { level: env.LOG_LEVEL } : false, bodyLimit: 5 * 1024 * 1024 });
   app.decorateRequest('authCtx', null);
+  app.decorateRequest('auditEntityId', null);
 
   app.addHook('onRequest', async (req) => {
     const cfg = req.routeOptions.config ?? {};
@@ -84,6 +108,12 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     req.authCtx = verifyToken(jwtSecret, h.slice(7));
   });
 
+  // audit log: every successful write by a signed-in user (runs before the response leaves, so readers see it at once)
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.authCtx && req.method !== 'GET' && req.method !== 'HEAD' && reply.statusCode < 400) await recordAudit(db, req, reply.statusCode, payload);
+    return payload;
+  });
+
   app.setErrorHandler((err, req, reply) => {
     const { status, body } = toErrorBody(err);
     if (status >= 500) req.log.error(err);
@@ -93,6 +123,9 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   app.get('/_health', { config: { public: true } }, async () => ({ status: 'ok', module: manifest.id, version: manifest.version }));
   app.get('/_manifest', { config: { public: true } }, async () => manifest);
   app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body, env) }));
+
+  mountAudit(app, { db, permPrefix: prefix });
+  if (def.attachments) mountAttachments(app, { db, moduleId: manifest.id, permPrefix: prefix, jwtSecret, spec: def.attachments });
 
   const ready = Promise.resolve(def.routes(app, kernel));
 

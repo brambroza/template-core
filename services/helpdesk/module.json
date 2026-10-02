@@ -18,6 +18,7 @@
     { "key": "helpdesk.ticket.work", "label": "รับงาน ตอบกลับ และแก้ไขปัญหา" },
     { "key": "helpdesk.setup.write", "label": "ตั้งค่าหมวดหมู่ SLA และข้อความตอบกลับสำเร็จรูป" },
     { "key": "helpdesk.kb.read", "label": "อ่านฐานความรู้" },
-    { "key": "helpdesk.kb.write", "label": "เขียนและเผยแพร่บทความฐานความรู้" }
+    { "key": "helpdesk.kb.write", "label": "เขียนและเผยแพร่บทความฐานความรู้" },
+    { "key": "helpdesk.attachment.delete", "label": "ลบไฟล์แนบของผู้อื่น" }
   ]
 }

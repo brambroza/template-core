@@ -122,7 +122,7 @@ export default defineUi({
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'requestDetail', idFrom: 'id' },
     },
     requestDetail: {
-      kind: 'detail', title: 'ใบขออนุมัติ', endpoint: '/requests/:id', perm: 'approvals.request.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'ใบขออนุมัติ', endpoint: '/requests/:id', perm: 'approvals.request.read', heading: 'no', attachments: { entity: 'request', label: 'เอกสารประกอบ' }, mobile: true,
       print: { title: 'ใบขออนุมัติ', signatures: [{ label: 'ผู้ขออนุมัติ', name: 'requester_name' }], signers: { path: 'steps', label: 'ผู้อนุมัติ', name: 'approver_name' } },
       edit: 'requestEdit',
       flow: {

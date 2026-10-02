@@ -38,6 +38,10 @@
     {
       "key": "maintenance.settings.write",
       "label": "ตั้งค่าซ่อมบำรุง (คลังอะไหล่เริ่มต้น)"
+    },
+    {
+      "key": "maintenance.attachment.delete",
+      "label": "ลบไฟล์แนบของผู้อื่น"
     }
   ]
 }

@@ -194,7 +194,7 @@ export default defineUi({
       fields: [employee, ...leaveFields], submitLabel: 'บันทึกใบลา', after: { screen: 'leaveDetail', idFrom: 'id' },
     },
     leaveDetail: {
-      kind: 'detail', title: 'ใบลา', endpoint: '/leave-requests/:id', perm: 'hr.leave.request', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'ใบลา', endpoint: '/leave-requests/:id', perm: 'hr.leave.request', heading: 'no', attachments: { entity: 'leave', label: 'ใบรับรองแพทย์ / เอกสารประกอบ' }, mobile: true, printable: true,
       flow: { field: 'status', steps: [{ value: 'pending', label: 'ยื่นใบลา' }, { value: 'approved', label: 'อนุมัติ' }],
         exits: [{ value: 'rejected', label: 'ไม่อนุมัติ' }, { value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [

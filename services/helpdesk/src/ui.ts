@@ -138,7 +138,7 @@ export default defineUi({
       fields: serviceFields, submitLabel: 'บันทึก (คำนวณ SLA ใหม่)', after: { screen: 'ticket', idFrom: 'id' },
     },
     ticket: {
-      kind: 'detail', title: 'เรื่องแจ้งปัญหา', endpoint: '/tickets/:id', perm: 'helpdesk.ticket.create', heading: 'no', mobile: true, edit: 'ticketEdit', printable: true,
+      kind: 'detail', title: 'เรื่องแจ้งปัญหา', endpoint: '/tickets/:id', perm: 'helpdesk.ticket.create', heading: 'no', attachments: { entity: 'ticket', label: 'รูปหน้าจอ / ไฟล์' }, mobile: true, edit: 'ticketEdit', printable: true,
       flow: {
         field: 'status',
         steps: [{ value: 'open', label: 'รับเรื่อง' }, { value: 'in_progress', label: 'กำลังทำ' }, { value: 'waiting', label: 'รอข้อมูล' }, { value: 'resolved', label: 'แก้ไขแล้ว' }, { value: 'closed', label: 'ปิดเรื่อง' }],

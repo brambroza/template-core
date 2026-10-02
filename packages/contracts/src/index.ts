@@ -166,6 +166,38 @@ export const events = {
     method: z.enum(['cash', 'transfer', 'cheque', 'card']), total: money, whtAmount: money, depositApplied: money, received: money,
     invoices: z.array(z.object({ invoiceId: id, invoiceNo: z.string(), amount: money, outstanding: money })),
   }),
+
+  /* ---- wave 4: service contracts / MA (contracts) ---- */
+
+  /** A PM visit (PMV-2569-0001) was generated from an active MA contract — alert the technician / auto-create a PM ticket. */
+  'contracts.visit_due': z.object({
+    visitId: id, no: z.string(), contractId: id, contractNo: z.string(), customerId: id.nullable(), customerName: z.string(),
+    dueDate: z.string(), scheduledDate: z.string(), technicianId: id.nullable(), technicianName: z.string().nullable(),
+    /** covered equipment / sites as one line of text, e.g. "CCTV 32 จุด (อาคาร A) · NVR SN123" */
+    itemsText: z.string().nullable(), coverage: z.enum(['8x5', '24x7']),
+  }),
+  /** An active MA contract ends within the notice window and has not been renewed (at most once per contract per month). */
+  'contracts.contract_expiring': z.object({
+    contractId: id, no: z.string(), customerId: id.nullable(), customerName: z.string(), title: z.string(),
+    endDate: z.string(), daysLeft: z.number().int(), value: money,
+  }),
+
+  /* ---- payroll ---- */
+
+  /**
+   * A payroll run (PR-2569-10) was paid. Company totals only — no per-employee data. `postings` is a balanced
+   * debit/credit list per account category (salary_expense, overtime_expense, allowance_expense, bonus_expense, other_income_expense,
+   * sso_employer_expense, pvd_employer_expense / sso_payable, wht_payable, pvd_payable, employee_deductions, net_pay_payable)
+   * that accounting maps to its chart of accounts.
+   */
+  'payroll.run_paid': z.object({
+    runId: id, no: z.string(), period: z.string(), payDate: z.string(), paidDate: z.string(), headcount: z.number().int(),
+    totals: z.object({
+      gross: money, salary: money, overtime: money, allowances: money, bonus: money, otherIncome: money, unpaidLeave: money,
+      ssoEmployee: money, ssoEmployer: money, pvdEmployee: money, pvdEmployer: money, wht: money, otherDeductions: money, totalDeductions: money, net: money,
+    }),
+    postings: z.array(z.object({ category: z.string(), side: z.enum(['debit', 'credit']), amount: money })),
+  }),
 } as const;
 
 export type EventType = keyof typeof events;

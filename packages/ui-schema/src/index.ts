@@ -181,6 +181,19 @@ export interface DetailScreen extends ScreenBase {
   printable?: boolean;
   /** printed document layout (letterhead, title, copy label, signature boxes); see `printSpec` */
   print?: PrintOptions;
+  /**
+   * Files attached to this record (receipts, certificates, photos…), stored by the module's kernel `/_attachments` routes.
+   * `entity` must be one the module's ServiceDefinition `attachments.entities` declares; the record id = the screen's id.
+   * `perm` hides the panel from users without it (the server checks the module's own attachment perms either way).
+   */
+  attachments?: AttachmentsPanel;
+}
+
+export interface AttachmentsPanel {
+  entity: string;
+  perm?: string;
+  /** panel heading, default "ไฟล์แนบ" */
+  label?: string;
 }
 
 /**
@@ -645,6 +658,10 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
     } else {
       out.push({ module: ui.module, method: 'GET', path: s.endpoint, where });
       s.actions?.forEach((a) => action(a, where));
+      if (s.attachments) {
+        out.push({ module: ui.module, method: 'GET', path: '/_attachments', where: `${where}.attachments` });
+        out.push({ module: ui.module, method: 'POST', path: '/_attachments', where: `${where}.attachments.upload` });
+      }
     }
   }
   return out;
@@ -999,4 +1016,89 @@ export function companyProblems(company: CompanyProfile | null | undefined, lega
 export function companyContactLine(company: CompanyProfile | null | undefined): string {
   if (!company) return '';
   return [company.phone && `โทร ${company.phone}`, company.email && `อีเมล ${company.email}`, company.website].filter(Boolean).join(' · ');
+}
+
+/* ---------------- attachments & audit log (kernel routes every module has / can opt in to) ---------------- */
+
+/** Largest file the kernel accepts (decoded). */
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+/** What the file picker offers; the server re-checks extension AND content. */
+export const ATTACHMENT_ACCEPT = '.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf,.xlsx,.docx,.csv,.txt';
+
+/** One row of `GET /_attachments?ref=` (the content is fetched separately). */
+export interface AttachmentInfo {
+  id: string;
+  ref: string;
+  file_name: string;
+  content_type: string;
+  size: number;
+  uploaded_by: string;
+  uploaded_by_name: string | null;
+  created_at: string;
+  can_delete: boolean;
+}
+
+/** `<entity>:<record id>` — how an attachment names the record it belongs to. */
+export function attachmentRef(entity: string, id: string): string {
+  return `${entity}:${id}`;
+}
+
+export type FileKind = 'image' | 'pdf' | 'sheet' | 'doc' | 'text' | 'file';
+
+/** Icon family of a stored file; `image` = a browser can show a thumbnail (HEIC cannot). */
+export function fileKind(contentType: string): FileKind {
+  if (/^image\/(jpeg|png|webp)$/.test(contentType)) return 'image';
+  if (contentType === 'application/pdf') return 'pdf';
+  if (contentType.includes('spreadsheet') || contentType === 'text/csv') return 'sheet';
+  if (contentType.includes('wordprocessing')) return 'doc';
+  if (contentType.startsWith('text/')) return 'text';
+  return 'file';
+}
+
+/** 1536000 -> "1.5 MB" */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`;
+}
+
+/** Permission prefix of a module ("master" for master-data) — kernel permissions use it, e.g. `master.audit.read`. */
+export function permPrefix(module: string): string {
+  return module.split('-')[0];
+}
+
+/** Permission that opens a module's audit log (`GET /_audit`); `*` and `<prefix>.*` include it. */
+export function auditPerm(module: string): string {
+  return `${permPrefix(module)}.audit.read`;
+}
+
+/** One row of `GET /_audit`. */
+export interface AuditRow {
+  id: string;
+  at: string;
+  user_id: string | null;
+  user_name: string | null;
+  method: string;
+  route: string;
+  entity_id: string | null;
+  status: number;
+  summary: unknown;
+  /** "POST /claims/:id/approve" */
+  action: string;
+  /** short "field: value · …" text of the redacted body */
+  summary_text: string;
+}
+
+const AUDIT_VERBS: Record<string, string> = {
+  submit: 'ส่ง', approve: 'อนุมัติ', reject: 'ไม่อนุมัติ', return: 'ส่งกลับแก้ไข', cancel: 'ยกเลิก', pay: 'จ่าย', close: 'ปิด',
+  receive: 'รับของ', start: 'เริ่ม', complete: 'เสร็จ', reopen: 'เปิดใหม่', assign: 'มอบหมาย', clear: 'เคลียร์', post: 'ลงบัญชี', void: 'ยกเลิก',
+};
+
+/** Thai wording of an audit row's action: "แนบไฟล์", "แก้ไข", "อนุมัติ" (last path word), else the method. */
+export function auditActionLabel(row: { method: string; route: string }): string {
+  if (row.route === '/_attachments') return 'แนบไฟล์';
+  if (row.route.startsWith('/_attachments/')) return 'ลบไฟล์แนบ';
+  const last = row.route.split('/').filter(Boolean).pop() ?? '';
+  if (!last.startsWith(':') && AUDIT_VERBS[last]) return AUDIT_VERBS[last];
+  return row.method === 'POST' ? (last.startsWith(':') ? 'บันทึก' : 'สร้าง') : row.method === 'DELETE' ? 'ลบ' : 'แก้ไข';
 }

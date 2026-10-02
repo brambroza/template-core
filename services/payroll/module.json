@@ -4,22 +4,25 @@
   "nameTh": "เงินเดือน",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Payroll module",
+  "description": "Thai payroll: pay profiles per employee (monthly salary or daily wage, bank name + last 4 digits only, social security, provident fund, tax allowances, recurring allowances and loans with balances, mid-year opening balances), CSV import of profiles and of monthly inputs (OT hours at 1/1.5/2/3, work days, unpaid leave, bonus), monthly runs PR-2569-10 draft → calculated → approved → paid with a pure calculation engine (SSO 5% with wage floor/ceiling, PND1 withholding by the annualised year-to-date method with bonus taxed at the marginal rate, pro-rata for joiners and leavers), printable Thai payslips, employee self-service payslips, bank transfer list, SSO 1-10 data, PND1 monthly summary, annual 50 Tawi certificates, all legal rates as settings, and a balanced accounting summary event when a run is paid.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
-  "enhancedBy": [],
-  "publishes": [],
+  "enhancedBy": [
+    "hr"
+  ],
+  "publishes": [
+    "payroll.run_paid"
+  ],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "payroll.record.read",
-      "label": "ดูเงินเดือน"
-    },
-    {
-      "key": "payroll.record.write",
-      "label": "จัดการเงินเดือน"
-    }
+    { "key": "payroll.payslip.self", "label": "ดูสลิปเงินเดือนและ 50 ทวิ ของตนเอง" },
+    { "key": "payroll.profile.read", "label": "ดูข้อมูลเงินเดือนพนักงาน" },
+    { "key": "payroll.profile.write", "label": "แก้ไขข้อมูลเงินเดือน รายได้/รายการหักประจำ และนำเข้าจากไฟล์" },
+    { "key": "payroll.run.read", "label": "ดูรอบเงินเดือน สลิปทุกคน และรายงาน (สปส.1-10, ภ.ง.ด.1, 50 ทวิ)" },
+    { "key": "payroll.run.write", "label": "สร้าง/คำนวณรอบเงินเดือน และบันทึก OT วันลา โบนัส" },
+    { "key": "payroll.run.approve", "label": "อนุมัติ/เปิดแก้ไขรอบเงินเดือน" },
+    { "key": "payroll.run.pay", "label": "บันทึกจ่ายเงินเดือน" },
+    { "key": "payroll.setup.write", "label": "ตั้งค่าอัตราประกันสังคม ภาษี และ OT" }
   ]
 }

@@ -48,6 +48,8 @@ export interface TestService {
   token(perms?: string[], tenantId?: string, user?: { userId?: string; userName?: string }): string;
   /** call the API as an admin of `tenantId` (default: the main test tenant) */
   api<T = any>(method: string, url: string, body?: unknown, opts?: { token?: string }): Promise<ApiResult<T>>;
+  /** like `api` but returns the raw response (binary bodies, headers); `token: null` sends no Authorization header */
+  raw(method: string, url: string, body?: unknown, opts?: { token?: string | null }): Promise<{ status: number; headers: Record<string, unknown>; body: Buffer }>;
   /** deliver an inbound event as the gateway would */
   deliver(type: string, data: unknown, opts?: { id?: string; tenantId?: string }): Promise<ApiResult>;
   /** events this service has published (outbox) */
@@ -75,6 +77,15 @@ export async function bootTestService(def: ServiceDefinition, extraEnv: Record<s
         ...(body !== undefined ? { payload: body as any } : {}),
       });
       return { status: res.statusCode, body: (res.body ? res.json() : undefined) as any };
+    },
+    async raw(method, url, body, opts) {
+      const tok = opts?.token === undefined ? defaultToken : opts.token;
+      const res = await svc.app.inject({
+        method: method as any, url,
+        headers: tok ? { authorization: `Bearer ${tok}` } : {},
+        ...(body !== undefined ? { payload: body as any } : {}),
+      });
+      return { status: res.statusCode, headers: res.headers, body: res.rawPayload };
     },
     async deliver(type, data, opts) {
       const res = await svc.app.inject({

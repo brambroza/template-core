@@ -214,6 +214,15 @@ function checkDates(start: string | null | undefined, end: string | null | undef
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // deliverables and site photos on tasks and projects
+  attachments: {
+    read: 'projects.project.read',
+    write: ['projects.task.write', 'projects.project.write'],
+    entities: {
+      task: 'tasks',
+      project: { table: 'projects', write: 'projects.project.write' },
+    },
+  },
   routes(app, k) {
     /* ---------------- projects ---------------- */
 

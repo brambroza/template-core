@@ -4,22 +4,19 @@
   "nameTh": "บัญชี",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Accounting module",
+  "description": "General ledger for Thai SMEs (TFRS for NPAEs): a ready-made Thai chart of accounts seeded on first use, journal vouchers (JV-2569-0001) that must balance, draft → posted with reversal, monthly period close / reopen, automatic posting of sales invoices, receipts and deposits (incl. withholding tax), goods receipts / returns and paid expense claims through editable posting rules with an error queue and retry, and reports: trial balance, general ledger, profit & loss (month + YTD), balance sheet, monthly VAT summary for ภ.พ.30 with output/input tax registers, and withholding tax received (50 ทวิ follow-up).",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
-  "enhancedBy": [],
+  "enhancedBy": ["sales", "purchasing", "expense", "payroll", "inventory"],
   "publishes": [],
-  "subscribes": [],
+  "subscribes": ["sales.invoiced", "sales.payment_received", "purchasing.goods_received", "purchasing.goods_returned", "expense.claim_paid"],
   "permissions": [
-    {
-      "key": "accounting.record.read",
-      "label": "ดูบัญชี"
-    },
-    {
-      "key": "accounting.record.write",
-      "label": "จัดการบัญชี"
-    }
+    { "key": "accounting.journal.read", "label": "ดูผังบัญชี สมุดรายวัน และกฎการลงบัญชี" },
+    { "key": "accounting.journal.write", "label": "บันทึก/แก้ไข/ยกเลิกสมุดรายวัน (ร่าง)" },
+    { "key": "accounting.journal.post", "label": "ผ่านรายการ กลับรายการ และลงบัญชีรายการที่ค้าง" },
+    { "key": "accounting.account.write", "label": "จัดการผังบัญชีและกฎการลงบัญชีอัตโนมัติ" },
+    { "key": "accounting.period.close", "label": "ปิด/เปิดงวดบัญชี" },
+    { "key": "accounting.report.read", "label": "ดูงบการเงินและรายงานภาษี" }
   ]
 }

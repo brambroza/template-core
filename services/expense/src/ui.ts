@@ -115,7 +115,7 @@ export default defineUi({
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'claimDetail', idFrom: 'id' },
     },
     claimDetail: {
-      kind: 'detail', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims/:id', perm: 'expense.claim.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims/:id', perm: 'expense.claim.read', heading: 'no', attachments: { entity: 'claim', label: 'ใบเสร็จ / หลักฐาน' }, mobile: true,
       print: { title: 'ใบเบิกค่าใช้จ่าย', signatures: ['ผู้เบิก', 'ผู้อนุมัติ', 'ผู้จ่ายเงิน'] },
       edit: 'claimEdit',
       flow: {
@@ -203,7 +203,7 @@ export default defineUi({
       submitLabel: 'ส่งขอเงินทดรอง', after: { screen: 'advanceDetail', idFrom: 'id' },
     },
     advanceDetail: {
-      kind: 'detail', title: 'เงินทดรองจ่าย', endpoint: '/advances/:id', perm: 'expense.claim.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'เงินทดรองจ่าย', endpoint: '/advances/:id', perm: 'expense.claim.read', heading: 'no', attachments: { entity: 'advance' }, mobile: true, printable: true,
       flow: {
         field: 'status',
         steps: [{ value: 'requested', label: 'ขอเบิก' }, { value: 'approved', label: 'อนุมัติ' }, { value: 'paid', label: 'จ่ายแล้ว' }, { value: 'cleared', label: 'เคลียร์แล้ว' }],

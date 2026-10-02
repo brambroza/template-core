@@ -91,7 +91,7 @@ export function describe(rule: { event_type: string; conditions: Condition[]; ac
   const cond = rule.conditions.length
     ? ` ถ้า ${rule.conditions.map((c) => `${ev?.fields.find((f) => f.key === c.field)?.label ?? c.field} ${OPS_TH[c.op]} ${typeof c.value === 'number' ? nf.format(c.value) : c.value}`).join(' และ ')}`
     : '';
-  const act = ` ให้${[...new Set(rule.actions.map((a) => (a.type === 'notify' && a.to && a.to !== 'all' ? `${ACTION_TH.notify} (ถึง${describeTo(a.to, rule.event_type)})` : ACTION_TH[a.type])))].join(' + ')}`;
+  const act = ` ให้${[...new Set(rule.actions.map((a) => (a.type !== 'webhook' && a.to && a.to !== 'all' ? `${ACTION_TH[a.type]}${a.type === 'line' ? ' ส่วนตัว' : ''} (ถึง${describeTo(a.to, rule.event_type)})` : ACTION_TH[a.type])))].join(' + ')}`;
   return `${when}${cond}${act}`;
 }
 

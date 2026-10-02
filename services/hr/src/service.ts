@@ -260,6 +260,20 @@ async function approvedLeaveDays(c: Client, from: string, to: string, isWorkday:
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // medical certificates etc. on leave requests: the employee, their approver, HR (same rule as GET /leave-requests/:id)
+  attachments: {
+    read: ['hr.leave.request', 'hr.leave.approve', 'hr.leave.approve-all', 'hr.employee.read'],
+    write: ['hr.leave.request', 'hr.leave.approve', 'hr.leave.approve-all', 'hr.employee.write'],
+    entities: {
+      leave: {
+        table: 'leave_requests',
+        access: async (c, a, id) => {
+          const lv = await loadLeave(c, id);
+          if (!isOwn(a, lv) && lv.approver_user_id !== a.userId && !approveAll(a)) requirePerm(a, 'hr.employee.read');
+        },
+      },
+    },
+  },
   routes(app, k) {
     /* ---------------- departments & positions ---------------- */
 

@@ -129,7 +129,7 @@ export default defineUi({
       submitLabel: 'สร้างงานตรวจ', after: { screen: 'inspDetail', idFrom: 'id' },
     },
     inspDetail: {
-      kind: 'detail', title: 'รายงานผลการตรวจคุณภาพ', endpoint: '/inspections/:id', perm: 'quality.inspection.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'รายงานผลการตรวจคุณภาพ', endpoint: '/inspections/:id', perm: 'quality.inspection.read', heading: 'no', attachments: { entity: 'inspection', label: 'รูปถ่าย / ผลวัด' }, mobile: true,
       print: { title: 'รายงานผลการตรวจคุณภาพ (Inspection Report)', signatures: ['ผู้ตรวจ', 'ผู้ทบทวน', 'ผู้อนุมัติ (QA)'] },
       flow: {
         field: 'status',
@@ -237,7 +237,7 @@ export default defineUi({
       submitLabel: 'บันทึก', after: { screen: 'ncrDetail', idFrom: 'id' },
     },
     ncrDetail: {
-      kind: 'detail', title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', endpoint: '/ncrs/:id', perm: 'quality.ncr.read', heading: 'no', mobile: true, edit: 'ncrEdit',
+      kind: 'detail', title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', endpoint: '/ncrs/:id', perm: 'quality.ncr.read', heading: 'no', attachments: { entity: 'ncr', label: 'รูปของเสีย / เอกสาร' }, mobile: true, edit: 'ncrEdit',
       print: { title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', signatures: ['ผู้รายงาน', 'ผู้รับผิดชอบแก้ไข', 'ผู้ปิด NCR (QA)'] },
       flow: {
         field: 'status',
@@ -297,7 +297,7 @@ export default defineUi({
       empty: 'ไม่มีการแก้ไขค้าง',
     },
     caDetail: {
-      kind: 'detail', title: 'การแก้ไขและป้องกัน (CA)', endpoint: '/corrective-actions/:id', perm: 'quality.ncr.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'การแก้ไขและป้องกัน (CA)', endpoint: '/corrective-actions/:id', perm: 'quality.ncr.read', heading: 'no', attachments: { entity: 'ca', label: 'หลักฐานการแก้ไข' }, mobile: true,
       flow: { field: 'status', steps: [{ value: 'open', label: 'รอดำเนินการ' }, { value: 'done', label: 'ทำแล้ว' }, { value: 'verified', label: 'ทวนสอบแล้ว' }] },
       fields: [
         { key: 'status_th', label: 'สถานะ' }, { key: 'overdue_th', label: 'เลยกำหนด' }, { key: 'ncr_no', label: 'NCR' }, { key: 'ncr_description', label: 'ปัญหา' },

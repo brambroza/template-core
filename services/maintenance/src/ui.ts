@@ -45,7 +45,7 @@ export default defineUi({
       submitLabel: 'แจ้งซ่อม', after: { screen: 'woDetail', idFrom: 'id' },
     },
     woDetail: {
-      kind: 'detail', title: 'งานซ่อม', endpoint: '/work-orders/:id', perm: 'maintenance.machine.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'งานซ่อม', endpoint: '/work-orders/:id', perm: 'maintenance.machine.read', heading: 'no', attachments: { entity: 'work-order', label: 'รูปถ่าย / เอกสาร' }, mobile: true,
       flow: { field: 'status', steps: [{ value: 'open', label: 'แจ้ง' }, { value: 'in_progress', label: 'กำลังซ่อม' }, { value: 'done', label: 'เสร็จ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'machine_code', label: 'เครื่อง' }, { key: 'machine_name', label: 'ชื่อเครื่อง' },
@@ -89,7 +89,7 @@ export default defineUi({
       submitLabel: 'บันทึกเครื่องจักร', after: { screen: 'machines' },
     },
     machineHistory: {
-      kind: 'detail', title: 'ประวัติเครื่องจักร', endpoint: '/machines/:id/history', perm: 'maintenance.machine.read', heading: 'machine.code', mobile: true,
+      kind: 'detail', title: 'ประวัติเครื่องจักร', endpoint: '/machines/:id/history', perm: 'maintenance.machine.read', heading: 'machine.code', attachments: { entity: 'machine', label: 'รูปเครื่อง / คู่มือ / ใบรับรอง' }, mobile: true,
       fields: [
         { key: 'machine.name', label: 'ชื่อ' }, { key: 'machine.location', label: 'ที่ตั้ง' }, { key: 'machine.status', label: 'สถานะ', format: 'status' },
         { key: 'breakdowns', label: 'เสียทั้งหมด (ครั้ง)', format: 'qty' }, { key: 'totalDowntimeMinutes', label: 'เครื่องหยุดรวม (นาที)', format: 'qty' },

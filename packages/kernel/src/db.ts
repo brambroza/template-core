@@ -70,7 +70,20 @@ create table if not exists _outbox (
 create index if not exists _outbox_pending on _outbox (occurred_at) where sent_at is null;
 create table if not exists _inbox (id uuid primary key, type text not null, received_at timestamptz not null default now());
 create table if not exists _doc_seq (tenant_id uuid not null, prefix text not null, year int not null, last int not null, primary key (tenant_id, prefix, year));
+create table if not exists _attachments (
+  id uuid primary key, tenant_id uuid not null, ref text not null, file_name text not null, content_type text not null,
+  size int not null, sha256 text not null, data bytea not null,
+  uploaded_by text not null, uploaded_by_name text, created_at timestamptz not null default now());
+create index if not exists _attachments_ref on _attachments (tenant_id, ref, created_at);
+create table if not exists _audit (
+  id bigserial primary key, tenant_id uuid not null, at timestamptz not null default now(),
+  user_id text, user_name text, method text not null, route text not null, entity_id text, status int not null, summary jsonb);
+create index if not exists _audit_at on _audit (tenant_id, at desc);
+create index if not exists _audit_entity on _audit (tenant_id, entity_id, at desc);
 `;
+
+/** Kernel tables holding tenant data: row-level security exactly like a `-- @tenant` business table. */
+export const KERNEL_TENANT_TABLES = ['_attachments', '_audit'] as const;
 
 /**
  * Apply `migrations/*.sql` in name order, once each.
@@ -81,6 +94,10 @@ export async function migrate(db: Db, dir: string): Promise<string[]> {
   await db.rawTx(async (c) => {
     await c.query(`select pg_advisory_xact_lock(424242)`);
     await c.query(KERNEL_SQL);
+    for (const t of KERNEL_TENANT_TABLES) {
+      const has = await c.query(`select 1 from pg_policies where schemaname = current_schema() and tablename = $1 and policyname = 'tenant_isolation'`, [t]);
+      if (!has.rowCount) await c.query(tenantTableSql(t));
+    }
     if (!existsSync(dir)) return;
     const done = new Set((await c.query<{ name: string }>('select name from _migrations')).rows.map((r) => r.name));
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {

@@ -31,6 +31,10 @@
     {
       "key": "expense.category.write",
       "label": "ตั้งค่าหมวดค่าใช้จ่ายและวงเงิน"
+    },
+    {
+      "key": "expense.attachment.delete",
+      "label": "ลบไฟล์แนบของผู้อื่น"
     }
   ]
 }

@@ -21,7 +21,7 @@ const SELF_SERVICE = [
   'helpdesk.ticket.create', 'helpdesk.kb.read',
   'assets.asset.read', 'assets.repair.report',
   'maintenance.machine.read', 'maintenance.wo.report',
-  'automation.notify.read',
+  'automation.notify.read', 'payroll.payslip.self',
 ];
 
 const t = (id: string, name: string, description: string, extra: string[], base = SELF_SERVICE): RoleTemplate =>
@@ -34,6 +34,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'identity.user.read', 'inventory.stock.read', 'master.item.read', 'master.partner.read', 'production.bom.read', 'production.order.read',
     'projects.project.read', 'projects.timesheet.approve', 'purchasing.po.read', 'purchasing.po.approve',
     'quality.plan.read', 'quality.inspection.read', 'quality.ncr.read', 'sales.order.read', 'sales.receivable.read',
+    'accounting.report.read', 'accounting.journal.read', 'payroll.run.read', 'payroll.run.approve', 'contracts.contract.read', 'contracts.billing.read',
   ]),
   t('staff', 'พนักงานทั่วไป', 'บริการตนเอง: ขออนุมัติ เบิกค่าใช้จ่าย ลา ลงเวลา จองห้อง/รถ แจ้งปัญหา แจ้งซ่อม และรับการแจ้งเตือน — ไม่เห็นข้อมูลของคนอื่นและตัวเลขการเงิน', []),
   t('supervisor', 'หัวหน้างาน', 'บริการตนเอง + อนุมัติคำขอ ใบเบิก ใบลา การจอง และดูเวลาทำงาน/งานของทีม', [
@@ -43,12 +44,15 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
   t('hr', 'ฝ่ายบุคคล', 'ทะเบียนพนักงาน แผนก ตำแหน่ง วันหยุด ประเภทการลา อนุมัติใบลา และจัดการเวลาทำงาน', [
     'hr.employee.read', 'hr.employee.write', 'hr.setup.write', 'hr.leave.approve', 'hr.attendance.read', 'hr.attendance.manage',
     'approvals.request.approve', 'identity.user.read',
+    'payroll.profile.read', 'payroll.profile.write', 'payroll.run.read', 'payroll.run.write', 'payroll.setup.write',
   ]),
   t('accounting', 'บัญชีและการเงิน', 'อนุมัติและจ่ายใบเบิก/เงินทดรอง ทรัพย์สินและค่าเสื่อม ใบกำกับภาษี ใบเสร็จ ลูกหนี้ และต้นทุน', [
     'expense.claim.approve', 'expense.claim.pay', 'expense.category.write',
     'assets.asset.write', 'assets.asset.dispose', 'assets.audit.run', 'assets.finance.read',
     'costing.cost.read', 'costing.cost.write', 'sales.order.read', 'sales.invoice.write', 'sales.receipt.write', 'sales.receivable.read',
     'purchasing.po.read', 'master.item.read', 'master.partner.read', 'inventory.stock.read', 'approvals.request.approve',
+    'accounting.journal.read', 'accounting.journal.write', 'accounting.journal.post', 'accounting.account.write', 'accounting.period.close', 'accounting.report.read',
+    'payroll.run.read', 'payroll.run.pay', 'contracts.contract.read', 'contracts.billing.read', 'contracts.billing.write',
   ]),
   t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย และรับสินค้าตามใบสั่งซื้อ', [
     'purchasing.po.read', 'purchasing.po.write', 'purchasing.po.receive', 'master.item.read', 'master.partner.read', 'master.partner.write',
@@ -56,6 +60,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
   ]),
   t('sales', 'ฝ่ายขาย', 'ลีด โอกาสขาย ใบเสนอราคา ใบสั่งขาย ลูกค้า และติดตามลูกหนี้', [
     'crm.lead.read', 'crm.lead.write', 'crm.activity.write', 'crm.quote.read', 'crm.quote.write', 'crm.quote.decide',
+    'contracts.contract.read', 'contracts.contract.write', 'contracts.contract.activate', 'contracts.visit.read', 'contracts.visit.plan',
     'sales.order.read', 'sales.order.write', 'sales.receivable.read', 'master.item.read', 'master.partner.read', 'master.partner.write', 'inventory.stock.read',
   ]),
   t('warehouse', 'คลังสินค้า', 'รับ-จ่าย-โอนสต็อก รับของตามใบสั่งซื้อ และส่งของตามใบสั่งขาย', [
@@ -72,6 +77,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
   t('it', 'ไอที / helpdesk', 'รับเรื่องแจ้งปัญหา แก้ไข เขียนฐานความรู้ ตั้งค่า SLA และดูแลทะเบียนทรัพย์สินไอที', [
     'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.write', 'helpdesk.setup.write',
     'assets.asset.write', 'assets.audit.run', 'identity.user.read',
+    'contracts.contract.read', 'contracts.visit.read', 'contracts.visit.work',
   ]),
   t('pm', 'ผู้จัดการโครงการ', 'สร้างและดูแลโครงการ งาน งวดงาน ลงชั่วโมง และอนุมัติชั่วโมงทำงานของทีม', [
     'projects.project.read', 'projects.project.write', 'projects.task.write', 'projects.timesheet.log', 'projects.timesheet.approve',

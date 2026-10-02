@@ -8,6 +8,7 @@ import {
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
 import { c } from '../lib/theme';
+import { AttachmentsList } from './Attachments';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 import { Button, Card, ErrorText, LabelsContext, s, ValueText } from './ui';
 
@@ -256,6 +257,7 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
           </View>
         );
       })}
+      {screen.attachments && id && <AttachmentsList module={ui.module} spec={screen.attachments} recordId={id} />}
       {active && <ActionModal action={active} module={ui.module} params={{ ...params, ...record }} onClose={() => setActive(null)} onDone={(res) => done(active, res)} />}
     </ScrollView>
   );

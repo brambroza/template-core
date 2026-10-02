@@ -4,22 +4,22 @@
   "nameTh": "สัญญาบริการ MA",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Service Contracts module",
+  "description": "Maintenance (MA) service contracts for service companies: customer contracts with covered equipment/sites (asset, serial, location), SLA level (response/resolve hours, 8x5 or 24x7 coverage), billing plan (one-time, monthly, quarterly, yearly) with an installment schedule to invoice, preventive-maintenance visits generated from the PM frequency with a checklist template, technician assignment, pass/fail results and customer sign-off on a printable service report, coverage lookup by serial or customer, renewal with price uplift and a 60-day expiry list with alerts.",
   "requires": [
     "identity",
     "master-data"
   ],
-  "enhancedBy": [],
-  "publishes": [],
+  "enhancedBy": ["helpdesk", "sales"],
+  "publishes": ["contracts.visit_due", "contracts.contract_expiring"],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "contracts.record.read",
-      "label": "ดูสัญญาบริการ MA"
-    },
-    {
-      "key": "contracts.record.write",
-      "label": "จัดการสัญญาบริการ MA"
-    }
+    { "key": "contracts.contract.read", "label": "ดูสัญญาบริการ MA และความคุ้มครอง" },
+    { "key": "contracts.contract.write", "label": "สร้าง แก้ไขสัญญา อุปกรณ์ในสัญญา และต่ออายุ" },
+    { "key": "contracts.contract.activate", "label": "เปิดใช้และยกเลิกสัญญา" },
+    { "key": "contracts.visit.read", "label": "ดูนัดเข้า PM" },
+    { "key": "contracts.visit.plan", "label": "สร้างนัด PM จัดตาราง และมอบหมายช่าง" },
+    { "key": "contracts.visit.work", "label": "บันทึกผลตรวจเช็คและปิดงาน PM (ช่าง)" },
+    { "key": "contracts.billing.read", "label": "ดูงวดวางบิลสัญญา" },
+    { "key": "contracts.billing.write", "label": "บันทึกวางบิลงวดสัญญา" }
   ]
 }

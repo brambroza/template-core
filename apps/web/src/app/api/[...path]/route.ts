@@ -8,7 +8,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const base = (process.env.GATEWAY_URL ?? 'http://localhost:8080').replace(/\/$/, '');
   const target = `${base}/api/${path.map(encodeURIComponent).join('/')}${req.nextUrl.search}`;
   const headers = new Headers();
-  for (const h of ['authorization', 'content-type', 'accept-language']) {
+  for (const h of ['authorization', 'content-type', 'accept-language', 'x-line-signature']) {
     const v = req.headers.get(h);
     if (v) headers.set(h, v);
   }

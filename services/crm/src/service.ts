@@ -164,6 +164,12 @@ async function insertLines(c: Client, quoteId: string, lines: z.infer<typeof Quo
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // customer drawings / RFQ files and signed quotations
+  attachments: {
+    read: 'crm.quote.read',
+    write: 'crm.quote.write',
+    entities: { quotation: 'quotations' },
+  },
   routes(app, k) {
     /* ================= leads ================= */
 

@@ -49,7 +49,7 @@ export default defineUi({
       submitLabel: 'สร้างใบสั่งซื้อ', after: { screen: 'poDetail', idFrom: 'id' },
     },
     poDetail: {
-      kind: 'detail', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders/:id', perm: 'purchasing.po.read', heading: 'no', mobile: true,
+      kind: 'detail', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders/:id', perm: 'purchasing.po.read', heading: 'no', attachments: { entity: 'po', label: 'ใบเสนอราคา / ใบส่งของ' }, mobile: true,
       print: { title: 'ใบสั่งซื้อ', signatures: ['ผู้จัดทำ', 'ผู้อนุมัติ', 'ผู้ขาย (ยืนยันรับคำสั่งซื้อ)'] },
       flow: { field: 'status', steps: [{ value: 'draft', label: 'ร่าง' }, { value: 'approved', label: 'อนุมัติ' }, { value: 'partially_received', label: 'รับบางส่วน' }, { value: 'received', label: 'รับครบ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
@@ -107,7 +107,7 @@ export default defineUi({
       empty: 'ยังไม่มีการส่งคืนสินค้า — เปิดใบสั่งซื้อที่รับของแล้ว แล้วกด "ส่งคืนผู้ขาย"',
     },
     rtDetail: {
-      kind: 'detail', title: 'ใบส่งคืนสินค้า', endpoint: '/purchase-returns/:id', perm: 'purchasing.po.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'ใบส่งคืนสินค้า', endpoint: '/purchase-returns/:id', perm: 'purchasing.po.read', heading: 'no', attachments: { entity: 'return', label: 'รูปถ่าย / เอกสาร' }, mobile: true, printable: true,
       fields: [
         { key: 'return_date', label: 'วันที่ส่งคืน', format: 'date' }, { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'po_no', label: 'ตามใบสั่งซื้อ' },
         { key: 'warehouse_code', label: 'ส่งออกจากคลัง' }, { key: 'ref_no', label: 'อ้างอิง NCR / เอกสาร' }, { key: 'created_by_name', label: 'ผู้บันทึก' },

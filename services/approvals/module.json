@@ -34,6 +34,10 @@
     {
       "key": "approvals.type.write",
       "label": "ตั้งค่าประเภทคำขอและสายอนุมัติ"
+    },
+    {
+      "key": "approvals.attachment.delete",
+      "label": "ลบไฟล์แนบของผู้อื่น"
     }
   ]
 }

@@ -225,6 +225,12 @@ async function decide(k: Kernel, c: Client, id: string, a: AuthContext, action: 
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
+  // supporting documents on requests; visibility follows the request's own rule
+  attachments: {
+    read: 'approvals.request.read',
+    write: 'approvals.request.write',
+    entities: { request: { table: 'requests', access: (c, a, id) => loadRequest(c, id, a) } },
+  },
   routes(app, k) {
     /* ----- request types ----- */
 

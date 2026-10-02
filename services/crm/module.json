@@ -18,6 +18,7 @@
     { "key": "crm.activity.write", "label": "บันทึกกิจกรรมและการเยี่ยมลูกค้า" },
     { "key": "crm.quote.read", "label": "ดูใบเสนอราคา" },
     { "key": "crm.quote.write", "label": "สร้าง แก้ไข และส่งใบเสนอราคา" },
-    { "key": "crm.quote.decide", "label": "บันทึกผลใบเสนอราคา (ลูกค้าตอบรับ/ปฏิเสธ)" }
+    { "key": "crm.quote.decide", "label": "บันทึกผลใบเสนอราคา (ลูกค้าตอบรับ/ปฏิเสธ)" },
+    { "key": "crm.attachment.delete", "label": "ลบไฟล์แนบของผู้อื่น" }
   ]
 }

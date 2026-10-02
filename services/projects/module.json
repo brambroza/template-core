@@ -32,6 +32,10 @@
     {
       "key": "projects.timesheet.approve",
       "label": "ดูและอนุมัติ timesheet ของทุกคน"
+    },
+    {
+      "key": "projects.attachment.delete",
+      "label": "ลบไฟล์แนบของผู้อื่น"
     }
   ]
 }

@@ -3,13 +3,14 @@ import type { EventType } from '@erp/contracts';
 import { fileURLToPath } from 'node:url';
 import { EVENTS, MODULE_TH, TEMPLATES, eventInfo, type ActionSpec, type Condition } from './catalog.ts';
 import { describe, describeTo, matches, parseTo, render, renderLink, resolveRecipients, sendLine, sendWebhook, webhookProblem } from './engine.ts';
+import { lineRoutes, pushToUsers } from './line.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
 const ConditionInput = z.object({ field: z.string().min(1), op: z.enum(['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contains']), value: z.union([z.string(), z.number()]) });
 const ActionInput = z.object({
   type: z.enum(['notify', 'line', 'webhook']), target: z.string().max(500).optional(), message: z.string().max(1000).optional(),
-  /** notify: 'all' (default) | 'field:<userField>[,<userField>]' | 'user:<uuid>' */
+  /** notify: 'all' (default) | 'field:<userField>[,<userField>]' | 'user:<uuid>'; line: 'field:…' | 'user:…' = personal LINE (instead of target) */
   to: z.string().max(200).optional(),
 });
 const RuleInput = z.object({
@@ -29,7 +30,7 @@ const SimpleRuleInput = z.object({
   actionType: z.enum(['notify', 'line', 'webhook']).default('notify'),
   target: z.string().max(500).optional(),
   message: z.string().max(1000).optional(),
-  /** in-app recipients: 'all' | 'field:<userField>' | 'user:<uuid>' */
+  /** recipients: 'all' | 'field:<userField>' | 'user:<uuid>' — in-app alert, or personal LINE when actionType = line and no target */
   to: z.string().max(200).optional(),
   /** shortcut for to = user:<id> (picked from identity /users) */
   toUserId: s.uuid.optional(),
@@ -47,9 +48,13 @@ function validateRule(r: { eventType: string; conditions: Condition[]; actions: 
   }
   for (const a of r.actions) {
     if (a.to !== undefined && a.to !== '') {
-      if (a.type !== 'notify') throw badRequest('ระบุผู้รับ (to) ได้เฉพาะการแจ้งเตือนในแอป — LINE/webhook ใช้ target');
+      if (a.type === 'webhook') throw badRequest('ระบุผู้รับ (to) ได้เฉพาะการแจ้งเตือนในแอปและ LINE ส่วนตัว — webhook ใช้ target');
       const to = parseTo(a.to);
       if (typeof to === 'string') throw badRequest(to, { fieldErrors: { to: [to] } });
+      if (a.type === 'line') {
+        if (to.kind === 'all') throw badRequest('LINE ถึงทุกคนไม่ได้ — ใส่ LINE group ID ใน target หรือเลือกผู้รับเป็นรายคน', { fieldErrors: { to: ['เลือกผู้รับ LINE เป็นรายคน'] } });
+        if (a.target) throw badRequest('LINE ส่วนตัว (ผู้รับ) กับ LINE กลุ่ม (target) ต้องแยกเป็นคนละการกระทำ', { fieldErrors: { target: ['เว้นว่างเมื่อส่ง LINE ส่วนตัว'] } });
+      }
       if (to.kind === 'fields') {
         for (const f of to.fields) {
           if (!ev.userFields?.some((x) => x.key === f)) {
@@ -59,7 +64,7 @@ function validateRule(r: { eventType: string; conditions: Condition[]; actions: 
         }
       }
     }
-    if (a.type === 'line' && !a.target) throw badRequest('ต้องระบุ LINE user id หรือ group id');
+    if (a.type === 'line' && !a.target && !a.to) throw badRequest('ต้องระบุ LINE group id (หรือเลือกผู้รับเพื่อส่ง LINE ส่วนตัว)');
     if (a.type === 'webhook') { const p = webhookProblem(a.target, env); if (p) throw badRequest(p); }
   }
 }
@@ -70,7 +75,12 @@ function validateRule(r: { eventType: string; conditions: Condition[]; actions: 
  */
 function effectiveActions(rule: { template_id?: string | null; actions: ActionSpec[] }): ActionSpec[] {
   const t = rule.template_id ? TEMPLATES.find((x) => x.id === rule.template_id) : undefined;
-  return rule.actions.map((a, i) => (a.type === 'notify' && a.to === undefined && t?.actions[i]?.type === 'notify' && t.actions[i].to ? { ...a, to: t.actions[i].to } : a));
+  const actions = rule.actions.map((a, i) => (a.type === 'notify' && a.to === undefined && t?.actions[i]?.type === 'notify' && t.actions[i].to ? { ...a, to: t.actions[i].to } : a));
+  // personal LINE added to a template later also reaches rules applied before (only people who linked their own LINE get it)
+  for (const x of t?.actions ?? []) {
+    if (x.type === 'line' && x.to && !actions.some((a) => a.type === 'line' && a.to === x.to)) actions.push(x);
+  }
+  return actions;
 }
 
 const withSummary = (r: any) => {
@@ -113,6 +123,24 @@ function handlerFor(type: EventType) {
             }
             results.push(`แจ้งในแอปแล้ว (ถึง${describeTo(a.to, type)} ${users.length} คน)`);
           }
+        } else if (a.type === 'line' && a.to) {
+          // personal LINE: each recipient's linked LINE account
+          const users = resolveRecipients(a.to, data) ?? [];
+          const who = describeTo(a.to, type);
+          if (!users.length) {
+            results.push(`LINE ส่วนตัว: เหตุการณ์ไม่มีผู้รับ (${who})`);
+          } else {
+            const link = ev.link ? renderLink(ev.link, data) : null;
+            const app = env.PUBLIC_APP_URL?.replace(/\/+$/, '');
+            const r = await pushToUsers(ctx.client, users, `${rule.name}\n${text}${app && link ? `\nเปิดดู: ${app}${link}` : ''}`, env);
+            const parts = [
+              ...(r.sent ? [`ส่งแล้ว ${r.sent} คน`] : []),
+              ...(r.notLinked ? [`ผู้รับยังไม่ได้ผูก LINE ${r.notLinked} คน`] : []),
+              ...(r.failed.length ? [`ไม่สำเร็จ ${r.failed.length} คน (${r.failed[0]})`] : []),
+            ];
+            results.push(`LINE ส่วนตัว (ถึง${who}): ${parts.join(', ')}`);
+            if (r.failed.length) failed = true;
+          }
         } else {
           const d = a.type === 'line' ? await sendLine(a.target, `${rule.name}\n${text}`, env) : await sendWebhook(a.target, { rule: rule.name, event: type, eventId: ctx.event.id, message: text, data }, env);
           results.push(`${a.type === 'line' ? 'LINE' : 'webhook'}: ${d.ok ? 'ส่งแล้ว' : `ไม่สำเร็จ (${d.detail})`}`);
@@ -150,6 +178,7 @@ export const definition: ServiceDefinition = {
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
   handlers,
   routes(app, k) {
+    lineRoutes(app, k);
 
     app.get('/event-types', async (req) => {
       requirePerm(auth(req), 'automation.rule.read');
@@ -180,7 +209,8 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ target: z.string().max(500).optional() }), req.body ?? {});
       const t = TEMPLATES.find((x) => x.id === id);
       if (!t) throw notFound('Template');
-      const actions = t.actions.map((x) => ({ ...x, target: x.target || b.target })).filter((x) => x.type === 'notify' || x.target);
+      // personal LINE (to) needs no target; group LINE / webhook take the target given here or are left out
+      const actions = t.actions.map((x) => (x.to ? x : { ...x, target: x.target || b.target })).filter((x) => x.type === 'notify' || x.to || x.target);
       validateRule({ eventType: t.eventType, conditions: structuredClone(t.conditions), actions }, k.env);
       reply.code(201);
       return k.db.tx(a.tenantId, (c) => createRule(c, { name: t.name, eventType: t.eventType, conditions: t.conditions, actions }, a.userId, t.id));
@@ -208,7 +238,9 @@ export const definition: ServiceDefinition = {
       const conditions: Condition[] = b.conditionField && b.conditionOp && b.conditionValue !== undefined && b.conditionValue !== ''
         ? [{ field: b.conditionField, op: b.conditionOp, value: b.conditionValue }] : [];
       // recipients only apply to in-app alerts; the form always sends its default 'all'
-      const to = b.actionType !== 'notify' ? undefined : b.toUserId ? `user:${b.toUserId}` : b.to && b.to !== 'all' ? b.to : undefined;
+      // in-app: the chosen recipients · LINE: personal only when no group target is given · webhook: never
+      const picked = b.toUserId ? `user:${b.toUserId}` : b.to && b.to !== 'all' ? b.to : undefined;
+      const to = b.actionType === 'notify' || (b.actionType === 'line' && !b.target) ? picked : undefined;
       const rule = { name: b.name, eventType: b.eventType, conditions, actions: [{ type: b.actionType, target: b.target, message: b.message, ...(to ? { to } : {}) }] as ActionSpec[] };
       validateRule(rule, k.env);
       reply.code(201);
@@ -259,7 +291,7 @@ export const definition: ServiceDefinition = {
         const ev = eventInfo(r.event_type)!;
         const data = b.data ?? Object.fromEntries(ev.fields.map((f) => [f.key, f.numeric ? 999999 : `(${f.label})`]));
         const matched = matches(r.conditions, data);
-        const messages = effectiveActions(r).map((x) => ({ type: x.type, text: render(x.message || ev.message, data), ...(x.type === 'notify' ? { to: describeTo(x.to, r.event_type) } : {}) }));
+        const messages = effectiveActions(r).map((x) => ({ type: x.type, text: render(x.message || ev.message, data), ...(x.type === 'notify' || x.to ? { to: describeTo(x.to, r.event_type) } : {}) }));
         const preview = matched ? `ตรงเงื่อนไข — จะส่ง: ${messages.map((m) => m.text).join(' / ')}` : 'ข้อมูลตัวอย่างไม่ตรงเงื่อนไข — กฎนี้จะไม่ทำงาน';
         return { matched, messages, preview };
       });
