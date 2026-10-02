@@ -112,6 +112,8 @@ export function createGateway(opts: GatewayOptions): Gateway {
       const v = req.headers[h];
       if (typeof v === 'string') headers[h] = v;
     }
+    // which modules this installation has (e.g. identity builds roles from templates with only installed perms)
+    headers['x-erp-modules'] = Object.keys(opts.modules).join(',');
     const hasBody = !['GET', 'HEAD'].includes(req.method) && req.body !== undefined;
     const res = await fetch(`${base}/${rest}${qs}`, { method: req.method, headers, body: hasBody ? JSON.stringify(req.body) : undefined });
     reply.code(res.status);

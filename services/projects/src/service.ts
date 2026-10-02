@@ -70,6 +70,7 @@ const TimesheetInput = z.object({
   taskId: s.uuid.nullable().optional(),
   hours: Hours,
   note: text(1000).nullable().optional(),
+  /** only used when the token carries no name (old sessions): hours are always logged for the logged-in user */
   userName: text(200).optional(),
 });
 const WeekQuery = z.object({ start: s.isoDate.optional(), userId: s.uuid.optional() });
@@ -186,6 +187,7 @@ async function loadWeek(c: Client, userId: string, start?: string) {
     weekStart, weekEnd: days[6].date,
     status: week ? week.status : 'empty',
     submittedAt: week?.submitted_at ?? null, approvedAt: week?.approved_at ?? null, rejectReason: week?.reject_reason ?? null,
+    approvedByName: week?.approved_by_name ?? null, rejectedByName: week?.rejected_by_name ?? null,
     total: rows.reduce((sum: number, r: any) => sum + r.hours, 0),
     days, byProject: [...byProject.values()], rows,
   };
@@ -518,12 +520,14 @@ export const definition: ServiceDefinition = {
           if (!t.rowCount) throw badRequest('Task does not belong to this project', { fieldErrors: { taskId: ['งานนี้ไม่ได้อยู่ในโครงการ'] } });
         }
         const member = (await c.query('select user_name from project_members where project_id = $1 and user_id = $2', [b.projectId, a.userId])).rows[0];
-        const userName = b.userName ?? member?.user_name ?? null;
+        // the token's name wins; old tokens fall back to the typed name or the member snapshot
+        const userName = a.userName ?? b.userName ?? member?.user_name ?? null;
         const weekStart = await weekStartOf(c, b.workDate);
         const week = (await c.query(
           `insert into timesheet_weeks (user_id, user_name, week_start) values ($1,$2,$3)
-           on conflict (tenant_id, user_id, week_start) do update set user_name = coalesce(timesheet_weeks.user_name, excluded.user_name)
-           returning *`, [a.userId, userName, weekStart])).rows[0];
+           on conflict (tenant_id, user_id, week_start) do update
+             set user_name = case when $4::boolean then excluded.user_name else coalesce(timesheet_weeks.user_name, excluded.user_name) end
+           returning *`, [a.userId, userName, weekStart, !!a.userName])).rows[0];
         if (week.status !== 'draft') throw conflict(`Timesheet week ${weekStart} is ${week.status}`);
         const day = (await c.query('select coalesce(sum(hours), 0) as h from timesheet_entries where user_id = $1 and work_date = $2', [a.userId, b.workDate])).rows[0].h;
         if (day + b.hours > 24) throw badRequest(`More than 24 hours on ${b.workDate}`, { fieldErrors: { hours: [`วันนี้ลงไปแล้ว ${day} ชั่วโมง รวมเกิน 24 ชั่วโมง`] } });
@@ -571,7 +575,7 @@ export const definition: ServiceDefinition = {
         if (w.status !== 'draft') throw conflict(`Timesheet week ${weekStart} is already ${w.status}`);
         const n = (await c.query('select count(*)::int as n from timesheet_entries where week_id = $1', [w.id])).rows[0].n;
         if (!n) throw conflict(`No hours logged in week ${weekStart}`);
-        await c.query(`update timesheet_weeks set status = 'submitted', submitted_at = now(), reject_reason = null where id = $1`, [w.id]);
+        await c.query(`update timesheet_weeks set status = 'submitted', submitted_at = now(), reject_reason = null, user_name = coalesce($2, user_name) where id = $1`, [w.id, a.userName ?? null]);
         return loadWeek(c, a.userId, weekStart);
       });
     });
@@ -618,7 +622,7 @@ export const definition: ServiceDefinition = {
         const w = await loadWeekById(c, a, id, true);
         if (w.status !== 'submitted') throw conflict(`Cannot approve a ${w.status} timesheet week`);
         if (w.user_id === a.userId) throw forbidden('อนุมัติชั่วโมงทำงานของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ');
-        await c.query(`update timesheet_weeks set status = 'approved', approved_by = $2, approved_at = now() where id = $1`, [id, a.userId]);
+        await c.query(`update timesheet_weeks set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);
         return loadWeekById(c, a, id);
       });
     });
@@ -632,7 +636,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const w = await loadWeekById(c, a, id, true);
         if (w.status !== 'submitted') throw conflict(`Cannot reject a ${w.status} timesheet week`);
-        await c.query(`update timesheet_weeks set status = 'draft', submitted_at = null, reject_reason = $2 where id = $1`, [id, b.reason]);
+        await c.query(`update timesheet_weeks set status = 'draft', submitted_at = null, reject_reason = $2, rejected_by_name = $3 where id = $1`, [id, b.reason, a.userName ?? null]);
         return loadWeekById(c, a, id);
       });
     });

@@ -7,12 +7,14 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 - `expense_categories` — `code`, `name`, `monthly_limit?` (per person per calendar month, incl. VAT), `requires_receipt`, `note`, `active`
 - `claims` — `EXP-2569-0001`, claimant (`claimant_id` = token user, `claimant_name`, `department`), `purpose`, `claim_date`,
   `status draft → submitted → approved → paid`, or `rejected | returned | cancelled`; `net`, `vat`, `total`; `over_limit`, `warnings` jsonb;
-  `last_note`, pay info (`paid_date`, `pay_method transfer|cash|cheque`, `pay_reference`), cleared advance (`advance_id`, `advance_no`, `advance_amount`)
+  `last_note`, `approved_by` + `approved_by_name`, pay info (`paid_date`, `pay_method transfer|cash|cheque`, `pay_reference`, `paid_by` + `paid_by_name`), cleared advance (`advance_id`, `advance_no`, `advance_amount`)
 - `claim_lines` — `expense_date`, category snapshot (`category_id/code/name`, `receipt_required`), `description`, `amount`, `vat`, `total`, `receipt_no`
-- `advances` — `ADV-2569-0001`, requester, `purpose`, `amount`, `needed_by`, `status requested → approved → paid → cleared` or `rejected | cancelled`,
+- `advances` — `ADV-2569-0001`, requester (`requester_id` = token user, `requester_name`), `approved_by_name`, `paid_by` + `paid_by_name`, `purpose`, `amount`, `needed_by`, `status requested → approved → paid → cleared` or `rejected | cancelled`,
   pay info, clearing (`claim_id` unique, `claim_no`, `claim_total`, `settle_amount = claim_total - amount`)
 
 ## Behaviour
+- **Names come from the login token** (`auth(req).userName`): `claimant_name` / advance `requester_name` on create, and on edit by the claimant themself
+  (a typed `claimantName`/`requesterName` is ignored; it only counts for old tokens without a name or someone else fixing the claim). Approver / payer names likewise.
 - Totals: line total = amount + vat (rounded 2 dp with `round()`); claim net/vat/total = sums. `total_text` = Thai baht text for the printed form.
 - Monthly limit **never blocks**: on create / line change / submit / reject / cancel the claim's `warnings` are recomputed —
   usage = the claimant's line totals in that category and month on every claim not rejected/cancelled (incl. drafts). `over_limit` = any limit warning.
@@ -26,8 +28,8 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 - Wrong status → 409.
 
 ## API
-- `GET/POST /categories` (`?q`, `?active`) · `GET/PUT /categories/:id` (detail has `used_this_month`)
-- `POST /claims { purpose, claimantName?, department?, claimDate?, lines[{ expenseDate, categoryId, description?, amount, vat?, receiptNo? }], submit? }` → includes `warnings`
+- `GET/POST /categories` (`?q`, `?active`) · `GET/PUT /categories/:id` (detail has `used_this_month` — company-wide for approvers/payers, the caller's own spend for staff)
+- `POST /claims { purpose, department?, claimantName? (nameless tokens only), claimDate?, lines[{ expenseDate, categoryId, description?, amount, vat?, receiptNo? }], submit? }` → includes `warnings`
 - `GET /claims` (`?q`, `?status`, `?mine=1`, `?from`, `?to`, `limit` 200) · `GET /my-claims` · `GET /claims/:id` · `PUT /claims/:id` · `PUT /claims/:id/lines`
 - `POST /claims/:id/submit | approve {note?} | reject {note} | return {note} | pay {method, paidDate?, reference?} | cancel`
 - `POST /advances` · `GET /advances` · `GET /advances/:id` · `POST /advances/:id/approve | reject {note} | pay | cancel | clear {claimId}`
@@ -37,15 +39,17 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 Permissions: `expense.claim.read | write | approve | pay`, `expense.category.write`.
 
 ## Events
-- publishes `expense.claim_submitted` (claimId, no, claimantName, total, overLimit — after limit warnings are refreshed) on submit (also `POST /claims { submit: true }`).
-- publishes `expense.claim_paid` (claimId, no, claimantName, total) on pay.
+- publishes `expense.claim_submitted` (claimId, no, claimantName, total, overLimit, claimantId — after limit warnings are refreshed) on submit (also `POST /claims { submit: true }`).
+- publishes `expense.claim_paid` (claimId, no, claimantName, total, claimantId) on pay — automation's expense-paid-to-claimant alerts the claimant personally.
 - subscribes: none. Candidates (not added): `expense.claim_approved`, advances events → an accounting module (post the expense journal).
 
 ## Screens
 `src/ui.ts`: myClaims (mobile), claims (all, row approve), claimNew (mobile, lines), claimEdit, claimDetail (flow, lines + warnings, actions, printable),
 toPay (row action pay), advances / advancesOpen / advanceNew (mobile) / advanceDetail (flow, clear with claim lookup, printable),
 byCategory, monthly, categories / categoryNew / categoryEdit / categoryDetail.
-Widgets: kpi, bars (`byCategory`), trend (`months`). ⌘K: `เบิก <เรื่อง>`, `เบิกล่วงหน้า <เรื่อง>`, `รอจ่าย`, `ใบเบิกของฉัน`. Search: claims, advances.
+Finance visibility: `claims` (ใบเบิกทั้งหมด), by-category, monthly and the widgets need `expense.claim.approve`; `toPay` and `advancesOpen` need `expense.claim.pay`.
+Staff (read/write only) see `myClaims`, `claimNew`, `advances` (their own) and the category rules; the API also scopes every list/report to their own rows.
+Widgets (approvers): kpi, bars (`byCategory`), trend (`months`). ⌘K: `เบิก <เรื่อง>`, `เบิกล่วงหน้า <เรื่อง>`, `รอจ่าย`, `ใบเบิกของฉัน`. Search: claims, advances.
 
 ## Extension ideas
 Receipt photos (store URLs), mileage rate per km, per-department budgets, block self-approval, export to accounting (journal CSV), withholding tax lines.

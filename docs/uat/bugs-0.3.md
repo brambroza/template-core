@@ -23,11 +23,11 @@ Severity: **High** = money / control can be bypassed or wrong · **Medium** = wr
 | AST-01 | assets | Medium | Fixed | Disposal can be dated in the future (gain/loss on a future book value) |
 | QC-01 | quality | Medium | Fixed | Measured value judged unrounded: shows "2.0500" in a 1.95–2.05 spec but fails |
 | HD-01 | helpdesk | Medium | Fixed | A technician closing a ticket can give his own work a satisfaction score |
-| KRN-01 | kernel (all) | Medium | Open | Impossible calendar dates (2026-02-31) return 500 "Internal error" |
+| KRN-01 | kernel (all) | Medium | Fixed (wave 4) | Impossible calendar dates (2026-02-31) return 500 "Internal error" |
 | UI-01 | web (lists on phone) | Medium | Open | Wide list tables overflow on a 390 px phone: row buttons (อนุมัติ) and the right edge of dialogs are off-screen |
 | UI-02 | web / quality | Medium | Open | Phone: "ปิดงานตรวจ" dialog on the results page cannot be submitted (button covered) |
-| AUT-01 | automation | Medium | Open | Notifications are tenant-wide (no recipient): leave reasons / reject reasons visible to every holder of `automation.notify.read` |
-| SEC-01 | assets / expense ui | Medium | Open | Every employee (assets.asset.read / expense.claim.read) sees finance menus: depreciation report with company book values, "รอจ่ายเงิน", categories, request types |
+| AUT-01 | automation | Medium | Fixed (wave 4) | Notifications are tenant-wide (no recipient): leave reasons / reject reasons visible to every holder of `automation.notify.read` |
+| SEC-01 | assets / expense ui | Medium | Fixed (wave 4) | Every employee (assets.asset.read / expense.claim.read) sees finance menus: depreciation report with company book values, "รอจ่ายเงิน", categories, request types |
 | EXP-05 | expense | Low | Fixed | Expense lines dated in the future are accepted |
 | HR-02 | hr | Low | Fixed | An approver can reject his own leave (approve was already blocked) |
 | PJ-02 | projects | Low | Fixed | Hours can be logged for future dates (e.g. 2027-05-03) |
@@ -35,9 +35,12 @@ Severity: **High** = money / control can be bypassed or wrong · **Medium** = wr
 | CRM-03 | crm | Low | Fixed | "ยืนราคาถึง" before the quotation date is accepted |
 | APV-02 | approvals | Low | Open | Approver user ids are not checked: an unknown id leaves the request stuck (only an admin can move it) |
 | AST-02 | assets | Low | Open | Purchase date in the future is accepted |
-| MSG-01 | approvals, expense, crm, helpdesk, projects, assets | Low | Open | Many 409/400 messages are English ("Cannot approve a approved request") in a Thai UI |
+| MSG-01 | approvals, expense, crm, helpdesk, projects, assets | Low | Open |
+| ID-01 | identity ui | Low | Fixed | Every signed-in employee gets the admin "ผู้ใช้และสิทธิ์" menu group (wave-4 company-profile screen had no perm) |
+| SEC-02 | approvals / expense / assets ui | Low | Open | Staff still see read-only setup menus: ประเภทคำขอและสายอนุมัติ, หมวดค่าใช้จ่าย, หมวดทรัพย์สิน |
+| UI-03 | booking ui | Low | Open | "จองแทนผู้อื่น (ชื่อ)" is shown to every employee but silently ignored unless they have `booking.book.approve` | Many 409/400 messages are English ("Cannot approve a approved request") in a Thai UI |
 
-Totals: 27 bugs — High 4 (4 fixed) · Medium 15 (10 fixed, 5 open) · Low 8 (5 fixed, 3 open). 19 fixed, 8 open.
+Totals: 30 bugs — High 4 (4 fixed) · Medium 15 (13 fixed, 2 open) · Low 11 (6 fixed, 5 open). 23 fixed, 7 open.
 
 ---
 
@@ -130,7 +133,8 @@ Totals: 27 bugs — High 4 (4 fixed) · Medium 15 (10 fixed, 5 open) · Low 8 (5
 - Steps: requester's ticket resolved; technician `POST /tickets/:id/close { satisfaction: 5 }`. Expected 403. Actual 200 — CSAT inflated.
 - Fix: satisfaction/feedback only from the ticket's creator (a phone ticket keyed in by the technician may still carry the caller's score). Test: helpdesk › HD-01; UAT-38.
 
-### KRN-01 — 500 on impossible dates · kernel · Medium · Open
+### KRN-01 — 500 on impossible dates · kernel · Medium · Fixed (wave 4)
+- Wave 4: the kernel's date schemas reject impossible calendar dates with 400 (`packages/kernel/test/schemas.test.ts`). Original report:
 - Steps: `POST /expense/claims` with `expenseDate: '2026-02-31'`. Expected 400. Actual 500 `{"code":"internal"}`.
 - Cause: `s.isoDate` is a regex only; Postgres rejects the value (22008). Owner: kernel (`packages/kernel/src/schemas.ts` or map 22007/22008 to 400 in `errors.ts`). Out of this QA's edit scope.
 
@@ -144,11 +148,15 @@ Totals: 27 bugs — High 4 (4 fixed) · Medium 15 (10 fixed, 5 open) · Low 8 (5
 - Actual: Chromium reports the dialog's submit button covered ("ยกเลิก intercepts pointer events"); the dialog is pushed partly off-screen (same cause as UI-01).
 - Workaround: close the inspection from the report page (inspDetail) — UAT-43 does this. Owner: apps/web.
 
-### AUT-01 — notifications have no recipient · automation · Medium · Open
+### AUT-01 — notifications have no recipient · automation · Medium · Fixed (wave 4)
+- Wave 4: notifications carry `recipient_user_id`; office templates address the approver / requester / claimant / employee; broadcast read state is per user
+  (automation `test/service.test.ts`). UAT-45 now checks that only the step-1 approver gets the alert (not the requester, not the administrator). Original report:
 - Notifications are stored per tenant, not per user: anyone with `automation.notify.read` sees every alert, including leave requests and rejection reasons.
   Needs a `recipient_id` (e.g. `nextApproverId`, `requesterId` from the event) and a per-user bell — schema + UI change, design decision for the product owner.
 
-### SEC-01 — finance screens visible to every employee · assets/expense ui · Medium · Open
+### SEC-01 — finance screens visible to every employee · assets/expense ui · Medium · Fixed (wave 4)
+- Wave 4: asset money fields and depreciation need `assets.finance.read`; expense all-claims / to-pay / summary screens need approve / pay perms. UAT-46 checks the
+  menus and `GET /assets/depreciation` (403) and that `cost` / `book_value` come back null for staff. Read-only setup lists are left over → SEC-02. Original report:
 - The self-service role needs `assets.asset.read` (QR lookup, report a repair) and `expense.claim.read`, which also opens ค่าเสื่อมรายเดือน / ค่าเสื่อมตามหมวด
   (company cost and book values), รอจ่ายเงิน, หมวดค่าใช้จ่าย and ประเภทคำขอและสายอนุมัติ menus. Proposal: a separate `assets.report.read` permission for
   `/depreciation` and finance-only menu perms in `ui.ts` (owned by the ui.ts team; the API change must land together with the screens).
@@ -161,3 +169,29 @@ Totals: 27 bugs — High 4 (4 fixed) · Medium 15 (10 fixed, 5 open) · Low 8 (5
 
 ### MSG-01 — English messages · several modules · Low · Open
 - e.g. approvals "Cannot approve a approved request", expense "Receipt number required on line(s) 1", assets "Repair is already done". All new messages added in this release are Thai.
+
+### ID-01 — admin menu group for every employee · identity ui · Low · Fixed
+- Found by UAT-46 after wave 4: staff (no identity permission) saw the "ผู้ใช้และสิทธิ์" group with "ข้อมูลบริษัท".
+- Cause: the new `company` detail screen had no `perm`, so the menu showed it to everyone; `GET /company` is deliberately open to every signed-in user (printed letterheads).
+- Fix: the screen needs `identity.company.write` (the same permission the web app already uses for the "ตั้งค่าข้อมูลบริษัท" link); the API is unchanged, printing still works for everyone.
+  Test: identity › company profile › "shows the company settings menu only to whoever may change it"; UAT-46.
+
+### SEC-02 — read-only setup menus for staff · approvals / expense / assets ui · Low · Open
+- The self-service role still sees ประเภทคำขอและสายอนุมัติ, หมวดค่าใช้จ่าย and หมวดทรัพย์สิน (read-only lists; no money, no edit). Hide them behind the write perms
+  (`approvals.type.write`, `expense.category.write`, `assets.asset.write`) or a setup-read perm — product decision, ui.ts owners.
+
+### UI-03 — "จองแทนผู้อื่น" shown to everyone · booking ui · Low · Open
+- The booking form shows the optional on-behalf name to every employee; the server ignores it unless the user has `booking.book.approve`, so a typed name silently disappears.
+  Needs a per-field `perm` in `@erp/ui-schema` (renderer change in apps/web + apps/mobile), or a 403/field error from the API when a non-approver types someone else's name.
+
+## UAT suite maintenance (wave 4)
+
+- UAT-28/30/34/35: the requester / claimant / booker name inputs were removed on purpose (name comes from the login) — the tests no longer fill them and instead assert
+  the field is absent and the detail shows the signed-in user's name.
+- UAT-29: PR types lock the approver chain, so "requester puts himself on the chain" is now a 403 on create; the self-approval check (APV-01) runs on a new unlocked
+  `MEMO` type seeded for this purpose.
+- UAT-45: alerts are personal — the approver (head) opens his bell; the staff role gets `automation.notify.read` as the automation CLAUDE.md recommends.
+- UAT-47's 400-vs-404 failure was a knock-on of UAT-28 (no request id → `undefined` in the URL); passes once UAT-28 passes.
+- UAT-40 was flaky: the row button turns into "กำลังบันทึก…" while the request runs, so waiting for "อนุมัติ" to detach raced the approval; now polls the API.
+- `startWeb` (tests/ui-e2e/browser.ts) refuses to start when the port already answers: a `next start` orphaned by an interrupted run kept :3931 with a dead gateway
+  and made the whole factory run hang past the 10-minute limit.

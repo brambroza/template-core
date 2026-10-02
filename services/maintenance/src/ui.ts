@@ -16,6 +16,7 @@ export default defineUi({
     { label: 'แจ้งซ่อม', screen: 'woNew' },
     { label: 'เครื่องจักร', screen: 'machines' },
     { label: 'แผน PM', screen: 'pmList' },
+    { label: 'ตั้งค่า', screen: 'settings' },
   ],
   commands: [
     { id: 'report', label: 'แจ้งซ่อมเครื่องจักร', example: 'แจ้งซ่อม PRESS-01 น้ำมันรั่ว', keywords: ['แจ้งซ่อม', 'ซ่อม', 'เครื่องเสีย', 'เสีย'], screen: 'woNew', perm: 'maintenance.wo.report',
@@ -51,7 +52,7 @@ export default defineUi({
         { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'title', label: 'อาการ/งาน' }, { key: 'description', label: 'รายละเอียด' },
         { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'started_at', label: 'เริ่มซ่อม', format: 'datetime' },
         { key: 'completed_at', label: 'ซ่อมเสร็จ', format: 'datetime' }, { key: 'downtime_minutes', label: 'เครื่องหยุด (นาที)', format: 'qty' },
-        { key: 'resolution', label: 'วิธีแก้' },
+        { key: 'resolution', label: 'วิธีแก้' }, { key: 'parts_warehouse', label: 'คลังอะไหล่' },
       ],
       lines: [{ path: 'parts', label: 'อะไหล่ที่ใช้', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'จำนวน', format: 'qty' }] }],
       actions: [
@@ -60,7 +61,8 @@ export default defineUi({
           fields: [
             { name: 'resolution', label: 'วิธีแก้', type: 'textarea', required: true },
             { name: 'downtimeMinutes', label: 'เครื่องหยุด (นาที)', type: 'number' },
-            { name: 'warehouseCode', label: 'เบิกอะไหล่จากคลัง', type: 'text', default: 'MAIN' },
+            { name: 'warehouseCode', label: 'เบิกอะไหล่จากคลัง', type: 'text',
+              help: 'เว้นว่าง = คลังอะไหล่ที่ตั้งไว้ (เริ่มต้น SPARE ดูช่อง "คลังอะไหล่" ด้านบน) · ใส่รหัสคลังเมื่อเบิกจากคลังอื่น' },
           ],
           lines: {
             name: 'parts', label: 'อะไหล่ที่ใช้',
@@ -116,6 +118,12 @@ export default defineUi({
         { name: 'firstDueOn', label: 'ครบกำหนดครั้งแรก', type: 'date', required: true },
       ],
       submitLabel: 'บันทึกแผน', after: { screen: 'pmList' },
+    },
+    settings: {
+      kind: 'form', title: 'ตั้งค่าซ่อมบำรุง', method: 'PUT', endpoint: '/settings', load: '/settings', perm: 'maintenance.settings.write',
+      fields: [{ name: 'defaultPartsWarehouse', label: 'คลังอะไหล่เริ่มต้น (ตัดอะไหล่เมื่อปิดงานซ่อม)', type: 'text', required: true, default: 'SPARE',
+        help: 'รหัสคลังในโมดูลคลังสินค้า เช่น SPARE · ช่างเปลี่ยนเป็นคลังอื่นได้ตอนปิดงาน' }],
+      submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'woList' },
     },
   },
   widgets: [

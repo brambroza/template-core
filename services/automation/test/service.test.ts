@@ -5,7 +5,7 @@ import { bootTestService, type TestService } from '@erp/kernel/testing';
 import { definition } from '../src/service.ts';
 import { describe as sentence, matches, render, webhookProblem } from '../src/engine.ts';
 import { EVENTS, TEMPLATES } from '../src/catalog.ts';
-import { isKnownEvent, parseEvent, type EventType } from '@erp/contracts';
+import { events, isKnownEvent, parseEvent, type EventType } from '@erp/contracts';
 import manifestJson from '../module.json' with { type: 'json' };
 
 let t: TestService;
@@ -129,19 +129,20 @@ describe('notification links', () => {
 /** One valid payload per office/service event (checked against @erp/contracts). */
 const uuid = () => randomUUID();
 const SAMPLES: Partial<Record<EventType, Record<string, unknown>>> = {
-  'approvals.request_submitted': { requestId: uuid(), no: 'APV-2569-0007', title: 'ซื้อโน้ตบุ๊ก', typeName: 'ขอซื้อ', requesterName: 'สมชาย', amount: 32000, nextApproverId: uuid(), nextApproverName: 'คุณวิภา', step: 1, stepCount: 2 },
+  'approvals.request_submitted': { requestId: uuid(), no: 'APV-2569-0007', title: 'ซื้อโน้ตบุ๊ก', typeName: 'ขอซื้อ', requesterName: 'สมชาย', amount: 32000, nextApproverId: uuid(), nextApproverName: 'คุณวิภา', step: 1, stepCount: 2, requesterId: uuid() },
   'approvals.request_decided': { requestId: uuid(), no: 'APV-2569-0007', title: 'ซื้อโน้ตบุ๊ก', decision: 'rejected', requesterId: uuid(), requesterName: 'สมชาย', byName: 'คุณวิภา', note: 'งบหมด' },
-  'expense.claim_submitted': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200, overLimit: true },
-  'expense.claim_paid': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200 },
-  'hr.leave_requested': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', from: '2026-10-12', to: '2026-10-14', days: 3 },
-  'hr.leave_decided': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', decision: 'approved' },
+  'expense.claim_submitted': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200, overLimit: true, claimantId: uuid() },
+  'expense.claim_paid': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200, claimantId: uuid() },
+  'hr.leave_requested': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', from: '2026-10-12', to: '2026-10-14', days: 3,
+    employeeUserId: uuid(), approverUserId: uuid(), approverName: 'คุณวิชัย' },
+  'hr.leave_decided': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', decision: 'approved', employeeUserId: uuid(), byName: 'คุณวิชัย', note: 'เที่ยวให้สนุก' },
   'helpdesk.ticket_created': { ticketId: uuid(), no: 'TK-2569-0010', title: 'อินเทอร์เน็ตล่มทั้งชั้น', priority: 'urgent', categoryName: 'ไอที', requesterName: 'คุณบี', assigneeName: 'ช่างเอก' },
-  'helpdesk.ticket_resolved': { ticketId: uuid(), no: 'TK-2569-0010', title: 'อินเทอร์เน็ตล่มทั้งชั้น', requesterName: 'คุณบี', resolution: 'รีสตาร์ทสวิตช์' },
+  'helpdesk.ticket_resolved': { ticketId: uuid(), no: 'TK-2569-0010', title: 'อินเทอร์เน็ตล่มทั้งชั้น', requesterName: 'คุณบี', resolution: 'รีสตาร์ทสวิตช์', requesterUserId: uuid() },
   'crm.lead_created': { leadId: uuid(), no: 'LD-2569-0021', company: 'บริษัท สยามพาร์ท จำกัด', contactName: 'คุณเอ', source: 'line' },
   'crm.quotation_accepted': { quotationId: uuid(), no: 'QT-2569-0005', customerName: 'บริษัท สยามพาร์ท จำกัด', total: 107000 },
   'quality.inspection_completed': { inspectionId: uuid(), no: 'QC-2569-0009', stage: 'incoming', itemCode: 'RM-STEEL', itemName: 'เหล็กแผ่น', lotNo: 'L-01', result: 'fail', rejectedQty: 55 },
   'quality.ncr_raised': { ncrId: uuid(), no: 'NCR-2569-0002', severity: 'critical', itemCode: 'FG-BRACKET', description: 'ลูกค้าร้องเรียนขายึดบิดงอ' },
-  'booking.requested': { bookingId: uuid(), no: 'BK-2569-0011', resourceName: 'รถตู้', startAt: '2026-10-05T01:00:00.000Z', endAt: '2026-10-05T09:00:00.000Z', requesterName: 'อลิส', needsApproval: true, period: 'จ. 5 ต.ค. 08:00–16:00', purpose: 'ไปพบลูกค้าระยอง' },
+  'booking.requested': { bookingId: uuid(), no: 'BK-2569-0011', resourceName: 'รถตู้', startAt: '2026-10-05T01:00:00.000Z', endAt: '2026-10-05T09:00:00.000Z', requesterName: 'อลิส', needsApproval: true, period: 'จ. 5 ต.ค. 08:00–16:00', purpose: 'ไปพบลูกค้าระยอง', requesterId: uuid() },
   'assets.repair_reported': { assetId: uuid(), code: 'AS-2569-0003', name: 'โน้ตบุ๊ก Dell', description: 'จอไม่ติด' },
 };
 
@@ -163,13 +164,20 @@ describe('event catalogue and templates', () => {
     }
   });
 
-  it('ships 19 templates, every one valid and appliable with a click', async () => {
-    expect(TEMPLATES).toHaveLength(19);
+  it('ships 22 templates, every one valid and appliable with a click', async () => {
+    expect(TEMPLATES).toHaveLength(22);
     expect(new Set(TEMPLATES.map((x) => x.id)).size).toBe(TEMPLATES.length);
     const other = t.token(['*'], t.otherTenantId);
     for (const tpl of TEMPLATES) {
       const ev = EVENTS.find((e) => e.type === tpl.eventType)!;
       for (const c of tpl.conditions) expect(ev.fields.map((f) => f.key), `${tpl.id}: ${c.field}`).toContain(c.field);
+      // personal recipients point at user-id fields the event declares and the contract carries
+      for (const a of tpl.actions.filter((x) => x.to?.startsWith('field:'))) {
+        for (const f of a.to!.slice(6).split(',')) {
+          expect(ev.userFields?.map((x) => x.key), `${tpl.id}: ${f}`).toContain(f);
+          expect(Object.keys((events as any)[tpl.eventType].shape), `${tpl.id}: ${f}`).toContain(f);
+        }
+      }
       const r = await t.api('POST', `/templates/${tpl.id}/apply`, {}, { token: other });
       expect(r.status, tpl.id).toBe(201);
     }
@@ -187,14 +195,27 @@ describe('event catalogue and templates', () => {
     await t.deliver('booking.requested', { ...SAMPLES['booking.requested'], bookingId: uuid(), needsApproval: false }, { tenantId });
     const items = (await t.api('GET', '/notifications', undefined, { token: other })).body.items as any[];
     const by = (title: string) => items.filter((x) => x.title === title);
-
     const s = SAMPLES as any;
-    expect(by('มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ')).toEqual([expect.objectContaining({
-      level: 'warn', body: 'คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" (ขอซื้อ) จาก สมชาย รอ คุณวิภา อนุมัติ (ขั้นที่ 1/2)', link: `/m/approvals/requestDetail/${s['approvals.request_submitted'].requestId}` })]);
-    expect(by('คำขอได้รับการอนุมัติ แจ้งผู้ขอ')).toHaveLength(0);
-    expect(by('คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ')[0].body).toBe('คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" ของ สมชาย ไม่ผ่านหรือถูกส่งกลับแก้ไข โดย คุณวิภา เหตุผล: งบหมด');
+    /** what one person sees in their bell */
+    const bell = async (userId: string) => (await t.api('GET', '/notifications', undefined, { token: t.token(['automation.notify.read'], tenantId, { userId }) })).body.items as any[];
+
+    // personal alerts are not broadcast
+    for (const title of ['มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ', 'คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ', 'มีคนขอลา แจ้งหัวหน้า', 'ใบลามีผลแล้ว แจ้งพนักงาน', 'จ่ายเงินใบเบิกแล้ว แจ้งผู้เบิก', 'แก้ปัญหาเสร็จ แจ้งผู้แจ้ง']) {
+      expect(by(title), title).toHaveLength(0);
+    }
+    expect((await bell(s['approvals.request_submitted'].nextApproverId)).filter((x) => x.title === 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ')).toEqual([expect.objectContaining({
+      level: 'warn', personal: true, body: 'คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" (ขอซื้อ) จาก สมชาย รอคุณอนุมัติ (ขั้นที่ 1/2)', link: `/m/approvals/requestDetail/${s['approvals.request_submitted'].requestId}` })]);
+    expect((await bell(s['approvals.request_submitted'].requesterId)).filter((x) => x.title === 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ')).toHaveLength(0);
+    const requester = await bell(s['approvals.request_decided'].requesterId);
+    expect(requester.filter((x) => x.title === 'คำขอได้รับการอนุมัติ แจ้งผู้ขอ')).toHaveLength(0);
+    expect(requester.find((x) => x.title === 'คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ').body).toBe('คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" ของคุณไม่ผ่านหรือถูกส่งกลับแก้ไข โดย คุณวิภา เหตุผล: งบหมด');
     expect(by('เบิกเกินวงเงิน แจ้งบัญชี')[0]).toMatchObject({ body: '⚠️ ใบเบิก EXP-2569-0003 ของ มาลี ยอด 4,200 บาท เกินวงเงินรายเดือน ตรวจสอบก่อนอนุมัติ', link: `/m/expense/claimDetail/${s['expense.claim_submitted'].claimId}` });
-    expect(by('มีคนขอลา แจ้งหัวหน้า')[0]).toMatchObject({ body: 'นายสมชาย ใจดี ขอลาพักร้อน 2026-10-12 ถึง 2026-10-14 (3 วัน) ใบลา LV-2569-0004 รออนุมัติ', link: `/m/hr/leaveDetail/${s['hr.leave_requested'].leaveId}` });
+    expect((await bell(s['hr.leave_requested'].approverUserId)).find((x) => x.title === 'มีคนขอลา แจ้งหัวหน้า')).toMatchObject({
+      body: 'นายสมชาย ใจดี ขอลาพักร้อน 2026-10-12 ถึง 2026-10-14 (3 วัน) ใบลา LV-2569-0004 รอคุณอนุมัติ', link: `/m/hr/leaveDetail/${s['hr.leave_requested'].leaveId}` });
+    expect((await bell(s['hr.leave_decided'].employeeUserId)).find((x) => x.title === 'ใบลามีผลแล้ว แจ้งพนักงาน').body)
+      .toBe('ใบลา LV-2569-0004 (ลาพักร้อน) ของคุณ: อนุมัติแล้ว โดย คุณวิชัย หมายเหตุ: เที่ยวให้สนุก');
+    expect((await bell(s['expense.claim_paid'].claimantId)).find((x) => x.title === 'จ่ายเงินใบเบิกแล้ว แจ้งผู้เบิก').body).toBe('💸 ใบเบิก EXP-2569-0003 ของคุณ ยอด 4,200 บาท จ่ายเงินแล้ว');
+    expect((await bell(s['helpdesk.ticket_resolved'].requesterUserId)).find((x) => x.title === 'แก้ปัญหาเสร็จ แจ้งผู้แจ้ง').body).toBe('✅ เรื่อง TK-2569-0010 "อินเทอร์เน็ตล่มทั้งชั้น" ที่คุณแจ้งแก้ไขแล้ว: รีสตาร์ทสวิตช์');
     expect(by('ตั๋วด่วนมาก แจ้งทีม IT').map((x) => x.body)).toEqual(['🚨 ด่วนมาก TK-2569-0010: อินเทอร์เน็ตล่มทั้งชั้น ผู้แจ้ง คุณบี (หมวด ไอที)']);
     expect(by('ลีดใหม่ แจ้งเซลส์')[0]).toMatchObject({ body: 'ลีดใหม่ LD-2569-0021: บริษัท สยามพาร์ท จำกัด ผู้ติดต่อ คุณเอ (ช่องทาง line)', link: `/m/crm/lead/${s['crm.lead_created'].leadId}` });
     expect(by('ลูกค้าตอบรับใบเสนอราคา')[0]).toMatchObject({ level: 'ok', body: '🎉 บริษัท สยามพาร์ท จำกัด ตอบรับใบเสนอราคา QT-2569-0005 ยอด 107,000 บาท', link: `/m/crm/quote/${s['crm.quotation_accepted'].quotationId}` });
@@ -213,5 +234,108 @@ describe('event catalogue and templates', () => {
     expect((await t.api('POST', '/rules/simple', { name: 'x', eventType: 'helpdesk.ticket_created', conditionField: 'priority', conditionOp: 'gt', conditionValue: 1 })).status).toBe(400);
     const test = await t.api('POST', `/rules/${rule.body.id}/test`, { data: SAMPLES['expense.claim_submitted'] });
     expect(test.body).toMatchObject({ matched: false, messages: [{ type: 'notify', text: 'ใบเบิก EXP-2569-0003 ของ มาลี ยอด 4,200 บาท รออนุมัติ' }] });
+  });
+});
+
+describe('per-user notifications (wave 4)', () => {
+  const NOTE = ['automation.notify.read'];
+  const tenant = () => t.otherTenantId;
+  const tok = (userId: string, tid = t.tenantId) => t.token(NOTE, tid, { userId });
+
+  it('validates recipients against the event', async () => {
+    const bad = (to: string, eventType = 'approvals.request_decided', type = 'notify') =>
+      t.api('POST', '/rules', { name: 'x', eventType, actions: [{ type, to, target: 'U1' }] });
+    expect((await bad('field:nextApproverId')).status).toBe(400); // not a user field of request_decided
+    expect((await bad('field:requesterName')).status).toBe(400);
+    expect((await bad('user:not-a-uuid')).status).toBe(400);
+    expect((await bad('boss')).status).toBe(400);
+    expect((await bad('field:requesterId', 'approvals.request_decided', 'line')).status).toBe(400);
+    expect((await bad('field:itemCode', 'inventory.low_stock')).status).toBe(400);
+    const ok = await t.api('POST', '/rules', { name: 'ถึงผู้ขอ', eventType: 'approvals.request_decided', actions: [{ type: 'notify', to: 'field:requesterId' }] });
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ recipients: 'ผู้ขอ', summary: 'เมื่อคำขออนุมัติมีผลแล้ว ให้แจ้งเตือนในแอป (ถึงผู้ขอ)' });
+    await t.api('DELETE', `/rules/${ok.body.id}`);
+  });
+
+  it('addresses alerts to people: approver + delegate, a picked user, nobody → no broadcast', async () => {
+    const tid = randomUUID(); // isolated tenant for clean counts
+    const admin = t.token(['*'], tid);
+    await t.api('POST', '/templates/approval-to-approver/apply', {}, { token: admin });
+    const boss = randomUUID(); const deputy = randomUUID(); const staff = randomUUID();
+    const data = { ...SAMPLES['approvals.request_submitted'], requestId: randomUUID(), nextApproverId: boss, delegateId: deputy, delegateName: 'รอง' };
+    expect((await t.deliver('approvals.request_submitted', data, { tenantId: tid })).body.status).toBe('handled');
+    const bossBell = (await t.api('GET', '/notifications', undefined, { token: tok(boss, tid) })).body;
+    expect(bossBell).toMatchObject({ unread: 1 });
+    expect(bossBell.items[0]).toMatchObject({ personal: true, recipient_user_id: boss, read_at: null });
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(deputy, tid) })).body.unread).toBe(1);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(staff, tid) })).body).toEqual({ unread: 0, items: [] });
+    const runs = (await t.api('GET', '/runs', undefined, { token: admin })).body;
+    expect(runs[0].detail).toContain('แจ้งในแอปแล้ว (ถึงผู้อนุมัติขั้นนี้ / ผู้อนุมัติแทน (ช่วงผู้อนุมัติไม่อยู่) 2 คน)');
+
+    // an event without the user id → nothing in anyone's bell, and the run says why
+    const { nextApproverId: _drop, ...noApprover } = data as any;
+    await t.deliver('approvals.request_submitted', { ...noApprover, nextApproverId: '00000000-0000-0000-0000-000000000000', delegateId: undefined }, { tenantId: tid });
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(staff, tid) })).body.unread).toBe(0);
+
+    // the simple form can pick one user
+    const picked = await t.api('POST', '/rules/simple', { name: 'แจ้งคุณเอ', eventType: 'crm.lead_created', actionType: 'notify', toUserId: staff }, { token: admin });
+    expect(picked.body).toMatchObject({ recipients: 'ผู้ใช้ที่เลือก' });
+    // the form's default 'all' does not break a LINE rule
+    expect((await t.api('POST', '/rules/simple', { name: 'LINE', eventType: 'crm.lead_created', actionType: 'line', target: 'G1', to: 'all' }, { token: admin })).status).toBe(201);
+    expect((await t.api('POST', '/rules/simple', { name: 'ผู้ขอ', eventType: 'approvals.request_decided', actionType: 'notify', to: 'field:requesterId' }, { token: admin })).body.recipients).toBe('ผู้ขอ');
+    await t.deliver('crm.lead_created', { leadId: randomUUID(), no: 'LD-1', company: 'A', contactName: null, source: 'line' }, { tenantId: tid });
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(staff, tid) })).body.items.map((x: any) => x.title)).toEqual(['แจ้งคุณเอ']);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(boss, tid) })).body.items.map((x: any) => x.title)).not.toContain('แจ้งคุณเอ');
+  });
+
+  it('keeps read state per person: broadcast read by one stays unread for others; personal ones are private', async () => {
+    const tid = randomUUID();
+    const admin = t.token(['*'], tid);
+    await t.api('POST', '/templates/low-stock-alert/apply', {}, { token: admin });
+    await t.api('POST', '/templates/approval-approved/apply', {}, { token: admin });
+    const a = randomUUID(); const b = randomUUID();
+    await t.deliver('inventory.low_stock', lowStock(1), { tenantId: tid });
+    await t.deliver('inventory.low_stock', lowStock(2), { tenantId: tid });
+    await t.deliver('approvals.request_decided', { ...SAMPLES['approvals.request_decided'], requestId: randomUUID(), decision: 'approved', requesterId: a }, { tenantId: tid });
+
+    const aBell = (await t.api('GET', '/notifications', undefined, { token: tok(a, tid) })).body;
+    expect(aBell.unread).toBe(3);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(b, tid) })).body.unread).toBe(2);
+    const broadcast = aBell.items.find((x: any) => !x.personal);
+    const personal = aBell.items.find((x: any) => x.personal);
+    expect(personal.body).toContain('ของคุณได้รับการอนุมัติแล้ว');
+
+    // b cannot read (or even see) a's personal alert
+    expect((await t.api('POST', `/notifications/${personal.id}/read`, {}, { token: tok(b, tid) })).status).toBe(404);
+    // a reads one broadcast → only a's count drops
+    const r = await t.api('POST', `/notifications/${broadcast.id}/read`, {}, { token: tok(a, tid) });
+    expect(r.body.read_at).toBeTruthy();
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(a, tid) })).body.unread).toBe(2);
+    expect((await t.api('GET', '/notifications?unread=1', undefined, { token: tok(b, tid) })).body.items).toHaveLength(2);
+    // read-all for b clears b's broadcasts, leaves a untouched
+    expect((await t.api('POST', '/notifications/read-all', {}, { token: tok(b, tid) })).body.updated).toBe(2);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(b, tid) })).body.unread).toBe(0);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(a, tid) })).body.unread).toBe(2);
+    expect((await t.api('POST', '/notifications/read-all', {}, { token: tok(a, tid) })).body.updated).toBe(2);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(a, tid) })).body.unread).toBe(0);
+    // the unread KPI is per user too
+    expect((await t.api('GET', '/summary', undefined, { token: t.token(['automation.rule.read'], tid, { userId: a }) })).body.unread).toBe(0);
+    // another tenant sees none of it and cannot mark it
+    expect((await t.api('POST', `/notifications/${broadcast.id}/read`, {}, { token: tok(a, tenant()) })).status).toBe(404);
+    expect((await t.api('GET', '/notifications', undefined, { token: t.token([]) })).status).toBe(403);
+  });
+
+  it('rules applied from a template before recipients existed follow the template (no more broadcast of personal news)', async () => {
+    const tid = randomUUID();
+    const admin = t.token(['*'], tid);
+    const rule = (await t.api('POST', '/templates/approval-approved/apply', {}, { token: admin })).body;
+    // simulate a pre-wave-4 rule: the stored notify action has no `to`
+    await t.svc.db.tx(tid, (c) => c.query(`update rules set actions = '[{"type":"notify","message":"เก่า {{no}}"}]' where id = $1`, [rule.id]));
+    const requester = randomUUID();
+    await t.deliver('approvals.request_decided', { ...SAMPLES['approvals.request_decided'], requestId: randomUUID(), decision: 'approved', requesterId: requester }, { tenantId: tid });
+    const stored = (await t.api('GET', `/rules/${rule.id}`, undefined, { token: admin })).body;
+    expect(stored.actions[0]).toMatchObject({ to: 'field:requesterId', message: 'เก่า {{no}}' });
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(randomUUID(), tid) })).body.unread).toBe(0);
+    expect((await t.api('GET', '/notifications', undefined, { token: tok(requester, tid) })).body.items.map((x: any) => x.body)).toEqual(['เก่า APV-2569-0007']);
   });
 });

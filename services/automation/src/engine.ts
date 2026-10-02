@@ -22,13 +22,55 @@ export function matches(conditions: Condition[], data: unknown): boolean {
 }
 
 const nf = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 });
-/** "{{itemCode}} เหลือ {{onHand}}" with numbers formatted the Thai way. */
+/** Thai wording for the English enum codes events carry — `{{decision:th}}`. */
+const ENUM_TH: Record<string, string> = {
+  approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', returned: 'ส่งกลับแก้ไข', cancelled: 'ยกเลิก',
+  low: 'ต่ำ', normal: 'ปกติ', high: 'สูง', urgent: 'ด่วนมาก', pass: 'ผ่าน', fail: 'ไม่ผ่าน', conditional: 'ผ่านแบบมีเงื่อนไข',
+  minor: 'เล็กน้อย', major: 'สำคัญ', critical: 'วิกฤต', true: 'ใช่', false: 'ไม่ใช่',
+};
+/** "{{itemCode}} เหลือ {{onHand}}" with numbers formatted the Thai way; `{{field:th}}` translates enum codes. */
 export function render(template: string, data: unknown): string {
-  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
+  return template.replace(/\{\{\s*([\w.]+)(:th)?\s*\}\}/g, (_, key: string, th?: string) => {
     const v = get(data, key);
     if (v === undefined || v === null) return '-';
+    if (th) return ENUM_TH[String(v)] ?? String(v);
     return typeof v === 'number' ? nf.format(v) : String(v);
   });
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Parsed `to` of a notify action. */
+export type Recipients = { kind: 'all' } | { kind: 'fields'; fields: string[] } | { kind: 'user'; userId: string };
+
+/** Parse `to` ('all' | 'field:a,b' | 'user:<uuid>'); returns an error text for anything else. */
+export function parseTo(to: string | undefined): Recipients | string {
+  const v = (to ?? '').trim();
+  if (!v || v === 'all') return { kind: 'all' };
+  if (v.startsWith('field:')) {
+    const fields = v.slice(6).split(',').map((x) => x.trim()).filter(Boolean);
+    return fields.length ? { kind: 'fields', fields } : 'ระบุช่องข้อมูลผู้รับ เช่น field:requesterId';
+  }
+  if (v.startsWith('user:')) return UUID.test(v.slice(5)) ? { kind: 'user', userId: v.slice(5).toLowerCase() } : 'รหัสผู้ใช้ (user:…) ไม่ถูกต้อง';
+  return 'ผู้รับต้องเป็น all, field:<ช่อง> หรือ user:<รหัสผู้ใช้>';
+}
+
+/** Who gets a notification for this event: null = everyone (broadcast), otherwise the distinct user ids (may be empty). */
+export function resolveRecipients(to: string | undefined, data: unknown): string[] | null {
+  const r = parseTo(to);
+  if (typeof r === 'string' || r.kind === 'all') return null;
+  if (r.kind === 'user') return [r.userId];
+  const ids = r.fields.map((f) => get(data, f)).filter((x): x is string => typeof x === 'string' && UUID.test(x)).map((x) => x.toLowerCase());
+  return [...new Set(ids)];
+}
+
+/** Thai wording of `to` for rule summaries. */
+export function describeTo(to: string | undefined, eventType: string): string {
+  const r = parseTo(to);
+  if (typeof r === 'string' || r.kind === 'all') return 'ทุกคน';
+  if (r.kind === 'user') return 'ผู้ใช้ที่เลือก';
+  const ev = eventInfo(eventType);
+  return r.fields.map((f) => ev?.userFields?.find((x) => x.key === f)?.label ?? f).join(' / ');
 }
 
 /** In-app link for a notification: values are path-encoded so event data can never change where it points. */
@@ -49,7 +91,7 @@ export function describe(rule: { event_type: string; conditions: Condition[]; ac
   const cond = rule.conditions.length
     ? ` ถ้า ${rule.conditions.map((c) => `${ev?.fields.find((f) => f.key === c.field)?.label ?? c.field} ${OPS_TH[c.op]} ${typeof c.value === 'number' ? nf.format(c.value) : c.value}`).join(' และ ')}`
     : '';
-  const act = ` ให้${[...new Set(rule.actions.map((a) => ACTION_TH[a.type]))].join(' + ')}`;
+  const act = ` ให้${[...new Set(rule.actions.map((a) => (a.type === 'notify' && a.to && a.to !== 'all' ? `${ACTION_TH.notify} (ถึง${describeTo(a.to, rule.event_type)})` : ACTION_TH[a.type])))].join(' + ')}`;
   return `${when}${cond}${act}`;
 }
 

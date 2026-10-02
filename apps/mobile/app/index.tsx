@@ -40,7 +40,7 @@ export default function Home() {
       <Stack.Screen options={{ title: session?.tenant.name ?? 'ERP' }} />
       <View style={{ paddingHorizontal: 16 }}>
         <Text style={st.hello}>สวัสดี {session?.user.name?.split(' ')[0] ?? ''}</Text>
-        <Text style={s.muted}>ภาพรวมโรงงานวันนี้ — ดึงลงเพื่ออัปเดต</Text>
+        <Text style={s.muted}>ภาพรวมวันนี้ — ดึงลงเพื่ออัปเดต</Text>
         <ErrorText text={error} />
       </View>
 

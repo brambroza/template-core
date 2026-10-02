@@ -9,10 +9,12 @@ The project page shows progress, hours vs estimate and labour cost vs budget. Re
 - `projects` (`PJ-2569-0001`, `planning → active → on_hold → done | cancelled`, budget `numeric(18,4)`, customer + manager snapshots)
 - `project_members` (user snapshot, role, `hourly_rate`; unique per project/user — POST upserts)
 - `milestones` (name, due_date, done) · `tasks` (title, assignee snapshot, `todo | doing | review | done`, priority `low | normal | high | urgent`, due_date, estimate_hours, milestone)
-- `timesheet_weeks` (one per user per ISO week, `week_start` = Monday, `draft → submitted → approved`, reject → draft with reason)
+- `timesheet_weeks` (one per user per ISO week, `week_start` = Monday, `draft → submitted → approved`, reject → draft with reason; `user_name`, `approved_by_name`, `rejected_by_name`)
 - `timesheet_entries` (work_date, project, task optional, hours 0.25–24, note, user from the token)
 
 ## Behaviour
+- Timesheet `user_name` = the token's name (`auth(req).userName`); a typed `userName` / the member snapshot are only fallbacks for old tokens.
+  Logging or submitting with a named token refreshes the week's name, so the approval list never shows a blank. Approve / send back record the approver's name.
 - Progress % = done estimate hours / all estimate hours; when no task has an estimate, done tasks / all tasks.
 - Cost = Σ hours × the logging user's `hourly_rate` on that project (0 if not a member; rate changes re-price history).
   `budget_at_risk` = budget > 0 and cost > 90% of budget.

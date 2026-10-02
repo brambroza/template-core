@@ -28,6 +28,10 @@ const position: Field = {
   name: 'positionId', label: 'ตำแหน่ง', type: 'lookup',
   lookup: { path: '/positions', label: ['code', 'name'], assign: { positionId: 'id' } },
 };
+const managerLookup = (name: string, label: string, help: string): Field => ({
+  name, label, type: 'lookup', help,
+  lookup: { path: '/employees', query: { status: 'current' }, label: ['code', 'full_name', 'nickname'], assign: { [name]: 'id' } },
+});
 const leaveFields: Field[] = [
   leaveType,
   { name: 'fromDate', label: 'ลาตั้งแต่วันที่', type: 'date', required: true },
@@ -48,6 +52,7 @@ const employeeFields: Field[] = [
   { name: 'phone', label: 'โทรศัพท์', type: 'text' },
   { name: 'email', label: 'อีเมล', type: 'email' },
   { name: 'status', label: 'สถานะ', type: 'select', default: 'active', options: [{ value: 'active', label: 'พนักงานประจำ' }, { value: 'probation', label: 'ทดลองงาน' }] },
+  managerLookup('managerId', 'หัวหน้างาน (ผู้อนุมัติใบลา)', 'เว้นว่าง = หัวหน้าแผนก — หัวหน้าต้องผูกบัญชีผู้ใช้จึงจะอนุมัติได้ ถ้าไม่มี ใบลาจะไปที่ฝ่ายบุคคล'),
   { name: 'userId', label: 'บัญชีผู้ใช้ (สำหรับลงเวลา/ลาเอง)', type: 'lookup', help: 'ผูกกับผู้ใช้ในระบบ เพื่อให้พนักงานลงเวลาและยื่นใบลาจากมือถือได้เอง',
     lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { userId: 'id' } } },
 ];
@@ -71,7 +76,8 @@ export default defineUi({
     { label: 'ของฉัน (ลงเวลา/วันลา)', screen: 'me' },
     { label: 'ยื่นใบลา', screen: 'leaveNew' },
     { label: 'ใบลาของฉัน', screen: 'myLeaves' },
-    { label: 'ใบลารออนุมัติ', screen: 'leaveInbox' },
+    { label: 'ใบลาลูกทีมรอฉันอนุมัติ', screen: 'teamLeaveInbox' },
+    { label: 'ใบลารออนุมัติ (ฝ่ายบุคคล)', screen: 'leaveInbox' },
     { label: 'ใบลาทั้งหมด', screen: 'leaveList' },
     { label: 'เวลาทำงานวันนี้', screen: 'attendanceDaily' },
     { label: 'สรุปเวลาทำงานรายเดือน', screen: 'attendanceMonthly' },
@@ -85,8 +91,8 @@ export default defineUi({
   commands: [
     { id: 'leave', label: 'ยื่นใบลา', example: 'ลา ป่วย ไข้หวัด', keywords: ['ขอลา', 'ลา', 'ยื่นลา', 'leave'], screen: 'leaveNew', perm: 'hr.leave.request',
       arg: { lookup: { path: '/leave-types', label: ['name', 'code'], assign: { leaveTypeId: 'id' } } }, restField: 'reason' },
-    { id: 'checkin', label: 'ลงเวลาเข้างาน', example: 'ลงเวลา', keywords: ['ลงเวลา', 'เข้างาน', 'สแกนเข้า', 'check in'], screen: 'checkIn', perm: 'hr.attendance.self' },
-    { id: 'checkout', label: 'ลงเวลาออกงาน', example: 'ออกงาน', keywords: ['ออกงาน', 'เลิกงาน', 'สแกนออก', 'check out'], screen: 'checkOut', perm: 'hr.attendance.self' },
+    { id: 'checkin', label: 'ลงเวลาเข้างาน', example: 'ลงเวลา', keywords: ['ลงเวลา', 'ลงเวลาเข้างาน', 'เข้างาน', 'สแกนเข้า', 'check in'], screen: 'checkIn', perm: 'hr.attendance.self' },
+    { id: 'checkout', label: 'ลงเวลาออกงาน', example: 'ออกงาน', keywords: ['ออกงาน', 'ลงเวลาออกงาน', 'ลงเวลาออก', 'เลิกงาน', 'สแกนออก', 'check out'], screen: 'checkOut', perm: 'hr.attendance.self' },
     { id: 'employee', label: 'เปิดข้อมูลพนักงาน', example: 'พนักงาน EMP-001', keywords: ['พนักงาน', 'ประวัติพนักงาน', 'employee'], screen: 'employeeDetail', perm: 'hr.employee.read',
       arg: { lookup: { path: '/employees', label: ['code', 'full_name', 'nickname'], assign: { employeeId: 'id' } }, openId: 'id' } },
   ],
@@ -101,7 +107,8 @@ export default defineUi({
       fields: [
         { key: 'message', label: 'หมายเหตุ' },
         { key: 'employee.code', label: 'รหัสพนักงาน' }, { key: 'employee.department_name', label: 'แผนก' }, { key: 'employee.position_name', label: 'ตำแหน่ง' },
-        { key: 'schedule', label: 'เวลางาน' },
+        { key: 'schedule', label: 'เวลางาน' }, { key: 'approverName', label: 'ผู้อนุมัติใบลาของฉัน' },
+        { key: 'teamPending', label: 'ใบลาลูกทีมรอฉันอนุมัติ', format: 'qty' },
         { key: 'today.check_in_at', label: 'เข้างานวันนี้', format: 'datetime' }, { key: 'today.late_minutes', label: 'สาย (นาที)', format: 'qty' },
         { key: 'today.check_out_at', label: 'ออกงานวันนี้', format: 'datetime' },
       ],
@@ -146,15 +153,28 @@ export default defineUi({
     },
 
     /* ---------- leave (HR / approvers) ---------- */
-    leaveInbox: {
-      kind: 'list', title: 'ใบลารออนุมัติ', endpoint: '/leave-requests/pending', perm: 'hr.leave.approve', mobile: true,
-      filters: [{ name: 'q', label: 'ค้นหาชื่อ/เลขที่', type: 'text' }, department],
+    teamLeaveInbox: {
+      kind: 'list', title: 'ใบลาลูกทีมรอฉันอนุมัติ', endpoint: '/leave-requests/inbox', perm: 'hr.leave.request', mobile: true,
+      filters: [{ name: 'q', label: 'ค้นหาชื่อ/เลขที่', type: 'text' }],
       columns: [...leaveColumns.filter((c) => c.key !== 'status'), { key: 'reason', label: 'เหตุผล' }],
+      rowLink: { screen: 'leaveDetail' }, empty: 'ไม่มีใบลาของลูกทีมที่รอคุณอนุมัติ',
+      rowActions: [
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/approve', perm: 'hr.leave.request', tone: 'primary', mobile: true,
+          when: { field: 'can_decide', in: [true] } },
+        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/reject', perm: 'hr.leave.request', tone: 'danger', mobile: true,
+          when: { field: 'can_decide', in: [true] }, fields: [{ name: 'note', label: 'เหตุผลที่ไม่อนุมัติ', type: 'textarea', required: true }] },
+      ],
+    },
+    leaveInbox: {
+      kind: 'list', title: 'ใบลารออนุมัติ (ฝ่ายบุคคล)', endpoint: '/leave-requests/pending', perm: 'hr.leave.approve', mobile: true,
+      filters: [{ name: 'q', label: 'ค้นหาชื่อ/เลขที่', type: 'text' }, department],
+      columns: [...leaveColumns.filter((c) => c.key !== 'status'), { key: 'approver_label', label: 'ผู้อนุมัติ' }, { key: 'reason', label: 'เหตุผล' }],
       rowLink: { screen: 'leaveDetail' }, empty: 'ไม่มีใบลารออนุมัติ',
       rowActions: [
-        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/approve', perm: 'hr.leave.approve', tone: 'primary', mobile: true },
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/approve', perm: 'hr.leave.approve', tone: 'primary', mobile: true,
+          when: { field: 'can_decide', in: [true] } },
         { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/reject', perm: 'hr.leave.approve', tone: 'danger', mobile: true,
-          fields: [{ name: 'note', label: 'เหตุผลที่ไม่อนุมัติ', type: 'textarea', required: true }] },
+          when: { field: 'can_decide', in: [true] }, fields: [{ name: 'note', label: 'เหตุผลที่ไม่อนุมัติ', type: 'textarea', required: true }] },
       ],
     },
     leaveList: {
@@ -183,14 +203,16 @@ export default defineUi({
         { key: 'from_date', label: 'ตั้งแต่วันที่', format: 'date' }, { key: 'to_date', label: 'ถึงวันที่', format: 'date' },
         { key: 'half_day', label: 'ครึ่งวัน', format: 'boolean' }, { key: 'days', label: 'จำนวนวันทำงานที่ลา', format: 'qty' },
         { key: 'reason', label: 'เหตุผล' }, { key: 'balance.remaining', label: 'คงเหลือหลังหักใบนี้ (วัน)', format: 'qty' },
-        { key: 'created_at', label: 'ยื่นเมื่อ', format: 'datetime' }, { key: 'decided_at', label: 'พิจารณาเมื่อ', format: 'datetime' },
+        { key: 'approver_label', label: 'ผู้อนุมัติ' },
+        { key: 'requested_by_name', label: 'ยื่นโดย' }, { key: 'created_at', label: 'ยื่นเมื่อ', format: 'datetime' },
+        { key: 'decided_by_name', label: 'พิจารณาโดย' }, { key: 'decided_at', label: 'พิจารณาเมื่อ', format: 'datetime' },
         { key: 'decision_note', label: 'หมายเหตุผู้อนุมัติ' },
       ],
       actions: [
-        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/approve', perm: 'hr.leave.approve', tone: 'primary', mobile: true,
-          when: { field: 'status', in: ['pending'] } },
-        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/reject', perm: 'hr.leave.approve', tone: 'danger', mobile: true,
-          when: { field: 'status', in: ['pending'] }, fields: [{ name: 'note', label: 'เหตุผลที่ไม่อนุมัติ', type: 'textarea', required: true }] },
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/approve', perm: 'hr.leave.request', tone: 'primary', mobile: true,
+          when: { field: 'can_decide', in: [true] } },
+        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/leave-requests/:id/reject', perm: 'hr.leave.request', tone: 'danger', mobile: true,
+          when: { field: 'can_decide', in: [true] }, fields: [{ name: 'note', label: 'เหตุผลที่ไม่อนุมัติ', type: 'textarea', required: true }] },
         { id: 'cancel', label: 'ยกเลิกใบลา', method: 'POST', endpoint: '/leave-requests/:id/cancel', perm: 'hr.leave.request', tone: 'danger', mobile: true,
           when: { field: 'status', in: ['pending', 'approved'] }, confirm: 'ยกเลิกใบลานี้?' },
       ],
@@ -250,6 +272,7 @@ export default defineUi({
       fields: [
         { key: 'code', label: 'รหัสพนักงาน' }, { key: 'nickname', label: 'ชื่อเล่น' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'department_name', label: 'แผนก' }, { key: 'position_name', label: 'ตำแหน่ง' },
+        { key: 'manager_name', label: 'หัวหน้างาน' }, { key: 'approver_label', label: 'ผู้อนุมัติใบลา' },
         { key: 'start_date', label: 'วันเริ่มงาน', format: 'date' }, { key: 'birth_date', label: 'วันเกิด', format: 'date' },
         { key: 'phone', label: 'โทรศัพท์' }, { key: 'email', label: 'อีเมล' }, { key: 'resigned_on', label: 'วันที่ลาออก', format: 'date' },
       ],
@@ -259,6 +282,9 @@ export default defineUi({
           { key: 'pending', label: 'รออนุมัติ', format: 'qty' }, { key: 'remaining', label: 'คงเหลือ', format: 'qty' },
         ] },
         { path: 'leaves', label: 'ใบลาล่าสุด', columns: leaveColumns.filter((c) => c.key !== 'employee_name') },
+        { path: 'reports', label: 'ลูกทีม (หัวหน้าโดยตรง)', columns: [
+          { key: 'code', label: 'รหัส' }, { key: 'full_name', label: 'ชื่อ-สกุล' }, { key: 'position_name', label: 'ตำแหน่ง' },
+        ] },
         { path: 'attendance', label: 'ลงเวลาล่าสุด', columns: [
           { key: 'work_date', label: 'วันที่', format: 'date' }, { key: 'check_in_at', label: 'เข้า', format: 'datetime' },
           { key: 'check_out_at', label: 'ออก', format: 'datetime' }, { key: 'late_minutes', label: 'สาย (นาที)', format: 'qty' },
@@ -287,12 +313,12 @@ export default defineUi({
     },
     departmentNew: {
       kind: 'form', title: 'เพิ่มแผนก', method: 'POST', endpoint: '/departments', perm: 'hr.employee.write',
-      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อแผนก', type: 'text', required: true }, { name: 'managerName', label: 'หัวหน้าแผนก', type: 'text' }],
+      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อแผนก', type: 'text', required: true }, managerLookup('managerEmployeeId', 'หัวหน้าแผนก', 'เป็นผู้อนุมัติใบลาของพนักงานในแผนกที่ไม่ได้ระบุหัวหน้างาน')],
       submitLabel: 'บันทึกแผนก', after: { screen: 'departments' },
     },
     departmentEdit: {
       kind: 'form', title: 'แก้ไขแผนก', method: 'PATCH', endpoint: '/departments/:id', load: '/departments/:id', perm: 'hr.employee.write',
-      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อแผนก', type: 'text', required: true }, { name: 'managerName', label: 'หัวหน้าแผนก', type: 'text' }, { name: 'active', label: 'ใช้งาน', type: 'boolean' }],
+      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อแผนก', type: 'text', required: true }, managerLookup('managerEmployeeId', 'หัวหน้าแผนก', 'เป็นผู้อนุมัติใบลาของพนักงานในแผนกที่ไม่ได้ระบุหัวหน้างาน'), { name: 'active', label: 'ใช้งาน', type: 'boolean' }],
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'departmentDetail', idFrom: 'id' },
     },
     departmentDetail: {

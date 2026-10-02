@@ -548,7 +548,16 @@ export const definition: ServiceDefinition = {
             `update opportunities set stage = 'won', probability = 100, value = $2, won_at = now(), closed_at = now(), lost_reason = null, updated_at = now()
              where id = $1 and stage <> 'won'`, [q.opportunity_id, q.net]);
         }
-        await k.emit(c, 'crm.quotation_accepted', { quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross });
+        // customer snapshot + lines let Sales draft the sales order (enhancedBy crm) without retyping
+        await k.emit(c, 'crm.quotation_accepted', {
+          quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross,
+          partnerId: q.partner_id, customerTaxId: q.customer_tax_id, customerBranch: q.customer_branch, customerAddress: q.customer_address,
+          opportunityId: q.opportunity_id, vatMode: q.vat_mode, subtotal: q.subtotal, discount: q.discount, net: q.net, vat: q.vat,
+          lines: q.lines.map((l: any) => ({
+            itemId: l.item_id, itemCode: l.item_code, itemName: l.item_name, description: l.description,
+            qty: l.qty, unitPrice: l.unit_price, discountPct: l.discount_pct, amount: l.amount,
+          })),
+        });
         return loadQuote(c, id);
       });
     });

@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { fillPath, get, hasPerm, matches, routeParams, type DetailScreen } from '@erp/ui-schema';
+import { buyerInfo, COPY_LABELS, companyProblems, fillPath, get, hasPerm, matches, printSpec, routeParams, signatureBoxes, type CompanyProfile, type CopyLabel, type DetailScreen } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
 import { FlowStepper } from './FlowStepper';
+import { loadCompany } from './print/company';
+import { BuyerBlock, Letterhead, PrintFooter, Signatures } from './print/PrintParts';
 import { isNumeric, Value } from './Value';
 
 const rank = (tone?: string) => (tone === 'primary' ? 0 : tone === 'danger' ? 2 : 1);
@@ -21,6 +23,10 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const params = routeParams(screen.endpoint, id);
+  const printable = !!(screen.print || screen.printable);
+  const [company, setCompany] = useState<CompanyProfile | null | undefined>(undefined);
+  const [copy, setCopy] = useState<CopyLabel>(COPY_LABELS[0]);
+  useEffect(() => { if (printable) loadCompany().then(setCompany); }, [printable]);
 
   const load = useCallback(() => {
     api<Record<string, unknown>>(module, fillPath(screen.endpoint, params)).then(setRecord).catch((e) => setError(e.message));
@@ -35,12 +41,19 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
   const actions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm) && matches(record, a.when))
     .map((a) => (a.tone === 'primary' && a !== firstPrimary ? { ...a, tone: 'default' as const } : a))
     .sort((a, b) => rank(a.tone) - rank(b.tone));
+  const print = printSpec(screen, company?.signature_labels ?? []);
+  const docNo = String(get(record, screen.heading) ?? '');
+  const buyer = print && print.legal !== 'none' ? buyerInfo(record) : null;
+  const onPaperElsewhere = new Set(buyer?.keys ?? []);
+  // shown on screen only: what the company profile lacks for this document (undefined = still loading)
+  const problems = print && company !== undefined && (print.legal !== 'none' || hasPerm(perms, 'identity.company.write')) ? companyProblems(company, print.legal) : [];
   return (
-    <article className={`screen detail${screen.printable ? ' printable' : ''}`}>
+    <article className={`screen detail${print ? ' printable print-doc' : ''}`}>
+      {print && <Letterhead company={company ?? null} title={print.title} docNo={docNo} copyLabel={print.copyLabel ? copy : undefined} />}
       <header className="screen-head">
         <div>
           <p className="doc-kind">{screen.title}</p>
-          <h1 className="doc-no">{String(get(record, screen.heading) ?? '')}</h1>
+          <h1 className="doc-no">{docNo}</h1>
         </div>
         <div className="screen-actions no-print">
           {actions.map((a) => (
@@ -48,15 +61,33 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
               onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined)) : load())} />
           ))}
           {screen.edit && <Link className="btn" href={screenHref(module, screen.edit, id)}>แก้ไข</Link>}
-          {screen.printable && <button type="button" className="btn" onClick={() => window.print()}>พิมพ์</button>}
+          {print?.copyLabel && (
+            <select className="print-copy" aria-label="พิมพ์เป็น" value={copy} onChange={(e) => setCopy(e.target.value as CopyLabel)}>
+              {COPY_LABELS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          {print && (
+            <button type="button" className="btn" onClick={() => window.print()} title="บันทึกเป็น PDF: ในหน้าต่างพิมพ์ เลือกปลายทาง “บันทึกเป็น PDF” (Save as PDF)">
+              พิมพ์ / บันทึกเป็น PDF
+            </button>
+          )}
         </div>
       </header>
+
+      {problems.length > 0 && (
+        <div className="print-warning no-print" role="status">
+          {problems.map((p) => <p key={p}>{p}</p>)}
+          {hasPerm(perms, 'identity.company.write') && <Link href={screenHref('identity', 'companyEdit')}>ตั้งค่าข้อมูลบริษัท</Link>}
+        </div>
+      )}
+
+      {buyer && <BuyerBlock buyer={buyer} />}
 
       {screen.flow && <FlowStepper flow={screen.flow} record={record} />}
 
       <dl className="facts">
         {screen.fields.filter((f) => { const v = get(record, f.key); return v !== null && v !== undefined && v !== ''; }).map((f) => (
-          <div key={f.key} className={f.format === 'qr' ? 'fact fact-qr' : isLong(get(record, f.key)) ? 'fact fact-wide' : 'fact'}>
+          <div key={f.key} className={(f.format === 'qr' ? 'fact fact-qr' : isLong(get(record, f.key)) ? 'fact fact-wide' : 'fact') + (onPaperElsewhere.has(f.key) ? ' screen-only' : '')}>
             <dt>{f.label}</dt>
             <dd className={isNumeric(f.format) ? 'num' : undefined}><Value value={get(record, f.key)} format={f.format} /></dd>
           </div>
@@ -84,6 +115,9 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
           </section>
         );
       })}
+
+      {print && <Signatures boxes={signatureBoxes(print, record)} />}
+      {print && <PrintFooter note={company?.footer_note} />}
     </article>
   );
 }

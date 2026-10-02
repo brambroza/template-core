@@ -23,6 +23,14 @@ const ticketFields: Field[] = [
   { name: 'requesterContact', label: 'ติดต่อกลับ (โทร/LINE/อีเมล)', type: 'text' },
 ];
 
+/** Technicians logging a customer's call: link the customer (master-data partner) and the affected equipment. */
+const serviceFields: Field[] = [
+  ...ticketFields,
+  { name: 'customerId', label: 'ลูกค้า', type: 'lookup',
+    lookup: { module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'], assign: { customerId: 'id', customerCode: 'code', customerName: 'name' } } },
+  { name: 'assetRef', label: 'อุปกรณ์ / Serial No.', type: 'text', help: 'เช่น รหัสทรัพย์สิน รุ่น หรือหมายเลขเครื่อง' },
+];
+
 const ticketColumns: Column[] = [
   { key: 'no', label: 'เลขที่' }, { key: 'title', label: 'เรื่อง' }, { key: 'category_name', label: 'หมวด' },
   { key: 'priority_label', label: 'ความเร่งด่วน' }, { key: 'status', label: 'สถานะ', format: 'status' },
@@ -65,6 +73,7 @@ export default defineUi({
   icon: 'life-buoy',
   menu: [
     { label: 'แจ้งปัญหา', screen: 'ticketNew' },
+    { label: 'บันทึกเรื่องจากลูกค้า', screen: 'ticketLog' },
     { label: 'เรื่องที่ฉันแจ้ง', screen: 'myRequests' },
     { label: 'งานของฉัน', screen: 'myTickets' },
     { label: 'เรื่องทั้งหมด', screen: 'tickets' },
@@ -72,15 +81,17 @@ export default defineUi({
     { label: 'ฐานความรู้', screen: 'articles' },
     { label: 'ข้อความสำเร็จรูป', screen: 'cannedReplies' },
     { label: 'หมวดหมู่และ SLA', screen: 'categories' },
+    { label: 'เวลาทำการ (SLA)', screen: 'slaSettings' },
+    { label: 'วันหยุด', screen: 'holidays' },
   ],
   commands: [
     { id: 'report', label: 'แจ้งปัญหา', example: 'แจ้งปัญหา ปริ้นเตอร์ชั้น 2 กระดาษติด', keywords: ['แจ้งปัญหา', 'แจ้งเรื่อง', 'ticket'], screen: 'ticketNew', perm: 'helpdesk.ticket.create', restField: 'title' },
-    { id: 'mine', label: 'งานค้างของฉัน', example: 'งานค้างของฉัน', keywords: ['งานค้างของฉัน', 'งานของฉัน', 'my tickets'], screen: 'myTickets', perm: 'helpdesk.ticket.work' },
+    { id: 'mine', label: 'งานค้างของฉัน', example: 'งานค้างของฉัน', keywords: ['งานค้างของฉัน', 'เรื่องที่ฉันรับ', 'my tickets'], screen: 'myTickets', perm: 'helpdesk.ticket.work' },
     { id: 'kb', label: 'ค้นวิธีแก้ในฐานความรู้', example: 'วิธีแก้ VPN', keywords: ['วิธีแก้', 'ฐานความรู้', 'kb'], screen: 'articles', perm: 'helpdesk.kb.read', restField: 'q' },
     { id: 'overdue', label: 'เรื่องที่เกิน SLA', example: 'เกิน SLA', keywords: ['เกิน sla', 'เลยกำหนด'], screen: 'overdueTickets', perm: 'helpdesk.ticket.read' },
   ],
   search: [
-    { id: 'tickets', title: 'เรื่องแจ้งปัญหา', endpoint: '/tickets', label: ['no', 'title', 'requester_name'], screen: 'ticket', perm: 'helpdesk.ticket.read' },
+    { id: 'tickets', title: 'เรื่องแจ้งปัญหา', endpoint: '/tickets', label: ['no', 'title', 'requester_name', 'customer_name', 'asset_ref'], screen: 'ticket', perm: 'helpdesk.ticket.read' },
     { id: 'articles', title: 'ฐานความรู้', endpoint: '/articles', label: ['title', 'excerpt'], screen: 'article', perm: 'helpdesk.kb.read' },
   ],
   screens: {
@@ -88,6 +99,10 @@ export default defineUi({
     ticketNew: {
       kind: 'form', title: 'แจ้งปัญหา', method: 'POST', endpoint: '/tickets', perm: 'helpdesk.ticket.create', mobile: true,
       fields: ticketFields, submitLabel: 'ส่งเรื่อง', after: { screen: 'ticket', idFrom: 'id' },
+    },
+    ticketLog: {
+      kind: 'form', title: 'บันทึกเรื่องจากลูกค้า', method: 'POST', endpoint: '/tickets', perm: 'helpdesk.ticket.work', mobile: true,
+      fields: serviceFields, submitLabel: 'บันทึกเรื่อง', after: { screen: 'ticket', idFrom: 'id' },
     },
     myRequests: {
       kind: 'list', title: 'เรื่องที่ฉันแจ้ง', endpoint: '/tickets/requested', perm: 'helpdesk.ticket.create', mobile: true,
@@ -102,7 +117,7 @@ export default defineUi({
     tickets: {
       kind: 'list', title: 'เรื่องแจ้งปัญหาทั้งหมด', endpoint: '/tickets', perm: 'helpdesk.ticket.read', mobile: true,
       filters: [
-        { name: 'q', label: 'ค้นหาเลขที่ เรื่อง ผู้แจ้ง', type: 'text' },
+        { name: 'q', label: 'ค้นหาเลขที่ เรื่อง ผู้แจ้ง ลูกค้า Serial', type: 'text' },
         { name: 'status', label: 'สถานะ', type: 'select', options: statuses },
         { name: 'priority', label: 'ความเร่งด่วน', type: 'select', options: priorities },
         { name: 'channel', label: 'ช่องทาง', type: 'select', options: channels },
@@ -110,7 +125,7 @@ export default defineUi({
         { name: 'unassigned', label: 'ยังไม่มีผู้รับผิดชอบ', type: 'boolean' },
         { name: 'overdue', label: 'เกิน SLA', type: 'boolean' },
       ],
-      columns: [...ticketColumns.slice(0, 2), { key: 'requester_name', label: 'ผู้แจ้ง' }, { key: 'channel_label', label: 'ช่องทาง' }, ...ticketColumns.slice(2)],
+      columns: [...ticketColumns.slice(0, 2), { key: 'customer_name', label: 'ลูกค้า' }, { key: 'requester_name', label: 'ผู้แจ้ง' }, { key: 'channel_label', label: 'ช่องทาง' }, ...ticketColumns.slice(2)],
       create: 'ticketNew', createLabel: 'แจ้งปัญหา', rowLink: { screen: 'ticket' }, empty: 'ยังไม่มีเรื่องแจ้งปัญหา',
       rowActions: [{ id: 'start', label: 'รับเรื่อง', method: 'POST', endpoint: '/tickets/:id/start', perm: 'helpdesk.ticket.work', when: { field: 'status', in: ['open'] } }],
     },
@@ -120,7 +135,7 @@ export default defineUi({
     },
     ticketEdit: {
       kind: 'form', title: 'แก้ไขเรื่อง', method: 'PUT', endpoint: '/tickets/:id', load: '/tickets/:id', perm: 'helpdesk.ticket.work',
-      fields: ticketFields, submitLabel: 'บันทึก (คำนวณ SLA ใหม่)', after: { screen: 'ticket', idFrom: 'id' },
+      fields: serviceFields, submitLabel: 'บันทึก (คำนวณ SLA ใหม่)', after: { screen: 'ticket', idFrom: 'id' },
     },
     ticket: {
       kind: 'detail', title: 'เรื่องแจ้งปัญหา', endpoint: '/tickets/:id', perm: 'helpdesk.ticket.create', heading: 'no', mobile: true, edit: 'ticketEdit', printable: true,
@@ -131,8 +146,9 @@ export default defineUi({
       fields: [
         { key: 'title', label: 'เรื่อง' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'priority_label', label: 'ความเร่งด่วน' },
         { key: 'category_name', label: 'หมวดหมู่' }, { key: 'channel_label', label: 'ช่องทาง' }, { key: 'description', label: 'รายละเอียด' },
+        { key: 'customer_name', label: 'ลูกค้า' }, { key: 'asset_ref', label: 'อุปกรณ์ / Serial' },
         { key: 'requester_name', label: 'ผู้แจ้ง' }, { key: 'requester_contact', label: 'ติดต่อกลับ' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' },
-        { key: 'created_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'response_due_at', label: 'ต้องตอบรับภายใน', format: 'datetime' },
+        { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'sla_mode_label', label: 'นับ SLA แบบ' }, { key: 'response_due_at', label: 'ต้องตอบรับภายใน', format: 'datetime' },
         { key: 'first_response_at', label: 'ตอบรับเมื่อ', format: 'datetime' }, { key: 'due_at', label: 'ต้องแก้ไขเสร็จภายใน', format: 'datetime' },
         { key: 'overdue', label: 'เกิน SLA', format: 'boolean' }, { key: 'resolution', label: 'วิธีแก้ไข' }, { key: 'resolved_at', label: 'แก้ไขเสร็จเมื่อ', format: 'datetime' },
         { key: 'reopen_count', label: 'เปิดเรื่องซ้ำ (ครั้ง)', format: 'qty' }, { key: 'satisfaction', label: 'ความพึงพอใจ (1–5)', format: 'qty' }, { key: 'feedback', label: 'ความเห็นผู้แจ้ง' },
@@ -211,6 +227,30 @@ export default defineUi({
         { key: 'sla_resolve_hours', label: 'แก้เสร็จ (ชม.)', format: 'qty' }, { key: 'default_assignee_name', label: 'ช่างประจำ' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'categoryNew', createLabel: 'เพิ่มหมวดหมู่', rowLink: { screen: 'categoryEdit' }, empty: 'ยังไม่มีหมวดหมู่ (ใช้ SLA มาตรฐาน 4/24 ชม.)',
+    },
+    slaSettings: {
+      kind: 'form', title: 'เวลาทำการสำหรับ SLA', method: 'PUT', endpoint: '/settings/sla', load: '/settings/sla', perm: 'helpdesk.setup.write',
+      fields: [
+        { name: 'businessHours', label: 'นับ SLA เฉพาะเวลาทำการ', type: 'boolean', default: true, help: 'ปิด = นับตามนาฬิกา 24 ชม. ทุกเรื่อง' },
+        { name: 'workDays', label: 'วันทำงาน', type: 'text', default: '1,2,3,4,5', help: '1 = จันทร์ … 7 = อาทิตย์ คั่นด้วยจุลภาค เช่น 1,2,3,4,5,6' },
+        { name: 'workStart', label: 'เริ่มงาน (HH:MM)', type: 'text', default: '08:00', required: true },
+        { name: 'workEnd', label: 'เลิกงาน (HH:MM)', type: 'text', default: '17:00', required: true },
+        { name: 'urgent24x7', label: 'เรื่องด่วนมากนับ 24 ชม.', type: 'boolean', default: true },
+        { name: 'timezone', label: 'เขตเวลา', type: 'text', default: 'Asia/Bangkok' },
+      ],
+      submitLabel: 'บันทึก (มีผลกับเรื่องใหม่)', after: { screen: 'holidays' },
+    },
+    holidays: {
+      kind: 'list', title: 'วันหยุด (ไม่นับ SLA)', endpoint: '/holidays', perm: 'helpdesk.ticket.read',
+      filters: [{ name: 'year', label: 'ปี (พ.ศ. หรือ ค.ศ.)', type: 'number' }],
+      columns: [{ key: 'date', label: 'วันที่', format: 'date' }, { key: 'name', label: 'วันหยุด' }],
+      create: 'holidayNew', createLabel: 'เพิ่มวันหยุด', empty: 'ยังไม่มีวันหยุด',
+      rowActions: [{ id: 'delete', label: 'ลบ', method: 'DELETE', endpoint: '/holidays/:id', perm: 'helpdesk.setup.write', tone: 'danger', confirm: 'ลบวันหยุดนี้', toast: 'message' }],
+    },
+    holidayNew: {
+      kind: 'form', title: 'เพิ่มวันหยุด', method: 'POST', endpoint: '/holidays', perm: 'helpdesk.setup.write',
+      fields: [{ name: 'date', label: 'วันที่', type: 'date', required: true }, { name: 'name', label: 'ชื่อวันหยุด', type: 'text', required: true }],
+      submitLabel: 'บันทึก', after: { screen: 'holidays' },
     },
     categoryNew: {
       kind: 'form', title: 'เพิ่มหมวดหมู่', method: 'POST', endpoint: '/categories', perm: 'helpdesk.setup.write',

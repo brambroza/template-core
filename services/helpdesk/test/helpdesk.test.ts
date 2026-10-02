@@ -4,7 +4,11 @@ import { bootTestService, type TestService } from '@erp/kernel/testing';
 import { definition } from '../src/service.ts';
 
 let t: TestService;
-beforeAll(async () => { t = await bootTestService(definition); });
+beforeAll(async () => {
+  t = await bootTestService(definition);
+  // these tests check clock-hour SLA arithmetic; business-hours SLA (the default) is covered in sla.test.ts
+  await t.api('PUT', '/settings/sla', { businessHours: false });
+});
 afterAll(async () => { await t?.close(); });
 
 const year = new Date().getFullYear() + 543;

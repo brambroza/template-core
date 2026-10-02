@@ -23,6 +23,8 @@ export default defineUi({
     { label: 'โอนย้าย', screen: 'transfer' },
     { label: 'ปรับปรุงยอด', screen: 'adjust' },
     { label: 'จุดสั่งซื้อ', screen: 'reorder' },
+    { label: 'กักกัน QC', screen: 'holds' },
+    { label: 'สต็อกติดลบ/ผิดปกติ', screen: 'anomalies' },
     { label: 'คลัง', screen: 'warehouses' },
     { label: 'ตั้งค่า', screen: 'settings' },
   ],
@@ -30,7 +32,7 @@ export default defineUi({
     { id: 'stock', label: 'ดูสต็อกสินค้า', example: 'สต็อก RM-STEEL', keywords: ['สต็อก', 'เช็คสต็อก', 'ของเหลือ', 'stock'], screen: 'stockCard', perm: 'inventory.stock.read',
       arg: { lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } }, openId: 'id' } },
     { id: 'receive', label: 'รับของเข้าคลัง', example: 'รับของ', keywords: ['รับของ', 'รับเข้า', 'receive'], screen: 'receipt', perm: 'inventory.move.write' },
-    { id: 'issue', label: 'เบิก/จ่ายของออก', example: 'เบิกของ', keywords: ['เบิกของ', 'จ่ายของ', 'เบิก', 'issue'], screen: 'issue', perm: 'inventory.move.write' },
+    { id: 'issue', label: 'เบิก/จ่ายของออก', example: 'เบิกของ', keywords: ['เบิกของ', 'จ่ายของ', 'เบิกวัตถุดิบ', 'issue'], screen: 'issue', perm: 'inventory.move.write' },
   ],
   screens: {
     balances: {
@@ -39,6 +41,7 @@ export default defineUi({
       columns: [
         { key: 'itemCode', label: 'รหัส' }, { key: 'itemName', label: 'ชื่อ' },
         { key: 'warehouseCode', label: 'คลัง' }, { key: 'onHand', label: 'คงเหลือ', format: 'qty' },
+        { key: 'available', label: 'พร้อมใช้', format: 'qty' }, { key: 'isHold', label: 'คลังกักกัน', format: 'boolean' },
       ],
       rowLink: { screen: 'stockCard', idFrom: 'itemId' },
       empty: 'ยังไม่มีสต็อก บันทึกรับเข้าครั้งแรกเพื่อเริ่มต้น',
@@ -81,23 +84,72 @@ export default defineUi({
       fields: [item, wh('warehouseCode', 'คลัง'), { name: 'minQty', label: 'สต็อกขั้นต่ำ', type: 'number', required: true }],
       submitLabel: 'บันทึกจุดสั่งซื้อ', after: { screen: 'reorder' },
     },
+    holds: {
+      kind: 'list', title: 'กักกัน QC (QC-HOLD)', endpoint: '/holds', perm: 'inventory.stock.read', mobile: true,
+      filters: [{ name: 'status', label: 'สถานะ', type: 'select', options: [
+        { value: 'pending,rejected', label: 'ยังกักอยู่' }, { value: 'pending', label: 'รอผล QC' }, { value: 'rejected', label: 'ไม่ผ่าน รอตัดสิน' },
+        { value: 'released', label: 'ปล่อยแล้ว' }, { value: 'returned', label: 'ส่งคืนผู้ขายแล้ว' }] }],
+      columns: [
+        { key: 'inspection_no', label: 'ใบตรวจ QC' }, { key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' },
+        { key: 'source_ref', label: 'จากเอกสาร' }, { key: 'warehouse_code', label: 'คลังเดิม' }, { key: 'qty', label: 'กักอยู่', format: 'qty' },
+        { key: 'held_qty', label: 'กักทั้งหมด', format: 'qty' }, { key: 'status_th', label: 'สถานะ' }, { key: 'created_at', label: 'เมื่อ', format: 'datetime' },
+      ],
+      rowActions: [
+        { id: 'release', label: 'ปล่อยเข้าคลัง', method: 'POST', endpoint: '/holds/:id/release', perm: 'inventory.hold.release', when: { field: 'status', in: ['pending', 'rejected'] },
+          fields: [
+            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', step: 0.0001 },
+            { name: 'toWarehouseCode', label: 'ปล่อยเข้าคลัง (ว่าง = คลังเดิม)', type: 'text' },
+            { name: 'note', label: 'เหตุผล/ผลการตัดสิน (เช่น ใช้ตามสภาพ อนุมัติโดย MRB, คัดแยกแล้ว)', type: 'textarea', required: true },
+          ] },
+      ],
+      empty: 'ไม่มีของในคลังกักกัน — เมื่อ QC ตรวจไม่ผ่าน ของจะถูกย้ายมาที่นี่อัตโนมัติ',
+    },
+    anomalies: {
+      kind: 'list', title: 'สต็อกติดลบ/ผิดปกติ', endpoint: '/anomalies', perm: 'inventory.stock.read', mobile: true,
+      filters: [{ name: 'open', label: 'สถานะ', type: 'select', default: 'true', options: [{ value: 'true', label: 'รอตรวจสอบ' }, { value: 'false', label: 'รับทราบแล้ว' }] }],
+      columns: [
+        { key: 'created_at', label: 'เมื่อ', format: 'datetime' }, { key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' },
+        { key: 'warehouse_code', label: 'คลัง' }, { key: 'qty_delta', label: 'จ่าย', format: 'qty' }, { key: 'on_hand_before', label: 'ก่อนจ่าย', format: 'qty' },
+        { key: 'on_hand_after', label: 'หลังจ่าย', format: 'qty' }, { key: 'on_hand_now', label: 'คงเหลือตอนนี้', format: 'qty' },
+        { key: 'ref_th', label: 'จาก' }, { key: 'ref_id', label: 'เลขที่อ้างอิง' }, { key: 'acknowledged_note', label: 'บันทึกการตรวจสอบ' },
+      ],
+      rowLink: { screen: 'stockCard', idFrom: 'item_id' },
+      rowActions: [
+        { id: 'ack', label: 'รับทราบ', method: 'POST', endpoint: '/anomalies/:id/acknowledge', perm: 'inventory.settings.write', when: { field: 'acknowledged_at', in: [null] },
+          fields: [{ name: 'note', label: 'ตรวจสอบแล้ว: สาเหตุ/สิ่งที่แก้ (เช่น ปรับยอดตามนับจริง, เลือกคลังผิด โอนกลับแล้ว)', type: 'textarea', required: true }] },
+      ],
+      empty: 'ไม่มีรายการสต็อกติดลบ',
+    },
     warehouses: {
       kind: 'list', title: 'คลัง', endpoint: '/warehouses', perm: 'inventory.stock.read',
-      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }],
+      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'is_hold', label: 'คลังกักกัน (ไม่นับพร้อมใช้)', format: 'boolean' }],
       create: 'warehouseNew', createLabel: 'เพิ่มคลัง', empty: 'ยังไม่มีคลัง เพิ่มคลังแรก เช่น MAIN',
     },
     warehouseNew: {
       kind: 'form', title: 'เพิ่มคลัง', method: 'POST', endpoint: '/warehouses', perm: 'inventory.settings.write',
-      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อ', type: 'text', required: true }],
+      fields: [
+        { name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อ', type: 'text', required: true },
+        { name: 'isHold', label: 'เป็นคลังกักกัน (ของในคลังนี้ไม่นับเป็นพร้อมใช้ จ่าย/โอนออกต้องมีสิทธิ์ปล่อยของ)', type: 'boolean' },
+      ],
       submitLabel: 'บันทึกคลัง', after: { screen: 'warehouses' },
     },
     settings: {
-      kind: 'form', title: 'ตั้งค่าคลัง', method: 'PUT', endpoint: '/settings', perm: 'inventory.settings.write',
-      fields: [{ name: 'allowNegative', label: 'อนุญาตให้สต็อกติดลบเมื่อจ่ายออก', type: 'boolean' }],
+      kind: 'form', title: 'ตั้งค่าคลัง', method: 'PUT', endpoint: '/settings', perm: 'inventory.settings.write', load: '/settings',
+      fields: [
+        { name: 'allowNegative', label: 'อนุญาตให้สต็อกติดลบเมื่อจ่ายออก', type: 'boolean',
+          help: 'ปิดไว้ (แนะนำ) = จ่าย/โอนเกินยอดคงเหลือไม่ได้ · รายการที่มาจากโมดูลอื่น (ส่งของ ผลิต ซ่อม) ยังบันทึกได้ แต่จะขึ้นในรายการ "สต็อกติดลบ/ผิดปกติ"' },
+        { name: 'receiveIntoHoldWhenInspected', label: 'ของรับเข้าที่ต้องตรวจ QC ให้เข้าคลังกักกัน (QC-HOLD) ก่อน', type: 'boolean',
+          help: 'เมื่อ QC ตรวจเสร็จ จำนวนที่ผ่านจะถูกปล่อยกลับเข้าคลังรับเข้าอัตโนมัติ ส่วนที่ไม่ผ่านอยู่ในคลังกักกันจนกว่าจะส่งคืน/ตัดสิน' },
+      ],
       submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'balances' },
     },
   },
   widgets: [
+    { id: 'stock-negative-kpi', kind: 'kpi', title: 'สต็อกผิดปกติ', endpoint: '/summary', perm: 'inventory.stock.read', size: 'sm', href: 'anomalies',
+      items: [{ key: 'negative', label: 'สต็อกติดลบ', format: 'qty', tone: 'stop' }, { key: 'onHold', label: 'รายการในคลังกักกัน QC', format: 'qty', tone: 'warn' },
+        { key: 'openAnomalies', label: 'รายการผิดปกติรอตรวจ', format: 'qty', tone: 'warn' }] },
+    { id: 'stock-negative-bars', kind: 'bars', title: 'สต็อกติดลบ (ขาดกี่หน่วย)', endpoint: '/summary', perm: 'inventory.stock.read', size: 'md', href: 'anomalies',
+      rows: 'negativeRows', label: 'label', value: 'shortQty', format: 'qty' },
     { id: 'stock-kpi', kind: 'kpi', title: 'คลังสินค้า', endpoint: '/summary', perm: 'inventory.stock.read', size: 'sm', href: 'balances',
       items: [{ key: 'skus', label: 'รายการในคลัง', format: 'qty' }, { key: 'lowStock', label: 'ต่ำกว่าจุดสั่งซื้อ', format: 'qty', tone: 'warn' }, { key: 'movesToday', label: 'เคลื่อนไหววันนี้', format: 'qty' }] },
     { id: 'stock-bars', kind: 'bars', title: 'ระดับสต็อกเทียบจุดสั่งซื้อ', endpoint: '/summary', perm: 'inventory.stock.read', size: 'md', href: 'balances',

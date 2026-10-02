@@ -26,6 +26,10 @@ export function toErrorBody(err: unknown): { status: number; body: unknown } {
   if (pgErr?.code === '23505') return { status: 409, body: { error: { code: 'conflict', message: 'Duplicate value', details: pgErr.detail } } };
   if (pgErr?.code === '23503') return { status: 409, body: { error: { code: 'conflict', message: 'Referenced record is missing or still in use', details: pgErr.detail } } };
   if (pgErr?.code === '23514') return { status: 400, body: { error: { code: 'bad_request', message: 'Value not allowed', details: pgErr.constraint } } };
+  // database busy/unavailable (too many connections, shutting down, can't connect): tell the client to retry
+  if (pgErr?.code && ['53300', '57P01', '57P03', '08001', '08006', 'ECONNREFUSED'].includes(pgErr.code)) {
+    return { status: 503, body: { error: { code: 'unavailable', message: 'ระบบฐานข้อมูลไม่ว่างชั่วคราว ลองใหม่อีกครั้ง', details: pgErr.code } } };
+  }
   const e = err as { statusCode?: number; message?: string; code?: string };
   if (e?.statusCode && e.statusCode < 500) return { status: e.statusCode, body: { error: { code: e.code ?? 'bad_request', message: e.message } } };
   return { status: 500, body: { error: { code: 'internal', message: 'Internal error' } } };

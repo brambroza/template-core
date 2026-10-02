@@ -413,6 +413,7 @@ describe('UAT — full installation (uat-factory)', () => {
     const dlg = phone.getByRole('dialog');
     await dlg.getByLabel('วิธีแก้').fill('เปลี่ยนซีลกระบอกสูบ');
     await dlg.getByLabel('เครื่องหยุด (นาที)').fill('45');
+    await dlg.getByLabel('เบิกอะไหล่จากคลัง').fill('MAIN'); // default is the SPARE store; this plant keeps bolts in MAIN
     await dlg.getByRole('button', { name: 'เพิ่มรายการ' }).click();
     await pick(phone, dlg, 'อะไหล่', 'SP-BOLT');
     await dlg.locator('.lines-editor').getByLabel('จำนวน').fill('6');
@@ -447,9 +448,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-20');
   });
 
-  it('UAT-23 ภาพรวมโรงงาน: ผัง 3 มิติและตัวเลขทุกฝ่าย', async () => {
+  it('UAT-23 ภาพรวมวันนี้: ผัง 3 มิติและตัวเลขทุกฝ่าย', async () => {
     await page.goto(`${base}/`);
-    await page.getByRole('heading', { name: 'ภาพรวมโรงงาน' }).waitFor();
+    await page.getByRole('heading', { name: 'ภาพรวมวันนี้' }).waitFor();
     await page.locator('.floor canvas').waitFor();
     await page.locator('.floor').getByText('PRESS-01').first().waitFor();
     for (const w of ['ขาย', 'จัดซื้อ', 'คลังสินค้า', 'ซ่อมบำรุง']) await page.getByRole('region', { name: w }).first().waitFor();

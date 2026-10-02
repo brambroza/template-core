@@ -565,3 +565,82 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
 .feed-text b { font-size: .86rem; font-weight: 600; }
 .feed-text span { font-size: .82rem; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .feed time { font-size: .72rem; color: var(--ink-3); white-space: nowrap; margin-top: 2px; }
+
+/* ---------- printed documents (DetailView print layout: letterhead, buyer, signatures, footer) ---------- */
+.print-warning { margin: -8px 0 20px; padding: 12px 16px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--ink); font-size: .9rem; }
+.print-warning p { margin: 0 0 4px; }
+.print-warning a { font-weight: 600; color: var(--ink); }
+.screen-actions .print-copy { width: auto; flex: none; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; }
+.print-letterhead, .print-buyer, .print-signatures, .print-footer { display: none; }
+
+@page { size: A4; margin: 14mm 14mm 18mm; @bottom-right { content: "หน้า " counter(page) " / " counter(pages); font-family: 'IBM Plex Sans Thai', 'Noto Sans Thai', 'Sarabun', sans-serif; font-size: 8pt; color: #555; } }
+
+@media print {
+  html, body { background: #fff !important; }
+  .print-doc {
+    --bg: #fff; --surface: #fff; --surface-2: #f3f3f3; --ink: #111; --ink-2: #444; --ink-3: #666; --line: #bbb; --line-strong: #888;
+    color: #111; font-size: 10.5pt; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .print-doc .screen-head, .print-doc .screen-only, .print-warning { display: none !important; }
+  .print-doc .print-letterhead { display: flex !important; }
+  .print-doc .print-buyer { display: block !important; }
+  .print-doc .print-signatures { display: grid !important; }
+  .print-doc .print-footer { display: block !important; }
+
+  .print-letterhead { justify-content: space-between; align-items: flex-start; gap: 8mm; padding-bottom: 4mm; margin-bottom: 5mm; border-bottom: 1.5pt solid #111; }
+  .lh-company { display: flex; gap: 4mm; align-items: flex-start; min-width: 0; }
+  .lh-logo { width: auto; height: auto; max-height: 22mm; max-width: 40mm; object-fit: contain; }
+  .lh-text p { margin: 0; }
+  .lh-name { font-size: 13pt; font-weight: 700; }
+  .lh-name-en { font-size: 9.5pt; font-weight: 600; color: #333; }
+  .lh-address { white-space: pre-line; font-size: 9pt; }
+  .lh-meta { font-size: 9pt; display: flex; flex-wrap: wrap; gap: 0 4mm; }
+  .lh-doc { text-align: right; flex: none; max-width: 75mm; }
+  .lh-doc p { margin: 0; }
+  .lh-title { font-size: 15pt; font-weight: 700; line-height: 1.25; margin: 0 0 1mm; }
+  .lh-no { font-size: 10pt; }
+  .lh-copy { display: inline-block; margin-bottom: 2mm !important; padding: .5mm 3mm; border: 1pt solid #111; border-radius: 1.5mm; font-size: 9pt; font-weight: 700; letter-spacing: .04em; }
+
+  .print-buyer { margin: 0 0 4mm; padding: 2.5mm 3.5mm; border: .75pt solid #888; border-radius: 1.5mm; break-inside: avoid; }
+  .print-buyer p { margin: 0; }
+  .pb-label { font-size: 8.5pt; color: #555; }
+  .pb-name { font-weight: 700; }
+  .pb-address { white-space: pre-line; font-size: 9.5pt; }
+  .pb-meta { display: flex; flex-wrap: wrap; gap: 0 5mm; font-size: 9.5pt; }
+
+  .print-doc .facts { border: .75pt solid #888; border-radius: 1.5mm; margin-bottom: 4mm; break-inside: avoid; }
+  .print-doc .fact { flex: 1 1 33%; padding: 1.4mm 3mm; box-shadow: .5pt 0 0 #bbb, 0 .5pt 0 #bbb; }
+  .print-doc .fact-wide { flex-basis: 100%; }
+  .print-doc .fact-qr { flex: 0 0 34mm; }
+  .print-doc .fact-qr img { width: 26mm; height: 26mm; }
+  .print-doc .fact dt { font-size: 8pt; color: #555; }
+  .print-doc .status { background: none !important; color: #111 !important; padding: 0; border: 0; }
+  .print-doc .status::before { display: none; }
+  .print-doc .table-wrap { padding: 0 1px 0 0; overflow: visible; }
+  .print-doc .detail-lines { margin-bottom: 4mm; }
+  .print-doc .detail-lines h2 { font-size: 10.5pt; margin: 0 0 1.5mm; }
+  /* lines print as a real table even when the screen stacks them as cards */
+  .print-doc table.data.stack { display: table; width: 100%; border-collapse: collapse; }
+  .print-doc table.data.stack thead { display: table-header-group !important; }
+  .print-doc table.data.stack tbody { display: table-row-group; }
+  .print-doc table.data.stack tr { display: table-row; background: none; border: 0; padding: 0; margin: 0; border-radius: 0; }
+  .print-doc table.data.stack td, .print-doc table.data.stack th { display: table-cell; width: auto; text-align: left; padding: 1.4mm 2mm; border: .5pt solid #999; font-size: 9.5pt; }
+  .print-doc table.data.stack td::before { display: none !important; }
+  .print-doc table.data.stack td:first-child { display: table-cell; font-size: 9.5pt; font-weight: 400; padding: 1.4mm 2mm; }
+  .print-doc table.data th { background: #eee !important; font-weight: 600; }
+  .print-doc table.data .num { text-align: right; }
+  .print-doc table.data tr, .print-doc table.data td { break-inside: avoid; page-break-inside: avoid; }
+
+  .print-signatures { grid-template-columns: repeat(var(--sig-cols, 3), minmax(0, 1fr)); gap: 6mm; margin-top: 7mm; break-inside: avoid; page-break-inside: avoid; }
+  .sig { text-align: center; font-size: 9.5pt; }
+  .sig p { margin: 0; }
+  .sig-line { height: 12mm; border-bottom: .75pt dotted #111; margin: 0 4mm 1.5mm; }
+  .sig-name { color: #555; font-size: 8pt; white-space: nowrap; overflow: hidden; }
+  .sig-label { font-weight: 600; margin-top: .5mm !important; }
+  .sig-date { color: #333; font-size: 8.5pt; margin-top: 1mm !important; }
+
+  .print-footer { margin-top: 5mm; padding-top: 1.5mm; border-top: .5pt solid #999; font-size: 8.5pt; color: #333; break-inside: avoid; }
+  .print-footer p { margin: 0; }
+  .pf-note { white-space: pre-line; }
+  .pf-company { color: #666; }
+}

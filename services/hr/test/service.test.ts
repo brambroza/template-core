@@ -308,3 +308,108 @@ describe('hr — QA regressions (docs/uat/bugs-0.3.md)', () => {
     expect(early.body.error.message).toContain('เวลาออกงานก่อนเวลาเข้างาน');
   });
 });
+
+describe('hr — org chart approvals (wave 4)', () => {
+  const u = { head: randomUUID(), lead: randomUUID(), a: randomUUID(), b: randomUUID(), out: randomUUID(), hr: randomUUID(), legacy: randomUUID() };
+  const tok = (userId: string, perms: string[], userName?: string) => ({ token: t.token(perms, t.tenantId, { userId, userName }) });
+  const e: Record<string, any> = {};
+  const lv: Record<string, any> = {};
+
+  it('links employees to a manager and departments to a head; the effective approver follows the org chart', async () => {
+    e.head = (await t.api('POST', '/employees', { code: 'S-HEAD', firstName: 'หัวหน้าขาย', startDate: '2020-01-01', userId: u.head })).body;
+    const dept = await t.api('POST', '/departments', { code: 'SALES', name: 'ฝ่ายขาย', managerEmployeeId: e.head.id });
+    expect(dept.status).toBe(201);
+    expect(dept.body).toMatchObject({ manager_employee_id: e.head.id, manager_name: 'หัวหน้าขาย' });
+    await t.api('PATCH', `/employees/${e.head.id}`, { departmentId: dept.body.id });
+    e.lead = (await t.api('POST', '/employees', { code: 'S-LEAD', firstName: 'หัวหน้าทีม', startDate: '2021-01-01', userId: u.lead, departmentId: dept.body.id })).body;
+    e.a = (await t.api('POST', '/employees', { code: 'S-A', firstName: 'มินตรา', startDate: '2025-01-01', userId: u.a, departmentId: dept.body.id })).body;
+    const b = await t.api('POST', '/employees', { code: 'S-B', firstName: 'ธนากร', startDate: '2025-01-01', userId: u.b, departmentId: dept.body.id, managerId: e.lead.id });
+    expect(b.body).toMatchObject({ manager_id: e.lead.id, manager_name: 'หัวหน้าทีม', approver_user_id: u.lead, approver_name: 'หัวหน้าทีม' });
+    e.b = b.body;
+    expect(e.a).toMatchObject({ manager_id: null, approver_user_id: u.head, approver_name: 'หัวหน้าขาย' });
+    // the head of the department is not their own approver → HR
+    const head = (await t.api('GET', `/employees/${e.head.id}`)).body;
+    expect(head).toMatchObject({ approver_user_id: null, approver_label: 'ฝ่ายบุคคล' });
+    expect(head.reports).toHaveLength(0);
+    expect((await t.api('GET', `/employees/${e.lead.id}`)).body.reports.map((x: any) => x.code)).toEqual(['S-B']);
+    // no self-management, no loops
+    expect((await t.api('PATCH', `/employees/${e.lead.id}`, { managerId: e.lead.id })).status).toBe(400);
+    const loop = await t.api('PATCH', `/employees/${e.lead.id}`, { managerId: e.b.id });
+    expect(loop.status).toBe(400);
+    expect(loop.body.error.details.fieldErrors.managerId).toBeDefined();
+    expect((await t.api('PATCH', `/employees/${e.lead.id}`, { managerId: randomUUID() })).status).toBe(400);
+  });
+
+  it('routes leave to the manager: only they (or HR approve-all) decide, never their own', async () => {
+    const a = tok(u.a, STAFF, 'มินตรา');
+    const r = await t.api('POST', '/leave-requests', { leaveTypeId: ids.SICK, fromDate: '2028-02-07' }, a);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ requested_by_name: 'มินตรา', approver_user_id: u.head, approver_label: 'หัวหน้าขาย', can_decide: false });
+    lv.a = r.body;
+    const ev = (await t.published('hr.leave_requested')).map((x) => x.data).find((d: any) => d.leaveId === lv.a.id);
+    expect(ev).toMatchObject({ employeeUserId: u.a, approverUserId: u.head, approverName: 'หัวหน้าขาย' });
+    lv.b = (await t.api('POST', '/leave-requests', { leaveTypeId: ids.SICK, fromDate: '2028-02-08' }, tok(u.b, STAFF))).body;
+    expect(lv.b.approver_user_id).toBe(u.lead);
+
+    // each manager's inbox holds only their own team
+    const head = tok(u.head, STAFF, 'หัวหน้าขาย');
+    const lead = tok(u.lead, STAFF, 'หัวหน้าทีม');
+    expect((await t.api('GET', '/leave-requests/inbox', undefined, head)).body.map((x: any) => x.id)).toEqual([lv.a.id]);
+    expect((await t.api('GET', '/leave-requests/inbox', undefined, lead)).body.map((x: any) => x.id)).toEqual([lv.b.id]);
+    expect((await t.api('GET', '/leave-requests/inbox', undefined, a)).body).toEqual([]);
+    expect((await t.api('GET', '/me', undefined, head)).body).toMatchObject({ teamPending: 1 });
+    expect((await t.api('GET', '/me', undefined, a)).body).toMatchObject({ approverName: 'หัวหน้าขาย' });
+
+    // the manager reads their member's leave; outsiders do not
+    expect((await t.api('GET', `/leave-requests/${lv.a.id}`, undefined, head)).body).toMatchObject({ can_decide: true, is_my_team: true });
+    expect((await t.api('GET', `/leave-requests/${lv.a.id}`, undefined, tok(u.out, STAFF))).status).toBe(403);
+
+    // not the manager → 403, even with the legacy hr.leave.approve
+    expect((await t.api('POST', `/leave-requests/${lv.a.id}/approve`, {}, lead)).status).toBe(403);
+    expect((await t.api('POST', `/leave-requests/${lv.a.id}/approve`, {}, tok(u.out, STAFF))).status).toBe(403);
+    const legacy = tok(u.legacy, ['hr.leave.approve', 'hr.employee.read']);
+    const refused = await t.api('POST', `/leave-requests/${lv.a.id}/approve`, {}, legacy);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.message).toContain('หัวหน้าขาย');
+    expect((await t.api('GET', '/leave-requests/pending', undefined, legacy)).body.map((x: any) => x.id)).not.toContain(lv.a.id);
+
+    // the manager approves with their name on record
+    const ok = await t.api('POST', `/leave-requests/${lv.a.id}/approve`, { note: 'ok' }, head);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ status: 'approved', decided_by: u.head, decided_by_name: 'หัวหน้าขาย' });
+    const dec = (await t.published('hr.leave_decided')).map((x) => x.data).find((d: any) => d.leaveId === lv.a.id);
+    expect(dec).toMatchObject({ decision: 'approved', employeeUserId: u.a, byName: 'หัวหน้าขาย', note: 'ok' });
+
+    // HR override (approve-all) decides for anyone
+    const hr = tok(u.hr, ['hr.leave.approve-all', 'hr.employee.read'], 'ฝ่ายบุคคล');
+    expect((await t.api('GET', '/leave-requests/pending', undefined, hr)).body.map((x: any) => x.id)).toContain(lv.b.id);
+    const rej = await t.api('POST', `/leave-requests/${lv.b.id}/reject`, { note: 'ช่วงปิดงบ' }, hr);
+    expect(rej.body).toMatchObject({ status: 'rejected', decided_by_name: 'ฝ่ายบุคคล' });
+  });
+
+  it("the manager cannot approve their own leave; HR handles leave of people without a manager", async () => {
+    const head = tok(u.head, STAFF, 'หัวหน้าขาย');
+    const own = (await t.api('POST', '/leave-requests', { leaveTypeId: ids.SICK, fromDate: '2028-02-09' }, head)).body;
+    expect(own).toMatchObject({ approver_user_id: null, approver_label: 'ฝ่ายบุคคล', can_decide: false });
+    expect((await t.api('POST', `/leave-requests/${own.id}/approve`, {}, head)).status).toBe(403);
+    // an HR approver who is also the employee still cannot approve it
+    const headAsHr = tok(u.head, [...STAFF, 'hr.leave.approve-all'], 'หัวหน้าขาย');
+    expect((await t.api('POST', `/leave-requests/${own.id}/approve`, {}, headAsHr)).status).toBe(409);
+    // unmanaged leave is open to hr.leave.approve
+    const legacy = tok(u.legacy, ['hr.leave.approve', 'hr.employee.read']);
+    expect((await t.api('GET', '/leave-requests/pending', undefined, legacy)).body.map((x: any) => x.id)).toContain(own.id);
+    expect((await t.api('POST', `/leave-requests/${own.id}/approve`, {}, legacy)).body.status).toBe('approved');
+  });
+
+  it('records who checked in, and keeps the org chart per tenant', async () => {
+    const a = tok(u.a, STAFF, 'มินตรา');
+    const ci = await t.api('POST', '/attendance/check-in', {}, a);
+    expect(ci.status).toBe(201);
+    expect(ci.body).toMatchObject({ recorded_by_name: 'มินตรา', source: 'self' });
+    const other = { token: t.token(['*'], t.otherTenantId, { userId: u.head }) };
+    expect((await t.api('GET', '/leave-requests/inbox', undefined, other)).body).toEqual([]);
+    expect((await t.api('PATCH', `/employees/${e.b.id}`, { managerId: e.lead.id }, other)).status).toBe(404);
+    expect((await t.api('POST', '/employees', { code: 'X1', firstName: 'x', startDate: '2025-01-01', managerId: e.lead.id }, other)).status).toBe(400);
+    expect((await t.api('GET', '/leave-requests/inbox', undefined, { token: t.token([]) })).status).toBe(403);
+  });
+});

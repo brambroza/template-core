@@ -88,7 +88,7 @@ const dialogAction = async (p: Page, label: string) => p.getByRole('dialog').get
 const ROLES: Record<string, string[]> = {
   staff: ['approvals.request.read', 'approvals.request.write', 'approvals.request.approve', 'expense.claim.read', 'expense.claim.write', 'hr.leave.request', 'hr.attendance.self',
     'booking.resource.read', 'booking.book.create', 'helpdesk.ticket.create', 'helpdesk.kb.read', 'projects.project.read', 'projects.task.write', 'projects.timesheet.log',
-    'assets.asset.read', 'assets.repair.report'],
+    'assets.asset.read', 'assets.repair.report', 'automation.notify.read'],
   hr: ['hr.*', 'identity.user.read'],
   accounting: ['expense.*', 'assets.*'],
   it: ['helpdesk.ticket.create', 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.read', 'helpdesk.kb.write'],
@@ -129,6 +129,10 @@ async function seed() {
   // approvals: purchase request = head of department, then finance
   ids.prType = (await api('admin', 'POST', 'approvals/types', {
     code: 'PR', name: 'ขอซื้อ', approvers: [{ userId: users.head.id, userName: users.head.name }, { userId: users.acc.id, userName: users.acc.name }],
+  })).body.id;
+  // a memo type whose chain the requester picks (lockApprovers off) — used to prove nobody approves their own request
+  ids.memoType = (await api('admin', 'POST', 'approvals/types', {
+    code: 'MEMO', name: 'บันทึกข้อความ', lockApprovers: false, approvers: [{ userId: users.head.id, userName: users.head.name }],
   })).body.id;
   // expense categories
   await api('admin', 'POST', 'expense/categories', { code: 'FUEL', name: 'ค่าน้ำมัน', monthlyLimit: 3000 });
@@ -186,12 +190,13 @@ describe('UAT — office & service modules (uat-office)', () => {
     await page.getByLabel('เรื่อง', { exact: true }).fill('ขอซื้อเครื่องพิมพ์ฉลาก');
     await page.getByLabel('รายละเอียด / เหตุผล').fill('เครื่องเดิมเสีย ใช้พิมพ์ฉลากส่งของ');
     await page.getByLabel('จำนวนเงิน (ถ้ามี)').fill('25000');
-    await page.getByLabel('ชื่อผู้ขอ').fill(users.staff.name);
+    expect(await page.getByLabel('ชื่อผู้ขอ').count()).toBe(0); // the requester is whoever is signed in
     await shot(page, 'UAT-28');
     await page.getByRole('button', { name: 'บันทึกคำขอ' }).click();
     await page.getByRole('heading', { name: 'APV-2569-0001' }).waitFor();
     expect(await fact(page, 'ขั้นอนุมัติ')).toContain('ขั้นที่ 1/2');
     expect(await fact(page, 'รอใครอนุมัติ')).toContain(users.head.name);
+    expect(await fact(page, 'ผู้ขอ')).toContain(users.staff.name);
     expect(await page.getByRole('button', { name: 'อนุมัติ', exact: true }).count()).toBe(0); // not the requester's job
     ids.apv1 = page.url().split('/').pop()!;
     await shot(page, 'UAT-28');
@@ -247,11 +252,11 @@ describe('UAT — office & service modules (uat-office)', () => {
     expect(await fact(page, 'ขั้นอนุมัติ')).toContain('ขั้นที่ 1/2');
     await shot(page, 'UAT-29');
 
-    // the requester put himself on the chain: no approve button, and the server refuses (bugs-0.3 APV-01)
-    const own = (await api('staff', 'POST', 'approvals/requests', {
-      typeId: ids.prType, title: 'ขอซื้อหมึกพิมพ์', amount: 800, submit: true,
-      approvers: [{ userId: users.staff.id, userName: users.staff.name }, { userId: users.head.id, userName: users.head.name }],
-    })).body;
+    // the PR chain is locked: the requester cannot pick his own approvers
+    const mine = [{ userId: users.staff.id, userName: users.staff.name }, { userId: users.head.id, userName: users.head.name }];
+    expect((await api('staff', 'POST', 'approvals/requests', { typeId: ids.prType, title: 'ขอซื้อหมึกพิมพ์', amount: 800, submit: true, approvers: mine })).status).toBe(403);
+    // on an unlocked memo type he can put himself on the chain — still no approve button, and the server refuses (bugs-0.3 APV-01)
+    const own = (await api('staff', 'POST', 'approvals/requests', { typeId: ids.memoType, title: 'ขอซื้อหมึกพิมพ์', amount: 800, submit: true, approvers: mine })).body;
     await open(page, `/m/approvals/requestDetail/${own.id}`);
     expect(await fact(page, 'รอใครอนุมัติ')).toContain(users.staff.name);
     expect(await page.getByRole('button', { name: 'อนุมัติ', exact: true }).count()).toBe(0);
@@ -265,7 +270,7 @@ describe('UAT — office & service modules (uat-office)', () => {
     await as(page, 'staff');
     await open(page, '/m/expense/claimNew');
     await page.getByLabel('วัตถุประสงค์').fill('เดินทางไปติดตั้งเครื่องที่ลูกค้าระยอง');
-    await page.getByLabel('ชื่อผู้เบิก').fill(users.staff.name);
+    expect(await page.getByLabel('ชื่อผู้เบิก').count()).toBe(0); // the claimant is whoever is signed in
     const lines = page.locator('.lines-editor');
     const r0 = lines.locator('tbody tr').nth(0);
     await r0.getByLabel('วันที่จ่าย').fill(today);
@@ -285,6 +290,7 @@ describe('UAT — office & service modules (uat-office)', () => {
     await page.getByRole('heading', { name: 'EXP-2569-0001' }).waitFor();
     expect(await fact(page, 'สถานะ')).toContain('รออนุมัติ');
     expect(await fact(page, 'ยอดเบิกรวม')).toContain('2,270.00');
+    expect(await fact(page, 'ผู้เบิก')).toContain(users.staff.name);
     expect(await fact(page, 'ตัวอักษร')).toBe('ตัวอักษรสองพันสองร้อยเจ็ดสิบบาทถ้วน');
     const id = page.url().split('/').pop()!;
     await shot(page, 'UAT-30');
@@ -405,10 +411,10 @@ describe('UAT — office & service modules (uat-office)', () => {
     await page.getByLabel('เวลาเริ่ม (HH:MM)').fill('09:00');
     await page.getByLabel('เวลาสิ้นสุด (HH:MM)').fill('10:00');
     await page.getByLabel('จำนวนผู้เข้าร่วม/ผู้โดยสาร').fill('8');
-    await page.getByLabel('ชื่อผู้จอง').fill(users.staff.name);
     await page.getByRole('button', { name: 'จอง', exact: true }).click();
     await page.getByRole('heading', { name: 'BK-2569-0001' }).waitFor();
     expect(await fact(page, 'สถานะ')).toContain('ยืนยัน');
+    expect(await fact(page, 'ผู้จอง')).toContain(users.staff.name); // from the login
     await shot(page, 'UAT-34');
 
     await as(page, 'sales');
@@ -418,7 +424,6 @@ describe('UAT — office & service modules (uat-office)', () => {
     await page.getByLabel('วันที่', { exact: true }).fill(day);
     await page.getByLabel('เวลาเริ่ม (HH:MM)').fill('09:30');
     await page.getByLabel('เวลาสิ้นสุด (HH:MM)').fill('10:30');
-    await page.getByLabel('ชื่อผู้จอง').fill(users.sales.name);
     await page.getByRole('button', { name: 'จอง', exact: true }).click();
     await page.locator('.form-error').waitFor();
     expect(await text(page, '.form-error')).toMatch(/ห้องประชุมเล็ก ถูกจองแล้วช่วง .*09:00–10:00 น\. \(BK-2569-0001: ประชุมทีมขายประจำเดือน — สมชาย ใจดี\)/);
@@ -444,7 +449,6 @@ describe('UAT — office & service modules (uat-office)', () => {
     await phone.getByLabel('เวลาเริ่ม (HH:MM)').fill('08:00');
     await phone.getByLabel('เวลาสิ้นสุด (HH:MM)').fill('12:00');
     await phone.getByLabel('ปลายทาง (สำหรับรถ)').fill('บางนา');
-    await phone.getByLabel('ชื่อผู้จอง').fill(users.staff.name);
     await phone.getByRole('button', { name: 'จอง', exact: true }).click();
     await phone.getByRole('heading', { name: 'BK-2569-0003' }).waitFor();
     expect(await fact(phone, 'สถานะ')).toContain('รออนุมัติ');
@@ -605,8 +609,8 @@ describe('UAT — office & service modules (uat-office)', () => {
     await shot(phone, 'UAT-40', 'phone');
 
     await open(phone, '/m/projects/myWeek');
-    await phone.getByRole('button', { name: 'ส่ง timesheet ให้อนุมัติ' }).click();
-    await dialogAction(phone, 'ส่ง timesheet ให้อนุมัติ');
+    await phone.getByRole('button', { name: 'ส่งชั่วโมงทำงานให้อนุมัติ' }).click();
+    await dialogAction(phone, 'ส่งชั่วโมงทำงานให้อนุมัติ');
     await expect.poll(async () => (await api('staff', 'GET', 'projects/timesheets/week')).body.status).toBe('submitted');
     expect((await api('staff', 'GET', 'projects/timesheets/week')).body).toMatchObject({ status: 'submitted', total: 8 });
 
@@ -616,8 +620,9 @@ describe('UAT — office & service modules (uat-office)', () => {
     expect(await row.innerText()).toContain('8');
     await shot(page, 'UAT-40');
     await row.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+    // (the button is renamed "กำลังบันทึก…" while the request runs, so its disappearance alone does not mean the approval landed)
+    await expect.poll(async () => (await api('staff', 'GET', 'projects/timesheets/week')).body.status).toBe('approved');
     await page.getByRole('row').filter({ hasText: users.staff.name }).getByRole('button', { name: 'อนุมัติ', exact: true }).waitFor({ state: 'detached' });
-    expect((await api('staff', 'GET', 'projects/timesheets/week')).body.status).toBe('approved');
     const p = (await api('pm', 'GET', `projects/projects/${ids.project}`)).body;
     expect(p).toMatchObject({ hours_logged: 8, cost: 2400 }); // 8 h × 300 baht
     await open(page, `/m/projects/projectDetail/${ids.project}`);
@@ -740,20 +745,28 @@ describe('UAT — office & service modules (uat-office)', () => {
 
   /* ---------------- automation ---------------- */
 
-  it('UAT-45 บอทแจ้งเตือน: มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติที่กระดิ่ง', async () => {
+  it('UAT-45 บอทแจ้งเตือน: มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติที่กระดิ่ง (เฉพาะผู้อนุมัติคนนั้น)', async () => {
     await as(page, 'admin');
     await open(page, '/m/automation/templates');
     const card = page.locator('.gcard', { hasText: 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ' });
     await card.getByRole('button', { name: 'เปิดใช้' }).click();
     await page.getByRole('heading', { name: 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ' }).waitFor();
     await shot(page, 'UAT-45');
-    const r = (await api('staff', 'POST', 'approvals/requests', { typeId: ids.prType, title: 'ขอซื้อจอคอมพิวเตอร์', amount: 6500, requesterName: users.staff.name, submit: true })).body;
+    const r = (await api('staff', 'POST', 'approvals/requests', { typeId: ids.prType, title: 'ขอซื้อจอคอมพิวเตอร์', amount: 6500, submit: true })).body;
     await erp.settle();
+    // addressed to the step-1 approver only: not to the requester, not to the administrator
+    const mentions = async (who: string) => (await api(who, 'GET', 'automation/notifications')).body.items.some((n: any) => `${n.title} ${n.body}`.includes(r.no));
+    expect(await mentions('admin')).toBe(false);
+    expect(await mentions('staff')).toBe(false);
+    expect(await mentions('head')).toBe(true);
+
+    await as(page, 'head');
+    await open(page, '/');
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('erp:notifications')));
     const bell = page.getByRole('button', { name: /การแจ้งเตือน \(\d+ ยังไม่อ่าน\)/ });
     await bell.waitFor();
     await bell.click();
-    const item = page.getByRole('dialog', { name: 'การแจ้งเตือน' }).getByRole('button', { name: new RegExp(`${r.no}.*ขอซื้อจอคอมพิวเตอร์.*${users.head.name}`) });
+    const item = page.getByRole('dialog', { name: 'การแจ้งเตือน' }).getByRole('button', { name: new RegExp(`${r.no}.*ขอซื้อจอคอมพิวเตอร์.*${users.staff.name}.*รอคุณอนุมัติ`) });
     await item.waitFor();
     await shot(page, 'UAT-45');
     await item.click();
@@ -770,11 +783,15 @@ describe('UAT — office & service modules (uat-office)', () => {
     for (const g of ['ควบคุมคุณภาพ', 'ลูกค้าสัมพันธ์', 'ผู้ใช้และสิทธิ์', 'จัดซื้อ', 'ขาย']) expect(groups).not.toContain(g);
     const nav = page.getByRole('navigation');
     expect(await nav.getByRole('link', { name: 'ใบลารออนุมัติ' }).count()).toBe(0);
-    expect(await nav.getByRole('link', { name: 'อนุมัติ timesheet' }).count()).toBe(0);
+    expect(await nav.getByRole('link', { name: 'อนุมัติชั่วโมงทำงาน' }).count()).toBe(0);
+    // no company money for ordinary staff: all claims, payment queue, spend reports, depreciation/book value
+    for (const l of ['ใบเบิกทั้งหมด', 'รอจ่ายเงิน', 'สรุปตามหมวด', 'ค่าเสื่อมรายเดือน', 'ค่าเสื่อมตามหมวด']) expect(await nav.getByRole('link', { name: l }).count()).toBe(0);
     await shot(page, 'UAT-46');
     // and the server agrees even when the URL is typed in
     expect((await api('staff', 'GET', 'hr/leave-requests/pending')).status).toBe(403);
     expect((await api('staff', 'GET', 'quality/ncrs')).status).toBe(403);
+    expect((await api('staff', 'GET', 'assets/depreciation')).status).toBe(403);
+    expect((await api('staff', 'GET', `assets/assets/${ids.asset}`)).body).toMatchObject({ cost: null, book_value: null });
     await as(page, 'qc');
     await open(page, '/');
     expect((await page.getByRole('navigation').locator('.nav-group-title').allInnerTexts()).map((g) => g.trim())).toContain('ควบคุมคุณภาพ');

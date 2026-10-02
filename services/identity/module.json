@@ -12,6 +12,7 @@
   "permissions": [
     { "key": "identity.user.read", "label": "ดูผู้ใช้" },
     { "key": "identity.user.write", "label": "จัดการผู้ใช้" },
-    { "key": "identity.role.write", "label": "จัดการบทบาทและสิทธิ์" }
+    { "key": "identity.role.write", "label": "จัดการบทบาทและสิทธิ์" },
+    { "key": "identity.company.write", "label": "แก้ไขข้อมูลบริษัท (หัวเอกสาร)" }
   ]
 }

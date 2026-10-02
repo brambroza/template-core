@@ -34,6 +34,10 @@
     {
       "key": "maintenance.wo.work",
       "label": "รับงานและปิดงานซ่อม"
+    },
+    {
+      "key": "maintenance.settings.write",
+      "label": "ตั้งค่าซ่อมบำรุง (คลังอะไหล่เริ่มต้น)"
     }
   ]
 }

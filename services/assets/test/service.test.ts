@@ -184,6 +184,32 @@ describe('assets', () => {
     expect((await t.api('GET', '/assets', undefined, { token: t.token([]) })).status).toBe(403);
   });
 
+  it('shows cost, depreciation and book value only with assets.finance.read', async () => {
+    const staff = t.token(['assets.asset.read', 'assets.repair.report']);
+    const money = ['cost', 'salvage_value', 'accumulated', 'book_value', 'monthly_depreciation'];
+    const blank = (row: any) => money.every((f) => row[f] === null);
+
+    const list = (await t.api('GET', '/assets', undefined, { token: staff })).body;
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.every(blank)).toBe(true);
+    expect(list[0]).toHaveProperty('code'); // still sees what, where, who, status
+    const one = (await t.api('GET', `/assets/${laptop.id}`, undefined, { token: staff })).body;
+    expect(one).toMatchObject({ id: laptop.id, cost: null, book_value: null, disposal_gain_loss: null });
+    expect(one.status).toBeDefined();
+    expect((await t.api('GET', '/assets/by-code/LAND-01', undefined, { token: staff })).body).toMatchObject({ code: 'LAND-01', cost: null, book_value: null });
+    expect((await t.api('GET', `/assets/${laptop.id}/schedule`, undefined, { token: staff })).status).toBe(403);
+    expect((await t.api('GET', '/depreciation', undefined, { token: staff })).status).toBe(403);
+    const s = (await t.api('GET', '/summary', undefined, { token: staff })).body;
+    expect(s).toMatchObject({ count: 4, totalCost: null, bookValue: null, depreciationMonth: null, byCategory: [], months: [] });
+
+    const finance = t.token(['assets.asset.read', 'assets.finance.read']);
+    expect((await t.api('GET', '/assets/by-code/LAND-01', undefined, { token: finance })).body).toMatchObject({ cost: 5000000, book_value: 5000000 });
+    expect((await t.api('GET', '/depreciation', undefined, { token: finance })).status).toBe(200);
+    expect((await t.api('GET', '/summary', undefined, { token: finance })).body.totalCost).toBeGreaterThan(0);
+    // module wildcard still means everything
+    expect((await t.api('GET', '/assets/by-code/LAND-01', undefined, { token: t.token(['assets.*']) })).body.cost).toBe(5000000);
+  });
+
   it('isolates tenants', async () => {
     const other = t.token(['*'], t.otherTenantId);
     for (const path of ['/assets', '/categories', '/repairs', '/audits', '/locations']) {

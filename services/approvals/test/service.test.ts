@@ -26,7 +26,7 @@ describe('approvals', () => {
     head = user('หัวหน้าแผนก', APPROVER);
     md = user('MD', APPROVER);
     const res = await t.api('POST', '/types', {
-      code: 'PR', name: 'ขอซื้อ', amountNote: 'เกิน 50,000 ให้ MD อนุมัติ',
+      code: 'PR', name: 'ขอซื้อ', amountNote: 'เกิน 50,000 ให้ MD อนุมัติ', lockApprovers: false,
       approvers: [{ userId: head.id, userName: head.name }, { userId: md.id, userName: md.name }],
     });
     expect(res.status).toBe(201);
@@ -199,5 +199,120 @@ describe('approvals — QA regressions (docs/uat/bugs-0.3.md)', () => {
     const admin2 = user('admin2', ['approvals.request.read', 'approvals.request.approve', 'approvals.request.admin']);
     expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: admin2.token })).body.current_step).toBe(2);
     expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: other.token })).body.status).toBe('approved');
+  });
+});
+
+describe('approvals — who (wave 4)', () => {
+  const named = (name: string, perms: string[]) => {
+    const id = randomUUID();
+    return { id, name, token: t.token(perms, t.tenantId, { userId: id, userName: name }) };
+  };
+  let mint: ReturnType<typeof named>;
+  let boss: ReturnType<typeof named>;
+  let deputy: ReturnType<typeof named>;
+  let lockedType: any;
+
+  it('takes the requester name from the token, not from the body', async () => {
+    mint = named('มินตรา ใจดี', STAFF);
+    boss = named('ผู้จัดการขาย', APPROVER);
+    deputy = named('รองผู้จัดการ', APPROVER);
+    lockedType = (await t.api('POST', '/types', { code: 'PR2', name: 'ขอซื้อ (ล็อก)', approvers: [{ userId: boss.id, userName: boss.name }] })).body;
+    expect(lockedType.lock_approvers).toBe(true);
+    const r = await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ซื้อโน้ตบุ๊ก', requesterName: 'คนอื่น', submit: true }, { token: mint.token });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ requester_name: 'มินตรา ใจดี', status: 'pending', current_approver_name: 'ผู้จัดการขาย' });
+    expect(r.body.history[0]).toMatchObject({ action: 'created', actor_name: 'มินตรา ใจดี' });
+    // editing cannot rename the requester either
+    const d = (await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ร่าง' }, { token: mint.token })).body;
+    const e = await t.api('PUT', `/requests/${d.id}`, { requesterName: 'ปลอม', detail: 'x' }, { token: mint.token });
+    expect(e.body.requester_name).toBe('มินตรา ใจดี');
+    // an old token without a name falls back to the typed name
+    const old = await t.api('POST', '/requests', { typeId: lockedType.id, title: 'เก่า', requesterName: 'สมหญิง' }, { token: t.token(STAFF) });
+    expect(old.body.requester_name).toBe('สมหญิง');
+    const ev = (await t.published('approvals.request_submitted')).map((x) => x.data).find((x: any) => x.requestId === r.body.id);
+    expect(ev).toMatchObject({ requesterName: 'มินตรา ใจดี', requesterId: mint.id, nextApproverId: boss.id });
+  });
+
+  it('locks the approver chain: requesters cannot pick or change approvers, admins can', async () => {
+    const pick = await t.api('POST', '/requests', { typeId: lockedType.id, title: 'x', approvers: [{ userId: deputy.id, userName: deputy.name }] }, { token: mint.token });
+    expect(pick.status).toBe(403);
+    expect(pick.body.error.message).toContain('ผู้ขอเลือกผู้อนุมัติเองไม่ได้');
+    // sending exactly the type's chain is fine
+    expect((await t.api('POST', '/requests', { typeId: lockedType.id, title: 'x', approvers: [{ userId: boss.id }] }, { token: mint.token })).status).toBe(201);
+    const d = (await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ร่างล็อก' }, { token: mint.token })).body;
+    expect(d).toMatchObject({ lock_approvers: true, can_edit: true, can_change_approvers: false });
+    expect((await t.api('PUT', `/requests/${d.id}/approvers`, { approvers: [{ userId: deputy.id }] }, { token: mint.token })).status).toBe(403);
+    const admin = named('ผู้ดูแล', [...APPROVER, 'approvals.request.admin']);
+    expect((await t.api('PUT', `/requests/${d.id}/approvers`, { approvers: [{ userId: deputy.id, userName: deputy.name }] }, { token: admin.token })).body.step_count).toBe(1);
+    // unlock the type → requesters may change it again
+    expect((await t.api('PUT', `/types/${lockedType.id}`, { lockApprovers: false })).body.lock_approvers).toBe(false);
+    const d2 = (await t.api('GET', `/requests/${d.id}`, undefined, { token: mint.token })).body;
+    expect(d2.can_change_approvers).toBe(true);
+    await t.api('PUT', `/types/${lockedType.id}`, { lockApprovers: true });
+  });
+
+  it('delegates approvals while the approver is away; the delegate acts and the trail says แทน', async () => {
+    const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const r = (await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ซื้อจอ', amount: 4000, submit: true }, { token: mint.token })).body;
+    // before delegating: deputy cannot see or act
+    expect((await t.api('GET', '/inbox', undefined, { token: deputy.token })).body).toHaveLength(0);
+    expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: deputy.token })).status).toBe(404);
+
+    // validation and permission
+    expect((await t.api('POST', '/delegations', { toUserId: boss.id, startsOn: today, endsOn: today }, { token: boss.token })).status).toBe(400);
+    expect((await t.api('POST', '/delegations', { toUserId: deputy.id, startsOn: today, endsOn: '2020-01-01' }, { token: boss.token })).status).toBe(400);
+    expect((await t.api('POST', '/delegations', { toUserId: deputy.id, startsOn: today, endsOn: today }, { token: mint.token })).status).toBe(403);
+    expect((await t.api('POST', '/delegations', { fromUserId: mint.id, toUserId: deputy.id, startsOn: today, endsOn: today }, { token: boss.token })).status).toBe(403);
+
+    const dg = await t.api('POST', '/delegations', { toUserId: deputy.id, toUserName: deputy.name, startsOn: today, endsOn: '2099-12-31', note: 'ลาพักร้อน' }, { token: boss.token });
+    expect(dg.status).toBe(201);
+    expect(dg.body).toMatchObject({ from_user_name: 'ผู้จัดการขาย', to_user_name: 'รองผู้จัดการ', status: 'active', active_now: true, can_cancel: true });
+    expect((await t.api('POST', '/delegations', { toUserId: mint.id, startsOn: today, endsOn: today }, { token: boss.token })).status).toBe(409); // overlap
+
+    const inbox = (await t.api('GET', '/inbox', undefined, { token: deputy.token })).body;
+    expect(inbox.find((x: any) => x.id === r.id)).toMatchObject({ acting_for_name: 'ผู้จัดการขาย', can_act: true, current_delegate_name: 'รองผู้จัดการ' });
+    expect((await t.api('GET', '/summary', undefined, { token: deputy.token })).body.waitingForMe).toBeGreaterThanOrEqual(1);
+    const seen = (await t.api('GET', `/requests/${r.id}`, undefined, { token: deputy.token })).body;
+    expect(seen).toMatchObject({ can_act: true, acting_for_name: 'ผู้จัดการขาย' });
+
+    const ok = await t.api('POST', `/requests/${r.id}/approve`, { note: 'อนุมัติแทน' }, { token: deputy.token });
+    expect(ok.body.status).toBe('approved');
+    expect(ok.body.steps[0]).toMatchObject({ acted_by: deputy.id, acted_by_name: 'รองผู้จัดการ', on_behalf_of_name: 'ผู้จัดการขาย', acted_by_label: 'รองผู้จัดการ (แทน ผู้จัดการขาย)' });
+    expect(ok.body.history.at(-1)).toMatchObject({ actor_name: 'รองผู้จัดการ', on_behalf_of_id: boss.id, action_label: 'อนุมัติ (แทน ผู้จัดการขาย)' });
+    const decided = (await t.published('approvals.request_decided')).map((x) => x.data).find((x: any) => x.requestId === r.id);
+    expect(decided).toMatchObject({ decision: 'approved', requesterId: mint.id, byName: 'รองผู้จัดการ' });
+
+    // a new request reaching the boss tells the delegate too
+    const r2 = (await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ซื้อเมาส์', submit: true }, { token: mint.token })).body;
+    const ev = (await t.published('approvals.request_submitted')).map((x) => x.data).find((x: any) => x.requestId === r2.id);
+    expect(ev).toMatchObject({ nextApproverId: boss.id, delegateId: deputy.id, delegateName: 'รองผู้จัดการ' });
+
+    // the delegate cannot cancel the delegation; the boss can — then the delegate loses the request
+    const list = (await t.api('GET', '/delegations', undefined, { token: deputy.token })).body;
+    expect(list.find((x: any) => x.id === dg.body.id)).toMatchObject({ can_cancel: false });
+    expect((await t.api('POST', `/delegations/${dg.body.id}/cancel`, {}, { token: deputy.token })).status).toBe(403);
+    expect((await t.api('POST', `/delegations/${dg.body.id}/cancel`, {}, { token: boss.token })).body).toMatchObject({ status: 'cancelled', can_cancel: false });
+    expect((await t.api('POST', `/requests/${r2.id}/approve`, {}, { token: deputy.token })).status).toBe(404);
+    expect((await t.api('GET', '/inbox', undefined, { token: deputy.token })).body).toHaveLength(0);
+    // ...but still sees the one they approved
+    expect((await t.api('GET', `/requests/${r.id}`, undefined, { token: deputy.token })).status).toBe(200);
+    expect((await t.api('GET', '/delegations?status=cancelled', undefined, { token: boss.token })).body).toHaveLength(1);
+  });
+
+  it('a delegate who is the requester still cannot approve their own request', async () => {
+    const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const staffApprover = named('พนักงานผู้อนุมัติ', APPROVER);
+    await t.api('POST', '/delegations', { toUserId: staffApprover.id, toUserName: staffApprover.name, startsOn: today, endsOn: today }, { token: boss.token });
+    const r = (await t.api('POST', '/requests', { typeId: lockedType.id, title: 'ของตัวเอง', submit: true }, { token: staffApprover.token })).body;
+    expect(r.can_act).toBe(false);
+    expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: staffApprover.token })).status).toBe(403);
+  });
+
+  it('keeps delegations per tenant', async () => {
+    const other = t.token(['*'], t.otherTenantId);
+    expect((await t.api('GET', '/delegations', undefined, { token: other })).body).toEqual([]);
+    const any = (await t.api('GET', '/delegations')).body[0];
+    expect((await t.api('POST', `/delegations/${any.id}/cancel`, {}, { token: other })).status).toBe(404);
+    expect((await t.api('GET', '/delegations', undefined, { token: t.token([]) })).status).toBe(403);
   });
 });

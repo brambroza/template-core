@@ -255,7 +255,8 @@ export default defineUi({
       fields: quoteFields, lines: quoteLines, submitLabel: 'บันทึกร่าง', after: { screen: 'quote', idFrom: 'id' },
     },
     quote: {
-      kind: 'detail', title: 'ใบเสนอราคา', endpoint: '/quotations/:id', perm: 'crm.quote.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'ใบเสนอราคา', endpoint: '/quotations/:id', perm: 'crm.quote.read', heading: 'no', mobile: true,
+      print: { title: 'ใบเสนอราคา', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันการสั่งซื้อ'] },
       flow: {
         field: 'status',
         steps: [{ value: 'draft', label: 'ร่าง' }, { value: 'sent', label: 'ส่งลูกค้า' }, { value: 'accepted', label: 'ลูกค้าตอบรับ' }],

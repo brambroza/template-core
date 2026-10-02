@@ -2,6 +2,9 @@ import { defineUi, type Action, type Field } from '@erp/ui-schema';
 
 /** Screens for web + mobile. Endpoints use the same path templates as the routes in service.ts. */
 
+/** Cost, depreciation and book value are company finance: only roles with this permission see them (the API returns null otherwise). */
+const FINANCE = 'assets.finance.read';
+
 const assetStatuses = [
   { value: 'in_use', label: 'ใช้งานอยู่' }, { value: 'in_storage', label: 'เก็บในคลัง' }, { value: 'in_repair', label: 'ส่งซ่อม' },
   { value: 'lost', label: 'สูญหาย' }, { value: 'disposed', label: 'ตัดจำหน่ายแล้ว' },
@@ -56,7 +59,7 @@ export default defineUi({
     { id: 'audit', label: 'ตรวจนับทรัพย์สิน', example: 'ตรวจนับ', keywords: ['ตรวจนับ', 'ตรวจนับทรัพย์สิน', 'audit'], screen: 'auditList', perm: 'assets.asset.read' },
     { id: 'repair', label: 'แจ้งซ่อมทรัพย์สิน', example: 'ซ่อมทรัพย์สิน AS-2569-0001 จอไม่ติด', keywords: ['ซ่อมทรัพย์สิน', 'แจ้งซ่อมทรัพย์สิน'], screen: 'repairNew', perm: 'assets.repair.report',
       arg: { lookup: { path: '/assets', query: { active: 'true' }, label: ['code', 'name'], assign: { assetId: 'id' } } }, restField: 'description' },
-    { id: 'schedule', label: 'ตารางค่าเสื่อมของทรัพย์สิน', example: 'ค่าเสื่อม AS-2569-0001', keywords: ['ค่าเสื่อม', 'ตารางค่าเสื่อม'], screen: 'assetSchedule', perm: 'assets.asset.read',
+    { id: 'schedule', label: 'ตารางค่าเสื่อมของทรัพย์สิน', example: 'ค่าเสื่อม AS-2569-0001', keywords: ['ค่าเสื่อม', 'ตารางค่าเสื่อม'], screen: 'assetSchedule', perm: FINANCE,
       arg: { lookup: { path: '/assets', label: ['code', 'name'], assign: { id: 'id' } }, openId: 'id' } },
   ],
   search: [
@@ -157,7 +160,7 @@ export default defineUi({
       ],
     },
     assetSchedule: {
-      kind: 'detail', title: 'ตารางค่าเสื่อมราคา', endpoint: '/assets/:id/schedule', perm: 'assets.asset.read', heading: 'code', printable: true,
+      kind: 'detail', title: 'ตารางค่าเสื่อมราคา', endpoint: '/assets/:id/schedule', perm: FINANCE, heading: 'code', printable: true,
       fields: [
         { key: 'name', label: 'ทรัพย์สิน' }, { key: 'category_name', label: 'หมวด' }, { key: 'method', label: 'วิธี', format: 'label' },
         { key: 'purchase_date', label: 'วันที่ซื้อ', format: 'date' }, { key: 'cost', label: 'ราคาทุน', format: 'money' }, { key: 'salvage_value', label: 'มูลค่าซาก', format: 'money' },
@@ -221,7 +224,7 @@ export default defineUi({
 
     /* ---------- depreciation ---------- */
     depreciationReport: {
-      kind: 'list', title: 'รายงานค่าเสื่อมราคารายเดือน', endpoint: '/depreciation', rows: 'rows', perm: 'assets.asset.read',
+      kind: 'list', title: 'รายงานค่าเสื่อมราคารายเดือน', endpoint: '/depreciation', rows: 'rows', perm: FINANCE,
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM)', type: 'text', help: 'เว้นว่าง = เดือนนี้' }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ทรัพย์สิน' }, { key: 'category_name', label: 'หมวด' }, { key: 'purchase_date', label: 'วันที่ซื้อ', format: 'date' },
@@ -231,7 +234,7 @@ export default defineUi({
       rowLink: { screen: 'assetSchedule' }, empty: 'ไม่มีทรัพย์สินที่คิดค่าเสื่อมในเดือนนี้',
     },
     depreciationByCategory: {
-      kind: 'list', title: 'ค่าเสื่อมราคาตามหมวด', endpoint: '/depreciation', rows: 'byCategory', perm: 'assets.asset.read',
+      kind: 'list', title: 'ค่าเสื่อมราคาตามหมวด', endpoint: '/depreciation', rows: 'byCategory', perm: FINANCE,
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM)', type: 'text', help: 'เว้นว่าง = เดือนนี้' }],
       columns: [
         { key: 'category_code', label: 'รหัสหมวด' }, { key: 'category_name', label: 'หมวด' }, { key: 'count', label: 'จำนวน', format: 'qty' },
@@ -289,13 +292,19 @@ export default defineUi({
     { id: 'as-kpi', kind: 'kpi', title: 'ทรัพย์สิน', endpoint: '/summary', perm: 'assets.asset.read', size: 'md', href: 'assetList',
       items: [
         { key: 'count', label: 'ทรัพย์สินในทะเบียน', format: 'qty' },
-        { key: 'bookValue', label: 'มูลค่าตามบัญชี', format: 'money', tone: 'ok' },
         { key: 'inRepair', label: 'ส่งซ่อมอยู่', format: 'qty', tone: 'warn' },
         { key: 'warrantyExpiring30d', label: 'ประกันหมดใน 30 วัน', format: 'qty', tone: 'warn' },
+        { key: 'lost', label: 'สูญหาย', format: 'qty', tone: 'stop' },
       ] },
-    { id: 'as-category', kind: 'bars', title: 'มูลค่าตามบัญชีแยกหมวด', endpoint: '/summary', perm: 'assets.asset.read', size: 'md', href: 'depreciationByCategory',
+    { id: 'as-value', kind: 'kpi', title: 'มูลค่าทรัพย์สิน', endpoint: '/summary', perm: FINANCE, size: 'md', href: 'depreciationReport',
+      items: [
+        { key: 'bookValue', label: 'มูลค่าตามบัญชี', format: 'money', tone: 'ok' },
+        { key: 'totalCost', label: 'ราคาทุนรวม', format: 'money' },
+        { key: 'depreciationMonth', label: 'ค่าเสื่อมเดือนนี้', format: 'money' },
+      ] },
+    { id: 'as-category', kind: 'bars', title: 'มูลค่าตามบัญชีแยกหมวด', endpoint: '/summary', perm: FINANCE, size: 'md', href: 'depreciationByCategory',
       rows: 'byCategory', label: 'category', value: 'book_value', format: 'money' },
-    { id: 'as-dep', kind: 'trend', title: 'ค่าเสื่อมราคา 6 เดือน', endpoint: '/summary', perm: 'assets.asset.read', size: 'md', href: 'depreciationReport',
+    { id: 'as-dep', kind: 'trend', title: 'ค่าเสื่อมราคา 6 เดือน', endpoint: '/summary', perm: FINANCE, size: 'md', href: 'depreciationReport',
       rows: 'months', x: 'month', y: 'depreciation', format: 'money' },
     { id: 'as-feed', kind: 'feed', title: 'ทรัพย์สินที่ต้องดูแล', endpoint: '/summary', perm: 'assets.asset.read', size: 'sm', href: 'repairList',
       rows: 'rows', title2: 'title', body: 'body', time: 'time', level: 'level', link: 'link' },

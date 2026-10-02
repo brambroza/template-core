@@ -42,6 +42,10 @@ const claimColumns: Column[] = [
   { key: 'over_limit', label: 'เกินวงเงิน', format: 'boolean' },
 ];
 
+/** Company-wide lists, payment queues and spend reports are for approvers / finance; staff work from "ใบเบิกของฉัน". */
+const APPROVE = 'expense.claim.approve';
+const PAY = 'expense.claim.pay';
+
 export default defineUi({
   module: 'expense',
   label: 'เบิกค่าใช้จ่าย',
@@ -61,7 +65,7 @@ export default defineUi({
   commands: [
     { id: 'claim', label: 'เบิกค่าใช้จ่าย', example: 'เบิก ค่าน้ำมันไปหาลูกค้าบางนา', keywords: ['เบิก', 'เบิกเงิน', 'เบิกค่า'], screen: 'claimNew', perm: 'expense.claim.write', restField: 'purpose' },
     { id: 'advance', label: 'ขอเงินทดรองจ่าย', example: 'เบิกล่วงหน้า ไปออกบูธงานแฟร์', keywords: ['เบิกล่วงหน้า', 'ทดรอง', 'เงินทดรอง'], screen: 'advanceNew', perm: 'expense.claim.write', restField: 'purpose' },
-    { id: 'toPay', label: 'ใบเบิกรอจ่ายเงิน', example: 'รอจ่าย', keywords: ['รอจ่าย', 'ค้างจ่าย'], screen: 'toPay', perm: 'expense.claim.read' },
+    { id: 'toPay', label: 'ใบเบิกรอจ่ายเงิน', example: 'รอจ่าย', keywords: ['รอจ่าย', 'ค้างจ่าย'], screen: 'toPay', perm: PAY },
     { id: 'mine', label: 'ใบเบิกของฉัน', example: 'ใบเบิกของฉัน', keywords: ['ใบเบิกของฉัน', 'ใบเบิก'], screen: 'myClaims', perm: 'expense.claim.read' },
   ],
   search: [
@@ -76,7 +80,7 @@ export default defineUi({
       create: 'claimNew', createLabel: 'เบิกค่าใช้จ่าย', rowLink: { screen: 'claimDetail' }, empty: 'คุณยังไม่มีใบเบิก',
     },
     claims: {
-      kind: 'list', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims', perm: 'expense.claim.read', mobile: true,
+      kind: 'list', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims', perm: APPROVE, mobile: true,
       filters: [
         { name: 'q', label: 'ค้นหาเลขที่ ผู้เบิก แผนก', type: 'text' },
         { name: 'status', label: 'สถานะ', type: 'select', options: claimStatuses },
@@ -93,8 +97,7 @@ export default defineUi({
     claimNew: {
       kind: 'form', title: 'เบิกค่าใช้จ่าย', method: 'POST', endpoint: '/claims', perm: 'expense.claim.write', mobile: true,
       fields: [
-        { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true },
-        { name: 'claimantName', label: 'ชื่อผู้เบิก', type: 'text' },
+        { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true, help: 'ผู้เบิกคือผู้ใช้ที่ล็อกอินอยู่' },
         { name: 'department', label: 'แผนก', type: 'text' },
         { name: 'claimDate', label: 'วันที่ขอเบิก (เว้นว่าง = วันนี้)', type: 'date' },
         { name: 'submit', label: 'ส่งขออนุมัติทันที', type: 'boolean', default: true },
@@ -105,15 +108,15 @@ export default defineUi({
     claimEdit: {
       kind: 'form', title: 'แก้ไขใบเบิก', method: 'PUT', endpoint: '/claims/:id', load: '/claims/:id', perm: 'expense.claim.write', mobile: true,
       fields: [
-        { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true },
-        { name: 'claimantName', label: 'ชื่อผู้เบิก', type: 'text' },
+        { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true, help: 'ผู้เบิกคือผู้ใช้ที่ล็อกอินอยู่' },
         { name: 'department', label: 'แผนก', type: 'text' },
         { name: 'claimDate', label: 'วันที่ขอเบิก', type: 'date' },
       ],
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'claimDetail', idFrom: 'id' },
     },
     claimDetail: {
-      kind: 'detail', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims/:id', perm: 'expense.claim.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'ใบเบิกค่าใช้จ่าย', endpoint: '/claims/:id', perm: 'expense.claim.read', heading: 'no', mobile: true,
+      print: { title: 'ใบเบิกค่าใช้จ่าย', signatures: ['ผู้เบิก', 'ผู้อนุมัติ', 'ผู้จ่ายเงิน'] },
       edit: 'claimEdit',
       flow: {
         field: 'status',
@@ -135,9 +138,12 @@ export default defineUi({
         { key: 'net_payable', label: 'ยอดจ่ายสุทธิ', format: 'money' },
         { key: 'over_limit', label: 'เกินวงเงิน', format: 'boolean' },
         { key: 'last_note', label: 'หมายเหตุผู้อนุมัติ' },
+        { key: 'approved_by_name', label: 'ผู้อนุมัติ' },
+        { key: 'approved_at', label: 'อนุมัติเมื่อ', format: 'datetime' },
         { key: 'paid_date', label: 'วันที่จ่าย', format: 'date' },
         { key: 'pay_method_label', label: 'วิธีจ่าย' },
         { key: 'pay_reference', label: 'อ้างอิงการจ่าย' },
+        { key: 'paid_by_name', label: 'ผู้จ่ายเงิน' },
       ],
       lines: [
         { path: 'lines', label: 'รายการ', columns: [
@@ -158,7 +164,7 @@ export default defineUi({
       ],
     },
     toPay: {
-      kind: 'list', title: 'ใบเบิกอนุมัติแล้ว รอจ่ายเงิน', endpoint: '/reports/outstanding', rows: 'items', perm: 'expense.claim.read',
+      kind: 'list', title: 'ใบเบิกอนุมัติแล้ว รอจ่ายเงิน', endpoint: '/reports/outstanding', rows: 'items', perm: PAY,
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'claimant_name', label: 'ผู้เบิก' }, { key: 'purpose', label: 'วัตถุประสงค์' },
         { key: 'total', label: 'ยอดเบิก', format: 'money' }, { key: 'advance_amount', label: 'หักเงินทดรอง', format: 'money' },
@@ -179,7 +185,7 @@ export default defineUi({
       create: 'advanceNew', createLabel: 'ขอเงินทดรอง', rowLink: { screen: 'advanceDetail' }, empty: 'ยังไม่มีเงินทดรอง',
     },
     advancesOpen: {
-      kind: 'list', title: 'เงินทดรองจ่ายแล้ว รอเคลียร์', endpoint: '/reports/outstanding', rows: 'advances', perm: 'expense.claim.read',
+      kind: 'list', title: 'เงินทดรองจ่ายแล้ว รอเคลียร์', endpoint: '/reports/outstanding', rows: 'advances', perm: PAY,
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'requester_name', label: 'ผู้ขอ' }, { key: 'purpose', label: 'วัตถุประสงค์' },
         { key: 'amount', label: 'จำนวนเงิน', format: 'money' }, { key: 'paid_date', label: 'จ่ายเมื่อ', format: 'date' }, { key: 'days_open', label: 'ค้าง (วัน)', format: 'qty' },
@@ -192,7 +198,6 @@ export default defineUi({
         { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true },
         { name: 'amount', label: 'จำนวนเงิน', type: 'number', step: 0.01, required: true },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
-        { name: 'requesterName', label: 'ชื่อผู้ขอ', type: 'text' },
         { name: 'department', label: 'แผนก', type: 'text' },
       ],
       submitLabel: 'ส่งขอเงินทดรอง', after: { screen: 'advanceDetail', idFrom: 'id' },
@@ -208,6 +213,7 @@ export default defineUi({
         { key: 'status_label', label: 'สถานะ' }, { key: 'requester_name', label: 'ผู้ขอ' }, { key: 'department', label: 'แผนก' },
         { key: 'purpose', label: 'วัตถุประสงค์' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' }, { key: 'amount_text', label: 'ตัวอักษร' },
         { key: 'needed_by', label: 'ต้องการภายใน', format: 'date' }, { key: 'last_note', label: 'หมายเหตุ' },
+        { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'paid_by_name', label: 'ผู้จ่ายเงิน' },
         { key: 'paid_date', label: 'วันที่จ่าย', format: 'date' }, { key: 'pay_method_label', label: 'วิธีจ่าย' }, { key: 'pay_reference', label: 'อ้างอิง' },
         { key: 'claim_no', label: 'เคลียร์ด้วยใบเบิก' }, { key: 'claim_total', label: 'ยอดใบเบิก', format: 'money' },
         { key: 'settle_text', label: 'ผลการเคลียร์' }, { key: 'cleared_at', label: 'เคลียร์เมื่อ', format: 'datetime' },
@@ -223,7 +229,7 @@ export default defineUi({
       ],
     },
     byCategory: {
-      kind: 'list', title: 'ค่าใช้จ่ายตามหมวด', endpoint: '/reports/by-category', perm: 'expense.claim.read',
+      kind: 'list', title: 'ค่าใช้จ่ายตามหมวด', endpoint: '/reports/by-category', perm: APPROVE,
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM, เว้นว่าง = เดือนนี้)', type: 'text' }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'หมวด' }, { key: 'total', label: 'ยอดรวม', format: 'money' },
@@ -232,7 +238,7 @@ export default defineUi({
       rowLink: { screen: 'categoryDetail' }, empty: 'ยังไม่มีหมวดค่าใช้จ่าย',
     },
     monthly: {
-      kind: 'list', title: 'ยอดเบิกรายเดือน (6 เดือน)', endpoint: '/summary', rows: 'months', perm: 'expense.claim.read',
+      kind: 'list', title: 'ยอดเบิกรายเดือน (6 เดือน)', endpoint: '/summary', rows: 'months', perm: APPROVE,
       columns: [{ key: 'month', label: 'เดือน', format: 'month' }, { key: 'claims', label: 'จำนวนใบเบิก', format: 'qty' }, { key: 'total', label: 'ยอดเบิก', format: 'money' }],
       empty: 'ยังไม่มีข้อมูล',
     },
@@ -273,21 +279,21 @@ export default defineUi({
       kind: 'detail', title: 'หมวดค่าใช้จ่าย', endpoint: '/categories/:id', perm: 'expense.claim.read', heading: 'name', edit: 'categoryEdit',
       fields: [
         { key: 'code', label: 'รหัส' }, { key: 'monthly_limit', label: 'วงเงิน/คน/เดือน', format: 'money' },
-        { key: 'requires_receipt', label: 'ต้องมีใบเสร็จ', format: 'boolean' }, { key: 'used_this_month', label: 'เบิกเดือนนี้ (ทุกคน)', format: 'money' },
+        { key: 'requires_receipt', label: 'ต้องมีใบเสร็จ', format: 'boolean' }, { key: 'used_this_month', label: 'เบิกเดือนนี้', format: 'money' },
         { key: 'note', label: 'ระเบียบการเบิก' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
     },
   },
   widgets: [
-    { id: 'expense-kpi', kind: 'kpi', title: 'เบิกค่าใช้จ่าย', endpoint: '/summary', perm: 'expense.claim.read', size: 'md', href: 'claims',
+    { id: 'expense-kpi', kind: 'kpi', title: 'เบิกค่าใช้จ่าย', endpoint: '/summary', perm: APPROVE, size: 'md', href: 'claims',
       items: [
         { key: 'toApprove', label: 'รออนุมัติ', format: 'qty', tone: 'warn' },
         { key: 'toPayAmount', label: 'ค้างจ่าย (บาท)', format: 'money' },
         { key: 'claimedThisMonth', label: 'ยอดเบิกเดือนนี้', format: 'money' },
         { key: 'advancesOutstanding', label: 'เงินทดรองค้างเคลียร์', format: 'money', tone: 'stop' },
       ] },
-    { id: 'expense-category', kind: 'bars', title: 'ค่าใช้จ่ายเดือนนี้ตามหมวด', endpoint: '/summary', perm: 'expense.claim.read', size: 'md', href: 'byCategory',
+    { id: 'expense-category', kind: 'bars', title: 'ค่าใช้จ่ายเดือนนี้ตามหมวด', endpoint: '/summary', perm: APPROVE, size: 'md', href: 'byCategory',
       rows: 'byCategory', label: 'name', value: 'total', format: 'money' },
-    { id: 'expense-trend', kind: 'trend', title: 'ยอดเบิก 6 เดือน', endpoint: '/summary', perm: 'expense.claim.read', size: 'md', href: 'monthly', rows: 'months', x: 'month', y: 'total', format: 'money' },
+    { id: 'expense-trend', kind: 'trend', title: 'ยอดเบิก 6 เดือน', endpoint: '/summary', perm: APPROVE, size: 'md', href: 'monthly', rows: 'months', x: 'month', y: 'total', format: 'money' },
   ],
 });

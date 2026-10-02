@@ -4,7 +4,7 @@
   "nameTh": "คลังสินค้า",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Warehouses, goods receipt/issue/transfer/adjustment, on-hand balances and stock card. Moves stock automatically when Purchasing, Sales, Production or Maintenance are installed.",
+  "description": "Warehouses, goods receipt/issue/transfer/adjustment, on-hand vs available balances and stock card, QC quarantine (QC-HOLD) and negative-stock anomalies. Moves stock automatically when Purchasing, Sales, Production, Maintenance or Quality are installed.",
   "requires": [
     "identity",
     "master-data"
@@ -13,7 +13,8 @@
     "purchasing",
     "sales",
     "production",
-    "maintenance"
+    "maintenance",
+    "quality"
   ],
   "publishes": [
     "inventory.stock_changed",
@@ -23,7 +24,10 @@
     "purchasing.goods_received",
     "sales.delivered",
     "production.completed",
-    "maintenance.parts_used"
+    "maintenance.parts_used",
+    "quality.inspection_created",
+    "quality.inspection_completed",
+    "purchasing.goods_returned"
   ],
   "permissions": [
     {
@@ -37,6 +41,10 @@
     {
       "key": "inventory.settings.write",
       "label": "ตั้งค่าคลัง"
+    },
+    {
+      "key": "inventory.hold.release",
+      "label": "ปล่อย/จ่ายของจากคลังกักกัน QC"
     }
   ]
 }

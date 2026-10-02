@@ -80,22 +80,26 @@ const SELF_SERVICE = [
   'approvals.request.read', 'approvals.request.write', 'approvals.request.approve', 'expense.claim.read', 'expense.claim.write',
   'hr.leave.request', 'hr.attendance.self', 'booking.resource.read', 'booking.book.create', 'helpdesk.ticket.create', 'helpdesk.kb.read',
   'projects.project.read', 'projects.task.write', 'projects.timesheet.log', 'assets.asset.read', 'assets.repair.report',
+  'automation.notify.read',
 ];
 const SERVICE_TEAM = ['helpdesk.ticket.create', 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.read', 'helpdesk.kb.write'];
 const EXTRA_ROLES: [string, string[]][] = [
   ['พนักงาน (บริการตนเอง)', SELF_SERVICE],
   ['ฝ่ายบุคคล', ['hr.*', 'identity.user.read']],
-  ['บัญชีและการเงิน', ['expense.*', 'assets.*', 'costing.cost.read']],
-  ['ไอที', ['assets.*', 'identity.user.read']],
   ['ทีมบริการ (Helpdesk)', SERVICE_TEAM],
   ['ควบคุมคุณภาพ', ['quality.*', 'master.item.read', 'master.partner.read', 'inventory.stock.read']],
   ['ฝ่ายขาย CRM', ['crm.*', 'master.item.read', 'master.partner.read']],
   ['ผู้จัดการโครงการ', ['projects.*']],
 ];
+/**
+ * Roles made from Identity's role templates (wave 4) — only the permissions of installed modules. Accounting gets receipts/AR and the
+ * money columns of the asset register; IT manages the assets but without `assets.finance.read` (cost and book value stay hidden).
+ */
+const TEMPLATE_ROLES: [string, string][] = [['accounting', 'บัญชีและการเงิน'], ['it', 'ไอที / helpdesk'], ['executive', 'ผู้บริหาร']];
 const EXTRA_BY_USER: Record<string, string[]> = {
   'store@demo.co.th': [], 'buyer@demo.co.th': [], 'sales@demo.co.th': ['ฝ่ายขาย CRM'], 'tech@demo.co.th': ['ทีมบริการ (Helpdesk)'],
   'plan@demo.co.th': ['ผู้จัดการโครงการ'], 'hr@demo.co.th': ['ฝ่ายบุคคล'], 'acc@demo.co.th': ['บัญชีและการเงิน'],
-  'it@demo.co.th': ['ไอที', 'ทีมบริการ (Helpdesk)', 'ผู้จัดการโครงการ'], 'qc@demo.co.th': ['ควบคุมคุณภาพ', 'ทีมบริการ (Helpdesk)', 'ผู้จัดการโครงการ'],
+  'it@demo.co.th': ['ไอที / helpdesk', 'ผู้จัดการโครงการ'], 'qc@demo.co.th': ['ควบคุมคุณภาพ', 'ทีมบริการ (Helpdesk)', 'ผู้จัดการโครงการ'],
 };
 
 type User = { id: string; name: string; email: string };
@@ -140,13 +144,13 @@ export async function seedQualityPlans(call: Call, items: Record<string, Item>):
 }
 
 export async function seedBusiness(base: BusinessCtx): Promise<void> {
-  const mods = ['hr', 'approvals', 'expense', 'booking', 'crm', 'helpdesk', 'projects', 'assets', 'quality'].filter(base.has);
+  const mods = ['hr', 'approvals', 'expense', 'booking', 'crm', 'helpdesk', 'projects', 'assets', 'quality', 'sales'].filter(base.has);
   if (!mods.length) return;
   const t0 = Date.now();
   const ctx = await people(base);
   const seeders: Record<string, (x: Ctx) => Promise<unknown>> = {
     hr: seedHr, approvals: seedApprovals, expense: seedExpense, booking: seedBooking, crm: seedCrm,
-    helpdesk: seedHelpdesk, projects: seedProjects, assets: seedAssets, quality: seedQualityWork,
+    helpdesk: seedHelpdesk, projects: seedProjects, assets: seedAssets, quality: seedQualityWork, sales: seedReceivables,
   };
   const failed: string[] = [];
   const timings: string[] = [];
@@ -160,8 +164,39 @@ export async function seedBusiness(base: BusinessCtx): Promise<void> {
       console.error(`demo seed: ${m} failed —`, err instanceof Error ? err.message : err);
     }
   }));
+  // last, once the other modules' events have been delivered: a few personal flows, so they sit at the top of each person's bell
+  await finale(ctx).catch((err) => { failed.push('finale'); console.error('demo seed: finale failed —', err instanceof Error ? err.message : err); });
   console.log(`  business modules seeded in ${((Date.now() - t0) / 1000).toFixed(1)}s (${timings.join(', ')})`);
   if (failed.length) console.error(`  demo seed: incomplete modules: ${failed.join(', ')}`);
+}
+
+/**
+ * Wave 4 notifications are personal: each person's bell shows what is addressed to them. Acting through the real flows here means
+ * the newest items are — admin: sales' new request to approve; sales@: "อนุมัติแล้ว" and "จ่ายเงินแล้ว"; acc@: QC's budget request.
+ */
+async function finale(x: Ctx) {
+  const { as, has, users: u, dept } = x;
+  await new Promise((r) => setTimeout(r, 1500));
+  if (has('approvals')) {
+    const types = await as.admin<any[]>('GET', '/api/approvals/types');
+    const typeId = (code: string) => types.find((t) => t.code === code)?.id;
+    const expo = (await as.admin<any[]>('GET', '/api/approvals/inbox')).find((r) => r.title?.startsWith('ออกบูธงาน Manufacturing Expo'));
+    if (expo) await as.admin('POST', `/api/approvals/requests/${expo.id}/approve`, { note: 'อนุมัติ ขอรายชื่อลูกค้าที่นัดพบที่บูธด้วย' });
+    await as.qc('POST', '/api/approvals/requests', {
+      typeId: typeId('BUDGET'), title: 'ส่งหัวหน้างาน 2 คนอบรม Internal Auditor ISO 9001', detail: 'หลักสูตร 2 วัน สถาบันรับรองมาตรฐาน — เตรียมตรวจติดตามภายในก่อน Surveillance audit',
+      amount: 8500, neededBy: wd(8), department: dept.qc, submit: true,
+    });
+    await as.sales('POST', '/api/approvals/requests', {
+      typeId: typeId('TRAVEL'), title: 'เยี่ยมลูกค้าใหม่ ไทยโฮม แอพพลายแอนซ์ ส่งตัวอย่างขายึดคอมเพรสเซอร์', detail: 'นำตัวอย่าง 20 ชิ้นและใบเสนอราคาไปนำเสนอฝ่ายจัดซื้อและวิศวกรรม',
+      amount: 1800, neededBy: wd(3), department: dept.sales, submit: true,
+    });
+  }
+  if (has('expense')) {
+    // accounting pays the salesman's approved entertainment claim: he gets "จ่ายเงินแล้ว"
+    const toPay = (await as.acc<any>('GET', '/api/expense/reports/outstanding')).items ?? [];
+    const claim = toPay.find((c: any) => c.claimant_id === u.sales.id && String(c.purpose).startsWith('รับรองลูกค้า อีสเทิร์น'));
+    if (claim) await as.acc('POST', `/api/expense/claims/${claim.id}/pay`, { method: 'transfer', paidDate: bkkDate(), reference: 'KBANK-7731' });
+  }
 }
 
 /** Extra users and roles, self-service for everybody, then one session per user. */
@@ -171,6 +206,9 @@ async function people(base: BusinessCtx): Promise<Ctx> {
   for (const r of await call<any[]>('GET', '/api/identity/roles')) roleIds[r.name] = r.id;
   for (const [name, permissions] of EXTRA_ROLES) {
     if (!roleIds[name]) roleIds[name] = (await call('POST', '/api/identity/roles', { name, permissions })).id;
+  }
+  for (const [template, name] of TEMPLATE_ROLES) {
+    if (!roleIds[name]) roleIds[name] = (await call('POST', '/api/identity/roles/from-template', { template, name })).id;
   }
   const existing = await call<any[]>('GET', '/api/identity/users');
   const have = new Set(existing.map((u) => u.email));
@@ -185,7 +223,6 @@ async function people(base: BusinessCtx): Promise<Ctx> {
     const key = u.email.split('@')[0];
     users[key] = { id: u.id, name: u.name, email: u.email };
   }
-  users.admin.name = 'สมศักดิ์ ศรีสวัสดิ์';
   const as: Record<string, Call> = { admin: call };
   await Promise.all(Object.entries(users).filter(([k]) => k !== 'admin').map(async ([k, u]) => { as[k] = await base.loginAs(u.email); }));
   const dept = {
@@ -198,7 +235,7 @@ async function people(base: BusinessCtx): Promise<Ctx> {
 /* ------------------------------------------------------------------ hr ------------------------------------------------------------------ */
 
 const EMPLOYEES: { code: string; prefix: string; first: string; last: string; nick: string; dept: string; pos: string; start: string; user?: string; status?: string; phone: string }[] = [
-  { code: 'EMP-001', prefix: 'นาย', first: 'สมศักดิ์', last: 'ศรีสวัสดิ์', nick: 'ศักดิ์', dept: 'PROD', pos: 'MGR', start: '2012-04-02', user: 'admin', phone: '081-234-5501' },
+  { code: 'EMP-001', prefix: 'นาย', first: 'สมศักดิ์', last: 'ศรีสวัสดิ์', nick: 'ศักดิ์', dept: 'PROD', pos: 'MD', start: '2012-04-02', user: 'admin', phone: '081-234-5501' },
   { code: 'EMP-002', prefix: 'นางสาว', first: 'กมลชนก', last: 'วางแผน', nick: 'ฝน', dept: 'PROD', pos: 'PLAN', start: '2019-06-03', user: 'plan', phone: '089-114-2290' },
   { code: 'EMP-003', prefix: 'นาย', first: 'สมชาย', last: 'คลังดี', nick: 'ชาย', dept: 'WH', pos: 'HEAD', start: '2016-01-04', user: 'store', phone: '086-552-1803' },
   { code: 'EMP-004', prefix: 'นางสาว', first: 'วิไลวรรณ', last: 'จัดซื้อ', nick: 'วิ', dept: 'PUR', pos: 'HEAD', start: '2017-08-01', user: 'buyer', phone: '092-771-4410' },
@@ -224,7 +261,24 @@ const EMPLOYEES: { code: string; prefix: string; first: string; last: string; ni
   { code: 'EMP-024', prefix: 'นางสาว', first: 'ศิริพร', last: 'คงสวัสดิ์', nick: 'ศิ', dept: 'ACC', pos: 'OFF', start: '2020-03-02', phone: '084-881-2236' },
   { code: 'EMP-025', prefix: 'นางสาว', first: 'ธิดารัตน์', last: 'วงศ์ใหญ่', nick: 'ธิดา', dept: 'SALES', pos: 'OFF', start: dayBack(45), status: 'probation', phone: '093-110-7782' },
   { code: 'EMP-026', prefix: 'นาย', first: 'กิตติศักดิ์', last: 'บุญประเสริฐ', nick: 'กิต', dept: 'PROD', pos: 'OP', start: '2023-01-09', phone: '096-405-3318' },
+  { code: 'EMP-027', prefix: 'นางสาว', first: 'พิมพ์ชนก', last: 'ศรีเมือง', nick: 'พิม', dept: 'HR', pos: 'OFF', start: '2021-07-01', phone: '095-771-2048' },
 ];
+
+/**
+ * Org chart (wave 4: leave goes to the manager, not to one HR inbox). Department heads approve their team; the heads report to the MD
+ * (EMP-001 = admin@), whose own leave falls to HR. EMP-009 is the only IT person, so he heads IT and reports to the MD as well.
+ */
+const DEPT_HEADS: Record<string, string> = {
+  PROD: 'EMP-001', WH: 'EMP-003', MT: 'EMP-006', PUR: 'EMP-004', SALES: 'EMP-005', ACC: 'EMP-008', HR: 'EMP-007', IT: 'EMP-009', QC: 'EMP-010',
+};
+const HEADS = new Set(Object.values(DEPT_HEADS));
+/** the employee who approves `code`'s leave (null = HR decides) — mirrors hr's APPROVER_JOIN for the seed's own bookkeeping */
+const leaveApprover = (code: string): string | null => {
+  if (code === 'EMP-001') return null;
+  if (HEADS.has(code)) return 'EMP-001';
+  return DEPT_HEADS[EMPLOYEES.find((e) => e.code === code)!.dept] ?? null;
+};
+const userOf = (code: string | null) => (code ? EMPLOYEES.find((e) => e.code === code)?.user : undefined);
 
 /** [employee, type, from (working-day offset), working days, halfDay, reason, outcome, decision note] */
 const LEAVES: [string, string, number, number, boolean, string, 'approved' | 'pending' | 'rejected' | 'cancelled', string?][] = [
@@ -238,6 +292,7 @@ const LEAVES: [string, string, number, number, boolean, string, 'approved' | 'pe
   ['EMP-005', 'ANNUAL', -12, 1, false, 'พักร้อน', 'approved'],
   ['EMP-013', 'BUSINESS', -10, 1, true, 'ไปธนาคาร ทำเรื่องสินเชื่อบ้าน', 'approved'],
   ['EMP-017', 'ANNUAL', -7, 1, false, 'ไปงานรับปริญญาลูก', 'cancelled', 'ยกเลิกเอง — งานเลื่อน'],
+  ['EMP-027', 'ANNUAL', -9, 1, false, 'พาคุณแม่ไปทำบุญต่างจังหวัด', 'approved', 'อนุมัติ ฝากเรื่องสรุปเวลาทำงานไว้กับพี่นกแล้ว'],
   ['EMP-022', 'SICK', -5, 1, false, 'ปวดหลัง ไปหาหมอ', 'approved'],
   ['EMP-009', 'SICK', -1, 1, false, 'ไข้สูง ส่งใบรับรองแพทย์ย้อนหลัง', 'pending'],
   ['EMP-018', 'SICK', 0, 1, false, 'ไข้หวัด แจ้งทางไลน์เช้านี้', 'approved', 'หายไวๆ นะ'],
@@ -247,7 +302,7 @@ const LEAVES: [string, string, number, number, boolean, string, 'approved' | 'pe
 ];
 
 async function seedHr(x: Ctx) {
-  const { call, users } = x;
+  const { call, users, as } = x;
   await call('PUT', '/api/hr/schedule', { startTime: '08:00', endTime: '17:00', graceMinutes: 5, saturdayWorkday: false });
   const [types] = await Promise.all([
     call('POST', '/api/hr/leave-types/defaults').then((r: any) => Object.fromEntries(r.types.map((t: any) => [t.code, t.id]))),
@@ -256,11 +311,10 @@ async function seedHr(x: Ctx) {
   const depts: Record<string, string> = {};
   const positions: Record<string, string> = {};
   await Promise.all([
-    ...([['PROD', 'ผลิต', 'สมศักดิ์ ศรีสวัสดิ์'], ['WH', 'คลังสินค้า', 'สมชาย คลังดี'], ['MT', 'ซ่อมบำรุง', 'ประเสริฐ ช่างใหญ่'],
-      ['PUR', 'จัดซื้อ', 'วิไลวรรณ จัดซื้อ'], ['SALES', 'ขาย', 'ปิยะพงษ์ ขายเก่ง'], ['ACC', 'บัญชี', 'สุดารัตน์ บุญมา'],
-      ['HR', 'บุคคล', 'นภาพร ใจงาม'], ['IT', 'ไอที', 'ธนากร พึ่งบุญ'], ['QC', 'QC', 'อรุณี ทองดี']] as const)
-      .map(async ([code, name, managerName]) => { depts[code] = (await call('POST', '/api/hr/departments', { code, name, managerName })).id; }),
-    ...([['MGR', 'ผู้จัดการโรงงาน'], ['HEAD', 'หัวหน้าแผนก'], ['SUP', 'หัวหน้างาน (โฟร์แมน)'], ['PLAN', 'เจ้าหน้าที่วางแผนการผลิต'],
+    ...([['PROD', 'ผลิต'], ['WH', 'คลังสินค้า'], ['MT', 'ซ่อมบำรุง'], ['PUR', 'จัดซื้อ'], ['SALES', 'ขาย'], ['ACC', 'บัญชี'],
+      ['HR', 'บุคคล'], ['IT', 'ไอที'], ['QC', 'QC']] as const)
+      .map(async ([code, name]) => { depts[code] = (await call('POST', '/api/hr/departments', { code, name })).id; }),
+    ...([['MD', 'กรรมการผู้จัดการ'], ['HEAD', 'หัวหน้าแผนก'], ['SUP', 'หัวหน้างาน (โฟร์แมน)'], ['PLAN', 'เจ้าหน้าที่วางแผนการผลิต'],
       ['OFF', 'เจ้าหน้าที่'], ['OP', 'พนักงานฝ่ายผลิต'], ['WELD', 'ช่างเชื่อม'], ['TECH', 'ช่างซ่อมบำรุง'], ['STORE', 'พนักงานคลังสินค้า'],
       ['DRV', 'พนักงานขับรถ'], ['INSP', 'พนักงานตรวจสอบคุณภาพ']] as const)
       .map(async ([code, name]) => { positions[code] = (await call('POST', '/api/hr/positions', { code, name })).id; }),
@@ -275,17 +329,27 @@ async function seedHr(x: Ctx) {
     emp[e.code] = r.id;
   }));
   await call('POST', `/api/hr/employees/${emp['EMP-026']}/resign`, { resignedOn: wd(-22) });
+  // org chart: department heads, and every head reports to the MD
+  await Promise.all([
+    ...Object.entries(DEPT_HEADS).map(([d, head]) => call('PATCH', `/api/hr/departments/${depts[d]}`, { managerEmployeeId: emp[head] })),
+    ...[...HEADS].filter((h) => h !== 'EMP-001').map((h) => call('PATCH', `/api/hr/employees/${emp[h]}`, { managerId: emp['EMP-001'] })),
+  ]);
 
-  // leave: oldest first so LV numbers follow the calendar
+  // leave: oldest first so LV numbers follow the calendar. Staff with a login file their own (self-service); HR keys in the paper forms
+  // of the shop floor. The employee's manager decides — the request lands in their "ใบลาลูกทีม" inbox and bell — HR only when nobody is above.
   const onLeave = new Set<string>();
   for (const [code, type, off, days, halfDay, reason, outcome, note] of LEAVES) {
     const fromDate = wd(off);
     let toDate = wd(off + days - 1);
     if (toDate.slice(0, 4) !== fromDate.slice(0, 4)) toDate = fromDate;
-    const lv = await call('POST', '/api/hr/leave-requests', { employeeId: emp[code], leaveTypeId: types[type], fromDate, toDate, halfDay, reason });
-    if (outcome === 'approved' || outcome === 'cancelled') await call('POST', `/api/hr/leave-requests/${lv.id}/approve`, { note });
-    if (outcome === 'rejected') await call('POST', `/api/hr/leave-requests/${lv.id}/reject`, { note });
-    if (outcome === 'cancelled') await call('POST', `/api/hr/leave-requests/${lv.id}/cancel`, { note });
+    const self = userOf(code);
+    const lv = self
+      ? await as[self]('POST', '/api/hr/leave-requests', { leaveTypeId: types[type], fromDate, toDate, halfDay, reason })
+      : await as.hr('POST', '/api/hr/leave-requests', { employeeId: emp[code], leaveTypeId: types[type], fromDate, toDate, halfDay, reason });
+    const boss = as[userOf(leaveApprover(code)) ?? 'hr'];
+    if (outcome === 'approved' || outcome === 'cancelled') await boss('POST', `/api/hr/leave-requests/${lv.id}/approve`, { note });
+    if (outcome === 'rejected') await boss('POST', `/api/hr/leave-requests/${lv.id}/reject`, { note });
+    if (outcome === 'cancelled') await boss('POST', `/api/hr/leave-requests/${lv.id}/cancel`, { note });
     if (outcome === 'approved' && !halfDay) for (let d = fromDate; d <= toDate; d = addDays(d, 1)) onLeave.add(`${code}|${d}`);
   }
 
@@ -351,6 +415,13 @@ async function seedApprovals(x: Ctx) {
   await req('hr', MEMO, 'ขออนุมัติจัดอบรมความปลอดภัยในการทำงาน (จป.) ให้หัวหน้างาน', 'ตามกฎหมายความปลอดภัยฯ หัวหน้างานใหม่ 4 คน ต้องอบรมภายใน 120 วัน', 12500, 12, []);
   await req('qc', PR, 'ซื้อไมโครมิเตอร์ดิจิตอล 2 ตัว', 'สำหรับจุดตรวจรับวัตถุดิบ และไลน์ปั๊ม', 12400, 6, []);
   await req('it', MEMO, 'ขอติดตั้งกล้องวงจรปิดเพิ่มที่คลังสินค้า', 'มุมอับหลังชั้นวางวัตถุดิบ 2 จุด', 9800, null, [], { draft: true });
+
+  // the MD travels next week: his approvals go to the chief accountant (Mon–Fri), so nothing waits for him
+  const nextMonday = addDays(bkkDate(), 7 - ((weekday(bkkDate()) + 6) % 7));
+  await call('POST', '/api/approvals/delegations', {
+    toUserId: u.acc.id, toUserName: u.acc.name, startsOn: nextMonday, endsOn: addDays(nextMonday, 4),
+    note: 'เดินทางไปดูงานเครื่องปั๊มที่ญี่ปุ่น — ระหว่างนี้คุณสุดารัตน์อนุมัติแทนทุกเรื่อง',
+  });
 }
 
 /* ------------------------------------------------------------------ expense ------------------------------------------------------------------ */
@@ -400,6 +471,8 @@ async function seedExpense(x: Ctx) {
   await call('POST', `/api/expense/advances/${adv.id}/approve`, {});
   await call('POST', `/api/expense/advances/${adv.id}/pay`, { method: 'cash', paidDate: dayBack(8) });
   await call('POST', `/api/expense/advances/${adv.id}/clear`, { claimId: expo.id });
+  // the advance (6,000) was more than the claim: the salesman paid the difference back in cash, which settles the claim
+  await call('POST', `/api/expense/claims/${expo.id}/pay`, { method: 'cash', paidDate: dayBack(5), reference: 'รับคืนเงินทดรองส่วนเกินเป็นเงินสด' });
   await as.tech('POST', '/api/expense/advances', { purpose: 'เงินทดรองซื้ออะไหล่ซ่อมเครื่องปั๊ม PRESS-02', amount: 5000, neededBy: wd(1), requesterName: u.tech.name, department: dept.tech });
 }
 
@@ -558,7 +631,12 @@ async function seedCrm(x: Ctx) {
 /* ------------------------------------------------------------------ helpdesk ------------------------------------------------------------------ */
 
 async function seedHelpdesk(x: Ctx) {
-  const { call, users: u, as } = x;
+  const { call, users: u, as, partners } = x;
+  // SLA clock = business hours (Mon–Fri 08:00–17:00, Thai holidays off); urgent tickets run 24x7
+  await Promise.all([
+    call('PUT', '/api/helpdesk/settings/sla', { businessHours: true, workDays: [1, 2, 3, 4, 5], workStart: '08:00', workEnd: '17:00', urgent24x7: true, timezone: 'Asia/Bangkok' }),
+    ...HOLIDAYS.map(([date, name]) => call('POST', '/api/helpdesk/holidays', { date, name })),
+  ]);
   const cats: Record<string, any> = {};
   for (const [code, name, slaResponseHours, slaResolveHours, who] of [
     ['IT', 'IT', 2, 8, 'it'], ['FAC', 'อาคารสถานที่', 4, 48, 'tech'], ['AFTER', 'บริการหลังการขาย', 4, 72, 'qc'],
@@ -580,59 +658,57 @@ async function seedHelpdesk(x: Ctx) {
     ['การแจ้งซ่อมอาคารและเวลาให้บริการ', 'FAC', 'แจ้งผ่านระบบหมวด "อาคารสถานที่" ทีมช่างให้บริการ จ.–ศ. 08:00–17:00 น. เรื่องเร่งด่วน (ไฟดับ น้ำรั่วใส่เครื่องจักร) โทร 1102', false],
   ].map(([title, cat, body, published]) => as.it('POST', '/api/helpdesk/articles', { title, body, categoryId: cats[cat as string].id, published })));
 
-  type Flow = { start?: boolean; wait?: string; comments?: [string, string, boolean?][]; resolve?: string; close?: [number, string?]; overdue?: boolean };
+  /** `reportedAt`: the technician keys in a phone call from earlier (the SLA counts from then — this is how the demo has overdue tickets) */
+  type Flow = { start?: boolean; wait?: string; comments?: [string, string, boolean?][]; resolve?: string; close?: [number, string?]; reportedAt?: string };
+  type Extra = { description?: string; requesterName?: string; requesterContact?: string; customerId?: string; customerCode?: string; customerName?: string; assetRef?: string };
   const tech = (cat: string) => (cat === 'IT' ? 'it' : cat === 'FAC' ? 'tech' : 'qc');
-  const overdue: { id: string; title: string; cat: string; priority: string; requesterName?: string; requesterContact?: string; description?: string }[] = [];
-  const ticket = async (who: string, cat: string, title: string, priority: string, channel: string, f: Flow, extra: { description?: string; requesterName?: string; requesterContact?: string } = {}) => {
-    const t = await as[who]('POST', '/api/helpdesk/tickets', { title, categoryId: cats[cat].id, priority, channel, requesterName: extra.requesterName ?? u[who].name, ...extra });
+  const ticket = async (who: string, cat: string, title: string, priority: string, channel: string, f: Flow, extra: Extra = {}) => {
+    const body = { title, categoryId: cats[cat].id, priority, channel, ...extra };
+    const t = f.reportedAt
+      ? await as[tech(cat)]('POST', '/api/helpdesk/tickets', { ...body, requesterName: extra.requesterName ?? u[who].name, reportedAt: f.reportedAt })
+      : await as[who]('POST', '/api/helpdesk/tickets', body);
     const w = as[tech(cat)];
     if (f.start) await w('POST', `/api/helpdesk/tickets/${t.id}/start`);
     for (const [by, body, internal] of f.comments ?? []) await as[by]('POST', `/api/helpdesk/tickets/${t.id}/comments`, { body, internal: !!internal });
     if (f.wait) await w('POST', `/api/helpdesk/tickets/${t.id}/wait`, { reason: f.wait });
     if (f.resolve) await w('POST', `/api/helpdesk/tickets/${t.id}/resolve`, { resolution: f.resolve });
     if (f.close) await as[who]('POST', `/api/helpdesk/tickets/${t.id}/close`, { satisfaction: f.close[0], feedback: f.close[1] });
-    if (f.overdue) overdue.push({ id: t.id, title, cat, priority, requesterName: extra.requesterName ?? u[who].name, requesterContact: extra.requesterContact, description: extra.description });
   };
-  const cust = (name: string, contact: string, description: string) => ({ requesterName: name, requesterContact: contact, description });
+  // after-sales tickets are linked to the customer record (wave 4), so the customer's history is one search away
+  const cust = (code: string, name: string, contact: string, description: string, assetRef?: string): Extra => ({
+    requesterName: name, requesterContact: contact, description: description || undefined, assetRef,
+    customerId: partners[code]?.id, customerCode: code, customerName: partners[code]?.name,
+  });
   await ticket('acc', 'IT', 'เครื่องพิมพ์ฝ่ายบัญชีพิมพ์ไม่ออก', 'high', 'phone', { start: true, resolve: 'ล้างคิวงานพิมพ์และอัปเดตไดรเวอร์ Brother', close: [5, 'แก้ไวมากค่ะ ทันปิดงบ'] });
   await ticket('buyer', 'IT', 'ลืมรหัสผ่านอีเมลบริษัท', 'normal', 'walk_in', { start: true, resolve: 'รีเซ็ตรหัสผ่านและเปิด 2FA ให้แล้ว', close: [4] });
   await ticket('store', 'FAC', 'ก๊อกน้ำห้องน้ำชาย อาคารผลิต รั่ว', 'low', 'web', { start: true, resolve: 'เปลี่ยนวาล์วก๊อกน้ำใหม่ 2 จุด', close: [5, 'ขอบคุณครับ'] });
   await ticket('plan', 'IT', 'อีเมลขยะเข้าเยอะผิดปกติ', 'low', 'web', { start: true, resolve: 'เพิ่มกฎกรองสแปมที่ Firewall และ Mail gateway', close: [3, 'ยังมีหลุดมาบ้าง'] });
   await ticket('sales', 'AFTER', 'อีสเทิร์น อิเล็คทริค: ขอใบรับรองวัสดุ (Mill cert) ล็อตล่าสุด', 'normal', 'email', { start: true, resolve: 'ส่ง Mill certificate SPCC ล็อตเดือนนี้ทางอีเมลแล้ว', close: [5, 'ลูกค้าได้รับเอกสารครบ'] },
-    cust('คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'ลูกค้าขอเอกสารประกอบการตรวจรับ'));
+    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'ลูกค้าขอเอกสารประกอบการตรวจรับ'));
   await ticket('sales', 'AFTER', 'คูลแอร์: ขอเลื่อนส่งของล็อตถัดไป 2 วัน', 'normal', 'line', { start: true, resolve: 'ประสานฝ่ายวางแผน ปรับแผนส่งเป็นวันศุกร์ ลูกค้ารับทราบ', close: [4] },
-    cust('คุณจิราพร (จัดซื้อ คูลแอร์)', 'LINE: jiraporn.coolair', 'คลังลูกค้าเต็ม ขอเลื่อนรับของ'));
+    cust('C-001', 'คุณจิราพร (จัดซื้อ คูลแอร์)', 'LINE: jiraporn.coolair', 'คลังลูกค้าเต็ม ขอเลื่อนรับของ'));
   await ticket('it', 'IT', 'ขอติดตั้งโปรแกรม AutoCAD LT ให้ฝ่ายผลิต', 'normal', 'web', { start: true, resolve: 'ติดตั้ง AutoCAD LT 2026 ที่เครื่องวางแผนการผลิตแล้ว' });
   await ticket('store', 'FAC', 'หลอดไฟลานจอดรถดับ 3 ดวง', 'normal', 'walk_in', { start: true, resolve: 'เปลี่ยนเป็นโคม LED 100W 3 ดวง' });
   await ticket('sales', 'AFTER', 'โฮมสโตร์: สอบถามวิธีประกอบชั้นวาง RACK-08', 'low', 'phone', { start: true, resolve: 'ส่งลิงก์บทความวิธีประกอบและวิดีโอให้ลูกค้าทางไลน์' },
-    cust('คุณเอกพล (สาขาลาดกระบัง)', '02-326-1144', ''));
+    cust('C-003', 'คุณเอกพล (สาขาลาดกระบัง)', '02-326-1144', '', 'RACK-08'));
   await ticket('sales', 'IT', 'อินเทอร์เน็ตช้าที่สำนักงานชั้น 2', 'high', 'web', { start: true, comments: [['it', 'ตรวจพบ Access point ชั้น 2 โหลดเกิน กำลังย้ายช่องสัญญาณ', false], ['it', 'อาจต้องเพิ่ม AP อีก 1 ตัว — เสนอซื้อผ่านระบบอนุมัติ', true]] });
   await ticket('admin', 'FAC', 'แอร์ห้องประชุมใหญ่ไม่เย็น', 'high', 'phone', { start: true, comments: [['tech', 'น้ำยาแอร์รั่วที่ข้อต่อคอยล์ร้อน นัดช่าง Daikin เข้ามาพรุ่งนี้เช้า', false]] });
   await ticket('sales', 'AFTER', 'คูลแอร์: ขายึด BRK-100 รูเจาะไม่ตรง 50 ชิ้น', 'urgent', 'phone', {
     start: true, comments: [['qc', 'รับเรื่องแล้ว กักของล็อตเดียวกันในคลัง FG และเปิด NCR ตรวจสอบ', false], ['qc', 'สงสัยพันช์ชุดเจาะรู PRESS-02 สึก — รอผลวัดจาก QC', true]],
-  }, cust('คุณสมพงษ์ (QC คูลแอร์)', '081-552-7781', 'ลูกค้าพบระยะรูยึดเกินสเปก ประกอบเข้าคอมเพรสเซอร์ไม่ได้'));
+  }, cust('C-001', 'คุณสมพงษ์ (QC คูลแอร์)', '081-552-7781', 'ลูกค้าพบระยะรูยึดเกินสเปก ประกอบเข้าคอมเพรสเซอร์ไม่ได้', 'FG-BRK-100'));
   await ticket('sales', 'IT', 'Notebook ฝ่ายขายแบตเสื่อม ใช้นอกสถานที่ไม่ได้', 'normal', 'web', { start: true, wait: 'สั่งแบตเตอรี่ Lenovo แท้แล้ว รอของ 5 วัน' });
   await ticket('plan', 'FAC', 'พัดลมระบายอากาศไลน์พ่นสีมีเสียงดัง', 'normal', 'walk_in', { start: true, wait: 'รอผู้รับเหมาเข้ามาเปลี่ยนลูกปืนมอเตอร์ (นัดวันจันทร์)' });
   await ticket('sales', 'AFTER', 'โฮมสโตร์: ชั้นวาง RACK-08 สีถลอกระหว่างขนส่ง 2 ชุด', 'normal', 'line', { start: true, wait: 'รอลูกค้าส่งรูปถ่ายและเลขที่ใบส่งของ' },
-    cust('คุณเอกพล (สาขาลาดกระบัง)', 'LINE: ekkapol.hs', 'พบรอยถลอกที่เสา 2 ต้น'));
+    cust('C-003', 'คุณเอกพล (สาขาลาดกระบัง)', 'LINE: ekkapol.hs', 'พบรอยถลอกที่เสา 2 ต้น', 'RACK-08'));
   await ticket('plan', 'IT', 'ขอเพิ่มสิทธิ์เข้าโฟลเดอร์แชร์ฝ่ายผลิต', 'low', 'web', {});
   await ticket('sales', 'AFTER', 'อีสเทิร์น อิเล็คทริค: กล่อง CASE-01 บานพับหลวม', 'high', 'email', {},
-    cust('คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'พบ 6 ตู้จาก 150 ตู้ บานพับหลวม ต้องขันน็อตใหม่'));
+    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'พบ 6 ตู้จาก 150 ตู้ บานพับหลวม ต้องขันน็อตใหม่', 'FG-CASE-01'));
   await ticket('qc', 'FAC', 'ปลั๊กไฟจุดตรวจ QC ช็อต มีประกายไฟ', 'urgent', 'phone', { start: true });
-  await ticket('store', 'IT', 'คอมพิวเตอร์จุดชั่งน้ำหนักคลังเปิดไม่ติด', 'urgent', 'phone', { overdue: true },
-    { description: 'กดปุ่ม power แล้วไฟไม่ขึ้น รับของเข้าคลังไม่ได้' });
-  await ticket('store', 'FAC', 'ประตูม้วนคลังสินค้าติดขัด เปิดได้ครึ่งเดียว', 'high', 'walk_in', { start: true, overdue: true }, { description: 'รถโฟล์คลิฟท์เข้าไม่ได้ ต้องยกของผ่านประตูเล็ก' });
-
-  // The API stamps due times from "now", so a fresh demo has nothing late. Shrink the SLA for a moment and re-save two tickets
-  // (PUT recomputes due times from their creation) so they turn overdue ~1 minute after seeding; then restore the category SLA.
-  for (const cat of new Set(overdue.map((t) => t.cat))) {
-    const b = cats[cat].body;
-    await call('PUT', `/api/helpdesk/categories/${cats[cat].id}`, { ...b, slaResponseHours: 0.01, slaResolveHours: 0.01 });
-    for (const t of overdue.filter((o) => o.cat === cat)) {
-      await call('PUT', `/api/helpdesk/tickets/${t.id}`, { title: t.title, description: t.description, requesterName: t.requesterName, requesterContact: t.requesterContact, categoryId: cats[cat].id, priority: t.priority });
-    }
-    await call('PUT', `/api/helpdesk/categories/${cats[cat].id}`, b);
-  }
+  // past SLA: calls the technicians logged with the time the store really phoned (urgent = 24x7 clock, high = business hours)
+  await ticket('store', 'IT', 'คอมพิวเตอร์จุดชั่งน้ำหนักคลังเปิดไม่ติด', 'urgent', 'phone', { reportedAt: iso(wd(-1), '15:40') },
+    { description: 'กดปุ่ม power แล้วไฟไม่ขึ้น รับของเข้าคลังไม่ได้', assetRef: 'IT-PC-01' });
+  await ticket('store', 'FAC', 'ประตูม้วนคลังสินค้าติดขัด เปิดได้ครึ่งเดียว', 'high', 'walk_in', { start: true, reportedAt: iso(wd(-7), '09:15') },
+    { description: 'รถโฟล์คลิฟท์เข้าไม่ได้ ต้องยกของผ่านประตูเล็ก' });
 }
 
 /* ------------------------------------------------------------------ projects ------------------------------------------------------------------ */
@@ -759,6 +835,54 @@ async function seedProjects(x: Ctx) {
   for (const w of weeks) await call('POST', `/api/projects/timesheet-weeks/${w.id}/approve`);
 }
 
+/* ------------------------------------------------------------------ receivables (sales) ------------------------------------------------------------------ */
+
+/**
+ * Accounting (acc@) collects: customers pay most invoices — คูลแอร์ withholds 3% (รับจ้างทำของ) and once short-pays a disputed freight
+ * charge, อีสเทิร์น pays by cheque and is behind on one invoice — so AR aging has current, 1–30, 31–60 and 90+ buckets.
+ * The sales order CRM drafted from the accepted quotation gets confirmed and a 30% deposit.
+ */
+async function seedReceivables(x: Ctx) {
+  const { as, partners, has } = x;
+  const acc = as.acc;
+  const today = bkkDate();
+  const cents = (n: number) => Math.round(n * 100) / 100;
+  const invoices = await acc<any[]>('GET', '/api/sales/invoices?limit=500');
+  const of = (code: string) => invoices.filter((i) => i.customer_id === partners[code]?.id).sort((a, b) => a.issue_date.localeCompare(b.issue_date));
+  const on = (inv: any, days: number) => { const d = addDays(inv.due_date, days); return d > today ? today : d; };
+  type Pay = [string, string, string, { inv: any; amount?: number }[], number, string?];
+  const plan: Pay[] = [];
+  const coolAir = of('C-001'); // credit 30 days, oldest first
+  if (coolAir[0]) plan.push([on(coolAir[0], 3), 'transfer', 'KBANK 0021-55871', [{ inv: coolAir[0], amount: cents(coolAir[0].gross - 1500) }], 3,
+    'ลูกค้าหักค่าขนส่ง 1,500 บาท อ้างว่าส่งของล่าช้า — ฝ่ายขายกำลังเจรจา']);
+  if (coolAir[1]) plan.push([on(coolAir[1], 0), 'transfer', 'KBANK 0021-61290', [{ inv: coolAir[1] }], 3, 'หัก ณ ที่จ่าย 3% แนบหนังสือรับรอง 50 ทวิ']);
+  if (coolAir[2]) plan.push([on(coolAir[2], -2), 'transfer', 'KBANK 0021-66014', [{ inv: coolAir[2] }], 3, 'หัก ณ ที่จ่าย 3% แนบหนังสือรับรอง 50 ทวิ']);
+  const eastern = of('C-002'); // credit 60 days, pays by cheque
+  if (eastern[0]) plan.push([on(eastern[0], -1), 'cheque', 'เช็ค BBL 4471025', [{ inv: eastern[0] }], 0]);
+  if (eastern[1]) plan.push([on(eastern[1], 2), 'cheque', 'เช็ค BBL 4471188', [{ inv: eastern[1], amount: cents(eastern[1].gross / 2) }], 0, 'ชำระครึ่งหนึ่งก่อน ส่วนที่เหลือนัดชำระสิ้นเดือน']);
+  if (eastern[2]) plan.push([on(eastern[2], 9), 'transfer', 'BBL 7720-31845', [{ inv: eastern[2] }], 0, 'ชำระล่าช้า 9 วัน — ลูกค้าแจ้งรอบจ่ายเช็คเปลี่ยน']);
+  plan.sort((a, b) => a[0].localeCompare(b[0])); // RC numbers follow the calendar
+  for (const [receiptDate, method, reference, lines, whtPct, note] of plan) {
+    await acc('POST', '/api/sales/receipts', {
+      receiptDate, method, reference, whtPct, note, lines: lines.map(({ inv, amount }) => ({ invoiceId: inv.id, amount: amount ?? inv.outstanding })),
+    });
+  }
+
+  // the order Sales drafted from the accepted CRM quotation (event, arrives asynchronously): confirm it and take a 30% deposit
+  if (!has('crm')) return;
+  let so: any;
+  for (let i = 0; i < 40 && !so; i++) {
+    so = (await acc<any[]>('GET', '/api/sales/orders?q=QT-')).find((o) => o.ref?.startsWith('QT-') && o.status === 'draft');
+    if (!so) await new Promise((r) => setTimeout(r, 400));
+  }
+  if (!so) throw new Error('no sales order was drafted from the accepted quotation');
+  await as.sales('POST', `/api/sales/orders/${so.id}/confirm`);
+  await acc('POST', '/api/sales/receipts', {
+    depositAmount: cents(so.gross * 0.3), orderId: so.id, method: 'transfer', reference: 'SCB 4410-77812', receiptDate: today,
+    note: `มัดจำ 30% ตามใบเสนอราคา ${so.ref} — ส่งมอบ 3 งวด หักมัดจำตามสัดส่วนทุกงวด`,
+  });
+}
+
 /* ------------------------------------------------------------------ assets ------------------------------------------------------------------ */
 
 async function seedAssets(x: Ctx) {
@@ -821,6 +945,30 @@ async function seedAssets(x: Ctx) {
 
 /* ------------------------------------------------------------------ quality ------------------------------------------------------------------ */
 
+/** NCR (return to supplier) for the rejected steel, then the buyer's RT document out of QC-HOLD once Inventory has quarantined it. */
+async function returnRejectedSteel(x: Ctx, r: any, insp: any, qty: number) {
+  const { as, has } = x;
+  const ncr = await as.qc('POST', `/api/quality/inspections/${r.id}/ncr`, { severity: 'major', disposition: 'return_to_supplier', qtyAffected: qty });
+  await as.qc('POST', `/api/quality/ncrs/${ncr.id}/investigate`, {
+    whyAnalysis: '1) ความหนา 1.10 มม. ต่ำกว่าสเปก 1.14 → 2) ม้วนท้ายของคอยล์รีดบาง → 3) ผู้ขายไม่ได้ตัดหัว-ท้ายคอยล์ก่อนส่ง',
+    rootCause: 'ผู้ขายส่งเหล็กท้ายม้วนที่ความหนาไม่สม่ำเสมอ โดยไม่ได้ตัดทิ้งตามข้อตกลงคุณภาพ',
+  });
+  if (!has('purchasing') || !insp.source_id) return;
+  const wh = has('inventory') ? 'QC-HOLD' : (insp.warehouse_code ?? 'MAIN');
+  if (has('inventory')) {
+    // wait until Inventory moved the rejected qty into QC-HOLD, so the return never takes the hold below zero
+    for (let i = 0; i < 30; i++) {
+      const holds = await as.admin('GET', '/api/inventory/holds?status=rejected');
+      if (holds.some((h: any) => h.inspection_no === insp.no)) break;
+      await new Promise((res) => setTimeout(res, 300));
+    }
+  }
+  await as.buyer('POST', `/api/purchasing/purchase-orders/${insp.source_id}/returns`, {
+    warehouseCode: wh, refNo: ncr.no, note: `ส่งคืนตาม ${ncr.no} ขอใบลดหนี้ · ผู้ขายรับของคืนที่โรงงาน`,
+    lines: [{ itemId: insp.item_id, qty, reason: 'ความหนา 1.10 มม. ต่ำกว่าสเปก 1.14–1.26 มม.' }],
+  });
+}
+
 /** Complete the inspections the core seed's receipts and production raised: most pass, one lot fails and gets an NCR + CA. */
 async function seedQualityWork(x: Ctx) {
   const { users: u, as } = x;
@@ -841,6 +989,9 @@ async function seedQualityWork(x: Ctx) {
   const keepPending = new Set([...incoming.slice(-2), ...final.slice(-1)].map((r) => r.id));
   const failId = final.find((r) => r.item_code === 'FG-BRK-100' && !keepPending.has(r.id))?.id;
   const condId = incoming.find((r) => r.item_code === 'RM-SUS304' && !keepPending.has(r.id))?.id;
+  // the latest steel lot is too thin: 300 kg rejected -> QC-HOLD -> NCR "return to supplier" -> RT document from QC-HOLD
+  const rejectLot = incoming.filter((r) => r.item_code === 'RM-SPCC-12' && !keepPending.has(r.id)).at(-1);
+  const rejectQty = rejectLot ? Math.min(300, Number(rejectLot.qty)) : 0;
   const inspectors = [u.qc, { id: undefined, name: 'ปวีณา แสงจันทร์' }];
 
   let n = 0;
@@ -854,6 +1005,7 @@ async function seedQualityWork(x: Ctx) {
       const hi = Number(c.max_value ?? c.target ?? lo);
       if (r.id === failId && c.name === 'ระยะห่างรูยึด') return { resultId: c.id, value: 80.6, note: 'รูเยื้อง 3 จาก 5 ชิ้นตัวอย่าง' };
       if (r.id === condId && c.type === 'visual') return { resultId: c.id, passed: false, note: 'ฟิล์มฉีก มีรอยขีดข่วนตื้น 4 แผ่น' };
+      if (r.id === rejectLot?.id && c.name === 'ความหนา') return { resultId: c.id, value: 1.1, note: 'ม้วนท้าย 300 กก. บางกว่าสเปกทุกจุดวัด' };
       if (c.type === 'measure') {
         const span = hi - lo;
         const v = lo + span * (0.35 + noise(n * 13 + k) * 0.3);
@@ -862,7 +1014,10 @@ async function seedQualityWork(x: Ctx) {
       return { resultId: c.id, passed: true };
     });
     await q('POST', `/api/quality/inspections/${r.id}/results`, { results });
-    const done = await q('POST', `/api/quality/inspections/${r.id}/complete`, r.id === condId ? { note: 'รับได้ทั้งล็อต แจ้งผู้ขายเรื่องการแพ็ก' } : {});
+    const done = await q('POST', `/api/quality/inspections/${r.id}/complete`,
+      r.id === condId ? { note: 'รับได้ทั้งล็อต แจ้งผู้ขายเรื่องการแพ็ก' }
+        : r.id === rejectLot?.id ? { acceptedQty: Number(r.qty) - rejectQty, rejectedQty: rejectQty, note: 'คัดแยกม้วนที่บางออก 300 กก. ส่วนที่เหลือวัดผ่าน' } : {});
+    if (r.id === rejectLot?.id && done.result === 'fail') await returnRejectedSteel(x, r, done, rejectQty);
     if (r.id === failId && done.result === 'fail') {
       const ncr = await q('POST', `/api/quality/inspections/${r.id}/ncr`, { severity: 'major', disposition: 'rework' });
       await q('POST', `/api/quality/ncrs/${ncr.id}/investigate`, {

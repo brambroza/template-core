@@ -35,6 +35,7 @@ const ClaimLine = z.object({
 });
 const ClaimLines = z.array(ClaimLine).min(1).max(100);
 const ClaimInput = z.object({
+  /** only used when the token carries no name: the claimant is always the logged-in user */
   claimantName: text(200).optional(),
   department: text(200).optional(),
   purpose: s.name,
@@ -178,8 +179,8 @@ async function submitClaim(k: Kernel, c: Client, id: string, a: AuthContext) {
   if (!(Number(cl.total) > 0)) throw badRequest('ยอดเบิกรวมเป็น 0 บาท ส่งขออนุมัติไม่ได้', { fieldErrors: { lines: ['กรอกจำนวนเงินอย่างน้อยหนึ่งรายการ'] } });
   await c.query(`update claims set status = 'submitted', submitted_at = now(), updated_at = now() where id = $1`, [id]);
   await refreshWarnings(c, id);
-  const row = (await c.query('select id, no, claimant_name, total, over_limit from claims where id = $1', [id])).rows[0];
-  await k.emit(c, 'expense.claim_submitted', { claimId: row.id, no: row.no, claimantName: row.claimant_name ?? null, total: row.total, overLimit: row.over_limit });
+  const row = (await c.query('select id, no, claimant_id, claimant_name, total, over_limit from claims where id = $1', [id])).rows[0];
+  await k.emit(c, 'expense.claim_submitted', { claimId: row.id, no: row.no, claimantName: row.claimant_name ?? null, total: row.total, overLimit: row.over_limit, claimantId: row.claimant_id });
 }
 
 async function loadAdvance(c: Client, id: string, a: AuthContext, lock = false) {
@@ -216,7 +217,8 @@ export const definition: ServiceDefinition = {
         const cat = await one(c, 'select * from expense_categories where id = $1', [id], 'Category');
         cat.used_this_month = (await c.query(
           `select coalesce(sum(l.total), 0) as v from claim_lines l join claims cl on cl.id = l.claim_id
-           where l.category_id = $1 and cl.status in ('submitted', 'approved', 'paid') and date_trunc('month', l.expense_date) = date_trunc('month', current_date)`, [id])).rows[0].v;
+           where l.category_id = $1 and cl.status in ('submitted', 'approved', 'paid') and date_trunc('month', l.expense_date) = date_trunc('month', current_date)
+             and (cl.claimant_id = $2 or $3::boolean)`, [id, a.userId, seesAll(a)])).rows[0].v; // staff: only their own spend
         return cat;
       });
     });
@@ -261,7 +263,7 @@ export const definition: ServiceDefinition = {
         const row = (await c.query(
           `insert into claims (no, claimant_id, claimant_name, department, purpose, claim_date, created_by)
            values ($1,$2,$3,$4,$5,coalesce($6::date, current_date),$2) returning id`,
-          [no, a.userId, b.claimantName ?? null, b.department ?? null, b.purpose, b.claimDate ?? null])).rows[0];
+          [no, a.userId, a.userName ?? b.claimantName ?? null, b.department ?? null, b.purpose, b.claimDate ?? null])).rows[0];
         await writeLines(c, row.id, b.lines);
         if (b.submit) await submitClaim(k, c, row.id, a);
         else await refreshWarnings(c, row.id);
@@ -302,6 +304,8 @@ export const definition: ServiceDefinition = {
         const cl = await loadClaim(c, id, a, true);
         requireOwner(cl, a);
         if (!['draft', 'returned'].includes(cl.status)) throw conflict(`Cannot edit a ${cl.status} claim`);
+        // the claimant's own name comes from the token; a typed name only counts for someone fixing another person's claim
+        if (cl.claimant_id === a.userId && a.userName) b.claimantName = a.userName;
         await c.query(
           `update claims set purpose = coalesce($2, purpose), claim_date = coalesce($3::date, claim_date),
              claimant_name = case when $4 then $5 else claimant_name end,
@@ -347,7 +351,7 @@ export const definition: ServiceDefinition = {
         const cl = await loadClaim(c, id, a, true);
         if (cl.status !== 'submitted') throw conflict(`Cannot approve a ${cl.status} claim`);
         refuseSelfApproval(cl.claimant_id, a, 'ใบเบิก');
-        await c.query(`update claims set status = 'approved', approved_by = $2, approved_at = now(), last_note = coalesce($3, last_note), updated_at = now() where id = $1`, [id, a.userId, b.note ?? null]);
+        await c.query(`update claims set status = 'approved', approved_by = $2, approved_by_name = $4, approved_at = now(), last_note = coalesce($3, last_note), updated_at = now() where id = $1`, [id, a.userId, b.note ?? null, a.userName ?? null]);
         return loadClaim(c, id, a);
       });
     });
@@ -377,9 +381,9 @@ export const definition: ServiceDefinition = {
         const cl = await loadClaim(c, id, a, true);
         if (cl.status !== 'approved') throw conflict(`Cannot pay a ${cl.status} claim`);
         await c.query(
-          `update claims set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, paid_by = $5, updated_at = now() where id = $1`,
-          [id, b.paidDate ?? null, b.method, b.reference ?? null, a.userId]);
-        await k.emit(c, 'expense.claim_paid', { claimId: cl.id, no: cl.no, claimantName: cl.claimant_name ?? null, total: cl.total });
+          `update claims set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, paid_by = $5, paid_by_name = $6, updated_at = now() where id = $1`,
+          [id, b.paidDate ?? null, b.method, b.reference ?? null, a.userId, a.userName ?? null]);
+        await k.emit(c, 'expense.claim_paid', { claimId: cl.id, no: cl.no, claimantName: cl.claimant_name ?? null, total: cl.total, claimantId: cl.claimant_id });
         return loadClaim(c, id, a);
       });
     });
@@ -410,7 +414,7 @@ export const definition: ServiceDefinition = {
         const no = await nextDocNo(c, 'ADV');
         const row = (await c.query(
           `insert into advances (no, requester_id, requester_name, department, purpose, amount, needed_by) values ($1,$2,$3,$4,$5,$6,$7) returning id`,
-          [no, a.userId, b.requesterName ?? null, b.department ?? null, b.purpose, round(b.amount), b.neededBy ?? null])).rows[0];
+          [no, a.userId, a.userName ?? b.requesterName ?? null, b.department ?? null, b.purpose, round(b.amount), b.neededBy ?? null])).rows[0];
         return loadAdvance(c, row.id, a);
       });
     });
@@ -443,7 +447,7 @@ export const definition: ServiceDefinition = {
         const adv = await loadAdvance(c, id, a, true);
         if (adv.status !== 'requested') throw conflict(`Cannot approve a ${adv.status} advance`);
         refuseSelfApproval(adv.requester_id, a, 'เงินทดรองจ่าย');
-        await c.query(`update advances set status = 'approved', approved_by = $2, approved_at = now(), updated_at = now() where id = $1`, [id, a.userId]);
+        await c.query(`update advances set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now(), updated_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);
         return loadAdvance(c, id, a);
       });
     });
@@ -469,8 +473,8 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const adv = await loadAdvance(c, id, a, true);
         if (adv.status !== 'approved') throw conflict(`Cannot pay a ${adv.status} advance`);
-        await c.query(`update advances set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, updated_at = now() where id = $1`,
-          [id, b.paidDate ?? null, b.method, b.reference ?? null]);
+        await c.query(`update advances set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, paid_by = $5, paid_by_name = $6, updated_at = now() where id = $1`,
+          [id, b.paidDate ?? null, b.method, b.reference ?? null, a.userId, a.userName ?? null]);
         return loadAdvance(c, id, a);
       });
     });

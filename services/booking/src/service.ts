@@ -42,7 +42,8 @@ const BookingInput = z.object({
   endDate: s.isoDate.optional(),
   attendees: z.number().int().positive().max(10000).optional(),
   destination: optText(300),
-  requesterName: s.name,
+  /** the booker is the logged-in user; a typed name only counts for booking admins booking on behalf of someone (or old tokens without a name) */
+  requesterName: s.name.optional(),
   requesterDepartment: optText(),
   requesterPhone: optText(30),
 });
@@ -297,15 +298,18 @@ export const definition: ServiceDefinition = {
         if (other) {
           throw conflict(`${r.name} ถูกจองแล้วช่วง ${thaiRange(new Date(other.start_at), new Date(other.end_at))} (${other.no}: ${other.purpose} — ${other.requester_name})`);
         }
+        // "booked by" comes from the token; booking admins may book on behalf of someone else by typing that person's name
+        const requesterName = (hasPerm(a, 'booking.book.approve') && b.requesterName) ? b.requesterName : (a.userName ?? b.requesterName);
+        if (!requesterName) throw badRequest('กรุณาระบุชื่อผู้จอง', { fieldErrors: { requesterName: ['กรุณาระบุชื่อผู้จอง'] } });
         const no = await nextDocNo(c, 'BK');
         const row = (await c.query(
           `insert into bookings (no, resource_id, purpose, start_at, end_at, attendees, destination, requester_id, requester_name, requester_department, requester_phone, status)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
-          [no, r.id, b.purpose, start, end, b.attendees ?? null, b.destination ?? null, a.userId, b.requesterName, b.requesterDepartment ?? null,
+          [no, r.id, b.purpose, start, end, b.attendees ?? null, b.destination ?? null, a.userId, requesterName, b.requesterDepartment ?? null,
             b.requesterPhone ?? null, r.requires_approval ? 'pending' : 'confirmed'])).rows[0];
         await k.emit(c, 'booking.requested', {
-          bookingId: row.id, no, resourceName: r.name, startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), requesterName: b.requesterName,
-          needsApproval: r.requires_approval, period: thaiRange(new Date(start), new Date(end)), purpose: b.purpose,
+          bookingId: row.id, no, resourceName: r.name, startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), requesterName,
+          needsApproval: r.requires_approval, period: thaiRange(new Date(start), new Date(end)), purpose: b.purpose, requesterId: a.userId,
         });
         return loadBooking(c, row.id);
       });
@@ -319,7 +323,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const bk = await loadBooking(c, id, true);
         assertStatus(bk, ['pending'], 'อนุมัติ');
-        await c.query(`update bookings set status = 'confirmed', approved_by = $2, approved_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note ?? null]);
+        await c.query(`update bookings set status = 'confirmed', approved_by = $2, approved_by_name = $4, approved_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note ?? null, a.userName ?? null]);
         return loadBooking(c, id);
       });
     });
@@ -332,7 +336,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const bk = await loadBooking(c, id, true);
         assertStatus(bk, ['pending'], 'ไม่อนุมัติ');
-        await c.query(`update bookings set status = 'rejected', approved_by = $2, approved_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note]);
+        await c.query(`update bookings set status = 'rejected', approved_by = $2, approved_by_name = $4, approved_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note, a.userName ?? null]);
         return loadBooking(c, id);
       });
     });
@@ -346,7 +350,7 @@ export const definition: ServiceDefinition = {
         assertOwnerOrApprover(a, bk);
         assertStatus(bk, ['pending', 'confirmed'], 'ยกเลิก');
         if (new Date(bk.end_at).getTime() < Date.now()) throw conflict(`การจอง ${bk.no} ผ่านไปแล้ว — ใช้ "ปิดงาน" แทนการยกเลิก`);
-        await c.query(`update bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now(), cancel_reason = $3 where id = $1`, [id, a.userId, b.reason ?? null]);
+        await c.query(`update bookings set status = 'cancelled', cancelled_by = $2, cancelled_by_name = $4, cancelled_at = now(), cancel_reason = $3 where id = $1`, [id, a.userId, b.reason ?? null, a.userName ?? null]);
         return loadBooking(c, id);
       });
     });

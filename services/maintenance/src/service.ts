@@ -9,15 +9,24 @@ const BreakdownInput = z.object({ machineId: s.uuid, title: s.name, description:
 const CompleteInput = z.object({
   resolution: z.string().min(1).max(2000),
   downtimeMinutes: z.number().int().min(0).optional(),
-  warehouseCode: s.code.default('MAIN'),
+  /** omit = the tenant's default parts warehouse (settings, 'SPARE' when never set) */
+  warehouseCode: s.code.optional(),
   parts: z.array(s.itemLine).default([]),
   doneOn: s.isoDate.optional(),
 });
 const IdParam = z.object({ id: s.uuid });
+const SettingsInput = z.object({ defaultPartsWarehouse: s.code });
+
+async function readSettings(c: Client) {
+  const r = (await c.query('select default_parts_warehouse from settings')).rows[0];
+  return { defaultPartsWarehouse: (r?.default_parts_warehouse as string | undefined) ?? 'SPARE' };
+}
 
 async function loadWo(c: Client, id: string, lock = false) {
   const wo = await one(c, `select w.*, m.code as machine_code, m.name as machine_name from work_orders w join machines m on m.id = w.machine_id where w.id = $1 ${lock ? 'for update of w' : ''}`, [id], 'Work order');
   wo.parts = (await c.query('select * from wo_parts where work_order_id = $1', [id])).rows;
+  // where parts were (or, while open, will by default be) issued from
+  wo.parts_warehouse = wo.parts_warehouse_code ?? (await readSettings(c)).defaultPartsWarehouse;
   return wo;
 }
 
@@ -171,6 +180,24 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    app.get('/settings', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'maintenance.machine.read');
+      return k.db.tx(a.tenantId, readSettings);
+    });
+
+    app.put('/settings', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'maintenance.settings.write');
+      const b = parse(SettingsInput, req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        await c.query(
+          `insert into settings (tenant_id, default_parts_warehouse) values (nullif(current_setting('app.tenant_id', true), '')::uuid, $1)
+           on conflict (tenant_id) do update set default_parts_warehouse = excluded.default_parts_warehouse`, [b.defaultPartsWarehouse.toUpperCase()]);
+        return readSettings(c);
+      });
+    });
+
     app.post('/work-orders/:id/complete', async (req) => {
       const a = auth(req);
       requirePerm(a, 'maintenance.wo.work');
@@ -179,9 +206,11 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const wo = await loadWo(c, id, true);
         if (!['open', 'in_progress'].includes(wo.status)) throw conflict(`Cannot complete ${wo.no}: status is ${wo.status}`);
+        const warehouseCode = b.warehouseCode ?? (await readSettings(c)).defaultPartsWarehouse;
         await c.query(
           `update work_orders set status = 'done', completed_at = now(), started_at = coalesce(started_at, now()), resolution = $2, downtime_minutes = $3 where id = $1`,
           [id, b.resolution, b.downtimeMinutes ?? null]);
+        if (b.parts.length) await c.query('update work_orders set parts_warehouse_code = $2 where id = $1', [id, warehouseCode]);
         for (const p of b.parts) {
           await c.query('insert into wo_parts (work_order_id, item_id, item_code, item_name, qty) values ($1,$2,$3,$4,$5)', [id, p.itemId, p.itemCode, p.itemName ?? null, p.qty]);
         }
@@ -194,7 +223,7 @@ export const definition: ServiceDefinition = {
         }
         await k.emit(c, 'maintenance.work_completed', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, kind: wo.kind, downtimeMinutes: b.downtimeMinutes ?? null });
         if (b.parts.length) {
-          await k.emit(c, 'maintenance.parts_used', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, warehouseCode: b.warehouseCode, parts: b.parts });
+          await k.emit(c, 'maintenance.parts_used', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, warehouseCode, parts: b.parts });
         }
         return loadWo(c, id);
       });

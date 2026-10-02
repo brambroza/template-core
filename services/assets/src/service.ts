@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, hasPerm, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { bookValueAt, closedMonthIndex, depreciationIn, monthIndex, monthlyAmount, periodOf, round2, schedule } from './depreciation.ts';
 
@@ -101,6 +101,18 @@ function withBook(a: any, asOf: string) {
     ...a, accumulated, book_value: a.status === 'disposed' ? 0 : book_value, monthly_depreciation: monthlyAmount(a),
     months_left: Math.max(0, monthsTotal - used), warranty_active: !!a.warranty_until && a.warranty_until >= asOf,
   };
+}
+
+/** Company money (cost, salvage, depreciation, book value, disposal result) is for `assets.finance.read` only. */
+const FINANCE = 'assets.finance.read';
+const MONEY_FIELDS = ['cost', 'salvage_value', 'accumulated', 'book_value', 'monthly_depreciation', 'disposal_price', 'disposal_book_value', 'disposal_gain_loss'] as const;
+const canSeeMoney = (a: AuthContext) => hasPerm(a, FINANCE);
+/** Blank the asset's money fields for users without the finance permission (they still see what/where/who/status). */
+function hideMoney<T extends Record<string, any>>(row: T, a: AuthContext): T {
+  if (canSeeMoney(a)) return row;
+  const out: Record<string, any> = { ...row };
+  for (const f of MONEY_FIELDS) if (f in out) out[f] = null;
+  return out as T;
 }
 
 async function loadAsset(c: Client, id: string, lock = false) {
@@ -232,7 +244,7 @@ export const definition: ServiceDefinition = {
             `insert into asset_assignments (asset_id, custodian_id, custodian_name, location, assigned_on, note, created_by) values ($1,$2,$3,$4,$5,'ลงทะเบียน',$6)`,
             [row.id, b.custodianId ?? null, b.custodianName ?? null, b.location ?? null, b.purchaseDate, a.userId]);
         }
-        return loadAsset(c, row.id);
+        return hideMoney(await loadAsset(c, row.id), a);
       });
     });
 
@@ -251,7 +263,7 @@ export const definition: ServiceDefinition = {
              and ($7::text is null or ($7 = 'true') = (a.status <> 'disposed'))
            order by a.code limit $8 offset $10`,
           [like(q.q), q.status ?? null, q.categoryId ?? null, q.location || null, q.custodianId ?? null, q.warrantyExpiring ?? null, q.active ?? null, q.limit, d, q.offset])).rows;
-        return rows.map((r: any) => withBook(r, d));
+        return rows.map((r: any) => hideMoney(withBook(r, d), a));
       });
     });
 
@@ -260,7 +272,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'assets.asset.read');
       const { code } = parse(z.object({ code: s.code }), req.params);
-      return k.db.tx(a.tenantId, async (c) => detail(c, await one(c, `${ASSET_SELECT} where a.code = $1`, [code], 'Asset')));
+      return k.db.tx(a.tenantId, async (c) => hideMoney(await detail(c, await one(c, `${ASSET_SELECT} where a.code = $1`, [code], 'Asset')), a));
     });
 
     /** Distinct locations with how many assets sit there (for audits and filters). */
@@ -303,16 +315,17 @@ export const definition: ServiceDefinition = {
           ...all.filter((r: any) => r.status === 'in_repair').map((r: any) => ({ title: `${r.code} ส่งซ่อมอยู่`, body: r.name, time: r.created_at, level: 'warn', link: `/m/assets/assetDetail/${r.id}` })),
           ...expiring.map((r: any) => ({ title: `${r.code} ประกันหมด ${r.warranty_until}`, body: r.name, time: r.warranty_until, level: 'info', link: `/m/assets/assetDetail/${r.id}` })),
         ];
+        const fin = canSeeMoney(a);
         return {
           count: live.length,
-          totalCost: round2(live.reduce((n: number, r: any) => n + r.cost, 0)),
-          bookValue: round2(live.reduce((n: number, r: any) => n + r.book_value, 0)),
+          totalCost: fin ? round2(live.reduce((n: number, r: any) => n + r.cost, 0)) : null,
+          bookValue: fin ? round2(live.reduce((n: number, r: any) => n + r.book_value, 0)) : null,
           inRepair: all.filter((r: any) => r.status === 'in_repair').length,
           lost: all.filter((r: any) => r.status === 'lost').length,
           warrantyExpiring30d: expiring.length,
-          depreciationMonth: months[5].depreciation,
-          byCategory: [...cats.values()].sort((x, y) => y.book_value - x.book_value),
-          months, rows: feed,
+          depreciationMonth: fin ? months[5].depreciation : null,
+          byCategory: fin ? [...cats.values()].sort((x, y) => y.book_value - x.book_value) : [],
+          months: fin ? months : [], rows: feed,
         };
       });
     });
@@ -321,7 +334,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'assets.asset.read');
       const { id } = parse(IdParam, req.params);
-      return k.db.tx(a.tenantId, (c) => loadAsset(c, id));
+      return k.db.tx(a.tenantId, async (c) => hideMoney(await loadAsset(c, id), a));
     });
 
     app.patch('/assets/:id', async (req) => {
@@ -335,7 +348,7 @@ export const definition: ServiceDefinition = {
         const map: Record<string, string> = { name: 'name', serialNo: 'serial_no', brand: 'brand', model: 'model', supplierName: 'supplier_name', warrantyUntil: 'warranty_until', note: 'note' };
         const keys = Object.keys(map).filter((key) => (b as any)[key] !== undefined);
         if (keys.length) await c.query(`update assets set ${keys.map((key, i) => `${map[key]} = $${i + 2}`).join(', ')} where id = $1`, [id, ...keys.map((key) => (b as any)[key])]);
-        return loadAsset(c, id);
+        return hideMoney(await loadAsset(c, id), a);
       });
     });
 
@@ -356,14 +369,14 @@ export const definition: ServiceDefinition = {
         await c.query(
           `insert into asset_assignments (asset_id, custodian_id, custodian_name, location, assigned_on, note, created_by) values ($1,$2,$3,$4,coalesce($5::date, current_date),$6,$7)`,
           [id, b.custodianId ?? null, b.custodianId ? b.custodianName ?? null : null, location, b.assignedOn ?? null, b.note ?? (cur.status === 'lost' ? 'พบทรัพย์สินที่สูญหาย' : null), a.userId]);
-        return loadAsset(c, id);
+        return hideMoney(await loadAsset(c, id), a);
       });
     });
 
     /** Monthly straight-line schedule over the whole life (cut at the disposal month). */
     app.get('/assets/:id/schedule', async (req) => {
       const a = auth(req);
-      requirePerm(a, 'assets.asset.read');
+      requirePerm(a, FINANCE);
       const { id } = parse(IdParam, req.params);
       const q = parse(z.object({ asOf: s.isoDate.optional() }), req.query);
       return k.db.tx(a.tenantId, async (c) => {
@@ -385,7 +398,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       const b = parse(RepairInput, req.body);
       reply.code(201);
-      return k.db.tx(a.tenantId, (c) => reportRepair(k, c, id, b, a.userId));
+      return k.db.tx(a.tenantId, async (c) => hideMoney(await reportRepair(k, c, id, b, a.userId), a));
     });
 
     /** Same as /assets/:id/repairs, with the asset in the body (form with a QR-scannable asset lookup). */
@@ -394,7 +407,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'assets.repair.report');
       const b = parse(RepairInput.extend({ assetId: s.uuid }), req.body);
       reply.code(201);
-      return k.db.tx(a.tenantId, (c) => reportRepair(k, c, b.assetId, b, a.userId));
+      return k.db.tx(a.tenantId, async (c) => hideMoney(await reportRepair(k, c, b.assetId, b, a.userId), a));
     });
 
     app.get('/repairs', async (req) => {
@@ -451,7 +464,7 @@ export const definition: ServiceDefinition = {
           `update assets set status = 'disposed', disposed_on = $2, disposal_method = $3, disposal_price = $4, disposal_book_value = $5, disposal_gain_loss = $6, disposal_note = $7
            where id = $1`, [id, b.disposedOn, b.method, b.price, book, round2(b.price - book), b.note ?? null]);
         await c.query(`update asset_repairs set status = 'done', completed_on = $2 where asset_id = $1 and status = 'open'`, [id, b.disposedOn]);
-        return loadAsset(c, id);
+        return hideMoney(await loadAsset(c, id), a);
       });
     });
 
@@ -460,7 +473,7 @@ export const definition: ServiceDefinition = {
     /** Depreciation of one month for every asset, with accumulated and book value at month end, plus totals by category. */
     app.get('/depreciation', async (req) => {
       const a = auth(req);
-      requirePerm(a, 'assets.asset.read');
+      requirePerm(a, FINANCE);
       const q = parse(z.object({ month: Month.optional(), categoryId: s.uuid.optional() }), req.query);
       return k.db.tx(a.tenantId, async (c) => {
         const month = q.month ?? (await today(c)).slice(0, 7);

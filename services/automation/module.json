@@ -5,8 +5,24 @@
   "version": "0.2.0",
   "tier": "feature",
   "description": "No-code rules: when something happens in any installed module (stock low, machine down, big PO, invoice issued…), check conditions and notify in the app, on LINE or by webhook. Ships with ready-made rule templates.",
-  "requires": ["identity"],
-  "enhancedBy": ["inventory", "purchasing", "sales", "production", "maintenance", "approvals", "expense", "hr", "helpdesk", "crm", "quality", "booking", "assets"],
+  "requires": [
+    "identity"
+  ],
+  "enhancedBy": [
+    "inventory",
+    "purchasing",
+    "sales",
+    "production",
+    "maintenance",
+    "approvals",
+    "expense",
+    "hr",
+    "helpdesk",
+    "crm",
+    "quality",
+    "booking",
+    "assets"
+  ],
   "publishes": [],
   "subscribes": [
     "inventory.low_stock",
@@ -32,11 +48,21 @@
     "quality.inspection_completed",
     "quality.ncr_raised",
     "booking.requested",
-    "assets.repair_reported"
+    "assets.repair_reported",
+    "sales.payment_received"
   ],
   "permissions": [
-    { "key": "automation.rule.read", "label": "ดูกฎอัตโนมัติ" },
-    { "key": "automation.rule.write", "label": "สร้าง/แก้ไขกฎอัตโนมัติ" },
-    { "key": "automation.notify.read", "label": "รับการแจ้งเตือน" }
+    {
+      "key": "automation.rule.read",
+      "label": "ดูกฎอัตโนมัติ"
+    },
+    {
+      "key": "automation.rule.write",
+      "label": "สร้าง/แก้ไขกฎอัตโนมัติ"
+    },
+    {
+      "key": "automation.notify.read",
+      "label": "รับการแจ้งเตือน (กระดิ่ง: ของตนเอง + ที่ส่งถึงทุกคน) — ให้ทุกบทบาทได้"
+    }
   ]
 }

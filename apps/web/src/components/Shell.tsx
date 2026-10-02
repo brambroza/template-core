@@ -72,7 +72,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="rail" aria-label="โมดูล" onMouseLeave={hideTip}>
         <div className="rail-logo" aria-hidden />
         <div className="rail-scroll" onScroll={hideTip}>
-          <Link href="/" className={path === '/' ? 'is-active' : undefined} aria-label="ภาพรวมโรงงาน" onMouseEnter={showTip('ภาพรวมโรงงาน')} onFocus={showTip('ภาพรวมโรงงาน')} onBlur={hideTip}>
+          <Link href="/" className={path === '/' ? 'is-active' : undefined} aria-label="ภาพรวมวันนี้" onMouseEnter={showTip('ภาพรวมวันนี้')} onFocus={showTip('ภาพรวมวันนี้')} onBlur={hideTip}>
             <Gauge size={20} strokeWidth={1.8} aria-hidden />
           </Link>
           {areas.map((g) => (

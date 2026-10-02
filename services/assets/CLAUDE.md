@@ -20,6 +20,10 @@ disposes assets with gain/loss, and a yearly physical audit is done by scanning 
   the asset `in_repair`; completing the last open repair restores the previous status. Logging a repair with `completed: true` keeps the status.
 - Disposal (sold | scrapped | donated), dated between the purchase date and today (400 otherwise): depreciate through the disposal month, gain/loss = price − book value; open repairs are closed.
 - Disposed assets: assign, repair, edit, dispose → 409. Lost assets: repair → 409; assign = found again (status restored, lost_on cleared); dispose allowed (write-off).
+- Finance visibility: cost, salvage, accumulated depreciation, book value, monthly depreciation and disposal price/book value/gain-loss
+  are returned only to users with `assets.finance.read` (else `null` in every asset response — list, detail, by-code, write results).
+  `/depreciation` and `/assets/:id/schedule` require it (403 otherwise); `/summary` returns `totalCost/bookValue/depreciationMonth = null`,
+  `byCategory = []`, `months = []` without it. Repair costs stay visible (operational, entered by the reporter).
 - Audit: opening snapshots every non-disposed, non-lost asset at that location (case/space-insensitive). Scan answers
   `found | duplicate | unexpected | unknown` + Thai `message`. Close marks unscanned expected lines `missing`.
   `mark-lost` (closed audits only) sets every missing asset `lost`. Scans on a closed audit → 409.
@@ -33,7 +37,7 @@ disposes assets with gain/loss, and a yearly physical audit is done by scanning 
 - `GET /locations` · `POST/GET /audits` · `GET /audits/:id` · `POST /audits/:id/scan { code }` · `POST /audits/:id/close` · `POST /audits/:id/mark-lost`
 - `GET /summary` → count, totalCost, bookValue, inRepair, lost, warrantyExpiring30d, depreciationMonth, byCategory, months[6] `{month, depreciation, acquisitions}`, rows (feed)
 
-Permissions: `assets.asset.read` · `assets.asset.write` (register, edit, categories, assign) · `assets.repair.report` · `assets.asset.dispose` · `assets.audit.run`.
+Permissions: `assets.asset.read` (register without money) · `assets.finance.read` (cost, depreciation, book value) · `assets.asset.write` (register, edit, categories, assign) · `assets.repair.report` · `assets.asset.dispose` · `assets.audit.run`.
 
 ## Events
 - publishes `assets.repair_reported` (assetId, code, name, description) when an open repair is reported (not when logging an already-finished repair).
@@ -45,7 +49,8 @@ Permissions: `assets.asset.read` · `assets.asset.write` (register, edit, catego
 `src/ui.ts` — assetList, assetScan (QR filter, mobile), assetNew/Edit/Detail (QR, assign/repair/dispose actions, printable),
 assetSchedule, categoryList/New/Edit, repairList (complete row action) + repairNew (QR asset lookup, mobile),
 depreciationReport + depreciationByCategory, auditList/New/Detail (scan by QR or typed code, close, mark lost).
-Widgets: kpi, bars (book value by category), trend (depreciation), feed (in repair / warranty ending).
+Widgets: kpi (counts), kpi `as-value` + bars (book value by category) + trend (depreciation) — finance only, feed (in repair / warranty ending).
+Depreciation screens, assetSchedule and the `ค่าเสื่อม` command need `assets.finance.read`.
 ⌘K: `ทรัพย์สิน <รหัส>` (opens it), `ตรวจนับ`, `ซ่อมทรัพย์สิน <รหัส> <อาการ>`, `ค่าเสื่อม <รหัส>`; search assets and audits.
 
 ## Extension ideas

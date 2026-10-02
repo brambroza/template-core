@@ -22,7 +22,7 @@ const bookingFields: Field[] = [
   { name: 'endDate', label: 'วันที่คืน (ถ้าใช้หลายวัน)', type: 'date' },
   { name: 'attendees', label: 'จำนวนผู้เข้าร่วม/ผู้โดยสาร', type: 'number' },
   { name: 'destination', label: 'ปลายทาง (สำหรับรถ)', type: 'text' },
-  { name: 'requesterName', label: 'ชื่อผู้จอง', type: 'text', required: true },
+  { name: 'requesterName', label: 'จองแทนผู้อื่น (ชื่อ)', type: 'text', help: 'เว้นว่าง = จองในชื่อของคุณ — การจองแทนผู้อื่นใช้ได้เฉพาะผู้ดูแลการจอง' },
   { name: 'requesterDepartment', label: 'แผนก', type: 'text' },
   { name: 'requesterPhone', label: 'เบอร์ติดต่อ', type: 'text' },
 ];
@@ -133,7 +133,8 @@ export default defineUi({
         { key: 'start_at', label: 'เริ่ม', format: 'datetime' }, { key: 'end_at', label: 'สิ้นสุด', format: 'datetime' }, { key: 'hours', label: 'ชั่วโมง', format: 'qty' },
         { key: 'attendees', label: 'ผู้เข้าร่วม/ผู้โดยสาร', format: 'qty' }, { key: 'destination', label: 'ปลายทาง' },
         { key: 'requester_name', label: 'ผู้จอง' }, { key: 'requester_department', label: 'แผนก' }, { key: 'requester_phone', label: 'เบอร์ติดต่อ' },
-        { key: 'decision_note', label: 'หมายเหตุผู้อนุมัติ' }, { key: 'cancel_reason', label: 'เหตุผลที่ยกเลิก' },
+        { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'decision_note', label: 'หมายเหตุผู้อนุมัติ' },
+        { key: 'cancelled_by_name', label: 'ยกเลิกโดย' }, { key: 'cancel_reason', label: 'เหตุผลที่ยกเลิก' },
         { key: 'mileage_start', label: 'เลขไมล์ก่อนใช้', format: 'qty' }, { key: 'mileage_end', label: 'เลขไมล์หลังใช้', format: 'qty' },
         { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'qty' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
         { key: 'completion_note', label: 'บันทึกหลังใช้งาน' },

@@ -50,6 +50,10 @@ export async function startStack(defs: ServiceDefinition[], opts: { prefix?: str
   const internalToken = process.env.INTERNAL_TOKEN ?? 'demo-internal-token';
   const jwtSecret = process.env.JWT_SECRET ?? 'demo-jwt-secret-change-me';
   const gatewayPort = opts.gatewayPort ?? 8080;
+  // Every module runs in this one process with its own pool. 18 pools x the kernel default (10) can open 180 connections and Postgres
+  // allows 100 by default: while the seed fans out (CRM activities, timesheets, attendance, assets …) the server ran out of connections
+  // and random POSTs answered 500 "too many clients already". A few connections per module is plenty for a demo.
+  process.env.DB_POOL_MAX ??= String(Math.max(2, Math.min(10, Math.floor(60 / Math.max(defs.length, 1)))));
   const dbs = await ensureDatabases(opts.prefix ?? 'demo', defs.map((d) => d.manifest.id), !!opts.reset);
   const services: Record<string, Service> = {};
   const urls: Record<string, string> = {};
@@ -91,6 +95,7 @@ function client(gatewayUrl: string, token: string): Call {
   };
 }
 
+const bkkToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const monthsAgo = (n: number, day = 12) => {
   const d = new Date();
   d.setDate(1);
@@ -98,6 +103,36 @@ const monthsAgo = (n: number, day = 12) => {
   d.setDate(Math.min(day, 28));
   return d.toISOString().slice(0, 10);
 };
+/** document dates never lie in the future (early in a month "this month's 8th" has not happened yet) */
+const notAfterToday = (date: string) => (date > bkkToday() ? bkkToday() : date);
+
+/** A small monogram logo (SVG) so printed documents show a real letterhead. */
+const DEMO_LOGO = 'data:image/svg+xml;base64,' + Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">'
+  + '<rect width="96" height="96" rx="18" fill="#141C22"/><path d="M14 70 L48 18 L82 70 Z" fill="#F5C518"/>'
+  + '<text x="48" y="66" font-family="Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#141C22">SP</text></svg>',
+).toString('base64');
+
+/**
+ * The demo company's profile. 0105559012342 is a made-up tax ID that passes the mod-11 check digit
+ * (first 12 digits 010555901234 -> check digit 2); it does not belong to a real company.
+ */
+export const DEMO_COMPANY = {
+  legalName: 'บริษัท สยามพาร์ท เมทัลเวิร์ค จำกัด',
+  nameEn: 'Siam Part Metalwork Co., Ltd.',
+  taxId: '0105559012342',
+  branchCode: '00000',
+  address: '88/8 หมู่ 4 ถนนสุขุมวิท ตำบลแพรกษา อำเภอเมืองสมุทรปราการ จังหวัดสมุทรปราการ 10280',
+  phone: '02-123-4567',
+  email: 'account@siampart.co.th',
+  website: 'www.siampart.co.th',
+  logo: DEMO_LOGO,
+  footerNote: 'โปรดชำระเงินภายใน 30 วันนับจากวันที่ในเอกสาร · โอนเข้าบัญชี บจก. สยามพาร์ท เมทัลเวิร์ค เท่านั้น',
+  signatureLabels: ['ผู้จัดทำ', 'ผู้อนุมัติ'],
+};
+
+/** Monthly sales targets (THB) of the 5 months before this one — drives the seeded deliveries and the opening stock that covers them. */
+const SALES_BASE = [182000, 205000, 198000, 236000, 251000];
 
 export interface SeedResult { tenant: string; email: string; password: string; created: boolean }
 
@@ -108,7 +143,7 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   const has = (m: string) => (opts.installed ?? Object.keys(stack.services)).includes(m);
   const prov = await fetch(`${stack.urls.identity}/tenants`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-token': stack.internalToken },
-    body: JSON.stringify({ code: tenant, name: 'บริษัท สยามพาร์ท เมทัลเวิร์ค จำกัด', admin: { email, name: 'คุณสมศักดิ์ (ผู้จัดการโรงงาน)', password } }),
+    body: JSON.stringify({ code: tenant, name: 'บริษัท สยามพาร์ท เมทัลเวิร์ค จำกัด', admin: { email, name: 'สมศักดิ์ ศรีสวัสดิ์', password } }),
   });
   if (prov.status === 409) return { tenant, email, password, created: false };
   if (!prov.ok) throw new Error(`provision failed: ${await prov.text()}`);
@@ -125,6 +160,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   };
   const settle = () => new Promise((r) => setTimeout(r, 1500));
   const business = await import('./demo-business.ts');
+
+  // ---------------- company profile (letterhead + seller details on every printed document) ----------------
+  await call('PUT', '/api/identity/company', DEMO_COMPANY);
 
   // rules first, so they fire on everything below (the bell then shows real notifications)
   if (has('automation')) {
@@ -177,8 +215,26 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   // ---------------- inventory set-up ----------------
   if (has('inventory')) {
     for (const [code, name] of [['MAIN', 'คลังวัตถุดิบหลัก'], ['FG', 'คลังสินค้าสำเร็จรูป'], ['SPARE', 'คลังอะไหล่ซ่อมบำรุง']]) await call('POST', '/api/inventory/warehouses', { code, name });
-    for (const [code, wh, min] of [['RM-SPCC-12', 'MAIN', 800], ['RM-SPCC-20', 'MAIN', 500], ['RM-SUS304', 'MAIN', 200], ['RM-PAINT-GR', 'MAIN', 60], ['SP-BOLT-M8', 'MAIN', 3000], ['SP-SEAL-HYD', 'SPARE', 4], ['SP-OIL-68', 'SPARE', 40], ['FG-BRK-100', 'FG', 300]] as const) {
+    for (const [code, wh, min] of [['RM-SPCC-12', 'MAIN', 800], ['RM-SPCC-20', 'MAIN', 500], ['RM-SUS304', 'MAIN', 200], ['RM-PAINT-GR', 'MAIN', 60], ['SP-BOLT-M8', 'MAIN', 3000], ['SP-SEAL-HYD', 'SPARE', 4], ['SP-OIL-68', 'SPARE', 40], ['FG-BRK-100', 'MAIN', 300]] as const) {
       await call('PUT', '/api/inventory/reorder-points', { ...items[code], warehouseCode: wh, minQty: min });
+    }
+    // Opening balances carried over from the old Excel stock sheet. Production and sales below run through MAIN, and six months of
+    // deliveries ship far more finished goods than this month's production orders make — without these the demo showed
+    // FG-BRK-100 at −12,763 (plant-manager review). Amounts = what the seed delivers/consumes − what it produces + a working stock,
+    // so every balance stays ≥ 0 (FG-BRK-100 also covers the 500 pcs a failed final inspection moves to QC-HOLD).
+    const sold = (share: number, price: number) => SALES_BASE.reduce((sum, target) => sum + Math.round(target * share / price), 0);
+    const opening: [string, number, number][] = [
+      ['FG-BRK-100', sold(0.55, 48) + 1100 - 620 + 500 + 780, 31.5], // delivered − produced (500 + 120) + QC hold + working stock
+      ['FG-CASE-01', sold(0.45, 690) + 150 - 18 + 170, 452],
+      ['FG-RACK-08', 36 + 24, 980],
+      ['SA-PLATE-A', 1240 - 1200 + 260, 14.2], // FG-BRK-100 uses 2 per piece (620 pcs) — the plate order makes 1,200
+      ['FG-BRK-200', 120, 88],
+    ];
+    if (has('sales') || has('production')) {
+      await call('POST', '/api/inventory/receipts', {
+        warehouseCode: 'MAIN', refType: 'opening', refId: 'OPEN-2569', note: 'ยอดยกมาจากสต็อก Excel เดิม (ตรวจนับ ณ วันเริ่มใช้ระบบ)',
+        lines: opening.map(([code, qty, unitCost]) => ({ ...items[code], qty, unitCost })),
+      });
     }
   }
 
@@ -186,7 +242,7 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   if (has('purchasing')) {
     const buy = async (when: string, supplier: string, wh: string, lines: [string, number, number][], receive: boolean, approve = true) => {
       const po = await call('POST', '/api/purchasing/purchase-orders', {
-        supplierId: partners[supplier].id, supplierName: partners[supplier].name, warehouseCode: wh, orderDate: when,
+        supplierId: partners[supplier].id, supplierName: partners[supplier].name, warehouseCode: wh, orderDate: notAfterToday(when),
         lines: lines.map(([c, qty, unitPrice]) => ({ ...items[c], qty, unitPrice })),
       });
       if (approve) await call('POST', `/api/purchasing/purchase-orders/${po.id}/approve`);
@@ -229,9 +285,13 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
 
   // ---------------- sales: 6 months of invoices ----------------
   if (has('sales')) {
-    const sell = async (when: string, customer: string, lines: [string, number, number][], stage: 'draft' | 'confirmed' | 'delivered' | 'invoiced') => {
+    // credit terms: คูลแอร์ / โฮมสโตร์ 30 days, อีสเทิร์น อิเล็คทริค 60 days — invoices fall due over time, so receivables age into buckets
+    const creditDays: Record<string, number> = { 'C-001': 30, 'C-002': 60, 'C-003': 30 };
+    const sell = async (date: string, customer: string, lines: [string, number, number][], stage: 'draft' | 'confirmed' | 'delivered' | 'invoiced') => {
+      const when = notAfterToday(date);
       const so = await call('POST', '/api/sales/orders', {
         customerId: partners[customer].id, customerName: partners[customer].name, customerAddress: partners[customer].address, orderDate: when, warehouseCode: 'MAIN',
+        creditDays: creditDays[customer],
         lines: lines.map(([c, qty, unitPrice]) => ({ ...items[c], qty, unitPrice })),
       });
       if (stage === 'draft') return;
@@ -240,9 +300,8 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
       await call('POST', `/api/sales/orders/${so.id}/deliver`);
       if (stage === 'invoiced') await call('POST', `/api/sales/orders/${so.id}/invoice`, { issueDate: when });
     };
-    const base = [182000, 205000, 198000, 236000, 251000];
     for (let m = 5; m >= 1; m--) {
-      const target = base[5 - m];
+      const target = SALES_BASE[5 - m];
       await sell(monthsAgo(m, 15), 'C-001', [['FG-BRK-100', Math.round(target * 0.55 / 48), 48]], 'invoiced');
       await sell(monthsAgo(m, 24), 'C-002', [['FG-CASE-01', Math.round(target * 0.45 / 690), 690]], 'invoiced');
     }
@@ -289,6 +348,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   await business.seedBusiness({ call, loginAs, has, items, partners });
 
   await settle();
+  // from now on (the visitor's own goods receipts) lots waiting for incoming QC sit in QC-HOLD until they pass
+  if (has('inventory') && has('quality')) await call('PUT', '/api/inventory/settings', { receiveIntoHoldWhenInspected: true });
+  if (has('maintenance') && has('inventory')) await call('PUT', '/api/maintenance/settings', { defaultPartsWarehouse: 'SPARE' });
   return { tenant, email, password, created: true };
 }
 

@@ -48,18 +48,18 @@ export default defineUi({
     { label: 'โครงการ', screen: 'projectList' },
     { label: 'งานของฉัน', screen: 'myTasks' },
     { label: 'งานทั้งหมด', screen: 'taskList' },
-    { label: 'Milestone', screen: 'milestoneList' },
+    { label: 'งวดงาน', screen: 'milestoneList' },
     { label: 'ลงชั่วโมง (สัปดาห์นี้)', screen: 'myWeek' },
-    { label: 'อนุมัติ timesheet', screen: 'weekApprovals' },
+    { label: 'อนุมัติชั่วโมงทำงาน', screen: 'weekApprovals' },
     { label: 'ชั่วโมงทำงานทั้งหมด', screen: 'entryList' },
   ],
   commands: [
     { id: 'task', label: 'สร้างงานในโครงการ', example: 'งาน PJ-2569-0001 ติดตั้งเครื่องที่หน้างาน', keywords: ['งาน', 'สร้างงาน', 'task'], screen: 'taskNew', perm: 'projects.task.write',
       arg: { lookup: { path: '/projects', query: { open: 'true' }, label: ['no', 'name'], assign: { projectId: 'id' } } }, restField: 'title' },
-    { id: 'log', label: 'ลงชั่วโมงทำงาน', example: 'ลงชั่วโมง PJ-2569-0001 ประชุมลูกค้า', keywords: ['ลงชั่วโมง', 'ลงเวลา', 'timesheet'], screen: 'timesheetNew', perm: 'projects.timesheet.log',
+    { id: 'log', label: 'ลงชั่วโมงทำงาน', example: 'ลงชั่วโมง PJ-2569-0001 ประชุมลูกค้า', keywords: ['ลงชั่วโมง', 'ลงชั่วโมงทำงาน', 'timesheet'], screen: 'timesheetNew', perm: 'projects.timesheet.log',
       arg: { lookup: { path: '/projects', query: { open: 'true' }, label: ['no', 'name'], assign: { projectId: 'id' } } }, restField: 'note' },
     { id: 'mine', label: 'งานของฉัน', example: 'งานของฉัน', keywords: ['งานของฉัน', 'my tasks'], screen: 'myTasks', perm: 'projects.project.read' },
-    { id: 'approve', label: 'timesheet รออนุมัติ', example: 'อนุมัติชั่วโมง', keywords: ['อนุมัติชั่วโมง', 'อนุมัติ timesheet'], screen: 'weekApprovals', perm: 'projects.timesheet.approve' },
+    { id: 'approve', label: 'ชั่วโมงทำงานรออนุมัติ', example: 'อนุมัติชั่วโมง', keywords: ['อนุมัติชั่วโมง', 'อนุมัติ timesheet'], screen: 'weekApprovals', perm: 'projects.timesheet.approve' },
   ],
   search: [
     { id: 'projects', title: 'โครงการ', endpoint: '/projects', label: ['no', 'name', 'customer_name'], screen: 'projectDetail', perm: 'projects.project.read' },
@@ -123,8 +123,8 @@ export default defineUi({
         { key: 'budget_at_risk', label: 'ใกล้เกินงบ (>90%)', format: 'boolean' }, { key: 'description', label: 'รายละเอียด' },
       ],
       lines: [
-        { path: 'milestones', label: 'Milestone', columns: [
-          { key: 'name', label: 'Milestone' }, { key: 'due_date', label: 'กำหนด', format: 'date' }, { key: 'done', label: 'เสร็จ', format: 'boolean' },
+        { path: 'milestones', label: 'งวดงาน', columns: [
+          { key: 'name', label: 'งวดงาน' }, { key: 'due_date', label: 'กำหนด', format: 'date' }, { key: 'done', label: 'เสร็จ', format: 'boolean' },
           { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' }, { key: 'tasks_done', label: 'งานเสร็จ', format: 'qty' }, { key: 'task_count', label: 'งานทั้งหมด', format: 'qty' },
         ] },
         { path: 'tasks', label: 'งาน', columns: [
@@ -148,21 +148,21 @@ export default defineUi({
             { name: 'role', label: 'บทบาท', type: 'text' },
             { name: 'hourlyRate', label: 'ต้นทุนต่อชั่วโมง (บาท)', type: 'number', step: 0.01, default: 0, help: 'ใช้คำนวณต้นทุนแรงงานเทียบงบประมาณ' },
           ] },
-        { id: 'milestone', label: 'เพิ่ม milestone', method: 'POST', endpoint: '/projects/:id/milestones', perm: 'projects.project.write', when: { field: 'status', in: ['planning', 'active', 'on_hold'] },
-          fields: [{ name: 'name', label: 'ชื่อ milestone', type: 'text', required: true }, { name: 'dueDate', label: 'กำหนดเสร็จ', type: 'date' }] },
+        { id: 'milestone', label: 'เพิ่มงวดงาน', method: 'POST', endpoint: '/projects/:id/milestones', perm: 'projects.project.write', when: { field: 'status', in: ['planning', 'active', 'on_hold'] },
+          fields: [{ name: 'name', label: 'ชื่องวดงาน', type: 'text', required: true }, { name: 'dueDate', label: 'กำหนดเสร็จ', type: 'date' }] },
         { id: 'cancel', label: 'ยกเลิกโครงการ', method: 'POST', endpoint: '/projects/:id/cancel', perm: 'projects.project.write', when: { field: 'status', in: ['planning', 'active', 'on_hold'] }, confirm: 'ยกเลิกแล้วจะลงชั่วโมงและเพิ่มงานไม่ได้อีก', tone: 'danger' },
       ],
     },
 
     /* ---------- milestones ---------- */
     milestoneList: {
-      kind: 'list', title: 'Milestone', endpoint: '/milestones', perm: 'projects.project.read',
+      kind: 'list', title: 'งวดงาน', endpoint: '/milestones', perm: 'projects.project.read',
       filters: [{ name: 'q', label: 'ค้นหา', type: 'text' }, { name: 'done', label: 'เสร็จแล้ว', type: 'select', options: yesNo }, { name: 'overdue', label: 'เลยกำหนด', type: 'select', options: yesNo }],
       columns: [
-        { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' }, { key: 'name', label: 'Milestone' },
+        { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' }, { key: 'name', label: 'งวดงาน' },
         { key: 'due_date', label: 'กำหนด', format: 'date' }, { key: 'done', label: 'เสร็จ', format: 'boolean' }, { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' },
       ],
-      rowLink: { screen: 'projectDetail', idFrom: 'project_id' }, empty: 'ยังไม่มี milestone',
+      rowLink: { screen: 'projectDetail', idFrom: 'project_id' }, empty: 'ยังไม่มีงวดงาน',
       rowActions: [
         { id: 'done', label: 'เสร็จแล้ว', method: 'POST', endpoint: '/milestones/:id/done', perm: 'projects.project.write', when: { field: 'done', in: [false] }, tone: 'primary' },
         { id: 'undo', label: 'ยังไม่เสร็จ', method: 'POST', endpoint: '/milestones/:id/undo', perm: 'projects.project.write', when: { field: 'done', in: [true] } },
@@ -207,7 +207,7 @@ export default defineUi({
         { name: 'priority', label: 'ความสำคัญ', type: 'select', options: priorities, default: 'normal' },
         { name: 'dueDate', label: 'กำหนดเสร็จ', type: 'date' },
         { name: 'estimateHours', label: 'ประมาณการ (ชั่วโมง)', type: 'number', step: 0.25 },
-        { name: 'milestoneId', label: 'Milestone', type: 'lookup', help: 'ต้องเป็น milestone ของโครงการเดียวกัน',
+        { name: 'milestoneId', label: 'งวดงาน', type: 'lookup', help: 'ต้องเป็นงวดงานของโครงการเดียวกัน',
           lookup: { path: '/milestones', query: { done: 'false' }, label: ['project_no', 'name'], assign: { milestoneId: 'id' } } },
       ],
       submitLabel: 'สร้างงาน', after: { screen: 'taskDetail', idFrom: 'id' },
@@ -229,7 +229,7 @@ export default defineUi({
       flow: { field: 'status', steps: taskStatuses },
       fields: [
         { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' }, { key: 'status', label: 'สถานะ', format: 'status' },
-        { key: 'priority', label: 'ความสำคัญ', format: 'label' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' }, { key: 'milestone_name', label: 'Milestone' },
+        { key: 'priority', label: 'ความสำคัญ', format: 'label' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' }, { key: 'milestone_name', label: 'งวดงาน' },
         { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' },
         { key: 'estimate_hours', label: 'ประมาณการ (ชม.)', format: 'qty' }, { key: 'hours_logged', label: 'ลงจริง (ชม.)', format: 'qty' },
         { key: 'completed_at', label: 'เสร็จเมื่อ', format: 'datetime' }, { key: 'description', label: 'รายละเอียด' },
@@ -254,12 +254,12 @@ export default defineUi({
       submitLabel: 'บันทึกชั่วโมง', after: { screen: 'myWeek' },
     },
     myWeek: {
-      kind: 'list', title: 'timesheet ของฉัน (รายสัปดาห์)', endpoint: '/timesheets/week', rows: 'rows', perm: 'projects.timesheet.log', mobile: true,
+      kind: 'list', title: 'ชั่วโมงทำงานของฉัน (รายสัปดาห์)', endpoint: '/timesheets/week', rows: 'rows', perm: 'projects.timesheet.log', mobile: true,
       filters: [{ name: 'start', label: 'สัปดาห์ของวันที่', type: 'date' }],
       columns: [...entryColumns, { key: 'week_status', label: 'สถานะสัปดาห์', format: 'status' }],
       create: 'timesheetNew', createLabel: 'ลงชั่วโมง', empty: 'สัปดาห์นี้ยังไม่ได้ลงชั่วโมง',
       actions: [
-        { id: 'submit', label: 'ส่ง timesheet ให้อนุมัติ', method: 'POST', endpoint: '/timesheets/week/submit', perm: 'projects.timesheet.log', tone: 'primary', mobile: true,
+        { id: 'submit', label: 'ส่งชั่วโมงทำงานให้อนุมัติ', method: 'POST', endpoint: '/timesheets/week/submit', perm: 'projects.timesheet.log', tone: 'primary', mobile: true,
           fields: [{ name: 'start', label: 'สัปดาห์ของวันที่ (เว้นว่าง = สัปดาห์นี้)', type: 'date' }] },
       ],
       rowActions: [
@@ -276,22 +276,23 @@ export default defineUi({
       empty: 'ยังไม่มีการลงชั่วโมง',
     },
     weekApprovals: {
-      kind: 'list', title: 'อนุมัติ timesheet', endpoint: '/timesheet-weeks', perm: 'projects.timesheet.approve', mobile: true,
+      kind: 'list', title: 'อนุมัติชั่วโมงทำงาน', endpoint: '/timesheet-weeks', perm: 'projects.timesheet.approve', mobile: true,
       filters: [{ name: 'q', label: 'ค้นหาพนักงาน', type: 'text' }, { name: 'status', label: 'สถานะ', type: 'select', options: weekStatuses }],
       columns: [
         { key: 'user_name', label: 'พนักงาน' }, { key: 'week_start', label: 'สัปดาห์เริ่ม', format: 'date' }, { key: 'week_end', label: 'ถึง', format: 'date' },
         { key: 'total_hours', label: 'รวมชั่วโมง', format: 'qty' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
       ],
-      rowLink: { screen: 'weekDetail' }, empty: 'ไม่มี timesheet รออนุมัติ',
+      rowLink: { screen: 'weekDetail' }, empty: 'ไม่มีชั่วโมงทำงานรออนุมัติ',
       rowActions: [approveWeek, rejectWeek],
     },
     weekDetail: {
-      kind: 'detail', title: 'timesheet รายสัปดาห์', endpoint: '/timesheet-weeks/:id', perm: 'projects.timesheet.log', heading: 'user_name', mobile: true, printable: true,
+      kind: 'detail', title: 'ชั่วโมงทำงานรายสัปดาห์', endpoint: '/timesheet-weeks/:id', perm: 'projects.timesheet.log', heading: 'user_name', mobile: true, printable: true,
       flow: { field: 'status', steps: weekStatuses },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'week_start', label: 'สัปดาห์เริ่ม', format: 'date' },
         { key: 'total_hours', label: 'รวมชั่วโมง', format: 'qty' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
-        { key: 'approved_at', label: 'อนุมัติเมื่อ', format: 'datetime' }, { key: 'reject_reason', label: 'เหตุผลที่ตีกลับ' },
+        { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'approved_at', label: 'อนุมัติเมื่อ', format: 'datetime' },
+        { key: 'reject_reason', label: 'เหตุผลที่ตีกลับ' }, { key: 'rejected_by_name', label: 'ตีกลับโดย' },
       ],
       lines: [{ path: 'entries', label: 'รายการชั่วโมง', columns: entryColumns }],
       actions: [approveWeek, rejectWeek],

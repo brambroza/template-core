@@ -62,7 +62,10 @@ export function verify(root: string): { errors: string[]; warnings: string[] } {
 
   if (existsSync(join(root, 'catalog', 'catalog.json'))) {
     const cat = loadCatalog(root);
-    for (const m of manifests.filter((x) => x.tier === 'feature')) if (!cat.modules[m.id]) errors.push(`${m.id}: no price in catalog/catalog.json`);
+    for (const m of manifests.filter((x) => x.tier === 'feature')) {
+      if (!cat.modules[m.id]) errors.push(`${m.id}: no price in catalog/catalog.json`);
+      else if ((cat as any).rental?.modules && !(cat as any).rental.modules[m.id]) errors.push(`${m.id}: no monthly rental price in catalog/catalog.json (rental.modules)`);
+    }
     for (const b of cat.bundles) for (const id of b.modules) if (!ids.has(id)) warnings.push(`bundle ${b.id}: module ${id} not in this repo`);
   }
   return { errors, warnings };

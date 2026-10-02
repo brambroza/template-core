@@ -3,7 +3,10 @@
  *
  *   catalog                                   list modules, dependencies and prices
  *   resolve  <modules>                        what actually gets installed (core + requires)
- *   quote    <modules>                        price, cheapest bundle combination
+ *   quote    <modules>                        price, cheapest bundle combination (one-time license)
+ *            [--rent]                         monthly managed-SaaS price instead (min. term, setup fee, prepay, rent-to-own)
+ *            [--pilot]                        add the 60-day design-partner pilot fee
+ *            [--partner referral|reseller|implementer [--deals N]]  what a partner pays / earns on this deal
  *   compose  <modules> [--out dir]            docker-compose installation for that selection
  *   pack     <modules> --customer NAME [--out dir] [--license TOKEN]
  *                                             customer deliverable containing only purchased modules
@@ -19,7 +22,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_PUBLIC_KEY_PATH, generateLicenseKeys, issueLicense, readLicense } from '@erp/kernel';
-import { loadCatalog, loadManifests, quote, REPO_ROOT, resolveSelection } from './catalog.ts';
+import { loadCatalog, loadManifests, partnerCost, pilotPrice, quote, REPO_ROOT, resolveSelection } from './catalog.ts';
 import { compose } from './compose.ts';
 import { pack } from './pack.ts';
 import { scaffoldModule } from './scaffold.ts';
@@ -63,10 +66,45 @@ function main() {
       console.log(resolveSelection(picks(args[0]), manifests).join('\n'));
       return;
     case 'quote': {
-      const q = quote(picks(args[0]), manifests, loadCatalog());
+      const cat = loadCatalog();
+      const spec = args[0] ?? [flags.rent, flags.pilot].find((v) => v && v !== 'true');
+      const row = (label: string, n: number, unit = '') => console.log(`${label.padEnd(70)} ${fmt(n).padStart(9)}${unit ? ` ${unit}` : ''}`);
+      if (flags.rent) {
+        const q = quote(picks(spec), manifests, cat, { mode: 'rent' });
+        const r = cat.rental!;
+        for (const l of q.lines) row(l.label, l.price);
+        row('TOTAL per month (excl. VAT) — monthly rental, no source code', q.total, `${q.currency}/month`);
+        row(`Minimum term ${q.minTermMonths} months`, q.termTotal, q.currency);
+        row('Setup fee (one-time)', q.setupFee, q.currency);
+        row(`Prepay 12 months (−${r.prepayYearDiscountPct}%)`, q.prepayYear, q.currency);
+        console.log(`Rent-to-own: within ${r.rentToOwn.windowMonths} months, ${r.rentToOwn.creditPct}% of rent paid is credited toward the license ${fmt(q.licenseTotal)} (max ${fmt(q.maxRentToOwnCredit)} ${q.currency})`);
+        if (flags.pilot) row(`Pilot ${cat.pilot?.durationDays ?? 60} days (design partner, credited toward purchase)`, pilotPrice(q.licenseTotal, cat), q.currency);
+        if (flags.partner) {
+          const t = cat.partner?.tiers.find((x) => x.id === flags.partner);
+          if (!t) throw new Error(`Unknown partner tier "${flags.partner}"`);
+          const months = t.rentalShareMonths || q.minTermMonths;
+          row(`Partner ${t.id}: ${t.rentalSharePct}% of rent for ${t.rentalShareMonths ? `${months} months` : 'the contract'} (per month)`, Math.round((q.total * t.rentalSharePct) / 100), q.currency);
+        }
+        return;
+      }
+      const q = quote(picks(spec), manifests, cat);
       for (const l of q.lines) console.log(`${l.label.padEnd(70)} ${fmt(l.price).padStart(9)}`);
       console.log(`${'TOTAL (excl. VAT)'.padEnd(70)} ${fmt(q.total).padStart(9)} ${q.currency}`);
       console.log(`${'Yearly updates & support'.padEnd(70)} ${fmt(q.yearlyUpdates).padStart(9)} ${q.currency}`);
+      if (flags.pilot) row(`Pilot ${cat.pilot?.durationDays ?? 60} days (design partner, 100% credited if bought within ${cat.pilot?.creditWindowDays ?? 30} days)`, pilotPrice(q.total, cat), q.currency);
+      if (flags.partner) {
+        const t = cat.partner?.tiers.find((x) => x.id === flags.partner);
+        if (!t) throw new Error(`Unknown partner tier "${flags.partner}". Available: ${(cat.partner?.tiers ?? []).map((x) => x.id).join(', ')}`);
+        const deals = Number(flags.deals ?? 0);
+        if (t.referralFeePct) row(`Partner ${t.id}: referral fee ${t.referralFeePct}%`, Math.round((q.total * t.referralFeePct) / 100), q.currency);
+        else {
+          const p = partnerCost(q.total, t.id, cat, deals);
+          row(`Partner ${t.id}: buys at −${p.discountPct}%`, p.cost, q.currency);
+          row(`Partner ${t.id}: lowest resale price (${cat.partner!.minResalePct}% of list)`, p.minResale, q.currency);
+          row(`Partner ${t.id}: license margin at list price`, q.total - p.cost, q.currency);
+        }
+        row(`Partner ${t.id}: ${t.updatePlanSharePct}% of the yearly update plan`, Math.round((q.yearlyUpdates * t.updatePlanSharePct) / 100), `${q.currency}/year`);
+      }
       return;
     }
     case 'compose': {
@@ -119,7 +157,7 @@ function main() {
       if (!args[0] || !flags.name || !flags['name-th']) throw new Error('new-module <id> --name "English" --name-th "ไทย"');
       const files = scaffoldModule(REPO_ROOT, args[0], flags.name, flags['name-th']);
       syncUi(REPO_ROOT, loadManifests().map((m) => m.id));
-      console.log(`Created services/${args[0]} (${files.length} files). Next: pnpm install, add a price in catalog/catalog.json, pnpm check.`);
+      console.log(`Created services/${args[0]} (${files.length} files). Next: pnpm install, add a price in catalog/catalog.json (modules + rental.modules), pnpm check.`);
       return;
     }
     case 'ui-sync': {

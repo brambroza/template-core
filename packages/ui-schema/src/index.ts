@@ -177,7 +177,32 @@ export interface DetailScreen extends ScreenBase {
   lines?: { path: string; label: string; columns: Column[] }[];
   actions?: Action[];
   edit?: string;
+  /** shorthand for `print: {}` — printable with the default layout */
   printable?: boolean;
+  /** printed document layout (letterhead, title, copy label, signature boxes); see `printSpec` */
+  print?: PrintOptions;
+}
+
+/**
+ * How a detail screen prints as a real company document. Every printed document gets the company letterhead
+ * (identity `GET /company`), the title, the record's facts and lines, signature boxes and a page footer.
+ */
+export type SignatureSpec = string | { label: string; name?: string };
+
+export interface PrintOptions {
+  /** document title on paper, e.g. "ใบกำกับภาษี / ใบเสร็จรับเงิน"; default = the screen title */
+  title?: string;
+  /**
+   * signature boxes, e.g. ["ผู้จัดทำ", "ผู้อนุมัติ"]; `{ label, name }` also prints the person's name read from the
+   * record path `name` under the line. Default = the company's default labels.
+   */
+  signatures?: SignatureSpec[];
+  /** one more box per row of a record array, e.g. the approvers of a request: `{ path: 'steps', label: 'ผู้อนุมัติ', name: 'approver_name' }` */
+  signers?: { path: string; label: string; name?: string };
+  /** offer "ต้นฉบับ" / "สำเนา" and print the chosen label on the document */
+  copyLabel?: boolean;
+  /** legal form: 'tax-invoice' / 'receipt' print the buyer block and require the seller's tax ID */
+  legal?: 'tax-invoice' | 'receipt' | 'none';
 }
 
 export type Screen = ListScreen | FormScreen | DetailScreen;
@@ -834,4 +859,142 @@ export function filtersToQuery(values: Record<string, unknown>): string {
     if (v !== undefined && v !== null && v !== '' && v !== false) qs.set(k, String(v));
   }
   return qs.toString();
+}
+
+/* ---------------- printed documents ---------------- */
+
+export interface ResolvedPrint {
+  title: string;
+  /** static boxes; `name` is a record path */
+  signatures: { label: string; name?: string }[];
+  signers?: { path: string; label: string; name?: string };
+  copyLabel: boolean;
+  legal: 'tax-invoice' | 'receipt' | 'none';
+}
+
+export const COPY_LABELS = ['ต้นฉบับ', 'สำเนา'] as const;
+export type CopyLabel = (typeof COPY_LABELS)[number];
+
+/** True when the screen prints (`print` set, or the older `printable: true`). */
+export function isPrintable(screen: { kind: string; printable?: boolean; print?: PrintOptions }): boolean {
+  return screen.kind === 'detail' && (!!screen.print || !!screen.printable);
+}
+
+/**
+ * The print layout of a detail screen with every default filled in, or null when it does not print.
+ * Signatures: the screen's own labels, else the company's default labels (`signature_labels`), else none.
+ */
+export function printSpec(screen: { kind: string; title: string; printable?: boolean; print?: PrintOptions }, companySignatures: string[] = []): ResolvedPrint | null {
+  if (!isPrintable(screen)) return null;
+  const p = screen.print ?? {};
+  const boxes = (p.signatures ?? (p.signers ? [] : companySignatures))
+    .map((x) => (typeof x === 'string' ? { label: x.trim() } : { ...x, label: x.label.trim() }))
+    .filter((x) => x.label);
+  return {
+    title: p.title?.trim() || screen.title,
+    signatures: boxes,
+    ...(p.signers ? { signers: p.signers } : {}),
+    copyLabel: !!p.copyLabel,
+    legal: p.legal ?? 'none',
+  };
+}
+
+/** The signature boxes of one record: static boxes with names filled in, then one box per `signers` row. */
+export function signatureBoxes(spec: ResolvedPrint, record: unknown): { label: string; name?: string }[] {
+  const text = (v: unknown) => (v === null || v === undefined || v === '' ? undefined : String(v));
+  const out = spec.signatures.map((b) => ({ label: b.label, name: b.name ? text(get(record, b.name)) : undefined }));
+  if (spec.signers) {
+    const rows = get(record, spec.signers.path);
+    const list = Array.isArray(rows) ? rows : [];
+    list.forEach((row, i) => out.push({
+      label: list.length > 1 ? `${spec.signers!.label} ขั้นที่ ${i + 1}` : spec.signers!.label,
+      name: spec.signers!.name ? text(get(row, spec.signers!.name)) : undefined,
+    }));
+  }
+  return out;
+}
+
+/** Branch wording on Thai tax documents: "00000" -> "สำนักงานใหญ่", "00012" -> "สาขาที่ 00012"; other text as is. */
+export function branchText(branch?: string | null): string {
+  const b = (branch ?? '').trim();
+  if (!b) return '';
+  if (b === '00000') return 'สำนักงานใหญ่';
+  return /^\d{5}$/.test(b) ? `สาขาที่ ${b}` : b;
+}
+
+/** "0105559123456" -> "0-1055-59123-45-6" (as printed on Thai documents); anything else unchanged. */
+export function formatTaxId(id?: string | null): string {
+  const d = (id ?? '').replace(/[\s-]/g, '');
+  return /^\d{13}$/.test(d) ? `${d[0]}-${d.slice(1, 5)}-${d.slice(5, 10)}-${d.slice(10, 12)}-${d[12]}` : (id ?? '');
+}
+
+export interface PartyInfo {
+  name?: string;
+  address?: string;
+  taxId?: string;
+  branch?: string;
+  /** record paths the info was read from (so the facts grid can skip them on paper) */
+  keys: string[];
+}
+
+const PARTY_PATHS: Record<'name' | 'address' | 'taxId' | 'branch', string[]> = {
+  name: ['customer.name', 'buyer.name', 'customer_name', 'customerName', 'buyer_name', 'partner_name'],
+  address: ['customer.address', 'buyer.address', 'customer_address', 'customerAddress', 'buyer_address'],
+  taxId: ['customer.taxId', 'customer.tax_id', 'buyer.taxId', 'buyer.tax_id', 'customer_tax_id', 'customerTaxId', 'buyer_tax_id'],
+  branch: ['customer.branch', 'buyer.branch', 'customer_branch', 'customerBranch', 'buyer_branch'],
+};
+
+/** The buyer of a sales document (tax invoice / receipt), found under the usual record paths. Null when no name. */
+export function buyerInfo(record: unknown): PartyInfo | null {
+  const out: PartyInfo = { keys: [] };
+  for (const [field, paths] of Object.entries(PARTY_PATHS) as [keyof typeof PARTY_PATHS, string[]][]) {
+    for (const path of paths) {
+      const v = get(record, path);
+      if (v !== null && v !== undefined && String(v).trim() !== '') {
+        out[field] = String(v);
+        out.keys.push(path);
+        break;
+      }
+    }
+  }
+  return out.name ? out : null;
+}
+
+/** The company profile fields a printed document uses (identity `GET /company`). */
+export interface CompanyProfile {
+  configured?: boolean;
+  legal_name?: string;
+  name_en?: string | null;
+  branch_code?: string | null;
+  branch_label?: string | null;
+  /** branch wording to print: the typed label, else from the code */
+  branch_text?: string | null;
+  address?: string | null;
+  tax_id?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  logo?: string | null;
+  footer_note?: string | null;
+  signature_labels?: string[];
+}
+
+/**
+ * What is missing from the company profile for this document, in Thai, for an on-screen warning (never printed).
+ * Tax invoices need the seller's name, address and tax ID (Revenue Code §86/4).
+ */
+export function companyProblems(company: CompanyProfile | null | undefined, legal: ResolvedPrint['legal']): string[] {
+  const out: string[] = [];
+  if (!company || company.configured === false) out.push('ยังไม่ได้ตั้งค่าข้อมูลบริษัท — หัวกระดาษจะมีแค่ชื่อบริษัท');
+  if (legal === 'tax-invoice') {
+    if (!company?.tax_id) out.push('ข้อมูลบริษัทยังไม่มีเลขประจำตัวผู้เสียภาษี — ใบกำกับภาษีที่ไม่มีเลขนี้ใช้ไม่ได้ตามมาตรา 86/4');
+    if (!company?.address) out.push('ข้อมูลบริษัทยังไม่มีที่อยู่ — ใบกำกับภาษีต้องมีที่อยู่ผู้ขาย');
+  }
+  return out;
+}
+
+/** Contact line under the letterhead: "โทร 02-… · อีเมล … · www…". */
+export function companyContactLine(company: CompanyProfile | null | undefined): string {
+  if (!company) return '';
+  return [company.phone && `โทร ${company.phone}`, company.email && `อีเมล ${company.email}`, company.website].filter(Boolean).join(' · ');
 }

@@ -1,6 +1,7 @@
-import { auth, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import { addBusinessSeconds, DEFAULT_CALENDAR, type BusinessCalendar } from './business-hours.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -32,8 +33,29 @@ const TicketInput = z.object({
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
   assigneeId: s.uuid.nullable().optional(),
   assigneeName: text(),
+  /** customer snapshot from the master-data partner lookup */
+  customerId: s.uuid.nullable().optional(),
+  customerCode: text(50),
+  customerName: text(),
+  /** affected equipment: asset code / serial no. (free text) */
+  assetRef: text(200),
+  /** when the customer actually reported it (e.g. a call at 23:04 logged next morning) — technicians only; SLA counts from here */
+  reportedAt: z.string().datetime({ offset: true }).optional(),
 });
-const TicketEdit = TicketInput.omit({ assigneeId: true, assigneeName: true, channel: true }).extend({ channel: TicketInput.shape.channel.optional() });
+const TicketEdit = TicketInput.omit({ assigneeId: true, assigneeName: true, channel: true, reportedAt: true }).extend({ channel: TicketInput.shape.channel.optional() });
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:MM');
+const SlaSettingsInput = z.object({
+  businessHours: z.boolean().default(true),
+  timezone: z.string().trim().min(1).max(64).refine((tz) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } }, 'unknown time zone').default('Asia/Bangkok'),
+  /** ISO weekdays 1 = Monday … 7 = Sunday; "1,2,3,4,5" from a form is accepted too */
+  workDays: z.preprocess((v) => (typeof v === 'string' ? v.split(/[\s,]+/).filter(Boolean).map(Number) : v),
+    z.array(z.number().int().min(1).max(7)).min(1)).default([1, 2, 3, 4, 5]),
+  workStart: hhmm.default('08:00'),
+  workEnd: hhmm.default('17:00'),
+  urgent24x7: z.boolean().default(true),
+}).refine((v) => v.workEnd > v.workStart, { message: 'workEnd must be after workStart', path: ['workEnd'] });
+const HolidayInput = z.object({ date: s.isoDate, name: s.name });
 
 const CommentInput = z.object({ body: z.string().trim().min(1).max(5000), internal: z.boolean().default(false), authorName: text() });
 const AssignInput = z.object({ assigneeId: s.uuid, assigneeName: text() });
@@ -51,7 +73,8 @@ const TICKET_SELECT = `select t.*,
   (${ACTIVE} and now() > t.due_at) as overdue,
   (${ACTIVE} and t.first_response_at is null and now() > t.response_due_at) as response_overdue,
   case t.priority when 'low' then 'ต่ำ' when 'normal' then 'ปกติ' when 'high' then 'สูง' else 'ด่วนมาก' end as priority_label,
-  case t.channel when 'web' then 'เว็บ' when 'phone' then 'โทรศัพท์' when 'line' then 'LINE' when 'email' then 'อีเมล' else 'มาด้วยตัวเอง' end as channel_label
+  case t.channel when 'web' then 'เว็บ' when 'phone' then 'โทรศัพท์' when 'line' then 'LINE' when 'email' then 'อีเมล' else 'มาด้วยตัวเอง' end as channel_label,
+  case t.sla_mode when 'business' then 'เวลาทำการ' else '24 ชม.' end as sla_mode_label
   from tickets t`;
 
 const DEFAULT_SLA = { response: 4, resolve: 24 };
@@ -61,16 +84,34 @@ function requireAny(a: AuthContext, ...perms: string[]) {
   if (!perms.some((p) => hasPerm(a, p))) requirePerm(a, perms[0]);
 }
 
-/** SLA hours for a category + priority; urgent halves both. */
-async function sla(c: Client, categoryId: string | null | undefined, priority: string) {
+interface SlaSettings { businessHours: boolean; urgent24x7: boolean; calendar: BusinessCalendar }
+
+/** The tenant's working calendar (defaults when never saved) with its holidays. */
+async function slaSettings(c: Client): Promise<SlaSettings> {
+  const r = (await c.query(`select business_hours, timezone, work_days, to_char(work_start, 'HH24:MI') as work_start, to_char(work_end, 'HH24:MI') as work_end, urgent_24x7
+    from sla_settings limit 1`)).rows[0];
+  const holidays = (await c.query(`select to_char(date, 'YYYY-MM-DD') as d from holidays where date >= current_date - 400`)).rows.map((h) => h.d);
+  return {
+    businessHours: r?.business_hours ?? true,
+    urgent24x7: r?.urgent_24x7 ?? true,
+    calendar: r ? { timezone: r.timezone, workDays: r.work_days, workStart: r.work_start, workEnd: r.work_end, holidays } : { ...DEFAULT_CALENDAR, holidays },
+  };
+}
+
+/**
+ * SLA due times for a category + priority from `start`; urgent halves both.
+ * Business-hours mode counts only working time (calendar + holidays); urgent tickets count clock time when `urgent24x7`.
+ */
+async function sla(c: Client, categoryId: string | null | undefined, priority: string, start: Date) {
   let cat: any = null;
   if (categoryId) cat = await one(c, 'select * from categories where id = $1', [categoryId], 'Category');
   const f = priority === 'urgent' ? 0.5 : 1;
-  return {
-    cat,
-    responseSecs: Math.round(Number(cat?.sla_response_hours ?? DEFAULT_SLA.response) * f * 3600),
-    resolveSecs: Math.round(Number(cat?.sla_resolve_hours ?? DEFAULT_SLA.resolve) * f * 3600),
-  };
+  const responseSecs = Math.round(Number(cat?.sla_response_hours ?? DEFAULT_SLA.response) * f * 3600);
+  const resolveSecs = Math.round(Number(cat?.sla_resolve_hours ?? DEFAULT_SLA.resolve) * f * 3600);
+  const set = await slaSettings(c);
+  const mode: 'business' | 'clock' = set.businessHours && !(priority === 'urgent' && set.urgent24x7) ? 'business' : 'clock';
+  const add = (secs: number) => (mode === 'business' ? addBusinessSeconds(start, secs, set.calendar) : new Date(start.getTime() + secs * 1000));
+  return { cat, mode, responseDue: add(responseSecs), due: add(resolveSecs) };
 }
 
 /** A requester may see their own tickets; staff with read/work see all. Internal notes only for technicians. */
@@ -85,8 +126,10 @@ async function loadTicket(c: Client, a: AuthContext, id: string, lock = false) {
   return t;
 }
 
+/** Author = the signed-in user (name from the token); `authorName` only fills in for old tokens without a name. */
 async function addComment(c: Client, ticketId: string, a: AuthContext, body: string, internal: boolean, authorName?: string | null) {
-  await c.query('insert into ticket_comments (ticket_id, internal, body, author_id, author_name) values ($1,$2,$3,$4,$5)', [ticketId, internal, body, a.userId, authorName ?? null]);
+  await c.query('insert into ticket_comments (ticket_id, internal, body, author_id, author_name) values ($1,$2,$3,$4,$5)',
+    [ticketId, internal, body, a.userId, a.userName ?? authorName ?? null]);
 }
 
 export const definition: ServiceDefinition = {
@@ -136,29 +179,92 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    /* ================= SLA calendar ================= */
+
+    /** Working days/hours the SLA counts in, plus upcoming holidays (defaults when never saved). */
+    app.get('/settings/sla', async (req) => {
+      const a = auth(req);
+      requireAny(a, 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.setup.write');
+      return k.db.tx(a.tenantId, async (c) => {
+        const set = await slaSettings(c);
+        return { businessHours: set.businessHours, urgent24x7: set.urgent24x7, ...set.calendar, holidays: undefined,
+          upcomingHolidays: (await c.query(`select id, to_char(date, 'YYYY-MM-DD') as date, name from holidays where date >= current_date order by date limit 30`)).rows };
+      });
+    });
+
+    /** Applies to tickets opened (or edited/reopened) from now on; existing due times stay as they are. */
+    app.put('/settings/sla', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'helpdesk.setup.write');
+      const b = parse(SlaSettingsInput, req.body ?? {});
+      return k.db.tx(a.tenantId, async (c) => {
+        await c.query(
+          `insert into sla_settings (business_hours, timezone, work_days, work_start, work_end, urgent_24x7) values ($1,$2,$3,$4,$5,$6)
+           on conflict (tenant_id) do update set business_hours = $1, timezone = $2, work_days = $3, work_start = $4, work_end = $5, urgent_24x7 = $6, updated_at = now()`,
+          [b.businessHours, b.timezone, [...new Set(b.workDays)].sort(), b.workStart, b.workEnd, b.urgent24x7]);
+        const set = await slaSettings(c);
+        return { businessHours: set.businessHours, urgent24x7: set.urgent24x7, ...set.calendar, holidays: undefined };
+      });
+    });
+
+    app.get('/holidays', async (req) => {
+      const a = auth(req);
+      requireAny(a, 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.setup.write');
+      const q = parse(ListQuery.extend({ year: z.coerce.number().int().min(1900).max(2600).optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select id, to_char(date, 'YYYY-MM-DD') as date, name from holidays where ($1::int is null or extract(year from date) = $1) order by date limit $2 offset $3`,
+        [q.year === undefined ? null : q.year > 2400 ? q.year - 543 : q.year, q.limit, q.offset])).rows); // พ.ศ. or ค.ศ.
+    });
+
+    app.post('/holidays', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'helpdesk.setup.write');
+      const b = parse(HolidayInput, req.body);
+      reply.code(201);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `insert into holidays (date, name) values ($1, $2) returning id, to_char(date, 'YYYY-MM-DD') as date, name`, [b.date, b.name])).rows[0]);
+    });
+
+    app.delete('/holidays/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'helpdesk.setup.write');
+      const { id } = parse(IdParam, req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const r = await one(c, `delete from holidays where id = $1 returning id, name`, [id], 'Holiday');
+        return { deleted: r.id, message: `ลบวันหยุด "${r.name}" แล้ว` };
+      });
+    });
+
     /* ================= tickets ================= */
 
     app.post('/tickets', async (req, reply) => {
       const a = auth(req);
       requirePerm(a, 'helpdesk.ticket.create');
       const b = parse(TicketInput, req.body);
+      const tech = hasPerm(a, 'helpdesk.ticket.work');
+      const now = new Date();
+      // only technicians back-date a ticket to when the customer reported it (never into the future)
+      const reportedAt = tech && b.reportedAt ? new Date(b.reportedAt) : now;
+      if (reportedAt.getTime() > now.getTime() + 5 * 60_000) throw badRequest('เวลาที่แจ้งต้องไม่เป็นเวลาในอนาคต', { fieldErrors: { reportedAt: ['ต้องไม่เป็นเวลาในอนาคต'] } });
+      // a requester reporting for themself: their name comes from the login
+      const requesterName = b.requesterName ?? (tech ? null : a.userName ?? null);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        const { cat, responseSecs, resolveSecs } = await sla(c, b.categoryId, b.priority);
+        const { cat, mode, responseDue, due } = await sla(c, b.categoryId, b.priority, reportedAt);
         if (cat && !cat.active) throw conflict(`Category ${cat.code} is inactive`);
         // only technicians pick an assignee; otherwise the category's default technician takes it
-        const assignId = (hasPerm(a, 'helpdesk.ticket.work') && b.assigneeId) || cat?.default_assignee_id || null;
+        const assignId = (tech && b.assigneeId) || cat?.default_assignee_id || null;
         const assignName = assignId && assignId === b.assigneeId ? b.assigneeName ?? null : cat?.default_assignee_name ?? null;
         const no = await nextDocNo(c, 'TK');
         const row = (await c.query(
           `insert into tickets (no, title, description, requester_name, requester_contact, channel, category_id, category_name, priority, assignee_id, assignee_name,
-             response_due_at, due_at, created_by)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now() + $12 * interval '1 second', now() + $13 * interval '1 second', $14) returning id`,
-          [no, b.title, b.description ?? null, b.requesterName ?? null, b.requesterContact ?? null, b.channel, cat?.id ?? null, cat?.name ?? null, b.priority,
-            assignId, assignName, responseSecs, resolveSecs, a.userId],
+             response_due_at, due_at, created_by, customer_id, customer_code, customer_name, asset_ref, reported_at, sla_mode)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) returning id`,
+          [no, b.title, b.description ?? null, requesterName, b.requesterContact ?? null, b.channel, cat?.id ?? null, cat?.name ?? null, b.priority,
+            assignId, assignName, responseDue, due, a.userId, b.customerId ?? null, b.customerCode ?? null, b.customerName ?? null, b.assetRef ?? null, reportedAt, mode],
         )).rows[0];
         await k.emit(c, 'helpdesk.ticket_created', {
-          ticketId: row.id, no, title: b.title, priority: b.priority, categoryName: cat?.name ?? null, requesterName: b.requesterName ?? null, assigneeName: assignName,
+          ticketId: row.id, no, title: b.title, priority: b.priority, categoryName: cat?.name ?? null, requesterName, assigneeName: assignName,
         });
         return loadTicket(c, a, row.id);
       });
@@ -169,17 +275,19 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'helpdesk.ticket.read');
       const q = parse(ListQuery.extend({
         status: z.string().optional(), priority: z.string().optional(), channel: z.string().optional(), categoryId: s.uuid.optional(),
-        assigneeId: s.uuid.optional(), unassigned: flag, overdue: flag, active: flag,
+        assigneeId: s.uuid.optional(), unassigned: flag, overdue: flag, active: flag, customerId: s.uuid.optional(),
       }), req.query);
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `${TICKET_SELECT}
          where ($1::text is null or t.status = $1) and ($2::text is null or t.priority = $2) and ($3::text is null or t.channel = $3)
            and ($4::uuid is null or t.category_id = $4) and ($5::uuid is null or t.assignee_id = $5)
            and (not $6 or (t.assignee_id is null and ${ACTIVE})) and (not $7 or (${ACTIVE} and now() > t.due_at)) and (not $8 or ${ACTIVE})
-           and ($9::text is null or t.no ilike $9 or t.title ilike $9 or t.requester_name ilike $9 or t.description ilike $9)
+           and ($9::text is null or t.no ilike $9 or t.title ilike $9 or t.requester_name ilike $9 or t.description ilike $9
+                or t.customer_name ilike $9 or t.customer_code ilike $9 or t.asset_ref ilike $9)
+           and ($12::uuid is null or t.customer_id = $12)
          order by (t.status in ('resolved', 'closed')), t.due_at limit $10 offset $11`,
         [q.status ?? null, q.priority ?? null, q.channel ?? null, q.categoryId ?? null, q.assigneeId ?? null, q.unassigned, q.overdue, q.active,
-          q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows);
+          q.q ? `%${q.q}%` : null, q.limit, q.offset, q.customerId ?? null])).rows);
     });
 
     /** Technician's queue: open work assigned to me, most urgent due first. */
@@ -213,7 +321,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, (c) => loadTicket(c, a, id));
     });
 
-    /** Change title/description/category/priority while the ticket is still active; SLA due times are recomputed from creation. */
+    /** Change title/description/category/priority/customer while the ticket is still active; SLA due times are recomputed from the reported time. */
     app.put('/tickets/:id', async (req) => {
       const a = auth(req);
       requirePerm(a, 'helpdesk.ticket.work');
@@ -222,11 +330,13 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
         if (['resolved', 'closed'].includes(t.status)) throw conflict(`Cannot edit a ${t.status} ticket`);
-        const { cat, responseSecs, resolveSecs } = await sla(c, b.categoryId, b.priority);
+        const { cat, mode, responseDue, due } = await sla(c, b.categoryId, b.priority, new Date(t.reported_at));
         await c.query(
           `update tickets set title = $2, description = $3, requester_name = $4, requester_contact = $5, channel = coalesce($6, channel), category_id = $7, category_name = $8,
-             priority = $9, response_due_at = created_at + $10 * interval '1 second', due_at = created_at + $11 * interval '1 second', updated_at = now() where id = $1`,
-          [id, b.title, b.description ?? null, b.requesterName ?? null, b.requesterContact ?? null, b.channel ?? null, cat?.id ?? null, cat?.name ?? null, b.priority, responseSecs, resolveSecs],
+             priority = $9, response_due_at = $10, due_at = $11, sla_mode = $12, customer_id = $13, customer_code = $14, customer_name = $15, asset_ref = $16, updated_at = now()
+           where id = $1`,
+          [id, b.title, b.description ?? null, b.requesterName ?? null, b.requesterContact ?? null, b.channel ?? null, cat?.id ?? null, cat?.name ?? null, b.priority,
+            responseDue, due, mode, b.customerId ?? null, b.customerCode ?? null, b.customerName ?? null, b.assetRef ?? null],
         );
         return loadTicket(c, a, id);
       });
@@ -255,8 +365,9 @@ export const definition: ServiceDefinition = {
         const t = await loadTicket(c, a, id, true);
         if (!['open', 'waiting'].includes(t.status)) throw conflict(`Cannot start a ${t.status} ticket`);
         await c.query(
-          `update tickets set status = 'in_progress', assignee_id = coalesce(assignee_id, $2), first_response_at = coalesce(first_response_at, now()), updated_at = now()
-           where id = $1`, [id, a.userId]);
+          `update tickets set status = 'in_progress', assignee_name = case when assignee_id is null then $3 else assignee_name end, assignee_id = coalesce(assignee_id, $2),
+             first_response_at = coalesce(first_response_at, now()), updated_at = now()
+           where id = $1`, [id, a.userId, a.userName ?? null]);
         return loadTicket(c, a, id);
       });
     });
@@ -305,8 +416,9 @@ export const definition: ServiceDefinition = {
         if (!['open', 'in_progress', 'waiting'].includes(t.status)) throw conflict(`Cannot resolve a ${t.status} ticket`);
         await c.query(
           `update tickets set status = 'resolved', resolution = $2, resolved_at = now(), first_response_at = coalesce(first_response_at, now()),
-             assignee_id = coalesce(assignee_id, $3), updated_at = now() where id = $1`, [id, b.resolution, a.userId]);
-        await k.emit(c, 'helpdesk.ticket_resolved', { ticketId: t.id, no: t.no, title: t.title, requesterName: t.requester_name ?? null, resolution: b.resolution });
+             assignee_name = case when assignee_id is null then $4 else assignee_name end, assignee_id = coalesce(assignee_id, $3), updated_at = now() where id = $1`,
+          [id, b.resolution, a.userId, a.userName ?? null]);
+        await k.emit(c, 'helpdesk.ticket_resolved', { ticketId: t.id, no: t.no, title: t.title, requesterName: t.requester_name ?? null, resolution: b.resolution, requesterUserId: t.created_by ?? null });
         return loadTicket(c, a, id);
       });
     });
@@ -320,10 +432,10 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
         if (t.status !== 'resolved') throw conflict(`Cannot reopen a ${t.status} ticket`);
-        const { resolveSecs } = await sla(c, t.category_id, t.priority);
+        const { due, mode } = await sla(c, t.category_id, t.priority, new Date());
         await c.query(
-          `update tickets set status = 'open', resolved_at = null, reopen_count = reopen_count + 1, due_at = now() + $2 * interval '1 second', updated_at = now()
-           where id = $1`, [id, resolveSecs]);
+          `update tickets set status = 'open', resolved_at = null, reopen_count = reopen_count + 1, due_at = $2, sla_mode = $3, updated_at = now()
+           where id = $1`, [id, due, mode]);
         await addComment(c, id, a, `เปิดเรื่องใหม่${b.reason ? `: ${b.reason}` : ''}`, false);
         return loadTicket(c, a, id);
       });

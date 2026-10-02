@@ -1,13 +1,17 @@
-import { auth, badRequest, loadManifest, notFound, one, parse, requirePerm, s, z, type Client, type EventHandlers, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, loadManifest, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type EventHandlers, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
 import type { EventType } from '@erp/contracts';
 import { fileURLToPath } from 'node:url';
-import { EVENTS, TEMPLATES, eventInfo, type ActionSpec, type Condition } from './catalog.ts';
-import { describe, matches, render, renderLink, sendLine, sendWebhook, webhookProblem } from './engine.ts';
+import { EVENTS, MODULE_TH, TEMPLATES, eventInfo, type ActionSpec, type Condition } from './catalog.ts';
+import { describe, describeTo, matches, parseTo, render, renderLink, resolveRecipients, sendLine, sendWebhook, webhookProblem } from './engine.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
 const ConditionInput = z.object({ field: z.string().min(1), op: z.enum(['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contains']), value: z.union([z.string(), z.number()]) });
-const ActionInput = z.object({ type: z.enum(['notify', 'line', 'webhook']), target: z.string().max(500).optional(), message: z.string().max(1000).optional() });
+const ActionInput = z.object({
+  type: z.enum(['notify', 'line', 'webhook']), target: z.string().max(500).optional(), message: z.string().max(1000).optional(),
+  /** notify: 'all' (default) | 'field:<userField>[,<userField>]' | 'user:<uuid>' */
+  to: z.string().max(200).optional(),
+});
 const RuleInput = z.object({
   name: s.name,
   eventType: z.string(),
@@ -25,6 +29,10 @@ const SimpleRuleInput = z.object({
   actionType: z.enum(['notify', 'line', 'webhook']).default('notify'),
   target: z.string().max(500).optional(),
   message: z.string().max(1000).optional(),
+  /** in-app recipients: 'all' | 'field:<userField>' | 'user:<uuid>' */
+  to: z.string().max(200).optional(),
+  /** shortcut for to = user:<id> (picked from identity /users) */
+  toUserId: s.uuid.optional(),
 });
 const IdParam = z.object({ id: s.uuid });
 
@@ -38,12 +46,38 @@ function validateRule(r: { eventType: string; conditions: Condition[]; actions: 
     if (f.numeric && ['gt', 'gte', 'lt', 'lte'].includes(c.op)) c.value = Number(c.value);
   }
   for (const a of r.actions) {
+    if (a.to !== undefined && a.to !== '') {
+      if (a.type !== 'notify') throw badRequest('ระบุผู้รับ (to) ได้เฉพาะการแจ้งเตือนในแอป — LINE/webhook ใช้ target');
+      const to = parseTo(a.to);
+      if (typeof to === 'string') throw badRequest(to, { fieldErrors: { to: [to] } });
+      if (to.kind === 'fields') {
+        for (const f of to.fields) {
+          if (!ev.userFields?.some((x) => x.key === f)) {
+            const ok = ev.userFields?.map((x) => `field:${x.key} (${x.label})`).join(', ') || 'ไม่มี — เหตุการณ์นี้ส่งถึงทุกคนเท่านั้น';
+            throw badRequest(`"${f}" ไม่ใช่ช่องผู้ใช้ของเหตุการณ์ ${ev.label} (ใช้ได้: ${ok})`, { fieldErrors: { to: ['ช่องผู้รับไม่ถูกต้อง'] } });
+          }
+        }
+      }
+    }
     if (a.type === 'line' && !a.target) throw badRequest('ต้องระบุ LINE user id หรือ group id');
     if (a.type === 'webhook') { const p = webhookProblem(a.target, env); if (p) throw badRequest(p); }
   }
 }
 
-const withSummary = (r: any) => ({ ...r, summary: describe(r) });
+/**
+ * Actions with their effective recipients. Rules applied from a template before `to` existed keep following the
+ * template's current recipients (e.g. approval-approved → the requester), so old installations stop broadcasting personal news.
+ */
+function effectiveActions(rule: { template_id?: string | null; actions: ActionSpec[] }): ActionSpec[] {
+  const t = rule.template_id ? TEMPLATES.find((x) => x.id === rule.template_id) : undefined;
+  return rule.actions.map((a, i) => (a.type === 'notify' && a.to === undefined && t?.actions[i]?.type === 'notify' && t.actions[i].to ? { ...a, to: t.actions[i].to } : a));
+}
+
+const withSummary = (r: any) => {
+  const actions = effectiveActions(r);
+  const notify = actions.find((a) => a.type === 'notify');
+  return { ...r, actions, summary: describe({ ...r, actions }), recipients: notify ? describeTo(notify.to, r.event_type) : null };
+};
 
 async function createRule(c: Client, body: { name: string; eventType: string; conditions: Condition[]; actions: ActionSpec[]; enabled?: boolean }, userId: string, templateId?: string) {
   const row = (await c.query(
@@ -62,12 +96,23 @@ function handlerFor(type: EventType) {
       if (!matches(rule.conditions, data)) continue;
       const results: string[] = [];
       let failed = false;
-      for (const a of rule.actions as ActionSpec[]) {
+      for (const a of effectiveActions(rule)) {
         const text = render(a.message || ev.message, data);
         if (a.type === 'notify') {
-          await ctx.client.query('insert into notifications (rule_id, level, title, body, link) values ($1,$2,$3,$4,$5)',
-            [rule.id, ev.level, rule.name, text, ev.link ? renderLink(ev.link, data) : null]);
-          results.push('แจ้งในแอปแล้ว');
+          const link = ev.link ? renderLink(ev.link, data) : null;
+          const users = resolveRecipients(a.to, data);
+          if (users === null) {
+            await ctx.client.query('insert into notifications (rule_id, level, title, body, link) values ($1,$2,$3,$4,$5)', [rule.id, ev.level, rule.name, text, link]);
+            results.push('แจ้งในแอปแล้ว');
+          } else if (!users.length) {
+            // a personal alert with nobody to address (e.g. leave without a manager): never fall back to everyone
+            results.push(`ไม่ได้แจ้งในแอป: เหตุการณ์ไม่มีผู้รับ (${describeTo(a.to, type)})`);
+          } else {
+            for (const u of users) {
+              await ctx.client.query('insert into notifications (rule_id, level, title, body, link, recipient_user_id) values ($1,$2,$3,$4,$5,$6)', [rule.id, ev.level, rule.name, text, link, u]);
+            }
+            results.push(`แจ้งในแอปแล้ว (ถึง${describeTo(a.to, type)} ${users.length} คน)`);
+          }
         } else {
           const d = a.type === 'line' ? await sendLine(a.target, `${rule.name}\n${text}`, env) : await sendWebhook(a.target, { rule: rule.name, event: type, eventId: ctx.event.id, message: text, data }, env);
           results.push(`${a.type === 'line' ? 'LINE' : 'webhook'}: ${d.ok ? 'ส่งแล้ว' : `ไม่สำเร็จ (${d.detail})`}`);
@@ -79,6 +124,23 @@ function handlerFor(type: EventType) {
       await ctx.client.query('update rules set fire_count = fire_count + 1, last_fired_at = now() where id = $1', [rule.id]);
     }
   };
+}
+
+/**
+ * The notifications a user sees ($1 = user id): addressed to them, or broadcast. `read_at` is their own read state
+ * (broadcast: their notification_reads row; a broadcast read before per-user state existed stays read for everyone).
+ */
+const MY_NOTES = `select x.id, x.rule_id, x.level, x.title, x.body, x.link, x.created_at, x.recipient_user_id,
+    (x.recipient_user_id is not null) as personal,
+    case when x.recipient_user_id is null then coalesce(x.read_at, (select r.read_at from notification_reads r where r.notification_id = x.id and r.user_id = $1)) else x.read_at end as read_at
+  from notifications x where x.recipient_user_id is null or x.recipient_user_id = $1`;
+
+async function markRead(c: Client, a: AuthContext, notes: { id: string; personal: boolean; read_at: string | null }[]) {
+  for (const n of notes) {
+    if (n.read_at) continue;
+    if (n.personal) await c.query('update notifications set read_at = now() where id = $1 and read_at is null', [n.id]);
+    else await c.query('insert into notification_reads (notification_id, user_id) values ($1,$2) on conflict (notification_id, user_id) do nothing', [n.id, a.userId]);
+  }
 }
 
 const handlers = Object.fromEntries(manifest.subscribes.map((t) => [t, handlerFor(t)])) as EventHandlers;
@@ -99,7 +161,14 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'automation.rule.read');
       return k.db.tx(a.tenantId, async (c) => {
         const used = new Set((await c.query('select template_id from rules where template_id is not null')).rows.map((r) => r.template_id));
-        return TEMPLATES.map((t) => ({ ...t, module: eventInfo(t.eventType)!.module, summary: describe({ event_type: t.eventType, conditions: t.conditions, actions: t.actions }), applied: used.has(t.id) }));
+        return TEMPLATES.map((t) => {
+          const module = eventInfo(t.eventType)!.module;
+          const notify = t.actions.find((x) => x.type === 'notify');
+          return {
+            ...t, module, module_label: MODULE_TH[module] ?? module, summary: describe({ event_type: t.eventType, conditions: t.conditions, actions: t.actions }),
+            recipients: notify ? describeTo(notify.to, t.eventType) : null, applied: used.has(t.id),
+          };
+        });
       });
     });
 
@@ -138,7 +207,9 @@ export const definition: ServiceDefinition = {
       const b = parse(SimpleRuleInput, req.body);
       const conditions: Condition[] = b.conditionField && b.conditionOp && b.conditionValue !== undefined && b.conditionValue !== ''
         ? [{ field: b.conditionField, op: b.conditionOp, value: b.conditionValue }] : [];
-      const rule = { name: b.name, eventType: b.eventType, conditions, actions: [{ type: b.actionType, target: b.target, message: b.message }] as ActionSpec[] };
+      // recipients only apply to in-app alerts; the form always sends its default 'all'
+      const to = b.actionType !== 'notify' ? undefined : b.toUserId ? `user:${b.toUserId}` : b.to && b.to !== 'all' ? b.to : undefined;
+      const rule = { name: b.name, eventType: b.eventType, conditions, actions: [{ type: b.actionType, target: b.target, message: b.message, ...(to ? { to } : {}) }] as ActionSpec[] };
       validateRule(rule, k.env);
       reply.code(201);
       return k.db.tx(a.tenantId, (c) => createRule(c, rule, a.userId));
@@ -188,7 +259,7 @@ export const definition: ServiceDefinition = {
         const ev = eventInfo(r.event_type)!;
         const data = b.data ?? Object.fromEntries(ev.fields.map((f) => [f.key, f.numeric ? 999999 : `(${f.label})`]));
         const matched = matches(r.conditions, data);
-        const messages = (r.actions as ActionSpec[]).map((x) => ({ type: x.type, text: render(x.message || ev.message, data) }));
+        const messages = effectiveActions(r).map((x) => ({ type: x.type, text: render(x.message || ev.message, data), ...(x.type === 'notify' ? { to: describeTo(x.to, r.event_type) } : {}) }));
         const preview = matched ? `ตรงเงื่อนไข — จะส่ง: ${messages.map((m) => m.text).join(' / ')}` : 'ข้อมูลตัวอย่างไม่ตรงเงื่อนไข — กฎนี้จะไม่ทำงาน';
         return { matched, messages, preview };
       });
@@ -200,13 +271,15 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => (await c.query('select * from runs order by created_at desc limit 100')).rows);
     });
 
+    /** Mine + broadcast, with my own read state. */
     app.get('/notifications', async (req) => {
       const a = auth(req);
       requirePerm(a, 'automation.notify.read');
-      const q = parse(z.object({ unread: z.coerce.boolean().optional() }), req.query);
+      const q = parse(z.object({ unread: z.enum(['true', 'false', '1', '0', '']).optional().transform((v) => v === 'true' || v === '1') }), req.query);
       return k.db.tx(a.tenantId, async (c) => {
-        const items = (await c.query(`select * from notifications ${q.unread ? 'where read_at is null' : ''} order by created_at desc limit 30`)).rows;
-        const unread = (await c.query('select count(*)::int as n from notifications where read_at is null')).rows[0].n;
+        const items = (await c.query(
+          `select * from (${MY_NOTES}) n ${q.unread ? 'where n.read_at is null' : ''} order by n.created_at desc limit 30`, [a.userId])).rows;
+        const unread = (await c.query(`select count(*)::int as n from (${MY_NOTES}) n where n.read_at is null`, [a.userId])).rows[0].n;
         return { unread, items };
       });
     });
@@ -215,13 +288,24 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'automation.notify.read');
       const { id } = parse(IdParam, req.params);
-      return k.db.tx(a.tenantId, (c) => one(c, 'update notifications set read_at = coalesce(read_at, now()) where id = $1 returning *', [id], 'Notification'));
+      return k.db.tx(a.tenantId, async (c) => {
+        const n = await one(c, `select * from (${MY_NOTES}) n where n.id = $2`, [a.userId, id], 'Notification');
+        await markRead(c, a, [n]);
+        return one(c, `select * from (${MY_NOTES}) n where n.id = $2`, [a.userId, id], 'Notification');
+      });
     });
 
     app.post('/notifications/read-all', async (req) => {
       const a = auth(req);
       requirePerm(a, 'automation.notify.read');
-      return k.db.tx(a.tenantId, async (c) => ({ updated: (await c.query('update notifications set read_at = now() where read_at is null')).rowCount }));
+      return k.db.tx(a.tenantId, async (c) => {
+        const mine = (await c.query('update notifications set read_at = now() where recipient_user_id = $1 and read_at is null', [a.userId])).rowCount ?? 0;
+        const shared = (await c.query(
+          `insert into notification_reads (notification_id, user_id)
+           select x.id, $1 from notifications x where x.recipient_user_id is null and x.read_at is null
+           on conflict (notification_id, user_id) do nothing`, [a.userId])).rowCount ?? 0;
+        return { updated: mine + shared };
+      });
     });
 
     app.get('/summary', async (req) => {
@@ -232,7 +316,7 @@ export const definition: ServiceDefinition = {
           `select (select count(*)::int from rules where enabled) as active,
                   (select count(*)::int from runs where status = 'done' and created_at > now() - interval '1 day') as fired_today,
                   (select count(*)::int from runs where status = 'failed' and created_at > now() - interval '1 day') as failed_today,
-                  (select count(*)::int from notifications where read_at is null) as unread`)).rows[0];
+                  (select count(*)::int from (${MY_NOTES}) n where n.read_at is null) as unread`, [a.userId])).rows[0];
         return { activeRules: n.active, firedToday: n.fired_today, failedToday: n.failed_today, unread: n.unread };
       });
     });

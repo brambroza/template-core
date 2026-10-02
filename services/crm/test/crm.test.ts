@@ -239,7 +239,17 @@ describe('crm events (for Automation alerts)', () => {
     expect(accepted).toHaveLength(1);
     const q = (await t.api('GET', `/quotations/${accepted[0].quotationId}`)).body;
     expect(q.status).toBe('accepted');
-    expect(accepted[0]).toEqual({ quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross });
+    expect(accepted[0]).toMatchObject({ quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross });
+    // wave 4: customer snapshot + lines so Sales can draft the sales order without retyping
+    expect(accepted[0]).toMatchObject({
+      partnerId: q.partner_id, customerTaxId: q.customer_tax_id, customerBranch: q.customer_branch, customerAddress: q.customer_address,
+      vatMode: q.vat_mode, subtotal: q.subtotal, discount: q.discount, net: q.net, vat: q.vat,
+    });
+    expect(accepted[0].lines).toEqual(q.lines.map((l: any) => ({
+      itemId: l.item_id, itemCode: l.item_code, itemName: l.item_name, description: l.description,
+      qty: l.qty, unitPrice: l.unit_price, discountPct: l.discount_pct, amount: l.amount,
+    })));
+    expect(accepted[0].lines.length).toBeGreaterThan(0);
     const before = leads.length;
     expect((await t.api('POST', '/leads', { company: '' })).status).toBe(400);
     expect((await t.published('crm.lead_created')).length).toBe(before);

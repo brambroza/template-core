@@ -4,7 +4,7 @@
   "nameTh": "จัดซื้อ",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Purchase orders with Thai VAT, approval, and goods receipt (full or partial). Feeds Inventory (stock in) and Costing (actual material cost) when installed.",
+  "description": "Purchase orders with Thai VAT, approval, goods receipt (full or partial) and returns to supplier. Feeds Inventory (stock in) and Costing (actual material cost) when installed.",
   "requires": [
     "identity",
     "master-data"
@@ -16,7 +16,8 @@
   "publishes": [
     "purchasing.goods_received",
     "purchasing.po_created",
-    "purchasing.po_approved"
+    "purchasing.po_approved",
+    "purchasing.goods_returned"
   ],
   "subscribes": [],
   "permissions": [
@@ -35,6 +36,10 @@
     {
       "key": "purchasing.po.receive",
       "label": "รับสินค้าตามใบสั่งซื้อ"
+    },
+    {
+      "key": "purchasing.po.return",
+      "label": "ส่งคืนสินค้าให้ผู้ขาย"
     }
   ]
 }

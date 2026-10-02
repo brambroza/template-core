@@ -1,6 +1,6 @@
 /**
  * Builds the public landing page: site/dist (static — host on any web server, Vercel, Netlify, GitHub Pages).
- * Prices come from catalog/catalog.json (pack copy from sales/industry-packs.json), module facts from
+ * Prices (license, monthly rental, pilot, partner tiers) come from catalog/catalog.json (pack copy from sales/industry-packs.json), module facts from
  * services/<id>/module.json and function counts from docs/roadmap/functions.json, so the page never drifts
  * from what `pnpm erp quote` says. Copy, industries & contact details: site/site.config.json.
  *
@@ -70,7 +70,13 @@ export function buildSite(): string {
   });
   for (const ind of site.industries ?? []) if (!bundles.some((b) => b.id === ind.pack)) throw new Error(`site.config.json industry ${ind.id}: pack ${ind.pack} is not a catalog bundle`);
   const roadmap = roadmapStats(site.industries ?? []);
-  const data = { site: { ...site, modules: undefined }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services }, modules, roadmap };
+  // pricing v2: monthly rental must cover every module the page can pick, or the buy/rent toggle would show gaps
+  if (catalog.rental) {
+    const noRent = [...featureIds].filter((id) => catalog.rental!.modules[id] === undefined);
+    if (noRent.length) throw new Error(`catalog.json rental.modules: no monthly price for ${noRent.join(', ')}`);
+  }
+  const { rental, pilot, partner } = catalog;
+  const data = { site: { ...site, modules: undefined }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services, rental, pilot, partner }, modules, roadmap };
   // JSON inside <script>: escape "<" so no value can close the tag
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
   const html = readFileSync(join(here, 'src', 'index.html'), 'utf8').replace('__DATA__', () => json);

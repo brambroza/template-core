@@ -10,6 +10,9 @@ export const CHROMIUM = process.env.CHROMIUM_PATH ?? (existsSync('/opt/pw-browse
 
 /** Start the built web app in its own process group so stopWeb() also ends next's workers. */
 export async function startWeb(gatewayUrl: string, port: number, env: Record<string, string> = {}): Promise<ChildProcess> {
+  // a web server left over from an interrupted run would answer instead of ours (with a dead gateway) and every login would hang
+  const stale = await fetch(`http://127.0.0.1:${port}/login`).then(() => true, () => false);
+  if (stale) throw new Error(`port ${port} is already in use (a web app left over from an interrupted test run?) — stop it first`);
   const proc = spawn(process.execPath, [NEXT_BIN, 'start', '-p', String(port)], { cwd: WEB_DIR, env: { ...process.env, GATEWAY_URL: gatewayUrl, NEXT_TELEMETRY_DISABLED: '1', ...env }, stdio: 'ignore', detached: true });
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${port}/login`)).ok) return proc; } catch { /* not up yet */ }
@@ -29,7 +32,7 @@ export async function login(page: Page, base: string, tenant: string, email = 'a
   await page.getByLabel('อีเมล').fill(email);
   await page.getByLabel('รหัสผ่าน').fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await page.getByRole('heading', { name: 'ภาพรวมโรงงาน' }).waitFor();
+  await page.getByRole('heading', { name: 'ภาพรวมวันนี้' }).waitFor();
 }
 
 export async function logout(page: Page, base: string) {

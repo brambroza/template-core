@@ -160,6 +160,21 @@ describe('expense', () => {
     expect((await t.api('GET', '/advances', undefined, { token: stranger.token })).body).toEqual([]);
   });
 
+  it('never shows staff company-wide money: queues, reports and category usage are their own only', async () => {
+    const stranger = as(STAFF);
+    const out = (await t.api('GET', '/reports/outstanding', undefined, { token: stranger.token })).body;
+    expect(out).toMatchObject({ items: [], advances: [], toPayTotal: 0, advanceTotal: 0 });
+    const byCat = (await t.api('GET', '/reports/by-category', undefined, { token: stranger.token })).body;
+    expect(byCat.every((r: any) => Number(r.total) === 0)).toBe(true);
+    expect((await t.api('GET', '/summary', undefined, { token: stranger.token })).body).toMatchObject({ toApprove: 0, toPay: 0, claimedThisMonth: 0, rows: [], byCategory: [] });
+    // the category page used to show what everybody claimed this month
+    expect(Number((await t.api('GET', `/categories/${fuel.id}`, undefined, { token: stranger.token })).body.used_this_month)).toBe(0);
+    expect(Number((await t.api('GET', `/categories/${fuel.id}`, undefined, { token: manager.token })).body.used_this_month)).toBeGreaterThan(0);
+    const mine = Number((await t.api('GET', `/categories/${fuel.id}`, undefined, { token: somchai.token })).body.used_this_month);
+    expect(mine).toBeGreaterThan(0);
+    expect(mine).toBeLessThanOrEqual(Number((await t.api('GET', `/categories/${fuel.id}`, undefined, { token: finance.token })).body.used_this_month));
+  });
+
   it('reports spend by category, monthly trend and a dashboard summary', async () => {
     const cats = (await t.api('GET', '/reports/by-category', undefined, { token: finance.token })).body;
     const fuelRow = cats.find((c: any) => c.code === 'FUEL');
@@ -257,5 +272,41 @@ describe('expense — QA regressions (docs/uat/bugs-0.3.md)', () => {
     expect(f.status).toBe(400);
     expect(f.body.error.details.fieldErrors.expenseDate).toBeDefined();
     expect((await t.api('POST', '/claims', { purpose: 'VAT พอดี', lines: [line({ amount: 100, vat: 7 })] }, { token: somchai.token })).status).toBe(201);
+  });
+});
+
+describe('expense — who (wave 4)', () => {
+  const named = (name: string, perms: string[]) => {
+    const id = randomUUID();
+    return { id, name, token: t.token(perms, t.tenantId, { userId: id, userName: name }) };
+  };
+  const ln = (amount: number) => ({ expenseDate: today, categoryId: fuel.id, amount, description: 'ค่าน้ำมัน' });
+
+  it('fills claimant, approver and payer names from the login; a typed claimant name cannot override it', async () => {
+    const mint = named('มินตรา ใจดี', STAFF);
+    const boss = named('ผู้จัดการขาย', [...STAFF, 'expense.claim.approve']);
+    const acc = named('ฝ่ายบัญชี', ['expense.claim.read', 'expense.claim.pay']);
+    const c = (await t.api('POST', '/claims', { purpose: 'น้ำมันไปหาลูกค้า', claimantName: 'คนอื่น', submit: true, lines: [ln(300)] }, { token: mint.token })).body;
+    expect(c).toMatchObject({ claimant_name: 'มินตรา ใจดี', status: 'submitted' });
+    expect((await t.published('expense.claim_submitted')).map((e) => e.data).find((d: any) => d.claimId === c.id)).toMatchObject({ claimantName: 'มินตรา ใจดี', claimantId: mint.id });
+    const ap = (await t.api('POST', `/claims/${c.id}/approve`, {}, { token: boss.token })).body;
+    expect(ap).toMatchObject({ status: 'approved', approved_by_name: 'ผู้จัดการขาย' });
+    const pd = (await t.api('POST', `/claims/${c.id}/pay`, { method: 'transfer', reference: 'TX1' }, { token: acc.token })).body;
+    expect(pd).toMatchObject({ status: 'paid', paid_by_name: 'ฝ่ายบัญชี' });
+    expect((await t.published('expense.claim_paid')).map((e) => e.data).find((d: any) => d.claimId === c.id)).toMatchObject({ claimantName: 'มินตรา ใจดี', claimantId: mint.id });
+    // the list (payout queue / CSV) shows the name
+    expect((await t.api('GET', '/claims?q=มินตรา', undefined, { token: acc.token })).body.map((x: any) => x.id)).toContain(c.id);
+
+    const d = (await t.api('POST', '/claims', { purpose: 'ร่าง', lines: [ln(100)] }, { token: mint.token })).body;
+    expect((await t.api('PUT', `/claims/${d.id}`, { claimantName: 'ปลอม' }, { token: mint.token })).body.claimant_name).toBe('มินตรา ใจดี');
+
+    const adv = (await t.api('POST', '/advances', { purpose: 'ออกบูธ', amount: 1000, requesterName: 'ปลอม' }, { token: mint.token })).body;
+    expect(adv.requester_name).toBe('มินตรา ใจดี');
+    expect((await t.api('POST', `/advances/${adv.id}/approve`, undefined, { token: boss.token })).body.approved_by_name).toBe('ผู้จัดการขาย');
+    expect((await t.api('POST', `/advances/${adv.id}/pay`, { method: 'cash' }, { token: acc.token })).body.paid_by_name).toBe('ฝ่ายบัญชี');
+
+    // old tokens without a name keep the typed name
+    const old = (await t.api('POST', '/claims', { purpose: 'เก่า', claimantName: 'สมหญิง', lines: [ln(50)] }, { token: t.token(STAFF) })).body;
+    expect(old.claimant_name).toBe('สมหญิง');
   });
 });

@@ -26,6 +26,8 @@ Requires `identity` + `master-data` only; `purchasing` and `production` enhance 
 - NCR from an inspection only when completed with `fail`/`conditional`, once per inspection; prefilled description (failed checkpoints, values, spec),
   `severity` (fail → major, conditional → minor), `qty_affected` (rejected qty or lot qty).
 - Adding a CA moves an open/investigating NCR to `action`. Closing (from investigating/action) requires root cause + disposition and no CA still `open`.
+- `warehouse_code` on an inspection comes from the goods receipt / production event, or the optional `warehouseCode` of a manual inspection.
+- NCR `return_hint` (text, no cross-module call): with disposition `return_to_supplier` it names the PO (`source_ref`) and tells the buyer to press "ส่งคืนผู้ขาย" there.
 - Every state change outside its allowed states returns 409. Thai labels come back as `*_th` fields (status_th, stage_th, result_th, severity_th…).
 
 ## API
@@ -43,7 +45,9 @@ Requires `identity` + `master-data` only; `purchasing` and `production` enhance 
   `GET /reports/pass-rate?months&stage` · `GET /reports/defects?by=checkpoint|item&stage&from&to` · `GET /reports/suppliers?from&to` · `GET /reports/ncr-severity`
 
 ## Events
-- publishes `quality.inspection_completed` (inspectionId, no, stage, itemCode, itemName, lotNo, result pass|fail|conditional, rejectedQty) on complete.
+- publishes `quality.inspection_completed` (inspectionId, no, stage, itemCode, itemName, lotNo, result pass|fail|conditional, rejectedQty
+  + optional itemId, warehouseCode, qty, acceptedQty, sourceType, sourceRef) on complete → Inventory quarantines the rejected qty in QC-HOLD.
+- publishes `quality.inspection_created` (item id, warehouse, qty, source) whenever an inspection is opened (event or manual) → Inventory can hold the lot until judged.
 - publishes `quality.ncr_raised` (ncrId, no, severity, itemCode, description) on `POST /ncrs` and `POST /inspections/:id/ncr`.
 - subscribes `purchasing.goods_received` → one PENDING incoming inspection per received line whose item has an active incoming plan (supplier + PO no snapshot).
 - subscribes `production.completed` → a PENDING final inspection when the item has an active final plan (MO no snapshot).

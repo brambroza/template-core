@@ -120,6 +120,7 @@ export default defineUi({
         item,
         { name: 'lotNo', label: 'เลขล็อต', type: 'text' },
         { name: 'sourceRef', label: 'อ้างอิง (เลข PO / ใบสั่งผลิต)', type: 'text' },
+        { name: 'warehouseCode', label: 'ของอยู่ที่คลัง (ถ้าไม่ผ่าน ระบบย้ายเข้าคลังกักกัน QC-HOLD)', type: 'text' },
         { name: 'qty', label: 'จำนวนทั้งล็อต', type: 'number', required: true },
         { name: 'sampleSize', label: 'จำนวนสุ่มตรวจ (เว้นว่าง = ตามแผน)', type: 'number' },
         supplier, inspector,
@@ -128,7 +129,8 @@ export default defineUi({
       submitLabel: 'สร้างงานตรวจ', after: { screen: 'inspDetail', idFrom: 'id' },
     },
     inspDetail: {
-      kind: 'detail', title: 'รายงานผลการตรวจคุณภาพ', endpoint: '/inspections/:id', perm: 'quality.inspection.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'รายงานผลการตรวจคุณภาพ', endpoint: '/inspections/:id', perm: 'quality.inspection.read', heading: 'no', mobile: true,
+      print: { title: 'รายงานผลการตรวจคุณภาพ (Inspection Report)', signatures: ['ผู้ตรวจ', 'ผู้ทบทวน', 'ผู้อนุมัติ (QA)'] },
       flow: {
         field: 'status',
         steps: [{ value: 'pending', label: 'รอตรวจ' }, { value: 'in_progress', label: 'กำลังตรวจ' }, { value: 'completed', label: 'ตรวจเสร็จ' }],
@@ -138,7 +140,7 @@ export default defineUi({
         { key: 'status_th', label: 'สถานะ' }, { key: 'result_th', label: 'ผลตรวจ' }, { key: 'stage_th', label: 'ขั้นตอน' },
         { key: 'item_code', label: 'รหัสสินค้า' }, { key: 'item_name', label: 'ชื่อสินค้า' }, { key: 'lot_no', label: 'ล็อต' },
         { key: 'source_th', label: 'ที่มา' }, { key: 'source_ref', label: 'อ้างอิง' }, { key: 'supplier_name', label: 'ผู้ขาย' },
-        { key: 'plan_name', label: 'แผนการตรวจ' }, { key: 'qty', label: 'จำนวนทั้งล็อต', format: 'qty' }, { key: 'sample_size', label: 'จำนวนสุ่มตรวจ', format: 'qty' },
+        { key: 'warehouse_code', label: 'คลัง' }, { key: 'plan_name', label: 'แผนการตรวจ' }, { key: 'qty', label: 'จำนวนทั้งล็อต', format: 'qty' }, { key: 'sample_size', label: 'จำนวนสุ่มตรวจ', format: 'qty' },
         { key: 'recorded_points', label: 'บันทึกผลแล้ว (จุด)', format: 'qty' }, { key: 'failed_points', label: 'ไม่ผ่าน (จุด)', format: 'qty' },
         { key: 'accepted_qty', label: 'รับ', format: 'qty' }, { key: 'rejected_qty', label: 'ปฏิเสธ', format: 'qty' },
         { key: 'inspector_name', label: 'ผู้ตรวจ' }, { key: 'started_at', label: 'เริ่มตรวจ', format: 'datetime' },
@@ -235,7 +237,8 @@ export default defineUi({
       submitLabel: 'บันทึก', after: { screen: 'ncrDetail', idFrom: 'id' },
     },
     ncrDetail: {
-      kind: 'detail', title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', endpoint: '/ncrs/:id', perm: 'quality.ncr.read', heading: 'no', mobile: true, printable: true, edit: 'ncrEdit',
+      kind: 'detail', title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', endpoint: '/ncrs/:id', perm: 'quality.ncr.read', heading: 'no', mobile: true, edit: 'ncrEdit',
+      print: { title: 'รายงานสิ่งที่ไม่เป็นไปตามข้อกำหนด (NCR)', signatures: ['ผู้รายงาน', 'ผู้รับผิดชอบแก้ไข', 'ผู้ปิด NCR (QA)'] },
       flow: {
         field: 'status',
         steps: [{ value: 'open', label: 'เปิด' }, { value: 'investigating', label: 'สอบสวนสาเหตุ' }, { value: 'action', label: 'แก้ไข' }, { value: 'closed', label: 'ปิด' }],
@@ -245,7 +248,7 @@ export default defineUi({
         { key: 'item_code', label: 'รหัสสินค้า' }, { key: 'item_name', label: 'ชื่อสินค้า' }, { key: 'lot_no', label: 'ล็อต' },
         { key: 'stage_th', label: 'พบที่ขั้นตอน' }, { key: 'inspection_no', label: 'จากงานตรวจ' }, { key: 'source_ref', label: 'อ้างอิง' },
         { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'qty_affected', label: 'จำนวนที่ได้รับผลกระทบ', format: 'qty' },
-        { key: 'disposition_th', label: 'การจัดการของเสีย' }, { key: 'why_analysis', label: 'วิเคราะห์ 5 Why' }, { key: 'root_cause', label: 'สาเหตุราก' },
+        { key: 'disposition_th', label: 'การจัดการของเสีย' }, { key: 'return_hint', label: 'ส่งคืนผู้ขาย' }, { key: 'why_analysis', label: 'วิเคราะห์ 5 Why' }, { key: 'root_cause', label: 'สาเหตุราก' },
         { key: 'created_at', label: 'ออกเมื่อ', format: 'datetime' }, { key: 'closed_at', label: 'ปิดเมื่อ', format: 'datetime' },
       ],
       lines: [

@@ -14,6 +14,8 @@ export interface EventInfo {
   /** web path for "open" on a notification, with {{field}} placeholders */
   link?: string;
   level: 'info' | 'warn' | 'stop' | 'ok';
+  /** fields holding a user id (identity) — a notify action can be addressed to them: `to: 'field:<key>'` */
+  userFields?: { key: string; label: string }[];
 }
 
 export const EVENTS: EventInfo[] = [
@@ -44,6 +46,9 @@ export const EVENTS: EventInfo[] = [
   { type: 'sales.invoiced', module: 'sales', label: 'ออกใบกำกับภาษี', level: 'ok',
     fields: [{ key: 'invoiceNo', label: 'เลขที่ใบกำกับ' }, { key: 'gross', label: 'ยอดรวม', numeric: true }],
     message: 'ออกใบกำกับ {{invoiceNo}} ยอด {{gross}} บาท', link: '/m/sales/invoice/{{invoiceId}}' },
+  { type: 'sales.payment_received', module: 'sales', label: 'รับชำระเงินจากลูกค้า', level: 'ok',
+    fields: [{ key: 'receiptNo', label: 'เลขที่ใบเสร็จ' }, { key: 'customerName', label: 'ลูกค้า' }, { key: 'received', label: 'รับจริง', numeric: true }, { key: 'whtAmount', label: 'ภาษีหัก ณ ที่จ่าย', numeric: true }, { key: 'kind', label: 'ประเภท (payment/deposit)' }],
+    message: 'รับเงินจาก {{customerName}} {{received}} บาท ({{receiptNo}})', link: '/m/sales/receipt/{{receiptId}}' },
   { type: 'production.completed', module: 'production', label: 'รายงานผลผลิต', level: 'ok',
     fields: [{ key: 'orderNo', label: 'เลขที่ใบสั่งผลิต' }, { key: 'item.itemCode', label: 'สินค้า' }, { key: 'qty', label: 'จำนวนที่ผลิตได้', numeric: true }],
     message: 'ผลิต {{item.itemCode}} ได้ {{qty}} ชิ้น ({{orderNo}})', link: '/m/production/moDetail/{{orderId}}' },
@@ -52,23 +57,30 @@ export const EVENTS: EventInfo[] = [
   { type: 'approvals.request_submitted', module: 'approvals', label: 'มีคำขออนุมัติรอพิจารณา', level: 'warn',
     fields: [{ key: 'no', label: 'เลขที่คำขอ' }, { key: 'title', label: 'เรื่อง' }, { key: 'typeName', label: 'ประเภทคำขอ' }, { key: 'requesterName', label: 'ผู้ขอ' },
       { key: 'amount', label: 'จำนวนเงิน', numeric: true }, { key: 'nextApproverName', label: 'ผู้อนุมัติขั้นนี้' }, { key: 'step', label: 'ขั้นที่', numeric: true }],
+    userFields: [{ key: 'nextApproverId', label: 'ผู้อนุมัติขั้นนี้' }, { key: 'delegateId', label: 'ผู้อนุมัติแทน (ช่วงผู้อนุมัติไม่อยู่)' }, { key: 'requesterId', label: 'ผู้ขอ' }],
     message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอ {{nextApproverName}} อนุมัติ (ขั้นที่ {{step}}/{{stepCount}})', link: '/m/approvals/requestDetail/{{requestId}}' },
   { type: 'approvals.request_decided', module: 'approvals', label: 'คำขออนุมัติมีผลแล้ว', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่คำขอ' }, { key: 'title', label: 'เรื่อง' }, { key: 'decision', label: 'ผล (approved / rejected / returned)' }, { key: 'requesterName', label: 'ผู้ขอ' },
       { key: 'byName', label: 'ผู้พิจารณา' }, { key: 'note', label: 'หมายเหตุ' }],
+    userFields: [{ key: 'requesterId', label: 'ผู้ขอ' }],
     message: 'คำขอ {{no}} "{{title}}" ของ {{requesterName}} มีผลแล้ว ({{decision}}) โดย {{byName}} หมายเหตุ: {{note}}', link: '/m/approvals/requestDetail/{{requestId}}' },
   { type: 'expense.claim_submitted', module: 'expense', label: 'มีใบเบิกค่าใช้จ่ายรออนุมัติ', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่ใบเบิก' }, { key: 'claimantName', label: 'ผู้เบิก' }, { key: 'total', label: 'ยอดเบิก', numeric: true }, { key: 'overLimit', label: 'เกินวงเงิน (true / false)' }],
+    userFields: [{ key: 'claimantId', label: 'ผู้เบิก' }],
     message: 'ใบเบิก {{no}} ของ {{claimantName}} ยอด {{total}} บาท รออนุมัติ', link: '/m/expense/claimDetail/{{claimId}}' },
   { type: 'expense.claim_paid', module: 'expense', label: 'จ่ายเงินตามใบเบิกแล้ว', level: 'ok',
     fields: [{ key: 'no', label: 'เลขที่ใบเบิก' }, { key: 'claimantName', label: 'ผู้เบิก' }, { key: 'total', label: 'ยอดเบิก', numeric: true }],
+    userFields: [{ key: 'claimantId', label: 'ผู้เบิก' }],
     message: 'จ่ายเงินตามใบเบิก {{no}} ให้ {{claimantName}} {{total}} บาทแล้ว', link: '/m/expense/claimDetail/{{claimId}}' },
   { type: 'hr.leave_requested', module: 'hr', label: 'มีคนยื่นใบลา', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่ใบลา' }, { key: 'employeeName', label: 'พนักงาน' }, { key: 'typeName', label: 'ประเภทการลา' }, { key: 'from', label: 'ลาตั้งแต่' },
-      { key: 'to', label: 'ถึง' }, { key: 'days', label: 'จำนวนวัน', numeric: true }],
+      { key: 'to', label: 'ถึง' }, { key: 'days', label: 'จำนวนวัน', numeric: true }, { key: 'approverName', label: 'หัวหน้าผู้อนุมัติ' }],
+    userFields: [{ key: 'approverUserId', label: 'หัวหน้าผู้อนุมัติ (ตามผังองค์กร)' }, { key: 'employeeUserId', label: 'พนักงานผู้ลา' }],
     message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รออนุมัติ', link: '/m/hr/leaveDetail/{{leaveId}}' },
   { type: 'hr.leave_decided', module: 'hr', label: 'ใบลามีผลแล้ว', level: 'info',
-    fields: [{ key: 'no', label: 'เลขที่ใบลา' }, { key: 'employeeName', label: 'พนักงาน' }, { key: 'typeName', label: 'ประเภทการลา' }, { key: 'decision', label: 'ผล (approved / rejected)' }],
+    fields: [{ key: 'no', label: 'เลขที่ใบลา' }, { key: 'employeeName', label: 'พนักงาน' }, { key: 'typeName', label: 'ประเภทการลา' }, { key: 'decision', label: 'ผล (approved / rejected)' },
+      { key: 'byName', label: 'ผู้พิจารณา' }, { key: 'note', label: 'หมายเหตุ' }],
+    userFields: [{ key: 'employeeUserId', label: 'พนักงานผู้ลา' }],
     message: 'ใบลา {{no}} ({{typeName}}) ของ {{employeeName}} มีผลแล้ว ({{decision}})', link: '/m/hr/leaveDetail/{{leaveId}}' },
   { type: 'helpdesk.ticket_created', module: 'helpdesk', label: 'มีเรื่องแจ้งปัญหาใหม่', level: 'warn',
     fields: [{ key: 'no', label: 'เลขที่เรื่อง' }, { key: 'title', label: 'ปัญหา' }, { key: 'priority', label: 'ความเร่งด่วน (low / normal / high / urgent)' },
@@ -76,6 +88,7 @@ export const EVENTS: EventInfo[] = [
     message: 'แจ้งปัญหา {{no}}: {{title}} (หมวด {{categoryName}}) ผู้แจ้ง {{requesterName}} ผู้รับผิดชอบ {{assigneeName}}', link: '/m/helpdesk/ticket/{{ticketId}}' },
   { type: 'helpdesk.ticket_resolved', module: 'helpdesk', label: 'แก้ปัญหาเสร็จแล้ว', level: 'ok',
     fields: [{ key: 'no', label: 'เลขที่เรื่อง' }, { key: 'title', label: 'ปัญหา' }, { key: 'requesterName', label: 'ผู้แจ้ง' }, { key: 'resolution', label: 'วิธีแก้' }],
+    userFields: [{ key: 'requesterUserId', label: 'ผู้แจ้ง' }],
     message: 'เรื่อง {{no}} "{{title}}" ของ {{requesterName}} แก้ไขแล้ว: {{resolution}}', link: '/m/helpdesk/ticket/{{ticketId}}' },
   { type: 'crm.lead_created', module: 'crm', label: 'มีลีดใหม่', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่ลีด' }, { key: 'company', label: 'บริษัท' }, { key: 'contactName', label: 'ผู้ติดต่อ' }, { key: 'source', label: 'ช่องทาง (website / line / phone / expo / referral / other)' }],
@@ -93,6 +106,7 @@ export const EVENTS: EventInfo[] = [
   { type: 'booking.requested', module: 'booking', label: 'มีการจองห้อง/รถ/อุปกรณ์', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่การจอง' }, { key: 'resourceName', label: 'ห้อง/รถ/อุปกรณ์' }, { key: 'period', label: 'ช่วงเวลา' }, { key: 'requesterName', label: 'ผู้จอง' },
       { key: 'purpose', label: 'วัตถุประสงค์' }, { key: 'needsApproval', label: 'ต้องอนุมัติ (true / false)' }],
+    userFields: [{ key: 'requesterId', label: 'ผู้จอง' }],
     message: '{{requesterName}} จอง {{resourceName}} {{period}} ({{purpose}}) เลขที่ {{no}}', link: '/m/booking/bookingDetail/{{bookingId}}' },
   { type: 'assets.repair_reported', module: 'assets', label: 'มีการแจ้งซ่อมทรัพย์สิน', level: 'warn',
     fields: [{ key: 'code', label: 'รหัสทรัพย์สิน' }, { key: 'name', label: 'ชื่อทรัพย์สิน' }, { key: 'description', label: 'อาการ' }],
@@ -100,6 +114,12 @@ export const EVENTS: EventInfo[] = [
 ];
 
 export const eventInfo = (type: string) => EVENTS.find((e) => e.type === type);
+
+/** Thai module names for the template gallery (the raw ids are English). */
+export const MODULE_TH: Record<string, string> = {
+  inventory: 'คลังสินค้า', purchasing: 'จัดซื้อ', sales: 'ขาย', production: 'ผลิต', maintenance: 'ซ่อมบำรุง', approvals: 'อนุมัติออนไลน์',
+  expense: 'เบิกค่าใช้จ่าย', hr: 'บุคคลและลงเวลา', helpdesk: 'แจ้งปัญหา', crm: 'ลูกค้าสัมพันธ์', quality: 'ควบคุมคุณภาพ', booking: 'จองห้อง/รถ', assets: 'ทรัพย์สิน',
+};
 
 export interface Template {
   id: string;
@@ -111,7 +131,16 @@ export interface Template {
 }
 
 export interface Condition { field: string; op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains'; value: string | number }
-export interface ActionSpec { type: 'notify' | 'line' | 'webhook'; target?: string; message?: string }
+export interface ActionSpec {
+  type: 'notify' | 'line' | 'webhook';
+  target?: string;
+  message?: string;
+  /**
+   * notify only — who gets the in-app alert: 'all' (default; everyone with automation.notify.read),
+   * 'field:<userField>[,<userField>]' (user ids carried by the event, e.g. nextApproverId), or 'user:<uuid>'.
+   */
+  to?: string;
+}
 
 export const TEMPLATES: Template[] = [
   { id: 'low-stock-alert', name: 'เตือนของใกล้หมด', description: 'แจ้งทุกคนเมื่อสินค้าต่ำกว่าจุดสั่งซื้อ', eventType: 'inventory.low_stock', conditions: [], actions: [{ type: 'notify' }] },
@@ -125,15 +154,21 @@ export const TEMPLATES: Template[] = [
 
   /* ---- office / service businesses ---- */
   { id: 'approval-to-approver', name: 'มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ', description: 'แจ้งในแอปและส่ง LINE ทุกครั้งที่คำขอถึงคิวผู้อนุมัติคนถัดไป', eventType: 'approvals.request_submitted', conditions: [],
-    actions: [{ type: 'notify' }, { type: 'line', target: '' }] },
+    actions: [{ type: 'notify', to: 'field:nextApproverId,delegateId', message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอคุณอนุมัติ (ขั้นที่ {{step}}/{{stepCount}})' }, { type: 'line', target: '' }] },
   { id: 'approval-approved', name: 'คำขอได้รับการอนุมัติ แจ้งผู้ขอ', description: 'แจ้งเมื่อคำขออนุมัติครบทุกขั้นแล้ว', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'eq', value: 'approved' }],
-    actions: [{ type: 'notify', message: '✅ คำขอ {{no}} "{{title}}" ของ {{requesterName}} ได้รับการอนุมัติแล้ว' }] },
+    actions: [{ type: 'notify', to: 'field:requesterId', message: '✅ คำขอ {{no}} "{{title}}" ของคุณได้รับการอนุมัติแล้ว (โดย {{byName}})' }] },
   { id: 'approval-not-approved', name: 'คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ', description: 'แจ้งผู้ขอพร้อมเหตุผลเมื่อคำขอถูกปฏิเสธหรือส่งกลับให้แก้ไข', eventType: 'approvals.request_decided', conditions: [{ field: 'decision', op: 'ne', value: 'approved' }],
-    actions: [{ type: 'notify', message: 'คำขอ {{no}} "{{title}}" ของ {{requesterName}} ไม่ผ่านหรือถูกส่งกลับแก้ไข โดย {{byName}} เหตุผล: {{note}}' }] },
+    actions: [{ type: 'notify', to: 'field:requesterId', message: 'คำขอ {{no}} "{{title}}" ของคุณไม่ผ่านหรือถูกส่งกลับแก้ไข โดย {{byName}} เหตุผล: {{note}}' }] },
   { id: 'expense-over-limit', name: 'เบิกเกินวงเงิน แจ้งบัญชี', description: 'แจ้งฝ่ายบัญชีเมื่อมีใบเบิกที่เกินวงเงินรายเดือนของหมวดค่าใช้จ่าย', eventType: 'expense.claim_submitted', conditions: [{ field: 'overLimit', op: 'eq', value: 'true' }],
     actions: [{ type: 'notify', message: '⚠️ ใบเบิก {{no}} ของ {{claimantName}} ยอด {{total}} บาท เกินวงเงินรายเดือน ตรวจสอบก่อนอนุมัติ' }] },
-  { id: 'leave-to-manager', name: 'มีคนขอลา แจ้งหัวหน้า', description: 'แจ้งในแอปและส่ง LINE หัวหน้าเมื่อพนักงานยื่นใบลา', eventType: 'hr.leave_requested', conditions: [],
-    actions: [{ type: 'notify' }, { type: 'line', target: '' }] },
+  { id: 'leave-to-manager', name: 'มีคนขอลา แจ้งหัวหน้า', description: 'แจ้งหัวหน้าตามผังองค์กร (ในแอป) และส่ง LINE เมื่อพนักงานยื่นใบลา', eventType: 'hr.leave_requested', conditions: [],
+    actions: [{ type: 'notify', to: 'field:approverUserId', message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รอคุณอนุมัติ' }, { type: 'line', target: '' }] },
+  { id: 'leave-decided-to-employee', name: 'ใบลามีผลแล้ว แจ้งพนักงาน', description: 'แจ้งพนักงานผู้ลาเมื่อหัวหน้าหรือฝ่ายบุคคลอนุมัติ/ไม่อนุมัติใบลา', eventType: 'hr.leave_decided', conditions: [],
+    actions: [{ type: 'notify', to: 'field:employeeUserId', message: 'ใบลา {{no}} ({{typeName}}) ของคุณ: {{decision:th}} โดย {{byName}} หมายเหตุ: {{note}}' }] },
+  { id: 'expense-paid-to-claimant', name: 'จ่ายเงินใบเบิกแล้ว แจ้งผู้เบิก', description: 'แจ้งผู้เบิกเมื่อฝ่ายบัญชีจ่ายเงินตามใบเบิกแล้ว', eventType: 'expense.claim_paid', conditions: [],
+    actions: [{ type: 'notify', to: 'field:claimantId', message: '💸 ใบเบิก {{no}} ของคุณ ยอด {{total}} บาท จ่ายเงินแล้ว' }] },
+  { id: 'ticket-resolved-to-requester', name: 'แก้ปัญหาเสร็จ แจ้งผู้แจ้ง', description: 'แจ้งผู้แจ้งปัญหาเมื่อทีมแก้ไขเรื่องเสร็จแล้ว', eventType: 'helpdesk.ticket_resolved', conditions: [],
+    actions: [{ type: 'notify', to: 'field:requesterUserId', message: '✅ เรื่อง {{no}} "{{title}}" ที่คุณแจ้งแก้ไขแล้ว: {{resolution}}' }] },
   { id: 'urgent-ticket', name: 'ตั๋วด่วนมาก แจ้งทีม IT', description: 'ส่ง LINE กลุ่มทีม IT ทันทีเมื่อมีเรื่องแจ้งปัญหาระดับด่วนมาก', eventType: 'helpdesk.ticket_created', conditions: [{ field: 'priority', op: 'eq', value: 'urgent' }],
     actions: [{ type: 'notify', message: '🚨 ด่วนมาก {{no}}: {{title}} ผู้แจ้ง {{requesterName}} (หมวด {{categoryName}})' }, { type: 'line', target: '' }] },
   { id: 'new-lead', name: 'ลีดใหม่ แจ้งเซลส์', description: 'แจ้งทีมขายทันทีที่มีลีดเข้ามา จะได้โทรกลับเร็ว', eventType: 'crm.lead_created', conditions: [],

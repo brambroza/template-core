@@ -6,7 +6,8 @@
   "tier": "feature",
   "description": "Ticketing for internal IT/facility requests or customer service: tickets from web, phone, LINE, email or walk-in with categories, priority-based SLA due times and overdue flags, assignment to technicians, public replies and internal notes, resolve/close with satisfaction rating, canned replies and a searchable knowledge base.",
   "requires": [
-    "identity"
+    "identity",
+    "master-data"
   ],
   "enhancedBy": [],
   "publishes": ["helpdesk.ticket_created", "helpdesk.ticket_resolved"],

@@ -11,7 +11,11 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM');
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'expected YYYY-MM');
 const IdParam = z.object({ id: s.uuid });
 
-const DepartmentInput = z.object({ code: s.code, name: s.name, managerName: optText(), active: z.boolean().optional() });
+const DepartmentInput = z.object({
+  code: s.code, name: s.name, managerName: optText(), active: z.boolean().optional(),
+  /** the department head (an employee): default leave approver for members without a direct manager */
+  managerEmployeeId: s.uuid.nullable().optional(),
+});
 const PositionInput = z.object({ code: s.code, name: s.name });
 
 const EmployeeInput = z.object({
@@ -28,11 +32,16 @@ const EmployeeInput = z.object({
   email: z.string().trim().email().max(200).optional(),
   status: z.enum(['active', 'probation']).default('active'),
   userId: s.uuid.optional(),
+  /** direct manager (an employee) — approves this employee's leave */
+  managerId: s.uuid.optional(),
 });
-const EmployeePatch = EmployeeInput.omit({ status: true }).partial().extend({ status: z.enum(['active', 'probation', 'resigned']).optional(), userId: s.uuid.nullable().optional() });
+const EmployeePatch = EmployeeInput.omit({ status: true }).partial().extend({
+  status: z.enum(['active', 'probation', 'resigned']).optional(), userId: s.uuid.nullable().optional(), managerId: s.uuid.nullable().optional(),
+});
 const EMPLOYEE_COLS: Record<string, string> = {
   code: 'code', prefix: 'prefix', firstName: 'first_name', lastName: 'last_name', nickname: 'nickname', departmentId: 'department_id',
   positionId: 'position_id', startDate: 'start_date', birthDate: 'birth_date', phone: 'phone', email: 'email', status: 'status', userId: 'user_id',
+  managerId: 'manager_id',
 };
 
 const HolidayInput = z.object({ date: s.isoDate, name: s.name });
@@ -82,12 +91,26 @@ const LEAVE_TH: Record<string, string> = { pending: 'รออนุมัติ
 
 /* ---------------- queries ---------------- */
 
-const FULL_NAME = `coalesce(e.prefix, '') || e.first_name || coalesce(' ' || e.last_name, '')`;
-const EMP_SELECT = `select e.*, ${FULL_NAME} as full_name, d.code as department_code, d.name as department_name, p.name as position_name
-  from employees e left join departments d on d.id = e.department_id left join positions p on p.id = e.position_id`;
+const fullName = (x: string) => `coalesce(${x}.prefix, '') || ${x}.first_name || coalesce(' ' || ${x}.last_name, '')`;
+const FULL_NAME = fullName('e');
+/**
+ * Org chart: the leave approver of employee `e` (department `d`) is the direct manager, else the department head (not the employee themself).
+ * Only a current employee with a linked login counts — otherwise nobody is the approver and HR (hr.leave.approve / approve-all) decides.
+ */
+const APPROVER_JOIN = `left join employees ap on ap.id = coalesce(e.manager_id, nullif(d.manager_employee_id, e.id))
+    and ap.status <> 'resigned' and ap.user_id is not null and ap.id <> e.id`;
+const EMP_SELECT = `select e.*, ${FULL_NAME} as full_name, d.code as department_code, d.name as department_name, p.name as position_name,
+    ${fullName('mg')} as manager_name, mg.code as manager_code,
+    ap.id as approver_employee_id, ap.user_id as approver_user_id, ${fullName('ap')} as approver_name
+  from employees e left join departments d on d.id = e.department_id left join positions p on p.id = e.position_id
+  left join employees mg on mg.id = e.manager_id
+  ${APPROVER_JOIN}`;
 const LEAVE_SELECT = `select r.*, e.code as employee_code, ${FULL_NAME} as employee_name, e.nickname, e.user_id as employee_user_id,
-    d.name as department_name, t.code as leave_type_code, t.name as leave_type_name
-  from leave_requests r join employees e on e.id = r.employee_id join leave_types t on t.id = r.leave_type_id left join departments d on d.id = e.department_id`;
+    d.name as department_name, t.code as leave_type_code, t.name as leave_type_name,
+    ap.id as approver_employee_id, ap.user_id as approver_user_id, ${fullName('ap')} as approver_name,
+    coalesce(${fullName('ap')}, 'ฝ่ายบุคคล') as approver_label
+  from leave_requests r join employees e on e.id = r.employee_id join leave_types t on t.id = r.leave_type_id left join departments d on d.id = e.department_id
+  ${APPROVER_JOIN}`;
 const ATT_SELECT = `select a.*, e.code as employee_code, ${FULL_NAME} as employee_name, e.nickname, d.name as department_name
   from attendance a join employees e on e.id = a.employee_id left join departments d on d.id = e.department_id`;
 
@@ -149,6 +172,44 @@ function assertLeaveStatus(lv: any, allowed: string[], verb: string) {
 
 const isOwn = (a: AuthContext, row: { user_id?: string | null; employee_user_id?: string | null }) =>
   (row.employee_user_id ?? row.user_id) === a.userId;
+
+const approveAll = (a: AuthContext) => hasPerm(a, 'hr.leave.approve-all');
+/** Any leave permission at all (managers only need to be able to file their own leave). */
+const anyLeavePerm = (a: AuthContext) => ['hr.leave.request', 'hr.leave.approve', 'hr.leave.approve-all'].some((p) => hasPerm(a, p));
+
+/**
+ * Who may approve / reject this leave: the employee's manager (org chart), HR with `hr.leave.approve-all`, or — when the
+ * employee has no manager with a login — anyone with `hr.leave.approve`. Never the employee themself (checked separately → 409).
+ */
+const canDecide = (a: AuthContext, lv: any) =>
+  approveAll(a) || (lv.approver_user_id ? lv.approver_user_id === a.userId : hasPerm(a, 'hr.leave.approve'));
+
+const withLeaveFlags = (a: AuthContext) => (lv: any) => ({
+  ...lv,
+  can_decide: lv.status === 'pending' && !isOwn(a, lv) && canDecide(a, lv),
+  is_my_team: !!lv.approver_user_id && lv.approver_user_id === a.userId,
+});
+
+/** Reject a manager that is the employee themself or would create a loop (A → B → A). */
+async function checkManager(c: Client, employeeId: string | null, managerId: string | null | undefined) {
+  if (!managerId) return;
+  if (managerId === employeeId) throw badRequest('พนักงานเป็นหัวหน้าของตนเองไม่ได้', { fieldErrors: { managerId: ['เลือกหัวหน้าคนอื่น'] } });
+  if (!(await c.query('select 1 from employees where id = $1', [managerId])).rowCount) throw badRequest('ไม่พบหัวหน้าที่เลือก');
+  if (!employeeId) return;
+  const loop = (await c.query(
+    `with recursive up(id, depth) as (select manager_id, 1 from employees where id = $1
+       union all select e.manager_id, up.depth + 1 from employees e join up on e.id = up.id where up.depth < 50 and e.manager_id is not null)
+     select 1 from up where id = $2 limit 1`, [managerId, employeeId])).rowCount;
+  if (loop) throw badRequest('ตั้งหัวหน้าแบบนี้จะวนกลับมาที่พนักงานคนนี้เอง', { fieldErrors: { managerId: ['สายบังคับบัญชาวนซ้ำ'] } });
+}
+
+/** The department head snapshot: id + display name (kept in manager_name for screens that show text). */
+async function departmentHead(c: Client, employeeId: string | null | undefined) {
+  if (!employeeId) return null;
+  const r = (await c.query(`select e.id, ${FULL_NAME} as name from employees e where e.id = $1`, [employeeId])).rows[0];
+  if (!r) throw badRequest('ไม่พบหัวหน้าแผนกที่เลือก', { fieldErrors: { managerEmployeeId: ['ไม่พบพนักงาน'] } });
+  return r;
+}
 
 /** Resolve whose time is being recorded and when. Self check-in uses server time; admins may record for others / a past time. */
 async function attendanceTarget(c: Client, a: AuthContext, b: z.infer<typeof CheckInput>) {
@@ -219,8 +280,9 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         await uniqueCode(c, 'departments', b.code, 'แผนก');
-        return (await c.query('insert into departments (code, name, manager_name, active) values ($1,$2,$3,$4) returning *',
-          [b.code, b.name, b.managerName ?? null, b.active ?? true])).rows[0];
+        const head = await departmentHead(c, b.managerEmployeeId);
+        return (await c.query('insert into departments (code, name, manager_name, active, manager_employee_id) values ($1,$2,$3,$4,$5) returning *',
+          [b.code, b.name, head?.name ?? b.managerName ?? null, b.active ?? true, head?.id ?? null])).rows[0];
       });
     });
 
@@ -243,7 +305,12 @@ export const definition: ServiceDefinition = {
       const b = parse(DepartmentInput.partial(), req.body);
       return k.db.tx(a.tenantId, async (c) => {
         if (b.code) await uniqueCode(c, 'departments', b.code, 'แผนก', id);
-        return patchRow(c, 'departments', id, { code: 'code', name: 'name', managerName: 'manager_name', active: 'active' }, b, 'Department');
+        const body: Record<string, unknown> = { ...b };
+        if (b.managerEmployeeId !== undefined) {
+          const head = await departmentHead(c, b.managerEmployeeId);
+          body.managerName = head?.name ?? b.managerName ?? null;
+        }
+        return patchRow(c, 'departments', id, { code: 'code', name: 'name', managerName: 'manager_name', active: 'active', managerEmployeeId: 'manager_employee_id' }, body, 'Department');
       });
     });
 
@@ -297,15 +364,16 @@ export const definition: ServiceDefinition = {
         await uniqueCode(c, 'employees', b.code, 'พนักงาน');
         await mustExist(c, 'departments', b.departmentId, 'แผนก');
         await mustExist(c, 'positions', b.positionId, 'ตำแหน่ง');
+        await checkManager(c, null, b.managerId);
         if (b.userId) {
           const other = (await c.query('select code from employees where user_id = $1', [b.userId])).rows[0];
           if (other) throw conflict(`บัญชีผู้ใช้นี้ผูกกับพนักงาน ${other.code} แล้ว`);
         }
         const row = (await c.query(
-          `insert into employees (code, prefix, first_name, last_name, nickname, department_id, position_id, start_date, birth_date, phone, email, status, user_id)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
+          `insert into employees (code, prefix, first_name, last_name, nickname, department_id, position_id, start_date, birth_date, phone, email, status, user_id, manager_id)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
           [b.code, b.prefix ?? null, b.firstName, b.lastName ?? null, b.nickname ?? null, b.departmentId ?? null, b.positionId ?? null,
-            b.startDate, b.birthDate ?? null, b.phone ?? null, b.email ?? null, b.status, b.userId ?? null])).rows[0];
+            b.startDate, b.birthDate ?? null, b.phone ?? null, b.email ?? null, b.status, b.userId ?? null, b.managerId ?? null])).rows[0];
         return loadEmployee(c, row.id);
       });
     });
@@ -320,6 +388,8 @@ export const definition: ServiceDefinition = {
         e.balance = await balances(c, id, Number(localDate().slice(0, 4)));
         e.leaves = (await c.query(`${LEAVE_SELECT} where r.employee_id = $1 order by r.from_date desc limit 10`, [id])).rows;
         e.attendance = (await c.query(`${ATT_SELECT} where a.employee_id = $1 order by a.work_date desc limit 10`, [id])).rows;
+        e.reports = (await c.query(`${EMP_SELECT} where e.manager_id = $1 and e.status <> 'resigned' order by e.code`, [id])).rows;
+        e.approver_label = e.approver_name ?? 'ฝ่ายบุคคล';
         return e;
       });
     });
@@ -337,6 +407,7 @@ export const definition: ServiceDefinition = {
         if (b.code) await uniqueCode(c, 'employees', b.code, 'พนักงาน', id);
         await mustExist(c, 'departments', b.departmentId, 'แผนก');
         await mustExist(c, 'positions', b.positionId, 'ตำแหน่ง');
+        await checkManager(c, id, b.managerId);
         if (b.userId) {
           const other = (await c.query('select code from employees where user_id = $1 and id <> $2', [b.userId, id])).rows[0];
           if (other) throw conflict(`บัญชีผู้ใช้นี้ผูกกับพนักงาน ${other.code} แล้ว`);
@@ -570,14 +641,15 @@ export const definition: ServiceDefinition = {
 
         const no = await nextDocNo(c, 'LV');
         const row = (await c.query(
-          `insert into leave_requests (no, employee_id, leave_type_id, from_date, to_date, half_day, days, reason, requested_by)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
-          [no, emp.id, type.id, b.fromDate, to, b.halfDay, days, b.reason ?? null, a.userId])).rows[0];
+          `insert into leave_requests (no, employee_id, leave_type_id, from_date, to_date, half_day, days, reason, requested_by, requested_by_name)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
+          [no, emp.id, type.id, b.fromDate, to, b.halfDay, days, b.reason ?? null, a.userId, a.userName ?? (emp.user_id === a.userId ? emp.full_name : null)])).rows[0];
         const lv = await loadLeave(c, row.id);
         await k.emit(c, 'hr.leave_requested', {
           leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, from: String(lv.from_date), to: String(lv.to_date), days: Number(lv.days),
+          employeeUserId: lv.employee_user_id ?? null, approverUserId: lv.approver_user_id ?? null, approverName: lv.approver_name ?? null,
         });
-        return lv;
+        return withLeaveFlags(a)(lv);
       });
     });
 
@@ -599,17 +671,33 @@ export const definition: ServiceDefinition = {
            and ($2::text is null or r.status = $2) and ($3::uuid is null or r.employee_id = $3) and ($4::uuid is null or e.department_id = $4)
            and ($5::uuid is null or r.leave_type_id = $5) and ($6::date is null or r.to_date >= $6) and ($7::date is null or r.from_date <= $7)
          order by r.created_at desc limit $8 offset $9`,
-        [like(q.q), q.status ?? null, q.employeeId ?? null, q.departmentId ?? null, q.leaveTypeId ?? null, q.from ?? null, q.to ?? null, q.limit, q.offset])).rows);
+        [like(q.q), q.status ?? null, q.employeeId ?? null, q.departmentId ?? null, q.leaveTypeId ?? null, q.from ?? null, q.to ?? null, q.limit, q.offset])).rows.map(withLeaveFlags(a)));
     });
 
-    /** Approver inbox (mobile): everything waiting for a decision, oldest first. */
+    /**
+     * HR approver inbox (mobile): pending leave this user may decide, oldest first.
+     * `hr.leave.approve-all` sees everything; `hr.leave.approve` sees employees without a manager (plus their own team).
+     */
     app.get('/leave-requests/pending', async (req) => {
       const a = auth(req);
-      requirePerm(a, 'hr.leave.approve');
+      if (!approveAll(a)) requirePerm(a, 'hr.leave.approve');
       const q = parse(z.object({ q: z.string().optional(), departmentId: s.uuid.optional() }), req.query);
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `${LEAVE_SELECT} where r.status = 'pending' and ($1::text is null or r.no ilike $1 or e.code ilike $1 or e.first_name ilike $1 or e.nickname ilike $1)
-           and ($2::uuid is null or e.department_id = $2) order by r.from_date, r.created_at limit 200`, [like(q.q), q.departmentId ?? null])).rows);
+           and ($2::uuid is null or e.department_id = $2)
+           and ($3::boolean or ap.user_id is null or ap.user_id = $4)
+         order by r.from_date, r.created_at limit 200`, [like(q.q), q.departmentId ?? null, approveAll(a), a.userId])).rows.map(withLeaveFlags(a)));
+    });
+
+    /** Manager inbox (mobile): pending leave of my team — employees whose manager (or department head) is me. */
+    app.get('/leave-requests/inbox', async (req) => {
+      const a = auth(req);
+      if (!anyLeavePerm(a)) requirePerm(a, 'hr.leave.request');
+      const q = parse(z.object({ q: z.string().optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `${LEAVE_SELECT} where r.status = 'pending' and ap.user_id = $1
+           and ($2::text is null or r.no ilike $2 or e.code ilike $2 or e.first_name ilike $2 or e.nickname ilike $2)
+         order by r.from_date, r.created_at limit 200`, [a.userId, like(q.q)])).rows.map(withLeaveFlags(a)));
     });
 
     app.get('/leave-requests/:id', async (req) => {
@@ -617,41 +705,40 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const lv = await loadLeave(c, id);
-        if (!isOwn(a, lv)) requirePerm(a, 'hr.employee.read');
+        // the employee, their manager, and HR may read it
+        if (!isOwn(a, lv) && lv.approver_user_id !== a.userId && !approveAll(a)) requirePerm(a, 'hr.employee.read');
         const bal = (await balances(c, lv.employee_id, Number(String(lv.from_date).slice(0, 4)))).find((x: any) => x.leave_type_id === lv.leave_type_id);
-        return { ...lv, balance: bal ?? null };
+        return withLeaveFlags(a)({ ...lv, balance: bal ?? null });
       });
     });
 
-    app.post('/leave-requests/:id/approve', async (req) => {
+    const decideLeave = (decision: 'approved' | 'rejected') => async (req: any) => {
       const a = auth(req);
-      requirePerm(a, 'hr.leave.approve');
+      if (!anyLeavePerm(a)) requirePerm(a, 'hr.leave.approve');
       const { id } = parse(IdParam, req.params);
-      const b = parse(NoteInput, req.body ?? {});
+      const b = decision === 'approved' ? parse(NoteInput, req.body ?? {}) : parse(RejectInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const lv = await loadLeave(c, id, true);
-        assertLeaveStatus(lv, ['pending'], 'อนุมัติ');
-        if (isOwn(a, lv)) throw conflict('อนุมัติใบลาของตนเองไม่ได้ — ให้หัวหน้าหรือฝ่ายบุคคลอนุมัติ');
-        await c.query(`update leave_requests set status = 'approved', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note ?? null]);
-        await k.emit(c, 'hr.leave_decided', { leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision: 'approved' });
-        return loadLeave(c, id);
+        assertLeaveStatus(lv, ['pending'], decision === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ');
+        if (!canDecide(a, lv)) {
+          throw forbidden(lv.approver_user_id
+            ? `ใบลา ${lv.no} รอ ${lv.approver_name} (หัวหน้าของ ${lv.employee_name}) อนุมัติ — อนุมัติแทนได้เฉพาะฝ่ายบุคคล`
+            : 'ไม่มีสิทธิ์อนุมัติใบลานี้');
+        }
+        if (isOwn(a, lv)) {
+          throw conflict(decision === 'approved' ? 'อนุมัติใบลาของตนเองไม่ได้ — ให้หัวหน้าหรือฝ่ายบุคคลอนุมัติ' : 'พิจารณาใบลาของตนเองไม่ได้ — ถ้าไม่ต้องการลาแล้วให้กด "ยกเลิก"');
+        }
+        await c.query(`update leave_requests set status = $4, decided_by = $2, decided_by_name = $5, decided_at = now(), decision_note = $3 where id = $1`,
+          [id, a.userId, b.note ?? null, decision, a.userName ?? null]);
+        await k.emit(c, 'hr.leave_decided', {
+          leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision,
+          employeeUserId: lv.employee_user_id ?? null, byName: a.userName ?? null, note: b.note ?? null,
+        });
+        return withLeaveFlags(a)(await loadLeave(c, id));
       });
-    });
-
-    app.post('/leave-requests/:id/reject', async (req) => {
-      const a = auth(req);
-      requirePerm(a, 'hr.leave.approve');
-      const { id } = parse(IdParam, req.params);
-      const b = parse(RejectInput, req.body ?? {});
-      return k.db.tx(a.tenantId, async (c) => {
-        const lv = await loadLeave(c, id, true);
-        assertLeaveStatus(lv, ['pending'], 'ไม่อนุมัติ');
-        if (isOwn(a, lv)) throw conflict('พิจารณาใบลาของตนเองไม่ได้ — ถ้าไม่ต้องการลาแล้วให้กด "ยกเลิก"');
-        await c.query(`update leave_requests set status = 'rejected', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note]);
-        await k.emit(c, 'hr.leave_decided', { leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision: 'rejected' });
-        return loadLeave(c, id);
-      });
-    });
+    };
+    app.post('/leave-requests/:id/approve', decideLeave('approved'));
+    app.post('/leave-requests/:id/reject', decideLeave('rejected'));
 
     /** The employee withdraws a pending request; an approver can also cancel an approved one (e.g. came to work after all). */
     app.post('/leave-requests/:id/cancel', async (req) => {
@@ -660,15 +747,15 @@ export const definition: ServiceDefinition = {
       const b = parse(NoteInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const lv = await loadLeave(c, id, true);
-        const approver = hasPerm(a, 'hr.leave.approve');
+        const approver = hasPerm(a, 'hr.leave.approve') || approveAll(a) || (!!lv.approver_user_id && lv.approver_user_id === a.userId);
         if (!approver) {
           requirePerm(a, 'hr.leave.request');
           if (!isOwn(a, lv)) throw forbidden('ยกเลิกได้เฉพาะใบลาของตนเอง');
         }
         assertLeaveStatus(lv, approver ? ['pending', 'approved'] : ['pending'], 'ยกเลิก');
-        await c.query(`update leave_requests set status = 'cancelled', decided_by = $2, decided_at = now(), decision_note = coalesce($3, decision_note) where id = $1`,
-          [id, a.userId, b.note ?? null]);
-        return loadLeave(c, id);
+        await c.query(`update leave_requests set status = 'cancelled', decided_by = $2, decided_by_name = $4, decided_at = now(), decision_note = coalesce($3, decision_note) where id = $1`,
+          [id, a.userId, b.note ?? null, a.userName ?? null]);
+        return withLeaveFlags(a)(await loadLeave(c, id));
       });
     });
 
@@ -684,9 +771,9 @@ export const definition: ServiceDefinition = {
         const afterStart = localMinutes(at) - toMinutes(cal.schedule.start_time);
         const late = cal.isWorkday(workDate) && afterStart > cal.schedule.grace_minutes ? afterStart : 0;
         const row = (await c.query(
-          `insert into attendance (employee_id, work_date, check_in_at, late_minutes, in_lat, in_lng, note, source, recorded_by)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
-          [emp.id, workDate, at, late, b.lat ?? null, b.lng ?? null, b.note ?? null, source, a.userId])).rows[0];
+          `insert into attendance (employee_id, work_date, check_in_at, late_minutes, in_lat, in_lng, note, source, recorded_by, recorded_by_name)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
+          [emp.id, workDate, at, late, b.lat ?? null, b.lng ?? null, b.note ?? null, source, a.userId, a.userName ?? (emp.user_id === a.userId ? emp.full_name : null)])).rows[0];
         const rec = (await c.query(`${ATT_SELECT} where a.id = $1`, [row.id])).rows[0];
         rec.message = `ลงเวลาเข้างาน ${hhmm(at)} น.${late ? ` — สาย ${late} นาที` : cal.isWorkday(workDate) ? ' — ตรงเวลา' : ' (วันหยุด)'}`;
         return rec;
@@ -848,6 +935,9 @@ export const definition: ServiceDefinition = {
           today,
           schedule: `${s0.start_time}–${s0.end_time} น.`,
           attendanceState: !today ? 'none' : today.check_out_at ? 'out' : 'in',
+          /** who approves my leave: my manager (org chart) or HR */
+          approverName: emp.approver_name ?? 'ฝ่ายบุคคล',
+          teamPending: Number((await c.query(`select count(*)::int as n from leave_requests r join employees e on e.id = r.employee_id left join departments d on d.id = e.department_id ${APPROVER_JOIN} where r.status = 'pending' and ap.user_id = $1`, [a.userId])).rows[0].n),
           balance: await balances(c, emp.id, Number(localDate().slice(0, 4))),
           leaves: (await c.query(`${LEAVE_SELECT} where r.employee_id = $1 order by r.created_at desc limit 10`, [emp.id])).rows,
         };
@@ -860,7 +950,7 @@ export const definition: ServiceDefinition = {
       const q = parse(z.object({ status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(), q: z.string().optional() }), req.query);
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `${LEAVE_SELECT} where e.user_id = $1 and ($2::text is null or r.status = $2) and ($3::text is null or r.no ilike $3 or t.name ilike $3 or r.reason ilike $3)
-         order by r.from_date desc limit 200`, [a.userId, q.status ?? null, like(q.q)])).rows);
+         order by r.from_date desc limit 200`, [a.userId, q.status ?? null, like(q.q)])).rows.map(withLeaveFlags(a)));
     });
 
     app.get('/summary', async (req) => {

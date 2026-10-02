@@ -7,6 +7,13 @@ const eventSelect: Field = {
   options: EVENTS.map((e) => ({ value: e.type, label: e.label })),
 };
 
+/** Who an in-app alert goes to: everyone, or a person named in the event (only fields the chosen event carries are accepted). */
+const RECIPIENTS = [
+  { value: 'all', label: 'ทุกคนที่รับการแจ้งเตือน' },
+  ...[...new Map(EVENTS.flatMap((e) => (e.userFields ?? []).map((f) => [f.key, f.label] as const))).entries()]
+    .map(([key, label]) => ({ value: `field:${key}`, label: `${label} (${key})` })),
+];
+
 export default defineUi({
   module: 'automation',
   label: 'ระบบอัตโนมัติ',
@@ -47,7 +54,8 @@ export default defineUi({
       columns: [
         { key: 'name', label: 'ชื่อ' },
         { key: 'summary', label: 'ทำอะไร' },
-        { key: 'module', label: 'จากโมดูล', format: 'label' },
+        { key: 'recipients', label: 'แจ้งถึง' },
+        { key: 'module_label', label: 'จากโมดูล' },
         { key: 'applied', label: 'ใช้อยู่', format: 'boolean' },
       ],
       rowActions: [
@@ -88,6 +96,10 @@ export default defineUi({
         { name: 'actionType', label: 'ให้…', type: 'select', required: true, default: 'notify', options: [
           { value: 'notify', label: 'แจ้งเตือนในแอป' }, { value: 'line', label: 'ส่ง LINE' }, { value: 'webhook', label: 'เรียก Webhook' },
         ] },
+        { name: 'to', label: 'แจ้งในแอปถึงใคร', type: 'select', default: 'all', options: RECIPIENTS,
+          help: 'ช่องผู้รับต้องมีในเหตุการณ์ที่เลือก (เช่น คำขออนุมัติ → ผู้อนุมัติ/ผู้ขอ, ใบลา → หัวหน้า/พนักงาน)' },
+        { name: 'toUserId', label: 'หรือส่งถึงผู้ใช้คนเดียว', type: 'lookup',
+          lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { toUserId: 'id' } } },
         { name: 'target', label: 'LINE group/user ID หรือ URL webhook', type: 'text', help: 'ไม่ต้องกรอกถ้าแจ้งเตือนในแอป' },
         { name: 'message', label: 'ข้อความ (ใช้ {{ชื่อช่อง}} ได้ — เว้นว่างใช้ข้อความมาตรฐาน)', type: 'textarea' },
       ],
@@ -98,6 +110,7 @@ export default defineUi({
       fields: [
         { key: 'summary', label: 'ทำงานอย่างไร' },
         { key: 'event_label', label: 'เหตุการณ์' },
+        { key: 'recipients', label: 'แจ้งในแอปถึง' },
         { key: 'enabled', label: 'เปิดใช้', format: 'boolean' },
         { key: 'fire_count', label: 'ทำงานแล้ว (ครั้ง)', format: 'qty' },
         { key: 'last_fired_at', label: 'ล่าสุด', format: 'datetime' },
@@ -121,6 +134,7 @@ export default defineUi({
         { key: 'level', label: 'ระดับ', format: 'status' },
         { key: 'title', label: 'เรื่อง' },
         { key: 'body', label: 'รายละเอียด' },
+        { key: 'personal', label: 'ถึงฉันโดยตรง', format: 'boolean' },
         { key: 'read_at', label: 'อ่านเมื่อ', format: 'datetime' },
       ],
       actions: [{ id: 'readAll', label: 'อ่านทั้งหมด', method: 'POST', endpoint: '/notifications/read-all', perm: 'automation.notify.read', mobile: true }],

@@ -214,6 +214,52 @@ section.block { padding: 96px 0; }
 .qbar small { display: block; font-size: .74rem; color: #9AA7B1; }
 .qbar .btn { height: 40px; padding: 0 14px; font-size: .9rem; }
 
+/* buy / rent toggle */
+.paymode { margin-top: 22px; }
+.quote .paymode { margin: 0 0 16px; }
+.quote .seg button { background: transparent; border-color: #2A353E; color: #C9D2D8; }
+.quote .seg button:hover { border-color: #6E7B85; color: #fff; }
+.quote .seg button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #141C22; }
+.quote .total b { white-space: nowrap; }
+.quote .total span { min-width: 0; }
+.quote .total.rent b { font-size: 1.7rem; }
+.quote .total small, .qbar b small, .mod .price small, .pk span small { font-size: .62em; font-weight: 500; opacity: .75; }
+
+/* pilot offer */
+.offer { margin-top: 40px; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; padding: 30px; border-radius: 24px; border: 2px dashed var(--accent-deep); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.offer h3 { font-size: 1.45rem; margin: 8px 0 10px; }
+.offer .muted { font-size: .97rem; }
+.offer .ticks { margin-top: 16px; gap: 8px; font-size: .93rem; }
+.offer .side { display: flex; flex-direction: column; gap: 6px; justify-content: center; padding-left: 28px; border-left: 1px solid var(--line); }
+.offer .side .lbl { font-size: .82rem; color: var(--ink-3); }
+.offer .side .big-price { font-size: clamp(2rem, 3.4vw, 2.6rem); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.offer .side .terms { font-size: .86rem; color: var(--ink-2); display: grid; gap: 4px; margin: 6px 0 0; padding-left: 18px; }
+.offer .side .btn { margin-top: 12px; justify-content: center; }
+
+/* partners */
+.tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.tier { padding: 26px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.tier.hl { border: 2px solid var(--ink); }
+.tier h3 { font-size: 1.15rem; }
+.tier .for { font-size: .86rem; color: var(--ink-2); min-height: 2.8em; }
+.tier .k { font-size: clamp(2.2rem, 4vw, 3rem); font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.tier .k small { display: block; font-size: .82rem; font-weight: 500; color: var(--ink-3); margin-top: 4px; }
+.tier dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; margin: 10px 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: .9rem; }
+.tier dt { color: var(--ink-2); }
+.tier dd { margin: 0; font-weight: 600; text-align: right; }
+.tier ul { margin: 6px 0 0; padding-left: 18px; font-size: .84rem; color: var(--ink-3); display: grid; gap: 3px; }
+.earn { margin-top: 20px; padding: 26px; border-radius: 22px; background: #141C22; color: #E9EEF1; }
+.earn h3 { font-size: 1.1rem; }
+.earn > p { color: #9AA7B1; font-size: .9rem; margin-top: 4px; }
+.earn .rows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.earn .row { padding: 18px 20px; border-radius: 16px; background: #1A232A; border: 1px solid #24303A; display: grid; gap: 6px; }
+.earn .row b { font-size: .95rem; }
+.earn .row .v { font-size: 1.6rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.earn .row span { font-size: .84rem; color: #B5C0C8; }
+.kit { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; align-items: center; }
+.kit span { font-size: .84rem; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); }
+.kit .btn { margin-left: auto; }
+
 /* 1,000 functions */
 .rm { background: #10171C; color: #E9EEF1; }
 .rm .eyebrow { color: var(--accent); }
@@ -283,6 +329,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
   .contact { padding: 24px; }
   .rec { padding: 26px 22px; gap: 20px; }
   .rec-side { padding-left: 0; border-left: 0; padding-top: 20px; border-top: 1px solid #2A353E; }
+  .offer, .tiers, .earn .rows { grid-template-columns: minmax(0, 1fr); }
+  .offer { padding: 24px 20px; }
+  .offer .side { padding-left: 0; border-left: 0; padding-top: 20px; border-top: 1px solid var(--line); }
+  .tier .for { min-height: 0; }
+  .kit .btn { margin-left: 0; width: 100%; justify-content: center; }
   form.lead { grid-template-columns: minmax(0, 1fr); }
   .ping { max-width: 210px; font-size: .76rem; }
   .qbar.show { display: flex; }
@@ -318,6 +369,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       <a href="#bots">บอทอัตโนมัติ</a>
       <a href="#pricing">ชุดและราคา</a>
       <a href="#roadmap">1,000 ฟังก์ชัน</a>
+      <a href="#partners">พาร์ทเนอร์</a>
       <a href="#faq">คำถาม</a>
     </nav>
     <a class="btn primary" href="#contact">ขอเดโม</a>
@@ -421,7 +473,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     <div class="head" data-up>
       <p class="eyebrow">ซื้อเฉพาะที่ใช้</p>
       <h2>เลือกชุดตามธุรกิจ หรือหยิบทีละโมดูล — เห็นราคาทันที</h2>
-      <p>ทุกโมดูลแยกกันเป็นระบบย่อย (microservice) ของใครของมัน ซื้อเพิ่มทีหลังได้โดยไม่ต้องรื้อ ระบบเลือกชุดที่ถูกที่สุดให้เองเสมอ ราคานี้คือซื้อขาด source code ติดตั้ง 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้</p>
+      <p>ทุกโมดูลแยกกันเป็นระบบย่อย (microservice) ของใครของมัน ซื้อเพิ่มทีหลังได้โดยไม่ต้องรื้อ ระบบเลือกชุดที่ถูกที่สุดให้เองเสมอ <span id="payLead">ราคานี้คือซื้อขาด source code ติดตั้ง 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้</span></p>
+      <div class="switch paymode"><span class="lbl" id="payLbl">วิธีจ่าย</span><div class="seg" data-pay-switch role="group" aria-labelledby="payLbl"><button type="button" data-pay="buy" aria-pressed="true">ซื้อขาด</button><button type="button" data-pay="rent" aria-pressed="false">เช่ารายเดือน</button></div></div>
     </div>
     <div data-up>
       <div class="packs-top">
@@ -434,11 +487,26 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       <div id="modGrid"></div>
       <aside class="quote" id="quote" aria-live="polite">
         <h3>ใบเสนอราคาของคุณ</h3>
+        <div class="switch paymode"><div class="seg" data-pay-switch role="group" aria-label="วิธีจ่าย"><button type="button" data-pay="buy" aria-pressed="true">ซื้อขาด</button><button type="button" data-pay="rent" aria-pressed="false">เช่ารายเดือน</button></div></div>
         <ul id="qLines"></ul>
-        <div class="total"><span>รวม (ยังไม่รวม VAT)</span><b id="qTotal">฿0</b></div>
+        <div class="total"><span id="qTotalLbl">รวม (ยังไม่รวม VAT)</span><b id="qTotal">฿0</b></div>
         <p class="note" id="qNote"></p>
         <a class="btn primary" href="#contact" id="qCta">ขอใบเสนอราคานี้</a>
       </aside>
+    </div>
+    <div class="offer" id="pilot" data-up>
+      <div>
+        <p class="eyebrow">ข้อเสนอลูกค้าร่วมพัฒนา · รับจำกัด</p>
+        <h3 id="pilotTitle">Pilot 60 วัน — ลองกับงานจริงก่อนตัดสินใจ</h3>
+        <p class="muted">ไม่ต้องจ่ายเต็มก่อนเห็นผล ตกลงเกณฑ์วัดผล 2–3 ข้อร่วมกันตั้งแต่วันแรก ใช้กับทีมจริงบนคลาวด์ของเรา ถ้าผ่านเกณฑ์ ค่า pilot หักเป็นส่วนลดได้เต็มจำนวน</p>
+        <ul class="ticks" id="pilotIncl"></ul>
+      </div>
+      <div class="side">
+        <span class="lbl" id="pilotLbl">สำหรับชุดที่เลือก</span>
+        <b class="big-price" id="pilotPrice">฿0</b>
+        <ul class="terms" id="pilotTerms"></ul>
+        <a class="btn primary" href="#contact" id="pilotCta">ขอ Pilot ชุดนี้</a>
+      </div>
     </div>
   </div>
 </section>
@@ -460,6 +528,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     <h3 class="sub-h" data-up>3 รุ่นถัดไป</h3>
     <div class="rel" id="rmRel" data-up></div>
     <div class="upcoming" id="rmUpcoming" data-up></div>
+  </div>
+</section>
+
+<section class="block" id="partners">
+  <div class="wrap">
+    <div class="head" data-up>
+      <p class="eyebrow">โปรแกรมพาร์ทเนอร์</p>
+      <h2>ขาย ติดตั้ง หรือแนะนำ Factory OS — แล้วมีรายได้ประจำไปด้วยกัน</h2>
+      <p>สำหรับผู้ขายเครื่องจักร ที่ปรึกษา ISO สำนักงานบัญชี IT integrator และ software house ที่ดูแลลูกค้าโรงงานและ SME อยู่แล้ว ทุกระดับได้ส่วนแบ่งแผนอัปเดตรายปีและค่าเช่ารายเดือน ไม่ใช่แค่ครั้งแรก</p>
+    </div>
+    <div class="tiers" id="tiers" data-up></div>
+    <div class="earn" id="earn" data-up></div>
+    <div class="kit" id="kit" data-up></div>
   </div>
 </section>
 
@@ -498,9 +579,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     <div class="head" data-up><p class="eyebrow">คำถามที่พบบ่อย</p><h2>ก่อนตัดสินใจ</h2></div>
     <div class="faq">
       <details data-up><summary>ไม่ใช่โรงงาน ใช้ได้ไหม</summary><p>ได้ ชื่อ Factory OS มาจากจุดเริ่มต้นที่โรงงาน แต่วันนี้มีโมดูลสำหรับสำนักงาน (อนุมัติ เบิกจ่าย ลา/ลงเวลา จองห้อง/รถ ทรัพย์สิน) ธุรกิจบริการ (CRM ใบเสนอราคา โครงการ timesheet helpdesk) ค้าส่ง ผู้รับเหมา อาคารและโรงเรียน เลือกชุดตามธุรกิจด้านบนได้เลย</p></details>
-      <details data-up><summary>ต้องจ่ายรายเดือนไหม คิดรายหัวไหม</summary><p>ไม่ต้อง ราคาที่เห็นคือซื้อขาด source code ต่อ 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้ ส่วนแผนอัปเดตและซัพพอร์ตรายปีเป็นตัวเลือก (ประมาณ 20% ของราคาต่อปี)</p></details>
+      <details data-up><summary>ต้องจ่ายรายเดือนไหม คิดรายหัวไหม</summary><p id="faqPay">เลือกได้ ซื้อขาด source code ต่อ 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้ แล้วต่อแผนอัปเดตและซัพพอร์ตรายปีหรือไม่ก็ได้ (ประมาณ 20% ของราคาต่อปี) หรือเช่ารายเดือนบนคลาวด์ที่เราดูแล ไม่ต้องจ่ายก้อน ทั้งสองแบบไม่คิดรายหัว</p></details>
       <details data-up><summary>มีบัญชี ภาษี และเงินเดือนไหม</summary><p>ยังไม่มีในรุ่นนี้ บัญชีแยกประเภท ภาษีซื้อ-ขาย ภ.พ.30 หัก ณ ที่จ่าย และเงินเดือน/ประกันสังคม อยู่ในรุ่น 0.4 (เป้า มี.ค. 2570) ระหว่างนี้ใช้คู่กับโปรแกรมบัญชีและเงินเดือนเดิมของคุณได้ และส่งข้อมูลใบกำกับภาษีออกทาง webhook ได้</p></details>
-      <details data-up><summary>ติดตั้งที่ไหน</summary><p>บนเซิร์ฟเวอร์ของคุณเอง หรือคลาวด์ที่คุณเลือก ใช้ Docker คำสั่งเดียว ข้อมูลอยู่กับคุณทั้งหมด</p></details>
+      <details data-up><summary>ติดตั้งที่ไหน</summary><p>ซื้อขาด: บนเซิร์ฟเวอร์ของคุณเอง หรือคลาวด์ที่คุณเลือก ใช้ Docker คำสั่งเดียว ข้อมูลอยู่กับคุณทั้งหมด · เช่ารายเดือน: บนคลาวด์ที่ GO Along ดูแล สำรองข้อมูลทุกวัน และย้ายออกไปเป็นซื้อขาดพร้อมข้อมูลได้ทุกเมื่อ</p></details>
       <details data-up><summary>ผู้ช่วย AI เอาข้อมูลเราไปไหน</summary><p>ผู้ช่วยใช้ API key ของบริษัทคุณเอง อ่านข้อมูลด้วยสิทธิ์ของผู้ใช้ที่ถามเท่านั้น และทำได้แค่อ่านกับเปิดหน้าจอ บันทึกหรืออนุมัติแทนไม่ได้ ถ้าไม่ใส่ key ระบบส่วนอื่นยังใช้ได้ครบ</p></details>
       <details data-up><summary>ซื้อแค่โมดูลเดียวได้ไหม</summary><p>ได้ ทุกการติดตั้งมีแพลตฟอร์มหลัก (ผู้ใช้/สิทธิ์ + ข้อมูลสินค้าและคู่ค้า) แล้วเลือกโมดูลอะไรก็ได้ เช่น อนุมัติออนไลน์อย่างเดียว หรือซ่อมบำรุงอย่างเดียว ซื้อเพิ่มทีหลังได้ ระบบคิดราคาชุดที่ถูกที่สุดให้เอง</p></details>
       <details data-up><summary>โมดูลสำนักงานและบริการใหม่ใช้จริงได้แค่ไหน</summary><p>9 โมดูลใหม่ (อนุมัติ เบิกจ่าย HR จองห้อง/รถ CRM helpdesk โครงการ ทรัพย์สิน คุณภาพ) ใช้งานได้ครบทั้งเว็บและมือถือ และกำลังเปิดรอบ pilot กับลูกค้ากลุ่มแรก และบอทแจ้งเตือน LINE รองรับเหตุการณ์ของทุกโมดูลใหม่แล้ว (ขออนุมัติ ลา เบิกเกินวงเงิน ticket ด่วน ลีดใหม่ QC ไม่ผ่าน ฯลฯ) มีสูตรสำเร็จรูปรวม 19 สูตร</p></details>
@@ -529,6 +610,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
         <label class="wide">อยากแก้ปัญหาอะไรก่อน<textarea name="message" id="leadMsg" rows="3"></textarea></label>
         <input type="hidden" name="modules" id="leadModules">
         <input type="hidden" name="industry" id="leadIndustry">
+        <input type="hidden" name="pay" id="leadPay" value="ซื้อขาด">
         <button class="btn primary wide" type="submit" style="justify-content: center">ขอเดโม</button>
         <p class="sent" id="sent" hidden></p>
       </form>
@@ -570,6 +652,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
   const bundleById = Object.fromEntries(bundles.map((b) => [b.id, b]));
   const modName = (id) => byId[id]?.nameTh || RM?.names?.[id] || id;
   let ind = IND.find((i) => i.id === new URLSearchParams(location.search).get('industry')) || IND[0];
+  // pricing v2 (catalog.json): monthly rental, 60-day pilot, partner tiers — each part of the page hides if its data is absent
+  const R = D.catalog.rental, PILOT = D.catalog.pilot, PARTNER = D.catalog.partner;
+  let pay = R && new URLSearchParams(location.search).get('pay') === 'rent' ? 'rent' : 'buy';
+  const perMonth = (mode = pay) => (mode === 'rent' ? '<small>/เดือน</small>' : '');
 
   // nav border on scroll
   const nav = document.querySelector('.nav');
@@ -597,28 +683,33 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     sel.forEach(visit);
     return [...out].filter((id) => byId[id].tier === 'feature');
   }
-  function quote(sel) {
+  const platformPrice = (mode = pay) => (mode === 'rent' ? R.platform : D.catalog.platform.price);
+  const modulePrice = (id, mode = pay) => (mode === 'rent' ? R.modules[id] : D.catalog.modules[id].price);
+  function quote(sel, mode = pay) {
     const features = resolve(sel);
-    const fit = bundles.filter((b) => b.modules.every((m) => features.includes(m)));
+    const rent = mode === 'rent';
+    const fit = bundles.filter((b) => (!rent || R.bundles[b.id] != null) && b.modules.every((m) => features.includes(m)));
     let best = null;
     for (let mask = 0; mask < 1 << fit.length; mask++) {
       const chosen = fit.filter((_, i) => mask & (1 << i));
       const covered = chosen.flatMap((b) => b.modules);
       if (new Set(covered).size !== covered.length) continue;
-      const lines = [...chosen.map((b) => ({ label: `ชุด ${b.nameTh}`, price: b.price, list: b.modules.reduce((a, m) => a + D.catalog.modules[m].price, 0) })),
-        ...features.filter((f) => !covered.includes(f)).map((f) => ({ label: byId[f].nameTh, price: D.catalog.modules[f].price }))];
+      const lines = [...chosen.map((b) => ({ label: `ชุด ${b.nameTh}`, price: rent ? R.bundles[b.id] : b.price, list: b.modules.reduce((a, m) => a + modulePrice(m, mode), 0) })),
+        ...features.filter((f) => !covered.includes(f)).map((f) => ({ label: byId[f].nameTh, price: modulePrice(f, mode) }))];
       const total = lines.reduce((a, l) => a + l.price, 0);
       if (!best || total < best.total) best = { lines, total };
     }
-    const lines = [{ label: D.catalog.platform.nameTh, price: D.catalog.platform.price }, ...best.lines];
+    const lines = [{ label: D.catalog.platform.nameTh, price: platformPrice(mode) }, ...best.lines];
     const total = lines.reduce((a, l) => a + l.price, 0);
-    return { lines, total, features, yearly: Math.round(total * D.catalog.updatePlanPct / 100) };
+    return { lines, total, features, mode, yearly: Math.round(total * D.catalog.updatePlanPct / 100) };
   }
+  // same rule as pilotPrice() in tools/erp/src/catalog.ts
+  const pilotFee = (licenseTotal) => Math.min(PILOT.maxPrice, Math.max(PILOT.minPrice, Math.round(licenseTotal * PILOT.pricePct / 100 / 500) * 500));
   // a pack's price and savings, computed by the same quote() the picker uses
-  function packInfo(b) {
-    const q = quote(b.modules);
-    const list = resolve(b.modules).reduce((a, m) => a + D.catalog.modules[m].price, 0);
-    const price = q.total - D.catalog.platform.price;
+  function packInfo(b, mode = pay) {
+    const q = quote(b.modules, mode);
+    const list = resolve(b.modules).reduce((a, m) => a + modulePrice(m, mode), 0);
+    const price = q.total - platformPrice(mode);
     return { total: q.total, price, list, save: list - price, pct: list ? Math.round(((list - price) / list) * 100) : 0 };
   }
   const packsFor = (i) => bundles.filter((b) => i.segments.includes(b.segment)).sort((a, b) => (a.id === i.pack ? -1 : b.id === i.pack ? 1 : 0));
@@ -662,10 +753,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     $('pains').innerHTML = ind.pains.map((p) => `<article class="pain"><div class="n"><span class="num" data-n="${p.n}">${whySeen && !anim ? num(p.n) : 0}</span><small>${esc(p.unit)}</small></div><h3>${esc(p.title)}</h3><p>${esc(p.text)}</p></article>`).join('');
     if (whySeen) $('pains').querySelectorAll('.num').forEach((el) => countUp(el, Number(el.dataset.n), .9));
     const b = bundleById[ind.pack];
-    const info = packInfo(b);
+    const info = packInfo(b, 'buy');
+    const other = [R ? `หรือเช่า <button type="button" class="link" data-pick="${b.id}" data-pay="rent" data-go="1">${baht(packInfo(b, 'rent').total)}/เดือน</button>` : '', PILOT ? `Pilot ${PILOT.durationDays} วัน ${baht(pilotFee(info.total))}` : ''].filter(Boolean).join(' · ');
     const alt = packsFor(ind).filter((x) => x.id !== b.id);
     $('rec').innerHTML = `<div><p class="eyebrow">ชุดแนะนำสำหรับ${esc(ind.label)}</p><h3>${esc(b.nameTh)}</h3><p class="pitch">${esc(b.pitch)}</p><div class="tags">${b.modules.map((m) => `<span>${esc(modName(m))}</span>`).join('')}<span>+ ${esc(D.catalog.platform.nameTh)}</span></div></div>
-      <div class="rec-side"><span class="lbl">ราคารวมแพลตฟอร์มหลัก · ซื้อขาด</span><b class="big-price">${baht(info.total)}</b><span class="save">ประหยัด ${baht(info.save)} (${info.pct}%) เทียบซื้อแยก</span>
+      <div class="rec-side"><span class="lbl">ราคารวมแพลตฟอร์มหลัก · ซื้อขาด</span><b class="big-price">${baht(info.total)}</b><span class="save">ประหยัด ${baht(info.save)} (${info.pct}%) เทียบซื้อแยก</span>${other ? `<span class="alt" style="margin-top:0">${other}</span>` : ''}
       <button type="button" class="btn primary" data-pick="${b.id}" data-go="1">เลือกชุดนี้ ดูใบเสนอราคา</button>
       ${alt.length ? `<p class="alt">ชุดอื่นสำหรับ${esc(ind.label)}: ${alt.map((a) => `<button type="button" class="link" data-pick="${a.id}" data-go="1">${esc(a.nameTh)}</button>`).join(' · ')}</p>` : ''}</div>`;
   }
@@ -748,7 +840,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     if (a.core) {
       const core = document.createElement('div');
       core.className = 'mod core on';
-      core.innerHTML = `<span class="for">มีในทุกการติดตั้ง</span><h3>${esc(D.catalog.platform.nameTh)}</h3><p>ผู้ใช้และสิทธิ์ ข้อมูลสินค้าและคู่ค้า ภาษีไทย ⌘K สั่งงาน ผู้ช่วย AI แดชบอร์ด แอปมือถือ</p><div class="foot"><span class="price">${baht(D.catalog.platform.price)}</span><span class="fn">${esc(fnLine('platform'))}</span></div>`;
+      core.innerHTML = `<span class="for">มีในทุกการติดตั้ง</span><h3>${esc(D.catalog.platform.nameTh)}</h3><p>ผู้ใช้และสิทธิ์ ข้อมูลสินค้าและคู่ค้า ภาษีไทย ⌘K สั่งงาน ผู้ช่วย AI แดชบอร์ด แอปมือถือ</p><div class="foot"><span class="price" data-price="">${baht(D.catalog.platform.price)}</span><span class="fn">${esc(fnLine('platform'))}</span></div>`;
       g.append(core);
     }
     for (const id of a.modules) {
@@ -757,38 +849,65 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
       b.type = 'button'; b.className = 'mod'; b.dataset.id = m.id; b.setAttribute('aria-pressed', 'false');
       const needs = m.requires.filter((r) => byId[r]?.tier === 'feature');
       const isNew = RM?.byModule?.[id] && !RM.byModule[id].done && RM.byModule[id].building;
-      b.innerHTML = `<span class="for">${esc(m.for)}${isNew ? '<span class="new">ใหม่</span>' : ''}</span><h3>${esc(m.nameTh)}</h3><p>${esc(m.pitch)}</p>${needs.length ? `<span class="for">ต้องมี: ${needs.map((r) => esc(byId[r].nameTh)).join(', ')}</span>` : ''}<div class="foot"><span class="price">${baht(D.catalog.modules[m.id]?.price ?? 0)}</span><span class="fn">${esc(fnLine(id))}</span></div>`;
+      b.innerHTML = `<span class="for">${esc(m.for)}${isNew ? '<span class="new">ใหม่</span>' : ''}</span><h3>${esc(m.nameTh)}</h3><p>${esc(m.pitch)}</p>${needs.length ? `<span class="for">ต้องมี: ${needs.map((r) => esc(byId[r].nameTh)).join(', ')}</span>` : ''}<div class="foot"><span class="price" data-price="${m.id}">${baht(D.catalog.modules[m.id]?.price ?? 0)}</span><span class="fn">${esc(fnLine(id))}</span></div>`;
       b.onclick = () => { touched = true; picked.has(m.id) ? picked.delete(m.id) : picked.add(m.id); update(); };
       g.append(b);
     }
     grid.append(sec);
   }
+  const renderPrices = () => grid.querySelectorAll('[data-price]').forEach((el) => { el.innerHTML = baht(el.dataset.price ? modulePrice(el.dataset.price) : platformPrice()) + perMonth(); });
+  function setPay(mode) {
+    if (!R || (mode !== 'rent' && mode !== 'buy') || mode === pay) return;
+    pay = mode;
+    try { const u = new URL(location.href); if (pay === 'rent') u.searchParams.set('pay', 'rent'); else u.searchParams.delete('pay'); history.replaceState(null, '', u); } catch { /* file:// etc. */ }
+    renderPacks(); renderPrices(); update();
+  }
   function renderPacks() {
     const list = showAll ? bundles : packsFor(ind);
-    $('packs').innerHTML = list.map((b) => { const i = packInfo(b); return `<button type="button" class="pk" data-pick="${b.id}" aria-pressed="false"><b>${esc(b.nameTh)}</b><span>${baht(i.price)}${i.save > 0 ? `<em>ประหยัด ${i.pct}%</em>` : ''}</span><small>${b.modules.length} โมดูล${b.id === ind.pack ? ' · แนะนำ' : ''}</small></button>`; }).join('');
+    $('packs').innerHTML = list.map((b) => { const i = packInfo(b); return `<button type="button" class="pk" data-pick="${b.id}" aria-pressed="false"><b>${esc(b.nameTh)}</b><span>${baht(i.price)}${perMonth()}${i.save > 0 ? `<em>ประหยัด ${i.pct}%</em>` : ''}</span><small>${b.modules.length} โมดูล${b.id === ind.pack ? ' · แนะนำ' : ''}</small></button>`; }).join('');
     $('packsNote').innerHTML = (showAll ? `ทุกชุด ${bundles.length} ชุด · ` : `ชุดสำหรับ${esc(ind.label)} · `) + `<button type="button" class="link" id="packsToggle">${showAll ? `เฉพาะ${esc(ind.label)}` : `ดูทุกชุด (${bundles.length})`}</button> · ราคาชุดยังไม่รวมแพลตฟอร์มหลัก`;
     $('packsToggle').onclick = () => { showAll = !showAll; renderPacks(); update(); };
   }
   document.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-pay]'); if (p) setPay(p.dataset.pay);
     const t = e.target.closest('[data-pick]'); if (!t) return;
     const b = bundleById[t.dataset.pick]; if (!b) return;
     touched = true; picked = new Set(b.modules); update();
     if (t.dataset.go) document.getElementById('pricing').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
   });
-  let shown = 0;
+  let shown = 0, shownMode = 'buy';
   function update() {
     const q = quote([...picked]);
     const key = [...q.features].sort().join();
     grid.querySelectorAll('button.mod').forEach((b) => { const on = q.features.includes(b.dataset.id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
     $('packs').querySelectorAll('.pk').forEach((c) => c.setAttribute('aria-pressed', String(resolve(bundleById[c.dataset.pick].modules).sort().join() === key)));
     $('qLines').innerHTML = q.lines.map((l) => `<li><span>${esc(l.label)}${l.list && l.list > l.price ? ` <span class="save">ประหยัด ${baht(l.list - l.price)}</span>` : ''}</span><span>${baht(l.price)}</span></li>`).join('');
-    $('qNote').textContent = `ซื้อขาด source code · ไม่จำกัดผู้ใช้ · แผนอัปเดตและซัพพอร์ตรายปี (ไม่บังคับ) ${baht(q.yearly)}/ปี · บริการติดตั้งและย้ายข้อมูลเริ่ม ${baht(D.catalog.services.setup?.from ?? 0)}`;
+    const rent = q.mode === 'rent';
+    const buyTotal = rent ? quote([...picked], 'buy').total : q.total;
+    document.querySelectorAll('[data-pay-switch] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pay === pay)));
+    $('payLead').textContent = rent
+      ? `ราคานี้คือเช่ารายเดือนบนคลาวด์ที่เราดูแล รวมโฮสติ้ง สำรองข้อมูล อัปเดตและซัพพอร์ต ไม่ต้องจ่ายก้อน ไม่คิดรายหัว (ไม่ได้ source code)`
+      : 'ราคานี้คือซื้อขาด source code ติดตั้ง 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้';
+    $('qTotalLbl').parentElement.classList.toggle('rent', rent);
+    $('qTotalLbl').textContent = rent ? 'ต่อเดือน (ไม่รวม VAT)' : 'รวม (ยังไม่รวม VAT)';
+    $('qNote').textContent = rent
+      ? `เช่ารายเดือน · ไม่จำกัดผู้ใช้ (ไม่เกิน ${num(R.userLimit ?? 100)} คน) · สัญญาขั้นต่ำ ${R.minTermMonths} เดือน · ค่าตั้งระบบครั้งเดียว ${baht(R.setupFee)} · จ่ายล่วงหน้า 12 เดือนลด ${R.prepayYearDiscountPct}% (${baht(Math.round(q.total * 12 * (100 - R.prepayYearDiscountPct) / 100))}) · เปลี่ยนเป็นซื้อขาด (${baht(buyTotal)}) ได้ภายใน ${R.rentToOwn.windowMonths} เดือน นำค่าเช่าที่จ่ายแล้ว ${R.rentToOwn.creditPct}% มาเป็นส่วนลด`
+      : `ซื้อขาด source code · ไม่จำกัดผู้ใช้ · แผนอัปเดตและซัพพอร์ตรายปี (ไม่บังคับ) ${baht(q.yearly)}/ปี · บริการติดตั้งและย้ายข้อมูลเริ่ม ${baht(D.catalog.services.setup?.from ?? 0)}${R ? ` · หรือเช่า ${baht(quote([...picked], 'rent').total)}/เดือน` : ''}`;
+    $('qCta').textContent = rent ? 'ขอใบเสนอราคาเช่ารายเดือน' : 'ขอใบเสนอราคานี้';
+    $('leadPay').value = rent ? 'เช่ารายเดือน' : 'ซื้อขาด';
+    if (PILOT) {
+      const tooBig = q.features.length > (PILOT.maxModules ?? 7);
+      $('pilotPrice').textContent = baht(pilotFee(buyTotal));
+      $('pilotLbl').textContent = tooBig ? `ชุดที่เลือกมี ${q.features.length} โมดูล — pilot รับไม่เกิน ${PILOT.maxModules ?? 7} โมดูล ราคานี้คือเพดาน` : `สำหรับ ${q.features.length} โมดูลที่เลือก + แพลตฟอร์มหลัก (ซื้อขาด ${baht(buyTotal)})`;
+    }
     $('leadModules').value = q.features.join(',');
-    $('qbarTotal').textContent = baht(q.total);
+    $('qbarTotal').innerHTML = baht(q.total) + perMonth(q.mode);
     $('qbarSub').textContent = `${q.features.length} โมดูล + แพลตฟอร์มหลัก`;
     const el = $('qTotal');
-    if (anim) { const o = { n: shown }; gsap.to(o, { n: q.total, duration: .6, ease: 'power2.out', onUpdate: () => (el.textContent = baht(o.n)) }); }
-    else el.textContent = baht(q.total);
+    const suffix = perMonth(q.mode);
+    if (anim && shownMode === q.mode) { const o = { n: shown }; gsap.to(o, { n: q.total, duration: .6, ease: 'power2.out', onUpdate: () => (el.innerHTML = baht(o.n) + suffix) }); }
+    else el.innerHTML = baht(q.total) + suffix;
+    shownMode = q.mode;
     shown = q.total;
   }
   // mobile: a small total bar while the module list is on screen but the quote card is not
@@ -798,6 +917,51 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     new IntersectionObserver(([e]) => { inPricing = e.isIntersecting; sync(); }).observe(grid);
     new IntersectionObserver(([e]) => { quoteVisible = e.isIntersecting; sync(); }).observe($('quote'));
   }
+
+  // ---------------- pilot 60 days ----------------
+  if (PILOT) {
+    $('pilotTitle').textContent = `Pilot ${PILOT.durationDays} วัน — ลองกับงานจริงก่อนตัดสินใจ`;
+    $('pilotIncl').innerHTML = (PILOT.includesTh || []).map((t) => `<li><span>${esc(t)}</span></li>`).join('');
+    $('pilotTerms').innerHTML = [
+      `${PILOT.pricePct}% ของราคาซื้อขาด (ขั้นต่ำ ${baht(PILOT.minPrice)} สูงสุด ${baht(PILOT.maxPrice)})`,
+      `หักคืน ${PILOT.creditTowardPurchasePct}% เมื่อซื้อภายใน ${PILOT.creditWindowDays} วันหลังจบ pilot หรือใช้เป็นค่าเช่าล่วงหน้า`,
+      `ไม่ผ่านเกณฑ์เพราะฟังก์ชันที่เราสัญญาไม่พร้อม คืนเงิน ${PILOT.refundPctIfCriteriaMissed}%`,
+      `รับไม่เกิน ${PILOT.maxPerPack} รายต่อชุด`,
+    ].map((t) => `<li>${esc(t)}</li>`).join('');
+    $('pilotCta').addEventListener('click', () => { if (!$('leadMsg').value) $('leadMsg').value = `สนใจ Pilot ${PILOT.durationDays} วัน: `; });
+  } else $('pilot').remove();
+
+  // ---------------- partner program ----------------
+  if (PARTNER) {
+    const ex = bundleById['smart-maintenance'] || bundles[0];
+    const exBuy = quote(ex.modules, 'buy'), exRent = R ? quote(ex.modules, 'rent') : null;
+    const yearly = exBuy.yearly;
+    const setupFrom = D.catalog.services.setup?.from ?? 0;
+    const nfrText = (t) => t.nfr.modules.length ? `${t.nfr.modules.length} โมดูล ใช้ภายในฟรี` : (t.nfr.demoTenant ? 'บัญชีเดโม' : '—');
+    const shareText = (t) => `${t.rentalSharePct}% ${t.rentalShareMonths ? `${t.rentalShareMonths} เดือนแรก` : 'ตลอดสัญญา'}`;
+    const cost = (t) => Math.round(exBuy.total * (100 - t.licenseDiscountPct) / 100);
+    const minResale = Math.round(exBuy.total * PARTNER.minResalePct / 100);
+    $('tiers').innerHTML = PARTNER.tiers.map((t, i) => {
+      const head = t.referralFeePct ? `${t.referralFeePct}%<small>ค่าแนะนำจากราคาไลเซนส์</small>` : `${t.licenseDiscountPct}%<small>ส่วนลดไลเซนส์${t.volumeDiscounts?.length ? ` · ${t.volumeDiscounts.map((v) => `${v.licenseDiscountPct}% เมื่อครบ ${v.dealsIn12Months} ดีล`).join(' · ')} ใน 12 เดือน` : ''}</small>`;
+      return `<article class="tier${i === PARTNER.tiers.length - 1 ? ' hl' : ''}"><h3>${esc(t.nameTh)}</h3><p class="for">${esc(t.for || '')}</p><div class="k">${head}</div>
+        <dl><dt>แผนอัปเดตรายปีของลูกค้า</dt><dd>${t.updatePlanSharePct}% ทุกปี</dd><dt>ลูกค้าเช่ารายเดือน</dt><dd>${shareText(t)}</dd><dt>ไลเซนส์ NFR</dt><dd>${esc(nfrText(t))}</dd><dt>ค่าติดตั้ง/พัฒนาเพิ่ม</dt><dd>${t.id === 'implementer' ? 'เก็บเอง 100%' : 'GO Along ทำ'}</dd></dl>
+        <ul>${t.requirements.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></article>`;
+    }).join('');
+    $('earn').innerHTML = `<h3>ตัวอย่าง: ขาย “${esc(ex.nameTh)}” ${baht(exBuy.total)} ให้โรงงาน 1 ราย</h3><p>ราคารวมแพลตฟอร์ม ไม่รวม VAT · แผนอัปเดตของลูกค้า ${baht(yearly)}/ปี${exRent ? ` · หรือลูกค้าเช่า ${baht(exRent.total)}/เดือน` : ''} · ขายต่ำสุดได้ ${baht(minResale)}</p>
+      <div class="rows">${PARTNER.tiers.map((t) => {
+        const first = t.referralFeePct ? baht(exBuy.total * t.referralFeePct / 100) : `${baht(minResale - cost(t))}–${num(exBuy.total - cost(t))}`;
+        const extra = t.id === 'implementer' ? ` + ค่าติดตั้งเริ่ม ${baht(setupFrom)}` : '';
+        return `<div class="row"><b>${esc(t.nameTh)}</b><span>ปีแรก${t.referralFeePct ? '' : ' (กำไรไลเซนส์)'}${extra}</span><span class="v">${first}</span><span>ทุกปีถัดไป ${baht(yearly * t.updatePlanSharePct / 100)} จากแผนอัปเดต${exRent ? ` · ถ้าลูกค้าเช่า ${baht(exRent.total * t.rentalSharePct / 100)}/เดือน` : ''}</span></div>`;
+      }).join('')}</div>`;
+    $('kit').innerHTML = `<span style="border:0;background:none;padding-left:0">พาร์ทเนอร์ได้:</span>${(PARTNER.demoKitTh || []).map((k) => `<span>${esc(k.replace(/\s*\(sales\/[^)]*\)/, '').replace(/: pnpm erp quote.*$/, ''))}</span>`).join('')}<a class="btn primary" href="#contact" id="partnerCta">สมัครเป็นพาร์ทเนอร์</a>`;
+    $('partnerCta').addEventListener('click', () => { if (!$('leadMsg').value) $('leadMsg').value = 'สนใจเป็นพาร์ทเนอร์ (แนะนำ / ตัวแทนขาย / ติดตั้ง): '; });
+  } else $('partners').remove();
+
+  // ---------------- FAQ numbers from the catalog ----------------
+  if (R) {
+    const fromPack = bundleById['office-paperless'] || bundles[0];
+    $('faqPay').textContent = `เลือกได้ (1) ซื้อขาด source code ต่อ 1 นิติบุคคล ไม่จำกัดจำนวนผู้ใช้ แล้วต่อแผนอัปเดตและซัพพอร์ตรายปีหรือไม่ก็ได้ (${D.catalog.updatePlanPct}% ของราคาต่อปี) หรือ (2) เช่ารายเดือนบนคลาวด์ที่เราดูแล เช่น ${fromPack.nameTh} ${baht(quote(fromPack.modules, 'rent').total)}/เดือน สัญญาขั้นต่ำ ${R.minTermMonths} เดือน ค่าตั้งระบบ ${baht(R.setupFee)} และเปลี่ยนเป็นซื้อขาดภายใน ${R.rentToOwn.windowMonths} เดือนได้โดยนำค่าเช่า ${R.rentToOwn.creditPct}% มาเป็นส่วนลด ทั้งสองแบบไม่คิดรายหัว`;
+  } else document.querySelectorAll('.paymode').forEach((el) => el.remove());
 
   // ---------------- 1,000 functions ----------------
   if (RM) {
@@ -851,6 +1015,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     } });
   }
   renderIndustry();
+  renderPrices();
   update();
   onEnter('#pains', () => { whySeen = true; $('pains').querySelectorAll('.num').forEach((el) => countUp(el, Number(el.dataset.n))); }, 'top 90%');
   onEnter('#command', auto, 'top 70%');
@@ -876,7 +1041,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
         e.target.reset(); $('leadIndustry').value = ind.label; return;
       } catch { /* fall through to e-mail */ }
     }
-    const body = `ชื่อ: ${data.name}\nบริษัท: ${data.company}\nโทร: ${data.phone}\nLINE: ${data.line || '-'}\nธุรกิจ: ${data.industry || '-'}\nสนใจโมดูล: ${modulesTh}\n\n${data.message || ''}`;
+    const body = `ชื่อ: ${data.name}\nบริษัท: ${data.company}\nโทร: ${data.phone}\nLINE: ${data.line || '-'}\nธุรกิจ: ${data.industry || '-'}\nวิธีจ่าย: ${data.pay || '-'}\nสนใจโมดูล: ${modulesTh}\n\n${data.message || ''}`;
     if (c.email) { location.href = `mailto:${c.email}?subject=${encodeURIComponent('ขอเดโม Factory OS — ' + data.company)}&body=${encodeURIComponent(body)}`; }
     sent.hidden = false; sent.textContent = c.email ? 'กำลังเปิดโปรแกรมอีเมลพร้อมข้อความให้แล้ว กดส่งได้เลย' : 'ขอบคุณครับ';
   });

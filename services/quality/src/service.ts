@@ -1,6 +1,6 @@
 import {
   auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z,
-  type Client, type EventHandlers, type ServiceDefinition,
+  type Client, type EventHandlers, type HandlerContext, type ServiceDefinition,
 } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +34,12 @@ const thInspection = (i: any) => ({
 });
 const thNcr = (n: any) => ({
   ...n, status_th: TH.ncrStatus[n.status], severity_th: TH.severity[n.severity], disposition_th: n.disposition ? TH.disposition[n.disposition] : '',
+  // return to supplier: point at the PO (no cross-module call — the buyer opens the PO and presses "ส่งคืนผู้ขาย")
+  return_hint: n.disposition === 'return_to_supplier'
+    ? (n.source_ref && /^PO-/.test(n.source_ref)
+      ? `ส่งคืนผู้ขายตามใบสั่งซื้อ ${n.source_ref}: เมนูจัดซื้อ → เปิด ${n.source_ref} → "ส่งคืนผู้ขาย" (เลือกคลัง QC-HOLD) อ้างอิง ${n.no}`
+      : `ส่งคืนผู้ขาย: เปิดใบสั่งซื้อของล็อตนี้ในเมนูจัดซื้อ แล้วกด "ส่งคืนผู้ขาย" อ้างอิง ${n.no}`)
+    : '',
   stage_th: n.stage ? TH.stage[n.stage] : '', title: `${n.item_code ?? ''} ${n.description ?? ''}`.trim(),
 });
 const thCa = (a: any) => ({ ...a, status_th: TH.caStatus[a.status], overdue: a.status === 'open' && !!a.due_on && a.due_on < today(), overdue_th: a.status === 'open' && !!a.due_on && a.due_on < today() ? 'เลยกำหนด' : '' });
@@ -102,6 +108,8 @@ const InspectionInput = z.object({
   planId: s.uuid.optional(),
   lotNo: optText(100),
   sourceRef: optText(100),
+  /** where the lot is stored (lets Inventory quarantine rejected qty) */
+  warehouseCode: s.code.optional(),
   qty: s.positiveQty,
   sampleSize: s.positiveQty.optional(),
   supplierId: s.uuid.optional(), supplierName: optText(200),
@@ -203,8 +211,10 @@ interface NewInspection {
   note?: string | null; eventId?: string | null; line?: number | null; userId?: string | null;
 }
 
-/** Creates the inspection and snapshots the plan's checkpoints as result rows (later plan edits never change it). */
-async function createInspection(c: Client, n: NewInspection) {
+type EmitFn = HandlerContext['emit'];
+
+/** Creates the inspection and snapshots the plan's checkpoints as result rows (later plan edits never change it). Publishes quality.inspection_created. */
+async function createInspection(c: Client, emit: EmitFn, n: NewInspection) {
   const no = await nextDocNo(c, 'QC');
   const sample = n.sampleSize !== undefined ? Math.min(n.sampleSize, n.qty) : sampleSizeFor(n.plan.sampling_mode, n.plan.sampling_value, n.qty);
   const row = (await c.query(
@@ -218,6 +228,10 @@ async function createInspection(c: Client, n: NewInspection) {
     `insert into inspection_results (inspection_id, checkpoint_id, seq, name, method, type, unit, target, min_value, max_value, critical)
      select $1, id, seq, name, method, type, unit, target, min_value, max_value, critical from plan_checkpoints where plan_id = $2 order by seq`,
     [row.id, n.plan.id]);
+  await emit('quality.inspection_created', {
+    inspectionId: row.id, no, stage: n.stage as 'incoming' | 'in_process' | 'final', itemId: n.itemId, itemCode: n.itemCode, itemName: n.itemName ?? null, lotNo: n.lotNo ?? null,
+    warehouseCode: n.warehouseCode ?? null, qty: n.qty, sourceType: n.sourceType, sourceRef: n.sourceRef ?? null,
+  });
   return row.id as string;
 }
 
@@ -265,14 +279,14 @@ async function loadCa(c: Client, id: string, lock = false) {
 
 export const handlers: EventHandlers = {
   /** One PENDING incoming inspection per received line whose item has an active incoming plan. */
-  'purchasing.goods_received': async (e, { client, event }) => {
+  'purchasing.goods_received': async (e, { client, event, emit }) => {
     for (const [line, l] of e.lines.entries()) {
       if (!(l.qty > 0)) continue;
       const plan = await activePlan(client, l.itemId, 'incoming');
       if (!plan) continue;
       const dup = await client.query('select 1 from inspections where source_event_id = $1 and source_line = $2', [event.id, line]);
       if (dup.rowCount) continue;
-      await createInspection(client, {
+      await createInspection(client, emit, {
         stage: 'incoming', plan, itemId: l.itemId, itemCode: l.itemCode, itemName: l.itemName, sourceType: 'purchase_order',
         sourceRef: e.poNo, sourceId: e.poId, supplierId: e.supplierId, supplierName: e.supplierName, warehouseCode: e.warehouseCode,
         qty: l.qty, eventId: event.id, line,
@@ -280,13 +294,13 @@ export const handlers: EventHandlers = {
     }
   },
   /** A PENDING final inspection when the finished item has an active final plan. */
-  'production.completed': async (e, { client, event }) => {
+  'production.completed': async (e, { client, event, emit }) => {
     if (!(e.qty > 0)) return;
     const plan = await activePlan(client, e.item.itemId, 'final');
     if (!plan) return;
     const dup = await client.query('select 1 from inspections where source_event_id = $1 and source_line = 0', [event.id]);
     if (dup.rowCount) return;
-    await createInspection(client, {
+    await createInspection(client, emit, {
       stage: 'final', plan, itemId: e.item.itemId, itemCode: e.item.itemCode, itemName: e.item.itemName, sourceType: 'production_order',
       sourceRef: e.orderNo, sourceId: e.orderId, warehouseCode: e.warehouseCode, qty: e.qty, eventId: event.id, line: 0,
     });
@@ -425,8 +439,8 @@ export const definition: ServiceDefinition = {
           : await activePlan(c, b.itemId, b.stage);
         if (!plan) throw conflict(`ยังไม่มีแผน${TH.stage[b.stage]}ที่ใช้งานสำหรับสินค้า ${b.itemCode} — สร้างแผนการตรวจก่อน`);
         if (plan.item_id !== b.itemId || plan.stage !== b.stage) throw badRequest('Validation failed', { fieldErrors: { planId: ['แผนการตรวจไม่ตรงกับสินค้าหรือขั้นตอนที่เลือก'] }, formErrors: [] });
-        const id = await createInspection(c, {
-          stage: b.stage, plan, itemId: b.itemId, itemCode: b.itemCode, itemName: b.itemName, lotNo: b.lotNo, sourceType: 'manual', sourceRef: b.sourceRef,
+        const id = await createInspection(c, (t, d) => k.emit(c, t, d), {
+          stage: b.stage, plan, itemId: b.itemId, itemCode: b.itemCode, itemName: b.itemName, lotNo: b.lotNo, sourceType: 'manual', sourceRef: b.sourceRef, warehouseCode: b.warehouseCode,
           supplierId: b.supplierId, supplierName: b.supplierName, qty: b.qty, sampleSize: b.sampleSize,
           inspectorId: b.inspectorId, inspectorName: b.inspectorName, note: b.note, userId: a.userId,
         });
@@ -571,6 +585,7 @@ export const definition: ServiceDefinition = {
           [id, result, accepted, rejected, a.userId, b.note ?? null]);
         await k.emit(c, 'quality.inspection_completed', {
           inspectionId: i.id, no: i.no, stage: i.stage, itemCode: i.item_code, itemName: i.item_name ?? null, lotNo: i.lot_no ?? null, result, rejectedQty: Number(rejected),
+          itemId: i.item_id, warehouseCode: i.warehouse_code ?? null, qty, acceptedQty: Number(accepted), sourceType: i.source_type, sourceRef: i.source_ref ?? null,
         });
         return loadInspection(c, id);
       });

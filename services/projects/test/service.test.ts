@@ -230,3 +230,27 @@ describe('projects — QA regressions (docs/uat/bugs-0.3.md)', () => {
     expect((await t.api('PATCH', `/projects/${ok.id}`, { endDate: '2026-10-10' })).status).toBe(200);
   });
 });
+
+describe('projects — who (wave 4)', () => {
+  it('logs hours under the token name and records who approved / sent back the week', async () => {
+    const p = (await t.api('POST', '/projects', { name: 'งานเอกสาร', budget: 0 })).body;
+    const meId = randomUUID();
+    const me = t.token(['projects.project.read', 'projects.timesheet.log'], t.tenantId, { userId: meId, userName: 'มินตรา ใจดี' });
+    const boss = t.token(['projects.project.read', 'projects.timesheet.log', 'projects.timesheet.approve'], t.tenantId, { userId: randomUUID(), userName: 'หัวหน้าโครงการ' });
+    const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    // an old nameless entry first, then the named token takes over the week's name
+    const e = await t.api('POST', '/timesheets', { workDate: today, projectId: p.id, hours: 1, userName: 'ปลอม' }, { token: me });
+    expect(e.status).toBe(201);
+    expect(e.body.user_name).toBe('มินตรา ใจดี');
+    const sub = (await t.api('POST', '/timesheets/week/submit', { start: today }, { token: me })).body;
+    expect(sub.userName).toBe('มินตรา ใจดี');
+    const weeks = (await t.api('GET', '/timesheet-weeks?status=submitted', undefined, { token: boss })).body;
+    const w = weeks.find((x: any) => x.user_id === meId);
+    expect(w.user_name).toBe('มินตรา ใจดี');
+    const rej = (await t.api('POST', `/timesheet-weeks/${w.id}/reject`, { reason: 'ใส่หมายเหตุ' }, { token: boss })).body;
+    expect(rej).toMatchObject({ status: 'draft', rejected_by_name: 'หัวหน้าโครงการ' });
+    await t.api('POST', '/timesheets/week/submit', { start: today }, { token: me });
+    const ok = (await t.api('POST', `/timesheet-weeks/${w.id}/approve`, {}, { token: boss })).body;
+    expect(ok).toMatchObject({ status: 'approved', approved_by_name: 'หัวหน้าโครงการ' });
+  });
+});

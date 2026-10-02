@@ -216,3 +216,29 @@ describe('booking — QA regressions (docs/uat/bugs-0.3.md)', () => {
     expect((await t.api('GET', `/resources/${truck}`)).body.lastMileage).toBe(153400);
   });
 });
+
+describe('booking — who (wave 4)', () => {
+  it('books in the name of the logged-in user; only booking admins book on behalf of someone else', async () => {
+    const mintId = randomUUID();
+    const mint = { token: t.token(STAFF, t.tenantId, { userId: mintId, userName: 'มินตรา ใจดี' }) };
+    const r = await t.api('POST', '/bookings', { resourceId: ids.mr, purpose: 'ประชุมทีม', date: '2027-09-01', startTime: '09:00', endTime: '10:00' }, mint);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ requester_name: 'มินตรา ใจดี', requester_id: mintId });
+    // a typed name from ordinary staff is ignored
+    const typed = await t.api('POST', '/bookings', { resourceId: ids.mr, purpose: 'x', date: '2027-09-01', startTime: '10:00', endTime: '11:00', requesterName: 'ปลอม' }, mint);
+    expect(typed.body.requester_name).toBe('มินตรา ใจดี');
+    const ev = (await t.published('booking.requested')).map((e) => e.data).find((d: any) => d.bookingId === r.body.id);
+    expect(ev).toMatchObject({ requesterName: 'มินตรา ใจดี', requesterId: mintId });
+    // a secretary with approve rights books for the MD
+    const sec = { token: t.token([...STAFF, 'booking.book.approve'], t.tenantId, { userId: randomUUID(), userName: 'เลขา' }) };
+    const forMd = await t.api('POST', '/bookings', { resourceId: ids.mr, purpose: 'MD พบลูกค้า', date: '2027-09-01', startTime: '13:00', endTime: '14:00', requesterName: 'คุณสมศักดิ์' }, sec);
+    expect(forMd.body.requester_name).toBe('คุณสมศักดิ์');
+    // a nameless token must type a name
+    expect((await t.api('POST', '/bookings', { resourceId: ids.mr, purpose: 'x', date: '2027-09-01', startTime: '15:00', endTime: '16:00' }, as(randomUUID()))).status).toBe(400);
+    // approver / canceller names
+    const board = await t.api('POST', '/bookings', { resourceId: ids.board, purpose: 'ประชุมใหญ่', date: '2027-09-02', startTime: '09:00', endTime: '10:00' }, mint);
+    expect(board.body.status).toBe('pending');
+    expect((await t.api('POST', `/bookings/${board.body.id}/approve`, {}, sec)).body.approved_by_name).toBe('เลขา');
+    expect((await t.api('POST', `/bookings/${board.body.id}/cancel`, { reason: 'เลื่อน' }, mint)).body.cancelled_by_name).toBe('มินตรา ใจดี');
+  });
+});

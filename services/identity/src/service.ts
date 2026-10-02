@@ -2,7 +2,9 @@ import {
   auth, hashPassword, loadManifest, one, parse, requirePerm, s, signToken, unauthorized, verifyPassword, z,
   type Client, type ServiceDefinition,
 } from '@erp/kernel';
+import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import { applyTemplate, ROLE_TEMPLATES } from './role-templates.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -17,6 +19,57 @@ const TenantInput = z.object({
 const LoginInput = z.object({ tenant: z.string().trim().toLowerCase(), email, password: z.string() });
 const UserInput = z.object({ email, name: s.name, password, roleIds: z.array(s.uuid).default([]) });
 const RoleInput = z.object({ name: s.name, permissions: z.array(z.string().regex(/^(\*|[a-z-]+\.(\*|[a-z_.]+))$/)) });
+
+/** Largest logo accepted (decoded bytes). It is embedded in every printed document. */
+export const LOGO_MAX_BYTES = 300 * 1024;
+
+/**
+ * A logo must be a base64 data URL of a PNG, JPEG or SVG image, ≤ 300 KB decoded,
+ * and its bytes must really be that kind of image. Returns a Thai problem, or null when fine.
+ */
+export function logoProblem(dataUrl: string): string | null {
+  const m = /^data:image\/(png|jpeg|svg\+xml);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!m) return 'โลโก้ต้องเป็นไฟล์ PNG, JPEG หรือ SVG (data URL แบบ base64)';
+  const bytes = Buffer.from(m[2], 'base64');
+  if (bytes.length > LOGO_MAX_BYTES) return 'โลโก้ใหญ่เกิน 300 KB';
+  const kind = m[1];
+  const ok = kind === 'png' ? bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    : kind === 'jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    : /<svg[\s>]/i.test(bytes.toString('utf8'));
+  return ok ? null : 'ไฟล์โลโก้ไม่ตรงกับชนิดที่ระบุ';
+}
+
+const optText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional();
+
+/** "ผู้จัดทำ, ผู้อนุมัติ" (form text) or ["ผู้จัดทำ", "ผู้อนุมัติ"] -> trimmed labels. */
+const labelList = z
+  .union([z.array(z.string()), z.string()])
+  .transform((v) => (Array.isArray(v) ? v : v.split(/[,\n]/)).map((x) => x.trim()).filter(Boolean))
+  .pipe(z.array(z.string().max(60)).max(6, 'ลายเซ็นได้ไม่เกิน 6 ช่อง'));
+
+const CompanyInput = z.object({
+  legalName: z.string().trim().min(1, 'กรอกชื่อนิติบุคคล').max(200),
+  nameEn: optText(200),
+  branchCode: z.string().trim().regex(/^\d{5}$/, 'รหัสสาขาเป็นตัวเลข 5 หลัก (สำนักงานใหญ่ = 00000)').default('00000'),
+  branchLabel: optText(100),
+  address: z.string().trim().min(1, 'กรอกที่อยู่').max(500),
+  taxId: z.string().transform((v) => v.replace(/[\s-]/g, '')).nullable().optional()
+    .refine((v) => !v || isValidThaiTaxId(v), 'เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง (13 หลัก ตรวจ check digit ไม่ผ่าน)')
+    .transform((v) => v || null),
+  phone: optText(50),
+  email: z.string().trim().max(200).transform((v) => v || null).pipe(z.string().email('อีเมลไม่ถูกต้อง').nullable()).nullable().optional(),
+  website: optText(200),
+  logo: z.string().max(LOGO_MAX_BYTES * 2, 'โลโก้ใหญ่เกิน 300 KB').nullable().optional()
+    .superRefine((v, ctx) => { const p = v ? logoProblem(v) : null; if (p) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p }); })
+    .transform((v) => v || null),
+  footerNote: optText(500),
+  signatureLabels: labelList.optional(),
+});
+
+/** "สำนักงานใหญ่" for 00000, "สาขาที่ 00012" otherwise — the wording the Revenue Department expects. */
+export const branchText = (code: string) => (code === '00000' ? 'สำนักงานใหญ่' : `สาขาที่ ${code}`);
+
+const companyCols = `legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_at`;
 
 async function permissionsOf(c: Client, userId: string): Promise<string[]> {
   const r = await c.query<{ p: string }>(
@@ -67,6 +120,41 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const u = await one(c, `select ${publicUser} from users where id = $1`, [a.userId], 'User');
         return { ...u, tenantId: a.tenantId, permissions: await permissionsOf(c, a.userId) };
+      });
+    });
+
+    /** Seller details for letterheads and tax invoices. Any signed-in user may read them (they print documents). */
+    app.get('/company', async (req) => {
+      const a = auth(req);
+      return k.db.tx(a.tenantId, async (c) => {
+        const row = (await c.query(`select ${companyCols} from company_profiles`)).rows[0];
+        if (row) return { configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code) };
+        // not set up yet: the company name from provisioning, everything else empty
+        const t = (await c.query<{ name: string }>('select name from tenants where id = $1', [a.tenantId])).rows[0];
+        return {
+          configured: false, legal_name: t?.name ?? '', name_en: null, branch_code: '00000', branch_label: null, branch_text: branchText('00000'),
+          address: null, tax_id: null, phone: null, email: null, website: null, logo: null, footer_note: null, signature_labels: [], updated_at: null,
+        };
+      });
+    });
+
+    app.put('/company', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.company.write');
+      const b = parse(CompanyInput, req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        const row = (await c.query(
+          `insert into company_profiles (legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_by)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           on conflict (tenant_id) do update set legal_name = excluded.legal_name, name_en = excluded.name_en, branch_code = excluded.branch_code,
+             branch_label = excluded.branch_label, address = excluded.address, tax_id = excluded.tax_id, phone = excluded.phone, email = excluded.email,
+             website = excluded.website, logo = excluded.logo, footer_note = excluded.footer_note, signature_labels = excluded.signature_labels,
+             updated_by = excluded.updated_by, updated_at = now()
+           returning ${companyCols}`,
+          [b.legalName, b.nameEn ?? null, b.branchCode, b.branchLabel ?? null, b.address, b.taxId ?? null, b.phone ?? null, b.email ?? null,
+            b.website ?? null, b.logo ?? null, b.footerNote ?? null, b.signatureLabels ?? [], a.userId],
+        )).rows[0];
+        return { configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code) };
       });
     });
 
@@ -125,6 +213,47 @@ export const definition: ServiceDefinition = {
       const body = parse(RoleInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => (await c.query('insert into roles (name, permissions) values ($1, $2) returning *', [body.name, body.permissions])).rows[0]);
+    });
+
+    /* ----- role templates (suggested Thai roles; see role-templates.ts) ----- */
+
+    /** Installed module ids: `modules` from the client (web has /api/_catalog), else an `x-erp-modules` header a gateway may add; undefined = unknown. */
+    const installed = (req: { headers: Record<string, unknown> }, fromBody?: string[]): string[] | undefined => {
+      if (fromBody?.length) return fromBody;
+      const h = req.headers['x-erp-modules'];
+      return typeof h === 'string' && h.trim() ? h.split(',').map((x) => x.trim()).filter(Boolean) : undefined;
+    };
+    const ModuleList = z.array(z.string().trim().regex(/^[a-z][a-z0-9-]*$/)).max(100);
+
+    /** `?modules=a,b` limits each template's permissions to installed modules; `?q=` filters by name (lookup). */
+    app.get('/role-templates', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.user.read');
+      const q = parse(z.object({ q: z.string().trim().optional(), modules: z.string().optional() }), req.query);
+      const mods = installed(req, q.modules ? parse(ModuleList, q.modules.split(',')) : undefined);
+      const needle = q.q?.toLowerCase();
+      return ROLE_TEMPLATES
+        .filter((tpl) => !needle || tpl.name.toLowerCase().includes(needle) || tpl.id.includes(needle))
+        .map((tpl) => {
+          const { permissions, skipped } = applyTemplate(tpl, mods);
+          return { id: tpl.id, name: tpl.name, description: tpl.description, permissions, permission_count: permissions.length, skipped };
+        });
+    });
+
+    /** Create a role from a template, keeping only the permissions of installed modules. Name defaults to the template's (409 if taken). */
+    app.post('/roles/from-template', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.role.write');
+      const ids = ROLE_TEMPLATES.map((tpl) => tpl.id) as [string, ...string[]];
+      const body = parse(z.object({ template: z.enum(ids), name: s.name.optional(), modules: ModuleList.optional() }), req.body);
+      const tpl = ROLE_TEMPLATES.find((x) => x.id === body.template)!;
+      const { permissions, skipped } = applyTemplate(tpl, installed(req, body.modules));
+      const name = body.name ?? tpl.name;
+      reply.code(201);
+      return k.db.tx(a.tenantId, async (c) => {
+        const role = (await c.query('insert into roles (name, permissions) values ($1, $2) returning *', [name, permissions])).rows[0];
+        return { ...role, template: tpl.id, skipped, message: `สร้างบทบาท "${name}" แล้ว (${permissions.length} สิทธิ์)` };
+      });
     });
   },
 };

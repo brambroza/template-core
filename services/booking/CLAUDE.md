@@ -1,14 +1,16 @@
 # booking — Room & Vehicle Booking (จองห้องและรถ) · feature
 
 Staff book meeting rooms, company vehicles and shared equipment from phone or web; approvers handle resources that need approval;
-drivers close a vehicle trip with odometer and fuel. Requires only `identity` (the requester is the token's user + a name snapshot).
+drivers close a vehicle trip with odometer and fuel. Requires only `identity` (the requester is the token's user + a name snapshot taken from the token).
 
 ## Data
 - `resources` (code, name, `room | vehicle | equipment`, capacity, location, plate_no, requires_approval, active, color, note)
 - `bookings` (`BK-2569-0001`, resource, purpose, start_at/end_at (timestamptz), attendees, destination, requester_id + requester_name/department/phone snapshot,
-  `pending → confirmed → completed`, exits `rejected | cancelled`, approval/cancel info, vehicle `mileage_start/end`, `distance_km`, `fuel_cost` numeric(18,4))
+  `pending → confirmed → completed`, exits `rejected | cancelled`, approval/cancel info (`approved_by_name`, `cancelled_by_name` from the token), vehicle `mileage_start/end`, `distance_km`, `fuel_cost` numeric(18,4))
 
 ## Behaviour
+- "Booked by" = the token's name (`auth(req).userName`); a typed `requesterName` is ignored, except for users with `booking.book.approve`
+  (a secretary booking on behalf of someone) or old tokens without a name. No name at all → 400. The form field is "จองแทนผู้อื่น" (optional).
 - Local time is Asia/Bangkok (`src/time.ts`). `POST /bookings` takes `startAt`/`endAt` (ISO) or `date` + `startTime`/`endTime` (+ `endDate` for multi-day trips).
 - `end > start` (400), max 31 days, `attendees ≤ capacity` (400 `ห้องประชุมเล็ก รับได้ 10 คน แต่ระบุผู้เข้าร่วม 12 คน`), inactive resource → 400.
 - Overlap with a `pending` or `confirmed` booking of the same resource → **409** `… ถูกจองแล้วช่วง 1/3/2570 09:00–10:00 น. (BK-…: purpose — requester)`.
@@ -32,7 +34,7 @@ drivers close a vehicle trip with odometer and fuel. Requires only `identity` (t
 Permissions: `booking.resource.read|write`, `booking.book.create|approve`.
 
 ## Events
-- publishes `booking.requested` (bookingId, no, resourceName, startAt, endAt (ISO), requesterName, needsApproval, period (Thai text), purpose) on every new booking.
+- publishes `booking.requested` (bookingId, no, resourceName, startAt, endAt (ISO), requesterName, needsApproval, period (Thai text), purpose, requesterId) on every new booking.
 - subscribes: none. Candidates (not added): `booking.decided` (tell the requester), `booking.trip_completed` (fuel cost to expense/costing).
 
 ## Screens

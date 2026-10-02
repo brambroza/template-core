@@ -187,6 +187,168 @@
     "aiAssistant": {
       "nameTh": "ผู้ช่วย AI (ใช้ Claude API key ของลูกค้าเอง) — รวมในเว็บแอป",
       "from": 0
+    },
+    "training": {
+      "nameTh": "อบรมผู้ใช้ on-site",
+      "unit": "day",
+      "from": 12000
     }
+  },
+  "rental": {
+    "nameTh": "เช่าใช้รายเดือน (Factory OS Cloud)",
+    "note": "Managed SaaS บนคลาวด์ multi-tenant ของ GO Along: รวมโฮสติ้ง โดเมน HTTPS สำรองข้อมูลรายวัน อัปเดตทุกรุ่น และซัพพอร์ต · ไม่ได้ source code · ไม่คิดรายหัว (fair use ≤ 100 ผู้ใช้ต่อบริษัท เกินนั้นย้ายไปเครื่องแยก) · ราคาต่อเดือน ไม่รวม VAT · ค่าเช่าต่อเดือน (รวมแพลตฟอร์ม) ≈ 4.1–4.6% ของราคาซื้อขาด",
+    "platform": 690,
+    "modules": {
+      "inventory": 990,
+      "purchasing": 590,
+      "sales": 790,
+      "production": 1390,
+      "maintenance": 990,
+      "costing": 990,
+      "automation": 790,
+      "approvals": 590,
+      "hr": 990,
+      "expense": 590,
+      "assets": 590,
+      "crm": 790,
+      "helpdesk": 590,
+      "projects": 790,
+      "quality": 790,
+      "booking": 390
+    },
+    "bundles": {
+      "trading": 1990,
+      "factory-maintenance": 1790,
+      "factory-full": 5290,
+      "smart-maintenance": 2500,
+      "factory-quality": 3590,
+      "factory-backoffice": 2490,
+      "factory-os-complete": 7990,
+      "office-starter": 990,
+      "office-paperless": 2200,
+      "office-complete": 3390,
+      "service-pro": 3100,
+      "service-desk": 3190,
+      "trading-growth": 3190,
+      "contractor": 3190,
+      "facility": 2590,
+      "campus": 2990
+    },
+    "minTermMonths": 12,
+    "setupFee": 9900,
+    "setupIncludesTh": "ตั้งค่าบริษัท/ผู้ใช้/บทบาท นำเข้าข้อมูลหลักจาก Excel ตั้ง LINE แจ้งเตือน อบรมออนไลน์ครึ่งวัน (อบรม on-site คิดตาม services.training)",
+    "prepayYearDiscountPct": 10,
+    "userLimit": 100,
+    "rentToOwn": {
+      "creditPct": 50,
+      "maxCreditPctOfLicense": 50,
+      "windowMonths": 24,
+      "noteTh": "เปลี่ยนเป็นซื้อขาดได้ทุกเมื่อภายใน 24 เดือน นำค่าเช่าที่จ่ายแล้ว 50% มาลดราคาไลเซนส์ (ลดได้ไม่เกิน 50% ของราคาไลเซนส์)"
+    }
+  },
+  "pilot": {
+    "nameTh": "Pilot 60 วัน (ลูกค้าร่วมพัฒนา)",
+    "durationDays": 60,
+    "pricePct": 50,
+    "minPrice": 35000,
+    "maxPrice": 49000,
+    "priceNoteTh": "50% ของราคาไลเซนส์ (ชุด + แพลตฟอร์ม) ขั้นต่ำ 35,000 สูงสุด 49,000 · รวมคลาวด์ระหว่าง pilot ติดตั้ง Quick Start และอบรม on-site 1 วัน",
+    "includesTh": [
+      "ระบบบนคลาวด์ GO Along ตลอด 60 วัน",
+      "ติดตั้ง + นำเข้าข้อมูลหลักและยอดยกมาจาก Excel",
+      "อบรม on-site 1 วัน + ช่วยใช้งานจริง 2 สัปดาห์แรก",
+      "ประชุมติดตามผล 30 นาทีทุกสัปดาห์",
+      "แก้ข้อที่ตกลงไว้ในเอกสาร must-have พร้อมวันส่งมอบที่เขียนในสัญญา"
+    ],
+    "creditTowardPurchasePct": 100,
+    "creditWindowDays": 30,
+    "creditNoteTh": "ค่า pilot หักจากราคาซื้อขาดได้ 100% ถ้าตัดสินใจภายใน 30 วันหลังจบ pilot หรือนำไปเป็นค่าเช่ารายเดือนล่วงหน้า",
+    "refundPctIfCriteriaMissed": 50,
+    "conditionsTh": [
+      "เกณฑ์วัดผล 2–3 ข้อเขียนตอนเริ่ม (เช่น งานแจ้งซ่อมเข้าระบบ ≥ 80%, สต็อกอะไหล่ตรง ≥ 95%, ใบลา/ใบเบิกผ่านระบบ ≥ 90%)",
+      "ถ้าไม่ผ่านเกณฑ์เพราะฟังก์ชันที่ GO Along สัญญาไว้ไม่พร้อม คืนเงิน 50% และยกเลิกได้ทันที",
+      "ลูกค้าให้ feedback รายสัปดาห์ และยินยอมให้ทำกรณีศึกษา (ชื่อ โลโก้ ตัวเลขก่อน-หลัง) เมื่อผ่านเกณฑ์",
+      "จำกัด 2 รายต่อชุด และไม่เกิน 6 รายพร้อมกัน",
+      "ใช้ได้กับชุดหรือโมดูลรวมไม่เกิน 7 โมดูล"
+    ],
+    "maxConcurrent": 6,
+    "maxPerPack": 2,
+    "maxModules": 7
+  },
+  "partner": {
+    "note": "ส่วนลดคิดจากราคาไลเซนส์รวมแพลตฟอร์ม (ไม่รวม VAT) · ส่วนแบ่งแผนอัปเดต/ค่าเช่าจ่ายรายไตรมาสจากเงินที่ GO Along ได้รับจริง · ห้ามขายต่ำกว่า minResalePct ของราคาตั้ง",
+    "minResalePct": 90,
+    "dealRegistrationDays": 90,
+    "tiers": [
+      {
+        "id": "referral",
+        "nameTh": "ผู้แนะนำ (Referral)",
+        "for": "ผู้ขายเครื่องจักร ที่ปรึกษา ISO สำนักงานบัญชี — ส่งลีด ไม่ขายเอง",
+        "licenseDiscountPct": 0,
+        "referralFeePct": 10,
+        "updatePlanSharePct": 10,
+        "rentalSharePct": 10,
+        "rentalShareMonths": 12,
+        "nfr": {
+          "modules": [],
+          "demoTenant": true,
+          "noteTh": "บัญชีเดโมบนเดโมเซิร์ฟเวอร์กลาง"
+        },
+        "requirements": ["เซ็นสัญญาแนะนำ", "ลงทะเบียนดีลใน CRM ของ GO Along ก่อนนัดเดโม"]
+      },
+      {
+        "id": "reseller",
+        "nameTh": "ตัวแทนขาย (Reseller)",
+        "for": "บริษัทที่มีฐานลูกค้าและทีมขาย แต่ให้ GO Along ติดตั้ง",
+        "licenseDiscountPct": 30,
+        "updatePlanSharePct": 20,
+        "rentalSharePct": 20,
+        "rentalShareMonths": 0,
+        "nfr": {
+          "modules": ["maintenance", "inventory", "automation"],
+          "demoTenant": true,
+          "noteTh": "ใช้ภายในฟรีสำหรับชุดที่ขาย + เดโมเซิร์ฟเวอร์ของตัวเอง (ล้างข้อมูลได้เอง)"
+        },
+        "requirements": ["ผ่านอบรมการขาย + เดโม 1 วัน อย่างน้อย 1 คน", "ขายอย่างน้อย 2 ดีลต่อปี", "ลงทะเบียนดีลทุกดีล"]
+      },
+      {
+        "id": "implementer",
+        "nameTh": "พาร์ทเนอร์ติดตั้ง (Certified Implementer)",
+        "for": "IT integrator / software house ที่ขาย ติดตั้ง ดูแลระดับแรก และต่อยอดด้วย AI เอง",
+        "licenseDiscountPct": 30,
+        "volumeDiscounts": [
+          {
+            "dealsIn12Months": 5,
+            "licenseDiscountPct": 35
+          },
+          {
+            "dealsIn12Months": 10,
+            "licenseDiscountPct": 40
+          }
+        ],
+        "updatePlanSharePct": 35,
+        "rentalSharePct": 30,
+        "rentalShareMonths": 0,
+        "nfr": {
+          "modules": ["crm", "sales", "helpdesk", "projects", "expense", "automation", "inventory"],
+          "demoTenant": true,
+          "noteTh": "ไลเซนส์ใช้ภายในฟรีไม่เกิน 7 โมดูล + เดโมเซิร์ฟเวอร์ข้อมูลโรงงานและบริษัทบริการ"
+        },
+        "trainingSeatsIncluded": 2,
+        "requirements": [
+          "มี Certified Implementer อย่างน้อย 1 คน (หลักสูตร 2 วัน ฟรี 2 ที่นั่งแรก)",
+          "รับซัพพอร์ตระดับแรก ตอบภายใน 4 ชม. ทำการ",
+          "go-live ภายใน 3 สัปดาห์ต่อดีลชุดเริ่มต้น",
+          "โค้ดที่ต่อยอดให้ลูกค้าต้องผ่าน pnpm erp verify",
+          "ขายอย่างน้อย 4 ดีลต่อปี"
+        ]
+      }
+    ],
+    "demoKitTh": [
+      "เดโมเซิร์ฟเวอร์ของพาร์ทเนอร์ (ข้อมูลโรงงาน / สำนักงาน / บริษัทบริการ)",
+      "สคริปต์เดโม 15 และ 30 นาทีต่ออุตสาหกรรม (sales/partner-kit.md)",
+      "โบรชัวร์ร่วมแบรนด์ + กรณีศึกษา 1 หน้า",
+      "เครื่องคิดราคา: pnpm erp quote <ชุด> [--rent] และหน้าเว็บ"
+    ]
   }
 }

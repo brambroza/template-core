@@ -73,6 +73,9 @@ pnpm site --serve      # site/dist + http://localhost:4321 — ราคาอ�
 
 ## ติดตั้งให้ลูกค้า
 
+ทุกโมดูลมี connection pool ของตัวเอง (ค่าเริ่มต้น 10) — ถ้ารันหลายโมดูลบนฐานข้อมูลเดียว ให้ตั้ง `DB_POOL_MAX` ให้ผลรวมไม่เกิน `max_connections` ของ Postgres (ค่าเริ่มต้น 100) เช่น 18 โมดูล × 4 = 72; ถ้าฐานข้อมูลเต็ม API จะตอบ 503 ให้ลองใหม่
+
+
 ```bash
 pnpm erp compose maintenance,inventory --out deploy/factory-a
 cd deploy/factory-a && cp .env.example .env && docker compose up -d --build

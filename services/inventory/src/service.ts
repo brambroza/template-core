@@ -1,6 +1,6 @@
-import { auth, loadManifest, parse, requirePerm, s, z, type ServiceDefinition } from '@erp/kernel';
+import { auth, conflict, forbidden, hasPerm, loadManifest, notFound, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
-import { postMove, type Emit } from './stock.ts';
+import { ensureHoldWarehouse, fmtQty, postMove, warehouse, type Emit, type MoveInput } from './stock.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -16,6 +16,39 @@ const AdjustInput = z.object({
   note: z.string().min(1).max(500),
 });
 
+const SettingsInput = z.object({ allowNegative: z.boolean().optional(), receiveIntoHoldWhenInspected: z.boolean().optional() })
+  .refine((v) => v.allowNegative !== undefined || v.receiveIntoHoldWhenInspected !== undefined, 'nothing to change');
+const ReleaseInput = z.object({ qty: s.positiveQty.optional(), toWarehouseCode: s.code.optional(), note: z.string().trim().min(1).max(500) });
+const IdParam = z.object({ id: s.uuid });
+
+type Item = Pick<MoveInput, 'itemId' | 'itemCode' | 'itemName'>;
+
+/** Stock in a hold warehouse (QC-HOLD) may only leave with inventory.hold.release — rejected material must not reach the line. */
+async function guardHold(c: Client, a: AuthContext, code: string) {
+  const wh = await warehouse(c, code);
+  if (wh.isHold && !hasPerm(a, 'inventory.hold.release')) {
+    throw forbidden(`คลัง ${code} เป็นคลังกักกัน QC — ของที่รอตัดสิน/ไม่ผ่าน QC จ่ายหรือโอนออกได้เฉพาะผู้มีสิทธิ์ "ปล่อยของจากคลังกักกัน" (inventory.hold.release)`);
+  }
+}
+
+/** transfer_out + transfer_in with the same reference (both through postMove). */
+async function transfer(em: Emit, c: Client, item: Item, from: string, to: string, qty: number, ref: { refType: string; refId: string; note?: string | null; userId?: string | null }, force = false) {
+  await postMove(em, c, { ...item, qty: -qty, warehouseCode: from, kind: 'transfer_out', ...ref }, { autoCreateWarehouse: force, force });
+  await postMove(em, c, { ...item, qty, warehouseCode: to, kind: 'transfer_in', ...ref }, { autoCreateWarehouse: force });
+}
+
+async function readSettings(c: Client) {
+  const r = (await c.query('select allow_negative, receive_into_hold from settings')).rows[0];
+  return { allowNegative: r?.allow_negative ?? false, receiveIntoHoldWhenInspected: r?.receive_into_hold ?? false };
+}
+
+const HOLD_STATUS_TH: Record<string, string> = { pending: 'รอผล QC', rejected: 'ไม่ผ่าน รอตัดสิน', released: 'ปล่อยแล้ว', returned: 'ส่งคืนผู้ขายแล้ว' };
+const thHold = (h: any) => ({ ...h, status_th: HOLD_STATUS_TH[h.status] ?? h.status });
+const REF_TH: Record<string, string> = {
+  sales_order: 'ส่งของตามใบสั่งขาย', production_order: 'ผลิต (ตัดวัตถุดิบ)', work_order: 'ใบสั่งซ่อม (อะไหล่)', purchase_order: 'รับตามใบสั่งซื้อ',
+  purchase_return: 'ส่งคืนผู้ขาย', qc_inspection: 'QC กักกัน/ปล่อย', qc_release: 'ปล่อยจากคลังกักกัน', transfer: 'โอนย้าย', adjustment: 'ปรับปรุงยอด',
+};
+
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
@@ -30,18 +63,28 @@ export const definition: ServiceDefinition = {
     app.post('/warehouses', async (req, reply) => {
       const a = auth(req);
       requirePerm(a, 'inventory.settings.write');
-      const body = parse(z.object({ code: s.code, name: s.name }), req.body);
+      const body = parse(z.object({ code: s.code, name: s.name, isHold: z.boolean().optional() }), req.body);
       reply.code(201);
-      return k.db.tx(a.tenantId, async (c) => (await c.query('insert into warehouses (code, name) values ($1, $2) returning *', [body.code, body.name])).rows[0]);
+      return k.db.tx(a.tenantId, async (c) => (await c.query('insert into warehouses (code, name, is_hold) values ($1, $2, $3) returning *', [body.code, body.name, body.isHold ?? false])).rows[0]);
+    });
+
+    app.get('/settings', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      return k.db.tx(a.tenantId, readSettings);
     });
 
     app.put('/settings', async (req) => {
       const a = auth(req);
       requirePerm(a, 'inventory.settings.write');
-      const body = parse(z.object({ allowNegative: z.boolean() }), req.body);
-      return k.db.tx(a.tenantId, async (c) => (await c.query(
-        `insert into settings (tenant_id, allow_negative) values (nullif(current_setting('app.tenant_id', true), '')::uuid, $1)
-         on conflict (tenant_id) do update set allow_negative = excluded.allow_negative returning *`, [body.allowNegative])).rows[0]);
+      const body = parse(SettingsInput, req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        await c.query(
+          `insert into settings (tenant_id, allow_negative, receive_into_hold) values (nullif(current_setting('app.tenant_id', true), '')::uuid, coalesce($1, false), coalesce($2, false))
+           on conflict (tenant_id) do update set allow_negative = coalesce($1, settings.allow_negative), receive_into_hold = coalesce($2, settings.receive_into_hold)`,
+          [body.allowNegative ?? null, body.receiveIntoHoldWhenInspected ?? null]);
+        return readSettings(c);
+      });
     });
 
     app.post('/receipts', async (req, reply) => {
@@ -63,6 +106,7 @@ export const definition: ServiceDefinition = {
       const b = parse(IssueInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
+        await guardHold(c, a, b.warehouseCode);
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
         for (const l of b.lines) out.push(await postMove(em, c, { ...l, qty: -l.qty, warehouseCode: b.warehouseCode, kind: 'issue', refType: b.refType, refId: b.refId, note: b.note, userId: a.userId }));
@@ -76,6 +120,7 @@ export const definition: ServiceDefinition = {
       const b = parse(TransferInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
+        await guardHold(c, a, b.fromWarehouseCode);
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
         for (const l of b.lines) {
@@ -92,6 +137,7 @@ export const definition: ServiceDefinition = {
       const b = parse(AdjustInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
+        if (b.lines.some((l) => l.qty < 0)) await guardHold(c, a, b.warehouseCode);
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
         for (const l of b.lines) out.push(await postMove(em, c, { ...l, warehouseCode: b.warehouseCode, kind: 'adjust', refType: 'adjustment', note: b.note, userId: a.userId }));
@@ -104,10 +150,11 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'inventory.stock.read');
       const q = parse(z.object({ itemId: s.uuid.optional(), warehouseCode: z.string().optional(), nonZero: z.coerce.boolean().default(true) }), req.query);
       return k.db.tx(a.tenantId, async (c) => (await c.query(
-        `select m.item_id as "itemId", m.item_code as "itemCode", max(m.item_name) as "itemName", w.code as "warehouseCode", sum(m.qty) as "onHand"
+        `select m.item_id as "itemId", m.item_code as "itemCode", max(m.item_name) as "itemName", w.code as "warehouseCode", sum(m.qty) as "onHand",
+                case when w.is_hold then 0 else sum(m.qty) end as "available", w.is_hold as "isHold"
          from stock_moves m join warehouses w on w.id = m.warehouse_id
          where ($1::uuid is null or m.item_id = $1) and ($2::text is null or w.code = $2)
-         group by m.item_id, m.item_code, w.code ${q.nonZero ? 'having sum(m.qty) <> 0' : ''}
+         group by m.item_id, m.item_code, w.code, w.is_hold ${q.nonZero ? 'having sum(m.qty) <> 0' : ''}
          order by m.item_code, w.code`, [q.itemId ?? null, q.warehouseCode ?? null])).rows);
     });
 
@@ -146,7 +193,99 @@ export const definition: ServiceDefinition = {
         const low = (await c.query(
           `select count(*)::int as n from reorder_points r where r.min_qty > coalesce((select sum(m.qty) from stock_moves m join warehouses w on w.id = m.warehouse_id
              where m.item_id = r.item_id and w.code = r.warehouse_code), 0)`)).rows[0].n;
-        return { skus: totals.skus, warehouses: totals.warehouses, movesToday: totals.moves_today, lowStock: low, rows };
+        const neg = (await c.query(
+          `select m.item_code as "itemCode", max(m.item_name) as "itemName", w.code as "warehouseCode", sum(m.qty) as "onHand",
+                  -sum(m.qty) as "shortQty", m.item_code || ' @ ' || w.code as "label"
+           from stock_moves m join warehouses w on w.id = m.warehouse_id
+           group by m.item_id, m.item_code, w.code having sum(m.qty) < 0 order by sum(m.qty) limit 12`)).rows;
+        const negCount = (await c.query(
+          `select count(*)::int as n from (select 1 from stock_moves group by item_id, warehouse_id having sum(qty) < 0) x`)).rows[0].n;
+        const hold = (await c.query(
+          `select count(*)::int as n from (select 1 from stock_moves m join warehouses w on w.id = m.warehouse_id where w.is_hold
+             group by m.item_id, w.id having sum(m.qty) > 0) x`)).rows[0].n;
+        const anomalies = (await c.query('select count(*)::int as n from stock_anomalies where acknowledged_at is null')).rows[0].n;
+        return {
+          skus: totals.skus, warehouses: totals.warehouses, movesToday: totals.moves_today, lowStock: low, rows,
+          negative: negCount, negativeRows: neg, onHold: hold, openAnomalies: anomalies,
+        };
+      });
+    });
+
+    /** Moves that left stock below zero (from other modules' events, or allowed by settings). `open=true` = not yet acknowledged. */
+    app.get('/anomalies', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      const q = parse(z.object({ open: z.enum(['true', 'false']).optional(), itemId: s.uuid.optional(), limit: z.coerce.number().int().min(1).max(500).default(200) }), req.query);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select x.*, coalesce((select sum(m.qty) from stock_moves m join warehouses w on w.id = m.warehouse_id
+                                where m.item_id = x.item_id and w.code = x.warehouse_code), 0) as on_hand_now
+         from stock_anomalies x
+         where ($1::boolean is null or (x.acknowledged_at is null) = $1) and ($2::uuid is null or x.item_id = $2)
+         order by x.created_at desc limit $3`,
+        [q.open === undefined ? null : q.open === 'true', q.itemId ?? null, q.limit])).rows
+        .map((r) => ({ ...r, ref_th: r.ref_type ? REF_TH[r.ref_type] ?? r.ref_type : 'บันทึกเอง', source_th: r.source === 'event' ? 'จากโมดูลอื่น' : 'ผู้ใช้ (อนุญาตติดลบ)' })));
+    });
+
+    app.post('/anomalies/:id/acknowledge', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.settings.write');
+      const { id } = parse(IdParam, req.params);
+      const b = parse(z.object({ note: z.string().trim().min(1).max(500) }), req.body ?? {});
+      return k.db.tx(a.tenantId, async (c) => {
+        const r = (await c.query(
+          `update stock_anomalies set acknowledged_at = now(), acknowledged_by = $2, acknowledged_note = $3 where id = $1 and acknowledged_at is null returning *`,
+          [id, a.userId, b.note])).rows[0];
+        if (r) return r;
+        if ((await c.query('select 1 from stock_anomalies where id = $1', [id])).rowCount) throw conflict('รายการนี้รับทราบไปแล้ว');
+        throw notFound('Anomaly');
+      });
+    });
+
+    /** QC quarantine log: what each inspection put on hold and what is still there. */
+    app.get('/holds', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      const q = parse(z.object({ status: z.string().optional(), itemId: s.uuid.optional() }), req.query);
+      const statuses = q.status ? q.status.split(',') : null;
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select * from qc_holds where ($1::text[] is null or status = any($1)) and ($2::uuid is null or item_id = $2) order by created_at desc limit 500`,
+        [statuses, q.itemId ?? null])).rows.map(thHold));
+    });
+
+    app.get('/holds/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      const { id } = parse(IdParam, req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const h = (await c.query('select * from qc_holds where id = $1', [id])).rows[0];
+        if (!h) throw notFound('QC hold');
+        return thHold(h);
+      });
+    });
+
+    /** Release (part of) a hold back to stock after a decision (use as is / sorted / re-inspected). Needs inventory.hold.release + a note for the audit trail. */
+    app.post('/holds/:id/release', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.hold.release');
+      const { id } = parse(IdParam, req.params);
+      const b = parse(ReleaseInput, req.body ?? {});
+      return k.db.tx(a.tenantId, async (c) => {
+        const h = (await c.query('select * from qc_holds where id = $1 for update', [id])).rows[0];
+        if (!h) throw notFound('QC hold');
+        if (!['pending', 'rejected'].includes(h.status) || !(Number(h.qty) > 0)) throw conflict(`ปล่อยไม่ได้: ${h.inspection_no} ${h.item_code} สถานะ ${HOLD_STATUS_TH[h.status]}`);
+        const qty = b.qty ?? Number(h.qty);
+        if (qty > Number(h.qty) + 1e-9) throw conflict(`ปล่อยได้ไม่เกิน ${fmtQty(h.qty)} (ที่กักไว้จาก ${h.inspection_no})`);
+        const to = b.toWarehouseCode ?? h.warehouse_code;
+        if ((await warehouse(c, to)).isHold) throw conflict(`คลังปลายทาง ${to} เป็นคลังกักกัน`);
+        const em: Emit = (t, d) => k.emit(c, t, d);
+        await transfer(em, c, { itemId: h.item_id, itemCode: h.item_code, itemName: h.item_name ?? undefined }, h.hold_warehouse_code, to, qty,
+          { refType: 'qc_release', refId: h.inspection_no, note: b.note, userId: a.userId });
+        const left = Number(h.qty) - qty;
+        const r = (await c.query(
+          `update qc_holds set qty = $2::numeric, status = case when $2::numeric <= 0 then 'released' else status end,
+             note = concat_ws(' · ', note, $3::text), updated_at = now() where id = $1 returning *`,
+          [id, left < 1e-9 ? 0 : left, `ปล่อย ${fmtQty(qty)} ไป ${to}: ${b.note}`])).rows[0];
+        return thHold(r);
       });
     });
 
@@ -177,6 +316,75 @@ export const definition: ServiceDefinition = {
     },
     'maintenance.parts_used': async (e, { client, emit }) => {
       for (const l of e.parts) await postMove(emit, client, { ...l, qty: -l.qty, warehouseCode: e.warehouseCode, kind: 'issue', refType: 'work_order', refId: e.workOrderNo }, { autoCreateWarehouse: true, force: true });
+    },
+
+    /** Setting receiveIntoHoldWhenInspected: an incoming lot waiting for QC goes into QC-HOLD until the inspection is completed. */
+    'quality.inspection_created': async (e, { client, emit }) => {
+      if (e.stage !== 'incoming' || !e.warehouseCode || !(e.qty > 0)) return;
+      if (!(await readSettings(client)).receiveIntoHoldWhenInspected) return;
+      if ((await client.query('select 1 from qc_holds where inspection_id = $1', [e.inspectionId])).rowCount) return;
+      if ((await warehouse(client, e.warehouseCode, true)).isHold) return;
+      const hold = await ensureHoldWarehouse(client);
+      await transfer(emit, client, { itemId: e.itemId, itemCode: e.itemCode, itemName: e.itemName ?? undefined }, e.warehouseCode, hold, e.qty,
+        { refType: 'qc_inspection', refId: e.no, note: 'กักรอผลตรวจรับ QC' }, true);
+      await client.query(
+        `insert into qc_holds (inspection_id, inspection_no, stage, item_id, item_code, item_name, lot_no, warehouse_code, hold_warehouse_code, source_ref, held_qty, qty, status)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,'pending')`,
+        [e.inspectionId, e.no, e.stage, e.itemId, e.itemCode, e.itemName, e.lotNo, e.warehouseCode, hold, e.sourceRef, e.qty]);
+    },
+
+    /**
+     * QC verdict. Lot already on hold → accepted qty goes back to its warehouse, rejected stays in QC-HOLD.
+     * Not on hold → the rejected qty moves from its warehouse into QC-HOLD. Never throws: stock that is no longer there goes negative and is recorded as an anomaly.
+     */
+    'quality.inspection_completed': async (e, { client, emit }) => {
+      if (!e.itemId || !e.warehouseCode) return; // older publisher: no location, nothing to quarantine
+      const item = { itemId: e.itemId, itemCode: e.itemCode, itemName: e.itemName ?? undefined };
+      const ref = { refType: 'qc_inspection', refId: e.no };
+      const h = (await client.query('select * from qc_holds where inspection_id = $1 for update', [e.inspectionId])).rows[0];
+      if (h) {
+        if (h.status !== 'pending') return; // already judged (duplicate / replay)
+        const rejected = Math.min(Math.max(e.rejectedQty, 0), Number(h.qty));
+        const release = Number(h.qty) - rejected;
+        if (release > 0) await transfer(emit, client, item, h.hold_warehouse_code, h.warehouse_code, release, { ...ref, note: 'QC ผ่าน ปล่อยเข้าคลัง' }, true);
+        await client.query(
+          `update qc_holds set qty = $2, rejected_qty = $3, status = $4, updated_at = now() where id = $1`,
+          [h.id, rejected, e.rejectedQty, rejected > 0 ? 'rejected' : 'released']);
+        return;
+      }
+      if (!(e.rejectedQty > 0)) return;
+      if ((await warehouse(client, e.warehouseCode, true)).isHold) return;
+      const hold = await ensureHoldWarehouse(client);
+      await transfer(emit, client, item, e.warehouseCode, hold, e.rejectedQty, { ...ref, note: 'QC ไม่ผ่าน กักรอตัดสิน' }, true);
+      await client.query(
+        `insert into qc_holds (inspection_id, inspection_no, stage, item_id, item_code, item_name, lot_no, warehouse_code, hold_warehouse_code, source_ref,
+           held_qty, qty, rejected_qty, status)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$11,'rejected')`,
+        [e.inspectionId, e.no, e.stage, e.itemId, e.itemCode, e.itemName, e.lotNo, e.warehouseCode, hold, e.sourceRef ?? null, e.rejectedQty]);
+    },
+
+    /** Return to supplier: issue the qty from the warehouse it left from (QC-HOLD for rejected material). */
+    'purchasing.goods_returned': async (e, { client, emit }) => {
+      const wh = await warehouse(client, e.warehouseCode, true);
+      for (const l of e.lines) {
+        await postMove(emit, client, { ...l, qty: -l.qty, warehouseCode: e.warehouseCode, kind: 'issue', unitCost: l.unitPrice, refType: 'purchase_return', refId: e.returnNo,
+          note: l.reason ? `ส่งคืนผู้ขาย ${e.supplierName}: ${l.reason}` : `ส่งคืนผู้ขาย ${e.supplierName}` }, { autoCreateWarehouse: true, force: true });
+        if (!wh.isHold) continue;
+        // settle the QC holds of this item, oldest first
+        let left = l.qty;
+        const holds = (await client.query(
+          `select id, qty from qc_holds where item_id = $1 and hold_warehouse_code = $2 and status = 'rejected' and qty > 0 order by created_at for update`,
+          [l.itemId, e.warehouseCode])).rows;
+        for (const h of holds) {
+          if (left <= 1e-9) break;
+          const take = Math.min(left, Number(h.qty));
+          left -= take;
+          await client.query(
+            `update qc_holds set qty = qty - $2, status = case when qty - $2 <= 0 then 'returned' else status end,
+               note = concat_ws(' · ', note, $3::text), updated_at = now() where id = $1`,
+            [h.id, take, `ส่งคืน ${fmtQty(take)} (${e.returnNo})`]);
+        }
+      }
     },
   },
 };

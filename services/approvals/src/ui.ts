@@ -31,6 +31,16 @@ const requestColumns = [
   { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' as const },
 ];
 
+const lockField: Field = {
+  name: 'lockApprovers', label: 'ล็อกสายอนุมัติ (ผู้ขอเลือก/แก้ผู้อนุมัติเองไม่ได้)', type: 'boolean', default: true,
+  help: 'ปิดเฉพาะประเภทที่ให้ผู้ขอเลือกผู้อนุมัติเอง เช่น บันทึกข้อความทั่วไป',
+};
+
+const delegationStatuses = [
+  { value: 'active', label: 'มีผลวันนี้' }, { value: 'scheduled', label: 'ยังไม่ถึงกำหนด' },
+  { value: 'ended', label: 'สิ้นสุดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
+];
+
 const noteField = (required: boolean, label = 'หมายเหตุ'): Field => ({ name: 'note', label, type: 'textarea', required });
 
 export default defineUi({
@@ -38,11 +48,13 @@ export default defineUi({
   label: 'อนุมัติออนไลน์',
   glyph: 'อ',
   icon: 'stamp',
+  statusLabels: { active: 'มีผลวันนี้', scheduled: 'ยังไม่ถึงกำหนด', ended: 'สิ้นสุดแล้ว' },
   menu: [
     { label: 'รออนุมัติ (ของฉัน)', screen: 'inbox' },
     { label: 'คำขอของฉัน', screen: 'myRequests' },
     { label: 'สร้างคำขออนุมัติ', screen: 'requestNew' },
     { label: 'คำขอทั้งหมด', screen: 'requests' },
+    { label: 'มอบอำนาจอนุมัติแทน', screen: 'delegations' },
     { label: 'ประเภทคำขอและสายอนุมัติ', screen: 'types' },
   ],
   commands: [
@@ -60,6 +72,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'title', label: 'เรื่อง' }, { key: 'requester_name', label: 'ผู้ขอ' },
         { key: 'amount', label: 'จำนวนเงิน', format: 'money' }, { key: 'needed_by', label: 'ต้องการภายใน', format: 'date' },
+        { key: 'acting_for_name', label: 'อนุมัติแทน' },
         { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
       ],
       rowLink: { screen: 'requestDetail' },
@@ -92,11 +105,9 @@ export default defineUi({
         { name: 'detail', label: 'รายละเอียด / เหตุผล', type: 'textarea' },
         { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', step: 0.01 },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
-        { name: 'requesterName', label: 'ชื่อผู้ขอ', type: 'text' },
         { name: 'department', label: 'แผนก', type: 'text' },
-        { name: 'submit', label: 'ส่งขออนุมัติทันที', type: 'boolean', default: true },
+        { name: 'submit', label: 'ส่งขออนุมัติทันที', type: 'boolean', default: true, help: 'ผู้ขอคือผู้ใช้ที่ล็อกอินอยู่ — สายอนุมัติมาจากประเภทคำขอ' },
       ],
-      lines: { ...approverLines, label: 'ผู้อนุมัติ (เว้นว่าง = ใช้สายอนุมัติตามประเภท)' },
       submitLabel: 'บันทึกคำขอ', after: { screen: 'requestDetail', idFrom: 'id' },
     },
     requestEdit: {
@@ -106,13 +117,13 @@ export default defineUi({
         { name: 'detail', label: 'รายละเอียด / เหตุผล', type: 'textarea' },
         { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', step: 0.01 },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
-        { name: 'requesterName', label: 'ชื่อผู้ขอ', type: 'text' },
         { name: 'department', label: 'แผนก', type: 'text' },
       ],
       submitLabel: 'บันทึกการแก้ไข', after: { screen: 'requestDetail', idFrom: 'id' },
     },
     requestDetail: {
-      kind: 'detail', title: 'ใบขออนุมัติ', endpoint: '/requests/:id', perm: 'approvals.request.read', heading: 'no', mobile: true, printable: true,
+      kind: 'detail', title: 'ใบขออนุมัติ', endpoint: '/requests/:id', perm: 'approvals.request.read', heading: 'no', mobile: true,
+      print: { title: 'ใบขออนุมัติ', signatures: [{ label: 'ผู้ขออนุมัติ', name: 'requester_name' }], signers: { path: 'steps', label: 'ผู้อนุมัติ', name: 'approver_name' } },
       edit: 'requestEdit',
       flow: {
         field: 'status',
@@ -130,6 +141,8 @@ export default defineUi({
         { key: 'department', label: 'แผนก' },
         { key: 'step_text', label: 'ขั้นอนุมัติ' },
         { key: 'current_approver_name', label: 'รอใครอนุมัติ' },
+        { key: 'current_delegate_name', label: 'ผู้รับมอบอำนาจ (แทน)' },
+        { key: 'acting_for_name', label: 'คุณอนุมัติแทน' },
         { key: 'last_note', label: 'เหตุผลล่าสุด' },
         { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
         { key: 'decided_at', label: 'ตัดสินเมื่อ', format: 'datetime' },
@@ -137,7 +150,7 @@ export default defineUi({
       lines: [
         { path: 'steps', label: 'สายอนุมัติ', columns: [
           { key: 'step_no', label: 'ขั้น' }, { key: 'approver_name', label: 'ผู้อนุมัติ' }, { key: 'status_label', label: 'ผล' },
-          { key: 'acted_at', label: 'เมื่อ', format: 'datetime' }, { key: 'note', label: 'หมายเหตุ' },
+          { key: 'acted_by_label', label: 'ดำเนินการโดย' }, { key: 'acted_at', label: 'เมื่อ', format: 'datetime' }, { key: 'note', label: 'หมายเหตุ' },
         ] },
         { path: 'history', label: 'ประวัติการดำเนินการ', columns: [
           { key: 'at', label: 'เวลา', format: 'datetime' }, { key: 'actor_name', label: 'โดย' }, { key: 'action_label', label: 'การดำเนินการ' },
@@ -149,17 +162,43 @@ export default defineUi({
         { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/requests/:id/approve', perm: 'approvals.request.approve', when: { field: 'can_act', in: [true] }, tone: 'primary', fields: [noteField(false, 'ความเห็น (ไม่บังคับ)')], mobile: true },
         { id: 'return', label: 'ส่งกลับแก้ไข', method: 'POST', endpoint: '/requests/:id/return', perm: 'approvals.request.approve', when: { field: 'can_act', in: [true] }, fields: [noteField(true, 'ต้องแก้ไขอะไร')], mobile: true },
         { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/requests/:id/reject', perm: 'approvals.request.approve', when: { field: 'can_act', in: [true] }, tone: 'danger', fields: [noteField(true, 'เหตุผลที่ไม่อนุมัติ')], mobile: true },
-        { id: 'approvers', label: 'เปลี่ยนผู้อนุมัติ', method: 'PUT', endpoint: '/requests/:id/approvers', perm: 'approvals.request.write', when: { field: 'can_edit', in: [true] }, lines: { ...approverLines, min: 1 } },
+        { id: 'approvers', label: 'เปลี่ยนผู้อนุมัติ', method: 'PUT', endpoint: '/requests/:id/approvers', perm: 'approvals.request.write', when: { field: 'can_change_approvers', in: [true] }, lines: { ...approverLines, min: 1 } },
         { id: 'comment', label: 'แสดงความเห็น', method: 'POST', endpoint: '/requests/:id/comment', perm: 'approvals.request.read', fields: [noteField(true, 'ความเห็น')], mobile: true },
         { id: 'cancel', label: 'ยกเลิกคำขอ', method: 'POST', endpoint: '/requests/:id/cancel', perm: 'approvals.request.write', when: { field: 'can_cancel', in: [true] }, tone: 'danger', confirm: 'ยกเลิกคำขอนี้? ยกเลิกแล้วส่งต่อไม่ได้', fields: [noteField(false, 'เหตุผล (ไม่บังคับ)')] },
       ],
+    },
+    delegations: {
+      kind: 'list', title: 'มอบอำนาจอนุมัติแทน', endpoint: '/delegations', perm: 'approvals.request.read', mobile: true,
+      filters: [{ name: 'status', label: 'สถานะ', type: 'select', options: delegationStatuses }],
+      columns: [
+        { key: 'from_user_name', label: 'ผู้มอบอำนาจ' }, { key: 'to_user_name', label: 'ผู้อนุมัติแทน' },
+        { key: 'starts_on', label: 'ตั้งแต่', format: 'date' }, { key: 'ends_on', label: 'ถึง', format: 'date' },
+        { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'note', label: 'หมายเหตุ' },
+      ],
+      create: 'delegationNew', createLabel: 'มอบอำนาจ',
+      rowActions: [
+        { id: 'cancel', label: 'ยกเลิก', method: 'POST', endpoint: '/delegations/:id/cancel', perm: 'approvals.request.read', when: { field: 'can_cancel', in: [true] }, tone: 'danger', confirm: 'ยกเลิกการมอบอำนาจนี้?', mobile: true },
+      ],
+      empty: 'ยังไม่มีการมอบอำนาจ — ก่อนลางาน มอบให้ผู้อื่นอนุมัติแทนได้ที่นี่',
+    },
+    delegationNew: {
+      kind: 'form', title: 'มอบอำนาจอนุมัติแทน (ช่วงที่ไม่อยู่)', method: 'POST', endpoint: '/delegations', perm: 'approvals.request.approve', mobile: true,
+      fields: [
+        { name: 'toUserId', label: 'ผู้อนุมัติแทน', type: 'lookup', required: true,
+          lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { toUserId: 'id', toUserName: 'name' } } },
+        { name: 'startsOn', label: 'ตั้งแต่วันที่', type: 'date', required: true },
+        { name: 'endsOn', label: 'ถึงวันที่', type: 'date', required: true },
+        { name: 'note', label: 'หมายเหตุ', type: 'text', help: 'เช่น ลาพักร้อน' },
+      ],
+      submitLabel: 'บันทึก', after: { screen: 'delegations' },
     },
     types: {
       kind: 'list', title: 'ประเภทคำขอและสายอนุมัติ', endpoint: '/types', perm: 'approvals.request.read',
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }, { name: 'active', label: 'สถานะ', type: 'select', options: [{ value: 'true', label: 'ใช้งาน' }, { value: 'false', label: 'ปิดใช้งาน' }] }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'chain', label: 'สายอนุมัติ' },
-        { key: 'step_count', label: 'จำนวนขั้น', format: 'qty' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
+        { key: 'step_count', label: 'จำนวนขั้น', format: 'qty' }, { key: 'lock_approvers', label: 'ล็อกสายอนุมัติ', format: 'boolean' },
+        { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'typeNew', createLabel: 'เพิ่มประเภท', rowLink: { screen: 'typeDetail' }, empty: 'ยังไม่มีประเภทคำขอ — เช่น ขอซื้อ, ขอเดินทาง, ขอใช้งบ, บันทึกข้อความ',
     },
@@ -170,6 +209,7 @@ export default defineUi({
         { name: 'name', label: 'ชื่อ', type: 'text', required: true, help: 'เช่น ขอซื้อ, ขอเดินทาง, ขอใช้งบ, บันทึกข้อความ' },
         { name: 'description', label: 'คำอธิบาย', type: 'textarea' },
         { name: 'amountNote', label: 'เงื่อนไขวงเงิน (ข้อความแนะนำ)', type: 'text', help: 'เช่น เกิน 50,000 บาท ให้ MD อนุมัติขั้นสุดท้าย' },
+        lockField,
         { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true },
       ],
       lines: approverLines,
@@ -181,6 +221,7 @@ export default defineUi({
         { name: 'name', label: 'ชื่อ', type: 'text', required: true },
         { name: 'description', label: 'คำอธิบาย', type: 'textarea' },
         { name: 'amountNote', label: 'เงื่อนไขวงเงิน (ข้อความแนะนำ)', type: 'text' },
+        { ...lockField, default: undefined },
         { name: 'active', label: 'ใช้งาน', type: 'boolean' },
       ],
       submitLabel: 'บันทึก', after: { screen: 'typeDetail', idFrom: 'id' },
@@ -190,6 +231,7 @@ export default defineUi({
       fields: [
         { key: 'code', label: 'รหัส' }, { key: 'description', label: 'คำอธิบาย' }, { key: 'amount_note', label: 'เงื่อนไขวงเงิน' },
         { key: 'step_count', label: 'จำนวนขั้นอนุมัติ', format: 'qty' }, { key: 'request_count', label: 'จำนวนคำขอที่ใช้ประเภทนี้', format: 'qty' },
+        { key: 'lock_approvers', label: 'ล็อกสายอนุมัติ (ผู้ขอแก้ไม่ได้)', format: 'boolean' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       lines: [{ path: 'approvers', label: 'สายอนุมัติเริ่มต้น (ตามลำดับ)', columns: [{ key: 'userName', label: 'ผู้อนุมัติ' }] }],

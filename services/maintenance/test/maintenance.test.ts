@@ -51,3 +51,33 @@ describe('maintenance', () => {
     expect(sum.body.machines[0]).toMatchObject({ code: 'PRESS-01', status: 'running', open_work_orders: 0 });
   });
 });
+
+describe('maintenance — parts warehouse (wave 4)', () => {
+  it('issues parts from SPARE by default, from the tenant setting when set, and from the warehouse given', async () => {
+    const m = (await t.api('POST', '/machines', { code: 'PRESS-09', name: 'เครื่องปั๊ม 9' })).body;
+    const seal = { itemId: randomUUID(), itemCode: 'SP-SEAL-HYD', qty: 1 };
+    const close = async (body: Record<string, unknown>) => {
+      const wo = (await t.api('POST', '/work-orders', { machineId: m.id, title: 'ซีลรั่ว' })).body;
+      expect(wo.parts_warehouse).toBeDefined();
+      return t.api('POST', `/work-orders/${wo.id}/complete`, { resolution: 'เปลี่ยนซีล', parts: [seal], ...body });
+    };
+    const last = async () => (await t.published('maintenance.parts_used')).at(-1)!.data;
+
+    expect((await t.api('GET', '/settings')).body).toEqual({ defaultPartsWarehouse: 'SPARE' });
+    const a = await close({});
+    expect(a.body).toMatchObject({ parts_warehouse_code: 'SPARE', parts_warehouse: 'SPARE' });
+    expect((await last()).warehouseCode).toBe('SPARE');
+
+    const tech = t.token(['maintenance.machine.read', 'maintenance.wo.work', 'maintenance.wo.report']);
+    expect((await t.api('PUT', '/settings', { defaultPartsWarehouse: 'SP-STORE' }, { token: tech })).status).toBe(403);
+    expect((await t.api('PUT', '/settings', { defaultPartsWarehouse: '' })).status).toBe(400);
+    expect((await t.api('PUT', '/settings', { defaultPartsWarehouse: 'sp-store' })).body).toEqual({ defaultPartsWarehouse: 'SP-STORE' });
+    await close({});
+    expect((await last()).warehouseCode).toBe('SP-STORE');
+    await close({ warehouseCode: 'MAIN' });
+    expect((await last()).warehouseCode).toBe('MAIN');
+
+    // per tenant
+    expect((await t.api('GET', '/settings', undefined, { token: t.token(['*'], t.otherTenantId) })).body).toEqual({ defaultPartsWarehouse: 'SPARE' });
+  });
+});

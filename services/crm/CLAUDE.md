@@ -34,13 +34,31 @@ Sales pipeline for B2B SMEs: leads → opportunities → quotations, with follow
 Permissions: `crm.lead.read|write`, `crm.activity.write`, `crm.quote.read|write|decide`.
 
 ## Events
-- publishes `crm.lead_created` (leadId, no, company, contactName, source) and `crm.quotation_accepted` (quotationId, no, customerName, total = gross).
-- subscribes: none. Automation alerts sales; Sales could later draft a sales order from `crm.quotation_accepted`.
+- publishes `crm.lead_created` (leadId, no, company, contactName, source) and `crm.quotation_accepted` (quotationId, no, customerName, total = gross,
+  plus — optional in the contract, always sent now — `partnerId`, `customerTaxId`, `customerBranch`, `customerAddress`, `opportunityId`, `vatMode`,
+  `subtotal`, `discount`, `net`, `vat`, `lines[{itemId, itemCode, itemName, description, qty, unitPrice, discountPct, amount}]`).
+- subscribes: none. Automation alerts sales; **Sales drafts a sales order** from `crm.quotation_accepted` (same lines/discounts/VAT, `ref` = quotation no.,
+  once per quotation). The quote screen cannot link to it (no cross-module links) — find it in Sales by searching the quotation no.
 
 ## Screens
 `src/ui.ts`: leads/lead/leadNew/leadEdit, opportunities/opportunity/opportunityNew/opportunityEdit, myActivities/activities/activityNew,
 quotes/quote (printable)/quoteNew. Widgets: KPI, pipeline (open stages), won-value trend. ⌘K: `เสนอราคา <ลูกค้า> <หมายเหตุ>`, `ลีด <บริษัท>`,
 `เยี่ยมลูกค้า`, `งานติดตาม`; search over leads, opportunities, quotations. Mobile: leads, lead detail actions, log activity/visit, my activities.
+
+## Recommended roles (identity settings — not code)
+A service/sales company hit two permission gaps in the demo (sales/feedback/service-owner.md #7): sales could not create a customer, and the
+project manager could not look up customers (or staff). Both are role settings in Identity; CRM only *reads* through the core lookups.
+Give these roles (identity `POST /roles`, or the role templates in `services/identity/src/role-templates.ts`):
+
+| Role | CRM | Core lookups it needs | Other modules |
+| --- | --- | --- | --- |
+| เซลส์ (sales) | `crm.lead.read/write`, `crm.activity.write`, `crm.quote.read/write/decide` | `master.partner.read` **+ `master.partner.write`** (create a new customer while quoting), `master.item.read`, `identity.user.read` (owner picker) | `sales.order.read/write`, `sales.receivable.read` |
+| ผู้จัดการโครงการ (PM) | `crm.lead.read`, `crm.quote.read` (see what was sold) | **`master.partner.read`** (customer lookup on a project), **`identity.user.read`** (add team members) | `projects.*`, `sales.order.read`, `helpdesk.ticket.read` |
+| หัวหน้าช่าง / ช่าง | — | `master.partner.read` (customer on a ticket), `master.item.read`, `identity.user.read` (assign) | `helpdesk.ticket.create/read/work`, `projects.timesheet.log`, `expense.claim.write` |
+| บัญชี (accounts) | `crm.quote.read` | `master.partner.read` | `sales.order.read`, `sales.invoice.write`, `sales.receipt.write`, `sales.receivable.read` |
+| ผู้บริหาร | `crm.lead.read`, `crm.quote.read` | `master.partner.read` | `sales.order.read`, `sales.receivable.read`, `helpdesk.ticket.read` |
+
+A lookup to a core module is refused (403) when the user lacks that module's read permission, so the picker finds nothing — check the role before suspecting a bug.
 
 ## Extension ideas
 Email/LINE the printed quote, lead scoring, auto-create a sales order on accept (via event), quote approval for big discounts.

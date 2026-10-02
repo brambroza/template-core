@@ -17,7 +17,7 @@ type Entry = { m: ModuleUi; w: Widget; key: string; src: string };
 
 /** Inside an area: numbers first, then work in flight, then rankings, then history. */
 const ORDER: Widget['kind'][] = ['kpi', 'pipeline', 'bars', 'trend', 'feed', 'floor3d'];
-/** Live kinds open the page as "ตอนนี้ในโรงงาน" (3D floor + what the bots/assets just reported). */
+/** Live kinds open the page as "ตอนนี้" (3D floor when maintenance is installed + what the bots/assets just reported). */
 const LIVE: Widget['kind'][] = ['floor3d', 'feed'];
 const REFRESH_MS = 30_000;
 /** A big installation hides the 6-month trends by default so the pulse stays scannable; each user can turn them on. */
@@ -26,7 +26,7 @@ const QUIET_TRENDS_OVER = 12;
 interface HomePrefs { shown: string[]; hidden: string[]; collapsed: AreaId[] }
 const NO_PREFS: HomePrefs = { shown: [], hidden: [], collapsed: [] };
 
-/** "Factory Pulse": every installed module contributes widgets, grouped by business area. */
+/** "ภาพรวมวันนี้" (works for offices and factories alike): every installed module contributes widgets, grouped by business area. */
 export default function Home() {
   const { modules, loading } = useRegistry();
   const session = loadSession();
@@ -80,7 +80,8 @@ export default function Home() {
     <div className="screen home">
       <header className="pulse-head">
         <div>
-          <h1>ภาพรวมโรงงาน</h1>
+          <h1>ภาพรวมวันนี้</h1>
+          {session?.tenant?.name && <p className="pulse-company" style={{ fontWeight: 600, color: 'var(--ink)' }}>{session.tenant.name}</p>}
           <p>{greeting} {session?.user.name}{updated ? ` · ข้อมูล ณ ${updated.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : ''}</p>
         </div>
         <div className="pulse-tools">
@@ -97,7 +98,7 @@ export default function Home() {
       {!loading && all.length > 0 && !shown.length && <p className="muted">ซ่อนการ์ดไว้ทั้งหมด — กด “เลือกการ์ดที่แสดง” เพื่อเลือกใหม่</p>}
 
       {live.length > 0 && (
-        <PulseSection id="live" label="ตอนนี้ในโรงงาน" entries={live} data={data} want={want} className="pulse-live" />
+        <PulseSection id="live" label="ตอนนี้" entries={live} data={data} want={want} className="pulse-live" />
       )}
       {areas.map((g) => (
         <PulseSection key={g.area} id={g.area} label={g.label} entries={g.items} data={data} want={want}
