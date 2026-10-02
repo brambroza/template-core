@@ -22,7 +22,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [tick, setTick] = useState(0);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
-  useReveal(tableRef, 'tbody tr', [rows?.length ?? -1]);
+  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +67,32 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
 
       {error && <p className="form-error" role="alert">{error}</p>}
 
+      {screen.display === 'cards' ? (
+        <div className="card-grid" ref={tableRef}>
+          {rows === null && <p className="muted">กำลังโหลด…</p>}
+          {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
+          {rows?.map((row, i) => {
+            const href = rowHref(row);
+            const [head, body, ...facts] = screen.columns;
+            return (
+              <article key={String(row.id ?? i)} className={`gcard${href ? ' is-link' : ''}`} onClick={href ? () => router.push(href) : undefined}>
+                <h3>{href ? <Link href={href} onClick={(e) => e.stopPropagation()}><Value value={get(row, head.key)} format={head.format} /></Link> : <Value value={get(row, head.key)} format={head.format} />}</h3>
+                {body && <p><Value value={get(row, body.key)} format={body.format} /></p>}
+                {facts.length > 0 && (
+                  <dl>{facts.map((c) => <div key={c.key}><dt>{c.label}</dt><dd><Value value={get(row, c.key)} format={c.format} /></dd></div>)}</dl>
+                )}
+                {rowActions.length > 0 && (
+                  <div className="gcard-actions" onClick={(e) => e.stopPropagation()}>
+                    {rowActions.filter((a) => matches(row, a.when)).map((a) => (
+                      <ActionButton key={a.id} action={a} module={module} params={row} onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined)) : setTick((t) => t + 1))} />
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
       <div className="table-wrap" ref={tableRef}>
         <table className="data">
           <thead>
@@ -100,6 +126,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

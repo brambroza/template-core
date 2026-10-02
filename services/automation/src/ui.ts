@@ -1,5 +1,5 @@
 import { defineUi, type Field } from '@erp/ui-schema';
-import { EVENTS } from './catalog.js';
+import { EVENTS } from './catalog.ts';
 
 /** Screens for web + mobile. Endpoints use the same path templates as the routes in service.ts. */
 const eventSelect: Field = {
@@ -23,6 +23,10 @@ export default defineUi({
   },
   widgets: [
     {
+      id: 'feed', kind: 'feed', title: 'บอทแจ้งเตือนล่าสุด', endpoint: '/notifications', perm: 'automation.notify.read', href: 'notifications', size: 'sm',
+      rows: 'items', title2: 'title', body: 'body', time: 'created_at', level: 'level', link: 'link',
+    },
+    {
       id: 'automation', kind: 'kpi', title: 'บอทอัตโนมัติ', endpoint: '/summary', perm: 'automation.rule.read', href: 'rules', size: 'md',
       items: [
         { key: 'activeRules', label: 'กฎที่เปิดอยู่', tone: 'ok' },
@@ -39,7 +43,7 @@ export default defineUi({
   ],
   screens: {
     templates: {
-      kind: 'list', title: 'สูตรสำเร็จรูป — เปิดใช้ได้ในคลิกเดียว', endpoint: '/templates', perm: 'automation.rule.read', mobile: true,
+      kind: 'list', display: 'cards', title: 'สูตรสำเร็จรูป — เปิดใช้ได้ในคลิกเดียว', endpoint: '/templates', perm: 'automation.rule.read', mobile: true,
       columns: [
         { key: 'name', label: 'ชื่อ' },
         { key: 'summary', label: 'ทำอะไร' },

@@ -117,7 +117,7 @@ export default defineUi({
     },
   },
   widgets: [
-    { id: 'floor', kind: 'floor3d', title: 'ผังโรงงาน', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'lg', href: 'machines',
+    { id: 'floor', kind: 'floor3d', title: 'ผังโรงงาน', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'wide', href: 'machines',
       rows: 'machines', code: 'code', name: 'name', status: 'status', group: 'location', badge: 'open_work_orders', link: { screen: 'machineHistory' } },
     { id: 'mt-kpi', kind: 'kpi', title: 'ซ่อมบำรุง', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'sm', href: 'woList',
       items: [{ key: 'down', label: 'เครื่องเสียตอนนี้', format: 'qty', tone: 'stop' }, { key: 'openWorkOrders', label: 'งานซ่อมค้าง', format: 'qty', tone: 'warn' }, { key: 'pmDue7d', label: 'PM ใน 7 วัน', format: 'qty' }] },

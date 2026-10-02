@@ -6,12 +6,12 @@ import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 import { ModuleIcon } from '@/components/Icon';
-import { Bars, Kpi, Pipeline, Trend, WidgetLink } from '@/components/widgets/Basic';
+import { Bars, Feed, Kpi, Pipeline, Trend, WidgetLink } from '@/components/widgets/Basic';
 import { Floor3D } from '@/components/widgets/Floor3D';
 import { useReveal } from '@/lib/motion';
 
 type Data = Record<string, unknown>;
-const ORDER: Widget['kind'][] = ['floor3d', 'kpi', 'pipeline', 'trend', 'bars'];
+const ORDER: Widget['kind'][] = ['floor3d', 'feed', 'kpi', 'pipeline', 'trend', 'bars'];
 const REFRESH_MS = 30_000;
 
 /** "Factory Pulse": every installed module contributes its own widgets. */
@@ -78,6 +78,7 @@ function WidgetCard({ m, w, data }: { m: ModuleUi; w: Widget; data?: Data }) {
         : w.kind === 'bars' ? <Bars w={w} data={data} />
         : w.kind === 'trend' ? <Trend w={w} data={data} />
         : w.kind === 'pipeline' ? <Pipeline w={w} data={data} module={m.module} />
+        : w.kind === 'feed' ? <Feed w={w} data={data} />
         : <Floor3D w={w} data={data} module={m.module} />}
     </section>
   );

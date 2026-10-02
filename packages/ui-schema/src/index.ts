@@ -91,6 +91,8 @@ export interface ListScreen extends ScreenBase {
   endpoint: string;
   /** path of the array inside the response when it is not the response itself, e.g. "items" */
   rows?: string;
+  /** 'cards': a grid of cards (first column = title, second = text, the rest as small facts) — for galleries */
+  display?: 'table' | 'cards';
   columns: Column[];
   filters?: Field[];
   /** screen id of the create form */
@@ -156,8 +158,8 @@ interface WidgetBase {
   perm?: string;
   /** screen opened when the widget is clicked */
   href?: string;
-  /** relative size on the dashboard grid */
-  size?: 'sm' | 'md' | 'lg';
+  /** relative size on the dashboard grid (of 6 columns: sm 2, md 3, wide 4, lg 6) */
+  size?: 'sm' | 'md' | 'wide' | 'lg';
 }
 
 /** Counters: one big number each, animated on load. */
@@ -208,7 +210,18 @@ export interface FloorWidget extends WidgetBase {
   link?: { screen: string; idFrom?: string };
 }
 
-export type Widget = KpiWidget | BarsWidget | PipelineWidget | TrendWidget | FloorWidget;
+/** A live activity feed (e.g. what the automation bots just did). `link` is a field holding an in-app path. */
+export interface FeedWidget extends WidgetBase {
+  kind: 'feed';
+  rows: string;
+  title2: string;
+  body?: string;
+  time: string;
+  level?: string;
+  link?: string;
+}
+
+export type Widget = KpiWidget | BarsWidget | PipelineWidget | TrendWidget | FloorWidget | FeedWidget;
 
 /** A module that collects notifications for the bell (e.g. automation). */
 export interface NotificationsSpec {

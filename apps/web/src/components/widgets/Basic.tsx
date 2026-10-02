@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useLayoutEffect, useRef } from 'react';
-import { formatValue, get, type BarsWidget, type KpiWidget, type PipelineWidget, type TrendWidget } from '@erp/ui-schema';
+import { formatValue, get, type BarsWidget, type FeedWidget, type KpiWidget, type PipelineWidget, type TrendWidget } from '@erp/ui-schema';
 import { countUp, growX, gsap, reducedMotion } from '@/lib/motion';
 
 const compact = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 1 });
@@ -132,4 +132,39 @@ export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; m
 export function WidgetLink({ module, screen }: { module: string; screen?: string }) {
   if (!screen) return null;
   return <Link href={screenHref(module, screen)}>ดูทั้งหมด</Link>;
+}
+
+function ago(iso: string) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'เมื่อสักครู่';
+  if (s < 3600) return `${Math.floor(s / 60)} นาที`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ชม.`;
+  return `${Math.floor(s / 86400)} วัน`;
+}
+
+/** Live activity: newest first, a coloured dot per level, items slide in. */
+export function Feed({ w, data }: { w: FeedWidget; data: Data }) {
+  const ref = useRef<HTMLOListElement>(null);
+  const rows = ((get(data, w.rows) ?? []) as Data[]).slice(0, 6);
+  const first = rows[0] ? String(get(rows[0], 'id') ?? '') : '';
+  useLayoutEffect(() => {
+    if (!ref.current || reducedMotion()) return;
+    gsap.fromTo(ref.current.querySelectorAll('li'), { opacity: 0, x: -8 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.06, ease: 'power2.out', clearProps: 'opacity,transform' });
+  }, [first]);
+  if (!rows.length) return <p className="muted feed-empty">ยังเงียบอยู่ — เปิดสูตรอัตโนมัติแล้วบอทจะรายงานที่นี่</p>;
+  return (
+    <ol className="feed" ref={ref}>
+      {rows.map((r, i) => {
+        const link = w.link ? (get(r, w.link) as string | null) : null;
+        const inner = (
+          <>
+            <span className={`lvl tone-${w.level ? String(get(r, w.level)) : 'info'}`} aria-hidden />
+            <span className="feed-text"><b>{String(get(r, w.title2) ?? '')}</b>{w.body && <span>{String(get(r, w.body) ?? '')}</span>}</span>
+            <time dateTime={String(get(r, w.time))}>{ago(String(get(r, w.time)))}</time>
+          </>
+        );
+        return <li key={String(get(r, 'id') ?? i)}>{link ? <Link href={link}>{inner}</Link> : <div>{inner}</div>}</li>;
+      })}
+    </ol>
+  );
 }

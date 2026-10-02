@@ -59,16 +59,12 @@ export function CommandPalette() {
   );
   const ui = (id: string) => modules.find((m) => m.module === id) as ModuleUi;
 
-  const close = useCallback(() => {
-    if (panel.current && !reducedMotion()) {
-      gsap.to(panel.current, { y: -8, opacity: 0, scale: 0.98, duration: 0.15, ease: 'power2.in', onComplete: () => setOpen(false) });
-    } else setOpen(false);
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
 
   // open/close
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen((o) => !o); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setText(''); setChat(null); setOpen((o) => !o); }
     };
     const onOpen = (e: Event) => {
       const d = (e as CustomEvent<{ text?: string; ask?: boolean }>).detail ?? {};
