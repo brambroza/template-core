@@ -67,3 +67,25 @@ describe('command targets', () => {
     expect(toBody([], { a: 1, '__label.a': 'x' })).toEqual({ a: 1 });
   });
 });
+
+import { AREAS, areaLabel, groupByArea, moduleArea } from '../src/index.ts';
+
+describe('areas', () => {
+  it('maps every GO Along module to an area, honours an explicit area and defaults add-ons to operations', () => {
+    expect(moduleArea({ module: 'sales' })).toBe('commercial');
+    expect(moduleArea({ module: 'identity' })).toBe('settings');
+    expect(moduleArea({ module: 'sales', area: 'office' })).toBe('office');
+    expect(moduleArea({ module: 'customer-x' })).toBe('operations');
+    expect(areaLabel('service')).toBe('บริการ & โครงการ');
+    expect(AREAS.map((a) => a.id)).toEqual(['operations', 'commercial', 'office', 'service', 'settings']);
+  });
+
+  it('groups items by area in area order, keeping item order and dropping empty areas', () => {
+    const mods = ['identity', 'crm', 'maintenance', 'sales', 'inventory'].map((module) => ({ module }));
+    expect(groupByArea(mods, (m) => m).map((g) => [g.area, g.items.map((m) => m.module)])).toEqual([
+      ['operations', ['maintenance', 'inventory']],
+      ['commercial', ['crm', 'sales']],
+      ['settings', ['identity']],
+    ]);
+  });
+});

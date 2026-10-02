@@ -199,3 +199,34 @@ describe('projects', () => {
     expect((await t.api('GET', '/summary', undefined, { token: other })).body).toMatchObject({ activeProjects: 0, hoursThisWeek: 0 });
   });
 });
+
+describe('projects — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('PJ-01: an approver cannot approve their own timesheet week', async () => {
+    const lead = t.token(['projects.project.read', 'projects.project.write', 'projects.timesheet.log', 'projects.timesheet.approve']);
+    const p = (await t.api('POST', '/projects', { name: 'โครงการทดสอบอนุมัติ' }, { token: lead })).body;
+    await t.api('POST', `/projects/${p.id}/activate`, undefined, { token: lead });
+    expect((await t.api('POST', '/timesheets', { workDate: '2026-09-21', projectId: p.id, hours: 8 }, { token: lead })).status).toBe(201);
+    const w = (await t.api('POST', '/timesheets/week/submit', { start: '2026-09-21' }, { token: lead })).body;
+    const self = await t.api('POST', `/timesheet-weeks/${w.id}/approve`, undefined, { token: lead });
+    expect(self.status).toBe(403);
+    expect(self.body.error.message).toContain('ของตนเองไม่ได้');
+    expect((await t.api('POST', `/timesheet-weeks/${w.id}/approve`)).body.status).toBe('approved'); // another approver
+  });
+
+  it('PJ-02: hours cannot be logged for a future date', async () => {
+    const p = (await t.api('POST', '/projects', { name: 'โครงการอนาคต' })).body;
+    const future = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const r = await t.api('POST', '/timesheets', { workDate: future, projectId: p.id, hours: 8 });
+    expect(r.status).toBe(400);
+    expect(r.body.error.details.fieldErrors.workDate).toBeDefined();
+  });
+
+  it('PJ-03: an end date before the start date gives a Thai field error, not the raw constraint', async () => {
+    const r = await t.api('POST', '/projects', { name: 'วันผิด', startDate: '2026-10-10', endDate: '2026-10-01' });
+    expect(r.status).toBe(400);
+    expect(r.body.error.details.fieldErrors.endDate).toEqual(['วันสิ้นสุดต้องไม่ก่อนวันเริ่ม']);
+    const ok = (await t.api('POST', '/projects', { name: 'วันถูก', startDate: '2026-10-10', endDate: '2026-12-31' })).body;
+    expect((await t.api('PATCH', `/projects/${ok.id}`, { endDate: '2026-10-09' })).status).toBe(400);
+    expect((await t.api('PATCH', `/projects/${ok.id}`, { endDate: '2026-10-10' })).status).toBe(200);
+  });
+});

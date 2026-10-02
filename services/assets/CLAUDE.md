@@ -18,7 +18,7 @@ disposes assets with gain/loss, and a yearly physical audit is done by scanning 
   Method `none` or life 0 = never depreciates. Salvage defaults to cost × category %, life to the category's.
 - Status: registered `in_use` with a custodian, else `in_storage`. Assign without custodian = back to storage. An open repair puts
   the asset `in_repair`; completing the last open repair restores the previous status. Logging a repair with `completed: true` keeps the status.
-- Disposal (sold | scrapped | donated): depreciate through the disposal month, gain/loss = price − book value; open repairs are closed.
+- Disposal (sold | scrapped | donated), dated between the purchase date and today (400 otherwise): depreciate through the disposal month, gain/loss = price − book value; open repairs are closed.
 - Disposed assets: assign, repair, edit, dispose → 409. Lost assets: repair → 409; assign = found again (status restored, lost_on cleared); dispose allowed (write-off).
 - Audit: opening snapshots every non-disposed, non-lost asset at that location (case/space-insensitive). Scan answers
   `found | duplicate | unexpected | unknown` + Thai `message`. Close marks unscanned expected lines `missing`.

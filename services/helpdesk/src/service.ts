@@ -1,4 +1,4 @@
-import { auth, conflict, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
@@ -338,6 +338,10 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
         if (t.status !== 'resolved') throw conflict(`Cannot close a ${t.status} ticket`);
+        // the satisfaction score is the requester's voice: a technician closing someone else's ticket cannot rate their own work
+        if ((b.satisfaction !== undefined || b.feedback) && t.created_by !== a.userId) {
+          throw forbidden('ให้คะแนนความพึงพอใจได้เฉพาะผู้แจ้งเรื่อง — ปิดเรื่องโดยไม่ต้องให้คะแนน');
+        }
         await c.query(`update tickets set status = 'closed', closed_at = now(), satisfaction = $2, feedback = $3, updated_at = now() where id = $1`,
           [id, b.satisfaction ?? null, b.feedback ?? null]);
         return loadTicket(c, a, id);

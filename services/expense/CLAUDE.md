@@ -17,10 +17,11 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 - Monthly limit **never blocks**: on create / line change / submit / reject / cancel the claim's `warnings` are recomputed —
   usage = the claimant's line totals in that category and month on every claim not rejected/cancelled (incl. drafts). `over_limit` = any limit warning.
   Warnings are a snapshot of the claim's last change; other claims are not re-evaluated.
+- Lines: VAT ≤ amount and expense date ≤ today (Bangkok) (400). Submitting a claim totalling 0 → 400. Approvers cannot approve their own claim or advance (403).
 - `requires_receipt`: a line without `receiptNo` gives a `receipt` warning on drafts and **blocks submit** (400).
 - Owner actions (edit, lines, submit, cancel) — claimant, or a user with `expense.claim.approve`. Approve / reject (note) / return (note) — `expense.claim.approve`. Pay — `expense.claim.pay`.
 - Visibility: users with approve or pay perms see everybody; everyone else only their own (others' records → 404).
-- Advance clearing (`expense.claim.pay`): advance must be `paid`, the claim must be the same employee's, `approved` or `paid`, and not already clearing another advance.
+- Advance clearing (`expense.claim.pay`): advance must be `paid`, the claim must be the same employee's, `approved` (not yet paid — a paid claim cannot absorb the advance, 409), and not already clearing another advance.
   `settle_amount > 0` company pays more; `< 0` employee returns cash (`settle_text` in Thai). The claim's `net_payable = total - advance_amount`.
 - Wrong status → 409.
 

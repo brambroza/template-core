@@ -11,6 +11,10 @@ import { ActionButton } from './ActionButton';
 import { FlowStepper } from './FlowStepper';
 import { isNumeric, Value } from './Value';
 
+const rank = (tone?: string) => (tone === 'primary' ? 0 : tone === 'danger' ? 2 : 1);
+/** Long values (descriptions, addresses, notes) take a full row in the facts grid. */
+const isLong = (v: unknown) => typeof v === 'string' && v.length > 60;
+
 export function DetailView({ module, screen, id }: { module: string; screen: DetailScreen; id?: string }) {
   const router = useRouter();
   const perms = loadSession()?.permissions ?? [];
@@ -26,7 +30,11 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
   if (error) return <p className="form-error" role="alert">{error}</p>;
   if (!record) return <p className="muted">กำลังโหลด…</p>;
 
-  const actions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm) && matches(record, a.when));
+  // one yellow button per page: the first primary action is the next step, any other primary becomes a normal button
+  const firstPrimary = (screen.actions ?? []).find((a) => a.tone === 'primary' && hasPerm(perms, a.perm) && matches(record, a.when));
+  const actions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm) && matches(record, a.when))
+    .map((a) => (a.tone === 'primary' && a !== firstPrimary ? { ...a, tone: 'default' as const } : a))
+    .sort((a, b) => rank(a.tone) - rank(b.tone));
   return (
     <article className={`screen detail${screen.printable ? ' printable' : ''}`}>
       <header className="screen-head">
@@ -48,7 +56,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
 
       <dl className="facts">
         {screen.fields.filter((f) => { const v = get(record, f.key); return v !== null && v !== undefined && v !== ''; }).map((f) => (
-          <div key={f.key} className={f.format === 'qr' ? 'fact fact-qr' : 'fact'}>
+          <div key={f.key} className={f.format === 'qr' ? 'fact fact-qr' : isLong(get(record, f.key)) ? 'fact fact-wide' : 'fact'}>
             <dt>{f.label}</dt>
             <dd className={isNumeric(f.format) ? 'num' : undefined}><Value value={get(record, f.key)} format={f.format} /></dd>
           </div>
@@ -60,14 +68,14 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
         return (
           <section key={ls.path} className="detail-lines">
             <h2>{ls.label}</h2>
-            <div className="table-wrap">
-              <table className="data">
-                <thead><tr>{ls.columns.map((c) => <th key={c.key} className={isNumeric(c.format) ? 'num' : undefined}>{c.label}</th>)}</tr></thead>
-                <tbody>
-                  {rows.length === 0 && <tr><td colSpan={ls.columns.length} className="empty">ไม่มีรายการ</td></tr>}
+            <div className="table-wrap stack">
+              <table className="data stack" role="table">
+                <thead role="rowgroup"><tr role="row">{ls.columns.map((c) => <th role="columnheader" key={c.key} className={isNumeric(c.format) ? 'num' : undefined}>{c.label}</th>)}</tr></thead>
+                <tbody role="rowgroup">
+                  {rows.length === 0 && <tr role="row"><td role="cell" colSpan={ls.columns.length} className="empty">ไม่มีรายการ</td></tr>}
                   {rows.map((r, i) => (
-                    <tr key={String(r.id ?? i)}>
-                      {ls.columns.map((c) => <td key={c.key} className={isNumeric(c.format) ? 'num' : undefined}><Value value={get(r, c.key)} format={c.format} /></td>)}
+                    <tr role="row" key={String(r.id ?? i)}>
+                      {ls.columns.map((c) => <td role="cell" key={c.key} className={isNumeric(c.format) ? 'num' : undefined} data-label={c.label}><Value value={get(r, c.key)} format={c.format} /></td>)}
                     </tr>
                   ))}
                 </tbody>

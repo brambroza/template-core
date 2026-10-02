@@ -205,3 +205,20 @@ describe('assets events (for Automation alerts)', () => {
     expect(evs[0]).toEqual({ assetId: asset.id, code: asset.code, name: asset.name, description: 'จอไม่ติด' });
   });
 });
+
+describe('assets — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('AST-01: disposal cannot be dated in the future; a disposed asset stops depreciating after its disposal month', async () => {
+    const cat = (await t.api('POST', '/categories', { code: 'QA-COMP', name: 'คอมพิวเตอร์ QA', usefulLifeYears: 3 })).body;
+    const nb = (await t.api('POST', '/assets', { name: 'โน้ตบุ๊ก QA', categoryId: cat.id, purchaseDate: '2026-01-15', cost: 36000 })).body;
+    const ahead = await t.api('POST', `/assets/${nb.id}/dispose`, { disposedOn: isoIn(60), method: 'sold', price: 1000 });
+    expect(ahead.status).toBe(400);
+    expect(ahead.body.error.details.fieldErrors.disposedOn).toBeDefined();
+    expect((await t.api('GET', `/assets/${nb.id}`)).body.status).toBe('in_storage');
+
+    const d = await t.api('POST', `/assets/${nb.id}/dispose`, { disposedOn: '2026-08-20', method: 'scrapped' });
+    expect(d.body).toMatchObject({ status: 'disposed', disposal_book_value: 28000, disposal_gain_loss: -28000, book_value: 0 });
+    const aug = (await t.api('GET', '/depreciation?month=2026-08')).body.rows.find((r: any) => r.id === nb.id);
+    expect(aug).toMatchObject({ depreciation: 1000, accumulated: 8000 });
+    expect((await t.api('GET', '/depreciation?month=2026-09')).body.rows.find((r: any) => r.id === nb.id)).toBeUndefined();
+  });
+});

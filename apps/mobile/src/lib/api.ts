@@ -18,7 +18,7 @@ export async function api<T = any>(module: string, path: string, opts: { method?
   const session = getSession();
   const base = (opts.baseUrl ?? session?.gatewayUrl ?? '').replace(/\/$/, '');
   const qs = Object.entries(opts.query ?? {})
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null && v !== '' && v !== false)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join('&');
   let res: Response;

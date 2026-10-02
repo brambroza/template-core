@@ -15,14 +15,14 @@ Employee register, leave with quotas and approval, mobile check-in/out with late
 ## Behaviour
 - Time zone is Asia/Bangkok (`src/calendar.ts`). Working day = Mon–Fri (+ Sat if `saturday_workday`) and not a holiday.
 - Leave `days` counts working days only; half day = 0.5 and only for a single day of a type with `allow_half_day`.
-  One request may not cross a calendar year. Overlapping pending/approved leave → 409.
+  One request may not cross a calendar year nor start before the employee's start date (400). Approvers cannot approve or reject their own leave (409). Overlapping pending/approved leave → 409.
 - Balance per type and year (by `from_date`): quota, used (approved), pending, remaining = quota − used − pending.
   A request bigger than remaining → **400** `วันลาคงเหลือไม่พอ: ลากิจ ปี 2570 คงเหลือ 1 วัน แต่ขอลา 2 วัน`.
 - Without `employeeId` a request/check-in is for the employee linked to the token's user; for someone else you need
   `hr.leave.approve` (leave) or `hr.attendance.manage` (attendance). Approvers cannot approve their own leave (409).
 - Staff cancel their own *pending* leave; approvers can also cancel *approved* leave.
 - Check-in uses server time; `late_minutes` = minutes after start_time when beyond `grace_minutes` (0 on non-working days).
-  Only `hr.attendance.manage` may pass `at` or `date`+`time` (forgotten scans; recorded as `source = admin`).
+  Only `hr.attendance.manage` may pass `at` or `date`+`time` (forgotten scans; recorded as `source = admin`); impossible dates (30 Feb) → 400.
   Check-out closes the latest open check-in within 20 h (night shifts), stores work and early-leave minutes.
 - Resigning cancels the employee's pending leave after the last day; resigned staff cannot check in or file leave.
 - `POST /leave-types/defaults` seeds Thai Labour Protection Act types (ลาป่วย 30, ลากิจ 3, ลาพักร้อน 6, ลาคลอด 98, ลาบวช, ลารับราชการทหาร, ลาไม่รับค่าจ้าง); idempotent.

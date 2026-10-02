@@ -1,4 +1,4 @@
-import { auth, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import { bahtText, documentTotals, round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
@@ -88,6 +88,16 @@ const QuoteInput = z.object({
   note: text(2000),
   lines: z.array(QuoteLine).min(1),
 });
+
+/** Today in Thailand (Asia/Bangkok, UTC+7) as YYYY-MM-DD. */
+const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+/** A quotation cannot expire before it is issued. */
+function checkValidity(b: { issueDate?: string; validUntil?: string }, currentIssue?: string) {
+  const issue = b.issueDate ?? currentIssue ?? bangkokToday();
+  if (b.validUntil && b.validUntil < issue) {
+    throw badRequest(`ยืนราคาถึง (${b.validUntil}) ต้องไม่ก่อนวันที่ออกใบเสนอราคา (${issue})`, { fieldErrors: { validUntil: ['ต้องไม่ก่อนวันที่ออกใบเสนอราคา'] } });
+  }
+}
 
 /* ---------------- helpers ---------------- */
 
@@ -439,6 +449,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'crm.quote.write');
       const b = parse(QuoteInput, req.body);
+      checkValidity(b);
       const t = quoteTotals(b.lines, b.vatMode);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
@@ -484,6 +495,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
         if (q.status !== 'draft') throw conflict(`Cannot edit a ${q.status} quotation`);
+        checkValidity({ issueDate: b.issueDate, validUntil: b.validUntil ?? (b.issueDate ? undefined : q.valid_until) }, q.issue_date);
         if (b.opportunityId) await one(c, 'select id from opportunities where id = $1', [b.opportunityId], 'Opportunity');
         await c.query(
           `update quotations set opportunity_id = $2, partner_id = $3, customer_name = $4, customer_tax_id = $5, customer_branch = $6, customer_address = $7,
@@ -523,6 +535,13 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
         if (q.status !== 'sent') throw conflict(`Cannot accept a ${q.status} quotation`);
+        if (q.revised_by) {
+          const rev = (await c.query('select no from quotations where id = $1', [q.revised_by])).rows[0];
+          throw conflict(`${q.no} ถูกแก้ไขเป็น ${rev?.no ?? 'ฉบับใหม่'} แล้ว — ตอบรับฉบับล่าสุดแทน`);
+        }
+        if ((await c.query('select $1::date < current_date as past', [q.valid_until])).rows[0].past) {
+          throw conflict(`${q.no} หมดอายุตั้งแต่ ${q.valid_until} — ออกฉบับแก้ไข (revise) แล้วส่งให้ลูกค้าใหม่`);
+        }
         await c.query(`update quotations set status = 'accepted', decided_at = now(), updated_at = now() where id = $1`, [id]);
         if (q.opportunity_id) {
           await c.query(

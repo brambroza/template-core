@@ -74,6 +74,7 @@ export default defineUi({
     machines: {
       kind: 'list', title: 'เครื่องจักร', endpoint: '/machines', perm: 'maintenance.machine.read', mobile: true,
       columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'location', label: 'ที่ตั้ง' }, { key: 'status', label: 'สถานะ', format: 'status' }],
+      filters: [{ name: 'status', label: 'สถานะ', type: 'select', options: [{ value: 'running', label: 'เดินเครื่อง' }, { value: 'down', label: 'เครื่องเสีย' }, { value: 'retired', label: 'เลิกใช้' }] }],
       create: 'machineNew', createLabel: 'เพิ่มเครื่องจักร', rowLink: { screen: 'machineHistory' }, empty: 'ยังไม่มีเครื่องจักร',
     },
     machineNew: {

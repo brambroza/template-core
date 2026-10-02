@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Download, Printer } from 'lucide-react';
+import { Download, Printer, SlidersHorizontal } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
 import { fillPath, filtersToQuery, get, hasPerm, listRows, matches, routeParams, toCsv, type Field, type ListScreen } from '@erp/ui-schema';
 import { api } from '@/lib/api';
@@ -13,7 +13,7 @@ import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
 import { FieldInput, type Values } from './Fields';
 import { ImportButton } from './ImportButton';
-import { isNumeric, LabelsContext, Value } from './Value';
+import { isNumeric, isWideColumn, LabelsContext, Value } from './Value';
 
 /** "ประเภท: วัตถุดิบ · ค้นหา: เหล็ก" — the active filters, printed above the list. */
 function filterSummary(fields: Field[], values: Values): string {
@@ -39,6 +39,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
+  const [moreFilters, setMoreFilters] = useState(false);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
   useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
@@ -82,6 +83,9 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
 
   const rowHref = (row: Record<string, unknown>) => (screen.rowLink ? screenHref(module, screen.rowLink.screen, get(row, screen.rowLink.idFrom ?? 'id')) : undefined);
   const rowActions = (screen.rowActions ?? []).filter((a) => hasPerm(perms, a.perm));
+  const colClass = (c: ListScreen['columns'][number]) => [isNumeric(c.format) ? 'num' : '', rows && isWideColumn(rows, (r) => get(r, c.key), c.format) ? 'col-wide' : ''].filter(Boolean).join(' ') || undefined;
+  // phone: the first filter (usually search) stays, the rest fold behind "ตัวกรอง"
+  const extraActive = (screen.filters ?? []).slice(1).filter((f) => { const v = filters[f.name]; return v !== undefined && v !== '' && v !== false; }).length;
 
   return (
     <div className="screen">
@@ -105,12 +109,17 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
       </header>
 
       {!!screen.filters?.length && (
-        <div className="filters no-print" role="search">
-          {screen.filters.map((f) => (
-            <div key={f.name} className="filter">
+        <div className={`filters no-print${moreFilters ? ' is-open' : ''}`} role="search">
+          {screen.filters.map((f, fi) => (
+            <div key={f.name} className={fi ? 'filter filter-more' : 'filter'}>
               <FieldInput field={{ ...f, required: false }} module={module} values={filters} compact onChange={(p) => setFilters((v) => ({ ...v, ...p }))} />
             </div>
           ))}
+          {screen.filters.length > 1 && (
+            <button type="button" className="btn filters-toggle" aria-expanded={moreFilters} onClick={() => setMoreFilters((o) => !o)}>
+              <SlidersHorizontal size={16} aria-hidden />ตัวกรอง{extraActive ? ` (${extraActive})` : ''}
+            </button>
+          )}
           {Object.values(filters).some((v) => v) && <button type="button" className="btn-ghost" onClick={() => setFilters({})}>ล้างตัวกรอง</button>}
         </div>
       )}
@@ -144,28 +153,28 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           })}
         </div>
       ) : (
-      <div className="table-wrap" ref={tableRef}>
-        <table className="data">
-          <thead>
-            <tr>
-              {screen.columns.map((c) => <th key={c.key} className={isNumeric(c.format) ? 'num' : undefined}>{c.label}</th>)}
-              {rowActions.length > 0 && <th className="no-print"><span className="sr-only">คำสั่ง</span></th>}
+      <div className="table-wrap stack" ref={tableRef}>
+        <table className="data stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              {screen.columns.map((c) => <th role="columnheader" key={c.key} className={colClass(c)}>{c.label}</th>)}
+              {rowActions.length > 0 && <th role="columnheader" className="no-print"><span className="sr-only">คำสั่ง</span></th>}
             </tr>
           </thead>
-          <tbody>
-            {rows === null && <tr><td colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
-            {rows?.length === 0 && !error && <tr><td colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
+          <tbody role="rowgroup">
+            {rows === null && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
+            {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
             {rows?.map((row, i) => {
               const href = rowHref(row);
               return (
-                <tr key={String(row.id ?? i)} className={href ? 'is-link' : undefined} onClick={href ? () => router.push(href) : undefined}>
+                <tr role="row" key={String(row.id ?? i)} className={href ? 'is-link' : undefined} onClick={href ? () => router.push(href) : undefined}>
                   {screen.columns.map((c, ci) => (
-                    <td key={c.key} className={isNumeric(c.format) ? 'num' : undefined}>
+                    <td role="cell" key={c.key} className={colClass(c)} data-label={c.label}>
                       {ci === 0 && href ? <Link href={href} onClick={(e) => e.stopPropagation()}><Value value={get(row, c.key)} format={c.format} /></Link> : <Value value={get(row, c.key)} format={c.format} />}
                     </td>
                   ))}
                   {rowActions.length > 0 && (
-                    <td className="row-actions no-print" onClick={(e) => e.stopPropagation()}>
+                    <td role="cell" className="row-actions no-print" onClick={(e) => e.stopPropagation()}>
                       {rowActions.filter((a) => matches(row, a.when)).map((a) => (
                         <ActionButton key={a.id} action={a} module={module} params={row} onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined)) : setTick((t) => t + 1))} />
                       ))}

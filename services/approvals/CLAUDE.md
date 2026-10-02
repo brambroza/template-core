@@ -14,7 +14,7 @@ Requires only `identity` (approvers are picked from `/users` and stored as snaps
 ## Behaviour
 - Steps are copied from the type when the request is created; `approvers` in the body overrides them (an empty list = use the type's chain).
 - Submit (requester or admin) needs ≥1 step (400 otherwise); it resets all steps to `waiting` and sets `current_step = 1`. Resubmitting a returned request restarts at step 1.
-- Approve / reject / return act on the current step only, by **that step's approver** or a user with `approvals.request.admin` (403 otherwise). Reject and return need a `note` (400).
+- Approve / reject / return act on the current step only, by **that step's approver** or a user with `approvals.request.admin` (403 otherwise). Nobody approves their own request — not even an admin (403, `can_act` false). Reject and return need a `note` (400).
   Approving the last step → `approved`; reject → `rejected`; return → `returned` (requester edits / changes approvers / resubmits).
 - Cancel: requester or admin while `draft | pending | returned`. Comment: anyone who can see the request, any status.
 - Wrong status → 409. Visibility: a user sees requests they raised or are on the chain of; `approvals.request.admin` sees all. Invisible → 404.

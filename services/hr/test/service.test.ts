@@ -275,3 +275,36 @@ describe('hr: events (for Automation alerts)', () => {
     expect((await t.published('hr.leave_requested')).length).toBe(before);
   });
 });
+
+describe('hr — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('HR-01: leave dated before the employee started is refused', async () => {
+    const me = { token: userToken(somchaiUser, STAFF) }; // EMP-001 started 2024-01-15
+    const r = await t.api('POST', '/leave-requests', { leaveTypeId: ids.BUSINESS, fromDate: '2023-03-06' }, me);
+    expect(r.status).toBe(400);
+    expect(r.body.error.message).toContain('ก่อนวันเริ่มงาน');
+    expect(r.body.error.details.fieldErrors.fromDate).toBeDefined();
+  });
+
+  it('HR-02: an approver cannot reject (or approve) their own leave', async () => {
+    const boss = { token: userToken(approverUser, ['hr.leave.request', 'hr.leave.approve', 'hr.employee.read']) };
+    const lv = await t.api('POST', '/leave-requests', { leaveTypeId: ids.SICK, fromDate: '2027-06-07' }, boss);
+    expect(lv.status).toBe(201);
+    expect((await t.api('POST', `/leave-requests/${lv.body.id}/reject`, { note: 'ไม่ลาแล้ว' }, boss)).status).toBe(409);
+    expect((await t.api('POST', `/leave-requests/${lv.body.id}/approve`, {}, boss)).status).toBe(409);
+    expect((await t.api('POST', `/leave-requests/${lv.body.id}/cancel`, {}, boss)).body.status).toBe('cancelled');
+  });
+
+  it('HR-03: an impossible date (30 Feb) is refused instead of rolling over to March', async () => {
+    const r = await t.api('POST', `/employees/${ids.boss}/check-in`, { date: '2026-02-30', time: '08:00' });
+    expect(r.status).toBe(400);
+    expect(r.body.error.details.fieldErrors.date).toBeDefined();
+    expect((await t.api('GET', `/employees/${ids.boss}/attendance?month=2026-03`)).body).toHaveLength(0);
+    // a past day says which day, not "today"
+    expect((await t.api('POST', `/employees/${ids.boss}/check-in`, { date: '2026-09-07', time: '08:00' })).status).toBe(201);
+    const dup = await t.api('POST', `/employees/${ids.boss}/check-in`, { date: '2026-09-07', time: '08:30' });
+    expect(dup.body.error.message).toContain('วันที่ 2026-09-07');
+    const early = await t.api('POST', `/employees/${ids.boss}/check-out`, { date: '2026-09-07', time: '07:00' });
+    expect(early.status).toBe(409);
+    expect(early.body.error.message).toContain('เวลาออกงานก่อนเวลาเข้างาน');
+  });
+});

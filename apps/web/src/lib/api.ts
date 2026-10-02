@@ -18,7 +18,7 @@ const MESSAGES: Record<number, string> = {
 /** Call a module through the gateway: api('purchasing', '/purchase-orders', …). */
 export async function api<T = any>(module: string, path: string, opts: { method?: string; body?: unknown; query?: Record<string, unknown> } = {}): Promise<T> {
   const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== '' && v !== false) qs.set(k, String(v));
   const session = loadSession();
   const res = await fetch(`/api/${module}${path}${qs.size ? `?${qs}` : ''}`, {
     method: opts.method ?? 'GET',

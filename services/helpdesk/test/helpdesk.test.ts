@@ -213,3 +213,20 @@ describe('helpdesk events (for Automation alerts)', () => {
     expect((await t.published()).length).toBe(before);
   });
 });
+
+describe('helpdesk — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('HD-01: only the requester rates satisfaction; a technician cannot score their own work', async () => {
+    const user = t.token(['helpdesk.ticket.create']);
+    const techToken = t.token(['helpdesk.ticket.create', 'helpdesk.ticket.read', 'helpdesk.ticket.work']);
+    const tk = (await t.api('POST', '/tickets', { title: 'เครื่องพิมพ์ไม่ออก', priority: 'normal' }, { token: user })).body;
+    await t.api('POST', `/tickets/${tk.id}/resolve`, { resolution: 'เปลี่ยนหมึก' }, { token: techToken });
+    const rated = await t.api('POST', `/tickets/${tk.id}/close`, { satisfaction: 5, feedback: 'ดีมาก' }, { token: techToken });
+    expect(rated.status).toBe(403);
+    expect(rated.body.error.message).toContain('เฉพาะผู้แจ้ง');
+    expect((await t.api('POST', `/tickets/${tk.id}/close`, {}, { token: techToken })).body).toMatchObject({ status: 'closed', satisfaction: null });
+    // a phone ticket keyed in by the technician may carry the caller's score
+    const phone = (await t.api('POST', '/tickets', { title: 'อินเทอร์เน็ตช้า', channel: 'phone', requesterName: 'คุณบี' }, { token: techToken })).body;
+    await t.api('POST', `/tickets/${phone.id}/resolve`, { resolution: 'รีสตาร์ตเราเตอร์' }, { token: techToken });
+    expect((await t.api('POST', `/tickets/${phone.id}/close`, { satisfaction: 4 }, { token: techToken })).body.satisfaction).toBe(4);
+  });
+});

@@ -314,6 +314,43 @@ export interface ModuleUi {
   statusLabels?: Record<string, string>;
   search?: SearchSpec[];
   commands?: CommandSpec[];
+  /** where the module sits in the menu and on the home dashboard; defaults per module id (see moduleArea) */
+  area?: AreaId;
+}
+
+/* ---------------- areas: how 18+ modules are grouped in the menu and on the home dashboard ---------------- */
+
+export type AreaId = 'operations' | 'commercial' | 'office' | 'service' | 'settings';
+
+/** Business areas in display order. */
+export const AREAS: readonly { id: AreaId; label: string }[] = [
+  { id: 'operations', label: 'การผลิต & คลัง' },
+  { id: 'commercial', label: 'ขาย & ลูกค้า' },
+  { id: 'office', label: 'สำนักงาน & บุคคล' },
+  { id: 'service', label: 'บริการ & โครงการ' },
+  { id: 'settings', label: 'ตั้งค่า' },
+];
+
+const MODULE_AREA: Record<string, AreaId> = {
+  inventory: 'operations', purchasing: 'operations', production: 'operations', quality: 'operations', maintenance: 'operations', costing: 'operations',
+  crm: 'commercial', sales: 'commercial',
+  approvals: 'office', expense: 'office', hr: 'office', booking: 'office', assets: 'office',
+  helpdesk: 'service', projects: 'service',
+  automation: 'settings', 'master-data': 'settings', identity: 'settings',
+};
+
+/** The area of a module: its own `area`, the built-in default for GO Along modules, else 'operations' (a factory add-on). */
+export function moduleArea(ui: { module: string; area?: AreaId }): AreaId {
+  return ui.area ?? MODULE_AREA[ui.module] ?? 'operations';
+}
+
+export function areaLabel(id: AreaId): string {
+  return AREAS.find((a) => a.id === id)?.label ?? id;
+}
+
+/** Group items by the area of their module, in AREAS order, keeping the items' own order inside an area. Empty areas are left out. */
+export function groupByArea<T>(items: T[], moduleOf: (item: T) => { module: string; area?: AreaId }): { area: AreaId; label: string; items: T[] }[] {
+  return AREAS.map((a) => ({ area: a.id, label: a.label, items: items.filter((i) => moduleArea(moduleOf(i)) === a.id) })).filter((g) => g.items.length);
 }
 
 /** Icon names the apps know how to draw (lucide names). */

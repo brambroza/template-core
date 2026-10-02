@@ -21,6 +21,9 @@ export interface Db {
 
 export function createDb(url: string): Db {
   const pool = new pg.Pool({ connectionString: url, max: Number(process.env.DB_POOL_MAX ?? 10) });
+  // an idle connection killed by the server (restart, failover, test teardown) must not crash the process;
+  // the pool drops it and opens a new one on the next query
+  pool.on('error', (err) => { if ((err as { code?: string }).code !== '57P01') console.error('[db] idle client error', err.message); });
   async function rawTx<T>(fn: (c: Client) => Promise<T>): Promise<T> {
     const c = await pool.connect();
     try {

@@ -42,7 +42,7 @@ export function Bars({ w, data }: { w: BarsWidget; data: Data }) {
   const rows = ((get(data, w.rows) as Data[]) ?? []).slice(0, 10);
   const max = Math.max(1, ...rows.map((r) => Math.max(Number(get(r, w.value) ?? 0), Number(w.threshold ? get(r, w.threshold) ?? 0 : 0))));
   useLayoutEffect(() => { if (ref.current) growX(ref.current.querySelectorAll('.bar-fill')); }, [data]);
-  if (!rows.length) return <p className="muted">ยังไม่มีข้อมูลสต็อก</p>;
+  if (!rows.length) return <p className="muted">ยังไม่มีข้อมูล</p>;
   return (
     <div className="bars" ref={ref}>
       {rows.map((r, i) => {
@@ -83,7 +83,7 @@ export function Trend({ w, data }: { w: TrendWidget; data: Data }) {
   const last = ys.at(-1) ?? 0;
   return (
     <div className="trend">
-      <div className="now">{w.format === 'money' ? `฿${formatValue(last, 'money')}` : formatValue(last, w.format)}<span className="muted" style={{ fontSize: '.8rem', fontWeight: 400, marginLeft: 8 }}>เดือนนี้</span></div>
+      <div className="now">{w.format === 'money' ? `฿${formatValue(last, 'money')}` : formatValue(last, w.format)}<span className="now-label">เดือนนี้</span></div>
       <svg ref={ref} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${w.title}: ${rows.map((r) => `${formatValue(get(r, w.x), 'month')} ${formatValue(get(r, w.y), w.format)}`).join(', ')}`}>
         <path className="trend-area" d={area} fill="color-mix(in srgb, var(--accent) 22%, transparent)" />
         <path className="trend-line" d={line} fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
@@ -93,6 +93,9 @@ export function Trend({ w, data }: { w: TrendWidget; data: Data }) {
     </div>
   );
 }
+
+/** Cards per lane on the dashboard; the rest is a count (the full list is one click away via "ดูทั้งหมด"). */
+const LANE_MAX = 4;
 
 export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; module: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -108,8 +111,8 @@ export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; m
         return (
           <section key={st.value} className="lane" aria-label={`${st.label} ${items.length} รายการ`}>
             <div className="lane-head"><span>{st.label}</span><span>{items.length}</span></div>
-            {items.length === 0 && <span className="muted" style={{ fontSize: '.8rem', padding: '0 2px' }}>ว่าง</span>}
-            {items.slice(0, 6).map((r, i) => {
+            {items.length === 0 && <span className="lane-empty">ว่าง</span>}
+            {items.slice(0, LANE_MAX).map((r, i) => {
               const qty = Number(r.qty ?? 0), done = Number(r.completed_qty ?? 0);
               const body = (
                 <>
@@ -122,7 +125,7 @@ export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; m
                 ? <a key={i} className="card" href={screenHref(module, w.link.screen, get(r, w.link.idFrom ?? 'id'))}>{body}</a>
                 : <div key={i} className="card">{body}</div>;
             })}
-            {items.length > 6 && <span className="muted" style={{ fontSize: '.8rem' }}>และอีก {items.length - 6} รายการ</span>}
+            {items.length > LANE_MAX && <span className="lane-more">และอีก {items.length - LANE_MAX} รายการ</span>}
           </section>
         );
       })}

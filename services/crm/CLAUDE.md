@@ -20,6 +20,7 @@ Sales pipeline for B2B SMEs: leads → opportunities → quotations, with follow
 - `valid_until` defaults to issue date + 30 days. Only drafts can be edited (`PUT`); `revise` copies a sent/rejected/expired quote
   (once) into a new draft keeping the validity length.
 - Sending a quote moves its opportunity from `prospect` to `proposal`. Accepting marks the opportunity `won` with `value = quote.net`.
+- `valid_until` before `issue_date` → 400. Accept → 409 when the quote is past `valid_until` (revise it) or was superseded by a revision.
 - `POST /quotations/expire-due { asOf? }` expires sent quotes past validity — idempotent, run daily.
 - All status changes not allowed in the current state return 409.
 

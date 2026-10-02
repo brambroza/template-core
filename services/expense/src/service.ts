@@ -81,6 +81,8 @@ const STATUS_TH: Record<string, string> = {
   requested: 'ขอเบิก', cleared: 'เคลียร์แล้ว',
 };
 const METHOD_TH: Record<string, string> = { transfer: 'โอนเงิน', cash: 'เงินสด', cheque: 'เช็ค' };
+/** Today in Thailand (Asia/Bangkok, UTC+7) as YYYY-MM-DD. */
+const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Approvers and payers see everybody's claims; everyone else only their own. */
@@ -101,6 +103,11 @@ async function loadClaim(c: Client, id: string, a: AuthContext, lock = false) {
   return decorate(cl);
 }
 
+/** Segregation of duties: nobody approves their own claim or advance. */
+function refuseSelfApproval(owner: string, a: AuthContext, what: string) {
+  if (owner === a.userId) throw forbidden(`อนุมัติ${what}ของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ`);
+}
+
 function requireOwner(row: { claimant_id?: string; requester_id?: string }, a: AuthContext) {
   const owner = row.claimant_id ?? row.requester_id;
   if (owner !== a.userId && !hasPerm(a, 'expense.claim.approve')) throw forbidden('Only the claimant (or an approver) can change this');
@@ -117,8 +124,12 @@ async function writeLines(c: Client, claimId: string, lines: z.infer<typeof Clai
     const cat = cats.get(l.categoryId);
     if (!cat) throw badRequest(`Line ${i + 1}: unknown expense category`);
     if (!cat.active) throw badRequest(`Line ${i + 1}: category ${cat.code} is inactive`);
+    if (l.expenseDate > bangkokToday()) {
+      throw badRequest(`รายการที่ ${i + 1}: วันที่ใช้จ่าย ${l.expenseDate} อยู่ในอนาคต`, { fieldErrors: { expenseDate: ['วันที่ใช้จ่ายต้องไม่เกินวันนี้'] } });
+    }
     const amount = round(l.amount);
     const v = round(l.vat);
+    if (v > amount) throw badRequest(`รายการที่ ${i + 1}: VAT (${fmt(v)}) มากกว่าจำนวนเงิน (${fmt(amount)})`, { fieldErrors: { vat: ['VAT ต้องไม่มากกว่าจำนวนเงิน'] } });
     net += amount;
     vat += v;
     await c.query(
@@ -164,6 +175,7 @@ async function submitClaim(k: Kernel, c: Client, id: string, a: AuthContext) {
   if (!['draft', 'returned'].includes(cl.status)) throw conflict(`Cannot submit a ${cl.status} claim`);
   const missing = cl.lines.filter((l: any) => l.receipt_required && !l.receipt_no);
   if (missing.length) throw badRequest(`Receipt number required on line(s) ${missing.map((l: any) => l.line_no).join(', ')}`);
+  if (!(Number(cl.total) > 0)) throw badRequest('ยอดเบิกรวมเป็น 0 บาท ส่งขออนุมัติไม่ได้', { fieldErrors: { lines: ['กรอกจำนวนเงินอย่างน้อยหนึ่งรายการ'] } });
   await c.query(`update claims set status = 'submitted', submitted_at = now(), updated_at = now() where id = $1`, [id]);
   await refreshWarnings(c, id);
   const row = (await c.query('select id, no, claimant_name, total, over_limit from claims where id = $1', [id])).rows[0];
@@ -334,6 +346,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const cl = await loadClaim(c, id, a, true);
         if (cl.status !== 'submitted') throw conflict(`Cannot approve a ${cl.status} claim`);
+        refuseSelfApproval(cl.claimant_id, a, 'ใบเบิก');
         await c.query(`update claims set status = 'approved', approved_by = $2, approved_at = now(), last_note = coalesce($3, last_note), updated_at = now() where id = $1`, [id, a.userId, b.note ?? null]);
         return loadClaim(c, id, a);
       });
@@ -429,6 +442,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const adv = await loadAdvance(c, id, a, true);
         if (adv.status !== 'requested') throw conflict(`Cannot approve a ${adv.status} advance`);
+        refuseSelfApproval(adv.requester_id, a, 'เงินทดรองจ่าย');
         await c.query(`update advances set status = 'approved', approved_by = $2, approved_at = now(), updated_at = now() where id = $1`, [id, a.userId]);
         return loadAdvance(c, id, a);
       });
@@ -475,7 +489,7 @@ export const definition: ServiceDefinition = {
     });
 
     /**
-     * Clear a paid advance against the employee's approved (or paid) claim.
+     * Clear a paid advance against the employee's approved, not yet paid claim (its net payable becomes total − advance).
      * settle = claim total - advance: > 0 the company still owes the employee, < 0 the employee returns cash.
      */
     app.post('/advances/:id/clear', async (req) => {
@@ -488,7 +502,9 @@ export const definition: ServiceDefinition = {
         if (adv.status !== 'paid') throw conflict(`Cannot clear a ${adv.status} advance`);
         const cl = await loadClaim(c, b.claimId, a, true);
         if (cl.claimant_id !== adv.requester_id) throw conflict(`Claim ${cl.no} belongs to another employee`);
-        if (!['approved', 'paid'].includes(cl.status)) throw conflict(`Claim ${cl.no} is ${cl.status}; only approved or paid claims can clear an advance`);
+        // a claim that was already paid in full cannot absorb the advance any more (the employee would keep the advance)
+        if (cl.status === 'paid') throw conflict(`ใบเบิก ${cl.no} จ่ายเงินเต็มจำนวนไปแล้ว — เคลียร์เงินทดรองได้เฉพาะใบเบิกที่อนุมัติแล้วและยังไม่จ่าย (พนักงานต้องคืนเงินทดรอง ${fmt(adv.amount)} บาท)`);
+        if (cl.status !== 'approved') throw conflict(`Claim ${cl.no} is ${cl.status}; only approved claims can clear an advance`);
         if (cl.advance_id) throw conflict(`Claim ${cl.no} already clears advance ${cl.advance_no}`);
         const settle = round(cl.total - adv.amount);
         await c.query(`update advances set status = 'cleared', claim_id = $2, claim_no = $3, claim_total = $4, settle_amount = $5, cleared_at = now(), updated_at = now() where id = $1`,

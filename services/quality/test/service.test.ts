@@ -357,3 +357,17 @@ describe('quality — events (for Automation alerts)', () => {
     expect((await t.published('quality.ncr_raised')).length).toBe(before);
   });
 });
+
+describe('quality — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('QC-01: a value is judged as stored (4 decimals): exactly at min/max passes, just outside fails', () => {
+    const cp = { type: 'measure', min_value: 1.95, max_value: 2.05, name: 'ความหนา' };
+    expect(evaluate(cp, { value: 1.95 })).toEqual({ value: 1.95, passed: true });
+    expect(evaluate(cp, { value: 2.05 })).toEqual({ value: 2.05, passed: true });
+    expect(evaluate(cp, { value: 2.05004 })).toEqual({ value: 2.05, passed: true }); // stored and printed as 2.0500
+    expect(evaluate(cp, { value: 2.0501 })).toEqual({ value: 2.0501, passed: false });
+    expect(evaluate(cp, { value: 1.9499 }).passed).toBe(false);
+    expect(evaluate({ ...cp, min_value: 0.1, max_value: 0.3 }, { value: 0.1 + 0.2 })).toEqual({ value: 0.3, passed: true });
+    expect(evaluate({ ...cp, min_value: -0.05, max_value: 0.05 }, { value: -0.05 }).passed).toBe(true);
+    expect(evaluate({ ...cp, min_value: null, max_value: 10 }, { value: 10 }).passed).toBe(true);
+  });
+});

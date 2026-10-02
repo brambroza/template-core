@@ -201,6 +201,14 @@ async function loadWeekById(c: Client, a: AuthContext, id: string, lock = false)
 
 const like = (q?: string) => (q ? `%${q}%` : null);
 
+/** Today in Thailand (Asia/Bangkok, UTC+7) as YYYY-MM-DD. */
+const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+/** End date before start date: a clear Thai field error instead of the raw table constraint. */
+function checkDates(start: string | null | undefined, end: string | null | undefined) {
+  if (start && end && end < start) throw badRequest('วันสิ้นสุดต้องไม่ก่อนวันเริ่มโครงการ', { fieldErrors: { endDate: ['วันสิ้นสุดต้องไม่ก่อนวันเริ่ม'] } });
+}
+
 export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
@@ -211,6 +219,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'projects.project.write');
       const b = parse(ProjectInput, req.body);
+      checkDates(b.startDate, b.endDate);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const no = await nextDocNo(c, 'PJ', b.startDate ? new Date(b.startDate) : new Date());
@@ -298,6 +307,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const p = await one(c, 'select * from projects where id = $1 for update', [id], 'Project');
         if (p.status === 'cancelled') throw conflict(`Cannot edit cancelled project ${p.no}`);
+        checkDates(b.startDate === undefined ? p.start_date : b.startDate, b.endDate === undefined ? p.end_date : b.endDate);
         const map: Record<string, string> = { name: 'name', customerId: 'customer_id', customerName: 'customer_name', managerId: 'manager_id', managerName: 'manager_name', budget: 'budget', startDate: 'start_date', endDate: 'end_date', description: 'description' };
         const keys = Object.keys(map).filter((key) => (b as any)[key] !== undefined);
         if (keys.length) {
@@ -502,6 +512,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const p = await one(c, 'select id, no, status from projects where id = $1', [b.projectId], 'Project');
         if (p.status === 'cancelled') throw conflict(`Project ${p.no} is cancelled`);
+        if (b.workDate > bangkokToday()) throw badRequest(`ลงชั่วโมงล่วงหน้าไม่ได้ (${b.workDate})`, { fieldErrors: { workDate: ['วันที่ทำงานต้องไม่เกินวันนี้'] } });
         if (b.taskId) {
           const t = await c.query('select 1 from tasks where id = $1 and project_id = $2', [b.taskId, b.projectId]);
           if (!t.rowCount) throw badRequest('Task does not belong to this project', { fieldErrors: { taskId: ['งานนี้ไม่ได้อยู่ในโครงการ'] } });
@@ -606,6 +617,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const w = await loadWeekById(c, a, id, true);
         if (w.status !== 'submitted') throw conflict(`Cannot approve a ${w.status} timesheet week`);
+        if (w.user_id === a.userId) throw forbidden('อนุมัติชั่วโมงทำงานของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ');
         await c.query(`update timesheet_weeks set status = 'approved', approved_by = $2, approved_at = now() where id = $1`, [id, a.userId]);
         return loadWeekById(c, a, id);
       });

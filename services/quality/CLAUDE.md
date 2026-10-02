@@ -19,7 +19,7 @@ Requires `identity` + `master-data` only; `purchasing` and `production` enhance 
 
 ## Behaviour
 - Sample size: fixed qty (never more than the lot) or `ceil(qty × % / 100)`, at least 1. Can be overridden on a manual inspection.
-- A checkpoint fails when a measured value is outside min/max, or when it is marked failed (`/fail`). Measure checkpoints need a value; others need pass/fail.
+- A checkpoint fails when a measured value (rounded to the stored 4 decimals; min/max inclusive) is outside min/max, or when it is marked failed (`/fail`). Measure checkpoints need a value; others need pass/fail.
 - Recording any result moves a pending inspection to `in_progress`. Complete needs every checkpoint recorded (409 otherwise).
 - Verdict: no fails → `pass`; any **critical** checkpoint failed → `fail`; only non-critical fails → `conditional`.
   Default quantities: fail → all rejected; pass/conditional → all accepted. Given quantities must add up to the lot qty (400).

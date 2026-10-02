@@ -181,3 +181,23 @@ describe('approvals events (for Automation alerts)', () => {
     expect((await t.published()).length).toBe(before + 1); // only the submit
   });
 });
+
+describe('approvals — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('APV-01: a requester on their own chain cannot approve their own request, not even as an admin', async () => {
+    const boss = user('ผู้จัดการ', [...APPROVER, 'approvals.request.admin']);
+    const other = user('ผู้อนุมัติแทน', APPROVER);
+    const r = (await t.api('POST', '/requests', {
+      typeId, title: 'ขอซื้อพัดลม', amount: 1500, submit: true,
+      approvers: [{ userId: boss.id, userName: 'ผู้จัดการ' }, { userId: other.id, userName: 'ผู้อนุมัติแทน' }],
+    }, { token: boss.token })).body;
+    expect(r).toMatchObject({ status: 'pending', current_step: 1, can_act: false });
+    const self = await t.api('POST', `/requests/${r.id}/approve`, {}, { token: boss.token });
+    expect(self.status).toBe(403);
+    expect(self.body.error.message).toContain('อนุมัติคำขอของตนเองไม่ได้');
+    expect((await t.api('GET', '/inbox', undefined, { token: boss.token })).body.find((x: any) => x.id === r.id)).toMatchObject({ can_act: false });
+    // another admin (not the requester) can still take the stuck step
+    const admin2 = user('admin2', ['approvals.request.read', 'approvals.request.approve', 'approvals.request.admin']);
+    expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: admin2.token })).body.current_step).toBe(2);
+    expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: other.token })).body.status).toBe('approved');
+  });
+});

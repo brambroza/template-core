@@ -20,7 +20,7 @@ The project page shows progress, hours vs estimate and labour cost vs budget. Re
 - Task moves: start (todo|review → doing — from review it means "sent back"), review (doing), done (todo|doing|review), reopen (done → todo). 409 otherwise; no moves in a cancelled project.
 - Done/cancelled projects refuse new tasks, members and milestones (409). Cancelled projects refuse hours (409).
 - Milestone of a task must belong to the same project (400). A timesheet task must belong to the entry's project (400).
-- Hours: one user may not exceed 24 h per day (400). Entries of a submitted/approved week cannot be added or deleted (409).
+- Hours: one user may not exceed 24 h per day (400), no future dates (400). Approvers cannot approve their own week (403). End date before start date → 400 `fieldErrors.endDate`. Entries of a submitted/approved week cannot be added or deleted (409).
   Users only see/delete their own entries unless they hold `projects.timesheet.approve`.
 - Overdue = not done and due_date < today (tasks and milestones).
 

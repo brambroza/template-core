@@ -115,6 +115,7 @@ export default defineUi({
     },
     notifications: {
       kind: 'list', title: 'การแจ้งเตือน', endpoint: '/notifications', rows: 'items', perm: 'automation.notify.read', mobile: true,
+      filters: [{ name: 'unread', label: 'เฉพาะที่ยังไม่อ่าน', type: 'boolean' }],
       columns: [
         { key: 'created_at', label: 'เวลา', format: 'datetime' },
         { key: 'level', label: 'ระดับ', format: 'status' },

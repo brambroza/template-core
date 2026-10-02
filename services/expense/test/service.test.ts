@@ -131,7 +131,7 @@ describe('expense', () => {
     expect((await t.api('POST', `/advances/${adv.id}/clear`, { claimId: claim.id }, { token: finance.token })).status).toBe(409); // claim not approved yet
     await t.api('POST', `/claims/${claim.id}/approve`, {}, { token: manager.token });
     const otherClaim = (await t.api('POST', '/claims', { purpose: 'y', submit: true, lines: [{ expenseDate: today, categoryId: fuel.id, amount: 5 }] }, { token: manager.token })).body;
-    await t.api('POST', `/claims/${otherClaim.id}/approve`, {}, { token: manager.token });
+    await t.api('POST', `/claims/${otherClaim.id}/approve`, {}, { token: as([...STAFF, 'expense.claim.approve']).token }); // nobody approves their own claim
     expect((await t.api('POST', `/advances/${adv.id}/clear`, { claimId: otherClaim.id }, { token: finance.token })).status).toBe(409); // someone else's claim
 
     const cleared = await t.api('POST', `/advances/${adv.id}/clear`, { claimId: claim.id }, { token: finance.token });
@@ -209,5 +209,53 @@ describe('expense events (for Automation alerts)', () => {
     const draft = (await t.api('POST', '/claims', { purpose: 'ร่าง', lines: [{ expenseDate: today, categoryId: hotel.id, amount: 500 }] }, { token: somchai.token })).body;
     expect((await t.api('POST', `/claims/${draft.id}/submit`, undefined, { token: somchai.token })).status).toBe(400); // receipt missing
     expect((await t.published('expense.claim_submitted')).length).toBe(before);
+  });
+});
+
+describe('expense — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  const line = (extra: Record<string, unknown> = {}) => ({ expenseDate: today, categoryId: fuel.id, amount: 300, ...extra });
+
+  it('EXP-01: an approver cannot approve their own claim or advance', async () => {
+    const boss = as([...STAFF, 'expense.claim.approve']);
+    const c = (await t.api('POST', '/claims', { purpose: 'ค่าน้ำมันของหัวหน้า', submit: true, lines: [line()] }, { token: boss.token })).body;
+    const self = await t.api('POST', `/claims/${c.id}/approve`, {}, { token: boss.token });
+    expect(self.status).toBe(403);
+    expect(self.body.error.message).toContain('ของตนเองไม่ได้');
+    expect((await t.api('POST', `/claims/${c.id}/approve`, {}, { token: manager.token })).body.status).toBe('approved');
+    const adv = (await t.api('POST', '/advances', { purpose: 'เดินทาง', amount: 1000 }, { token: boss.token })).body;
+    expect((await t.api('POST', `/advances/${adv.id}/approve`, undefined, { token: boss.token })).status).toBe(403);
+    expect((await t.api('POST', `/advances/${adv.id}/approve`, undefined, { token: manager.token })).body.status).toBe('approved');
+  });
+
+  it('EXP-02: a claim that was already paid cannot clear an advance (the employee must return it all)', async () => {
+    const emp = as(STAFF);
+    const adv = (await t.api('POST', '/advances', { purpose: 'เดินทางเชียงใหม่', amount: 2000 }, { token: emp.token })).body;
+    await t.api('POST', `/advances/${adv.id}/approve`, undefined, { token: manager.token });
+    await t.api('POST', `/advances/${adv.id}/pay`, { method: 'cash' }, { token: finance.token });
+    const c = (await t.api('POST', '/claims', { purpose: 'แท็กซี่', submit: true, lines: [line({ amount: 350 })] }, { token: emp.token })).body;
+    await t.api('POST', `/claims/${c.id}/approve`, {}, { token: manager.token });
+    await t.api('POST', `/claims/${c.id}/pay`, { method: 'transfer' }, { token: finance.token });
+    const r = await t.api('POST', `/advances/${adv.id}/clear`, { claimId: c.id }, { token: finance.token });
+    expect(r.status).toBe(409);
+    expect(r.body.error.message).toContain('จ่ายเงินเต็มจำนวนไปแล้ว');
+    expect((await t.api('GET', `/advances/${adv.id}`, undefined, { token: finance.token })).body.status).toBe('paid');
+  });
+
+  it('EXP-03: a claim totalling 0 baht cannot be submitted', async () => {
+    const r = await t.api('POST', '/claims', { purpose: 'ศูนย์บาท', submit: true, lines: [line({ amount: 0 })] }, { token: somchai.token });
+    expect(r.status).toBe(400);
+    const d = (await t.api('POST', '/claims', { purpose: 'ศูนย์บาท', lines: [line({ amount: 0 })] }, { token: somchai.token })).body;
+    expect((await t.api('POST', `/claims/${d.id}/submit`, undefined, { token: somchai.token })).status).toBe(400);
+  });
+
+  it('EXP-04 / EXP-05: VAT above the amount and expenses dated in the future are refused', async () => {
+    const vat = await t.api('POST', '/claims', { purpose: 'VAT ผิด', lines: [line({ amount: 100, vat: 500 })] }, { token: somchai.token });
+    expect(vat.status).toBe(400);
+    expect(vat.body.error.details.fieldErrors.vat).toBeDefined();
+    const future = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const f = await t.api('POST', '/claims', { purpose: 'ล่วงหน้า', lines: [line({ expenseDate: future })] }, { token: somchai.token });
+    expect(f.status).toBe(400);
+    expect(f.body.error.details.fieldErrors.expenseDate).toBeDefined();
+    expect((await t.api('POST', '/claims', { purpose: 'VAT พอดี', lines: [line({ amount: 100, vat: 7 })] }, { token: somchai.token })).status).toBe(201);
   });
 });

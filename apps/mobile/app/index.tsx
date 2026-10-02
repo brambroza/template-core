@@ -1,7 +1,7 @@
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { formatValue, get, hasPerm, type FeedWidget, type KpiWidget, type ModuleUi } from '@erp/ui-schema';
+import { formatValue, get, groupByArea, hasPerm, type FeedWidget, type KpiWidget, type ModuleUi } from '@erp/ui-schema';
 import { screenPath } from '../src/components/Screens';
 import { Button, ErrorText, s } from '../src/components/ui';
 import { api } from '../src/lib/api';
@@ -84,25 +84,29 @@ export default function Home() {
         );
       })}
 
-      {modules.map((m) => {
-        const items = m.menu.filter((i) => m.screens[i.screen]?.mobile && hasPerm(perms, m.screens[i.screen].perm));
-        if (!items.length) return null;
-        return (
-          <View key={m.module} style={[st.card, { marginHorizontal: 16 }]}>
-            <View style={st.cardHead}>
-              <View style={st.glyph}><Text style={st.glyphText}>{m.glyph}</Text></View>
-              <Text style={[st.cardTitle, { flex: 1 }]}>{m.label}</Text>
+      {groupByArea(
+        modules.map((m) => ({ m, items: m.menu.filter((i) => m.screens[i.screen]?.mobile && hasPerm(perms, m.screens[i.screen].perm)) })).filter((x) => x.items.length),
+        (x) => x.m,
+      ).map((g) => (
+        <View key={g.area} style={{ gap: 10 }}>
+          <Text accessibilityRole="header" style={st.area}>{g.label}</Text>
+          {g.items.map(({ m, items }) => (
+            <View key={m.module} style={[st.card, { marginHorizontal: 16 }]}>
+              <View style={st.cardHead}>
+                <View style={st.glyph}><Text style={st.glyphText}>{m.glyph}</Text></View>
+                <Text style={[st.cardTitle, { flex: 1 }]}>{m.label}</Text>
+              </View>
+              <View style={st.tiles}>
+                {items.map((i) => (
+                  <Pressable key={i.screen} accessibilityRole="button" onPress={() => router.push(screenPath(m.module, i.screen))} style={({ pressed }) => [st.tile, pressed && { backgroundColor: 'rgba(245,197,24,0.22)' }]}>
+                    <Text style={st.tileText}>{i.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
-            <View style={st.tiles}>
-              {items.map((i) => (
-                <Pressable key={i.screen} accessibilityRole="button" onPress={() => router.push(screenPath(m.module, i.screen))} style={({ pressed }) => [st.tile, pressed && { backgroundColor: 'rgba(245,197,24,0.22)' }]}>
-                  <Text style={st.tileText}>{i.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        );
-      })}
+          ))}
+        </View>
+      ))}
       {!loading && !error && modules.every((m) => !m.menu.some((i) => m.screens[i.screen]?.mobile)) && (
         <Text style={[s.muted, { paddingHorizontal: 16 }]}>โมดูลที่ติดตั้งยังไม่มีหน้าจอสำหรับมือถือ ใช้งานผ่านหน้าเว็บได้</Text>
       )}
@@ -116,6 +120,7 @@ export default function Home() {
 
 const st = StyleSheet.create({
   hello: { fontSize: 24, fontWeight: '700', color: c.ink },
+  area: { paddingHorizontal: 16, marginTop: 6, fontSize: 13, fontWeight: '700', color: c.inkSoft, letterSpacing: 0.2 },
   kpi: { width: 132, padding: 14, borderRadius: radius + 4, backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, gap: 2 },
   kpiModule: { fontSize: 11, fontWeight: '600', color: c.inkSoft, textTransform: 'uppercase' },
   kpiValue: { fontSize: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },

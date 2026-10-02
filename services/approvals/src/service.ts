@@ -89,7 +89,8 @@ async function loadRequest(c: Client, id: string, a: AuthContext, lock = false) 
   const mine = r.requester_id === a.userId || isAdmin(a);
   const open = ['draft', 'returned'].includes(r.status);
   r.is_requester = r.requester_id === a.userId;
-  r.can_act = r.status === 'pending' && (r.current_approver_id === a.userId || isAdmin(a));
+  // nobody approves their own request (segregation of duties) — not even an approvals admin
+  r.can_act = r.status === 'pending' && (r.current_approver_id === a.userId || isAdmin(a)) && r.requester_id !== a.userId;
   r.can_edit = open && mine;
   r.can_submit = open && mine;
   r.can_cancel = ['draft', 'pending', 'returned'].includes(r.status) && mine;
@@ -147,6 +148,7 @@ async function decide(k: Kernel, c: Client, id: string, a: AuthContext, action: 
   const r = await loadRequest(c, id, a, true);
   if (r.status !== 'pending') throw conflict(`Cannot ${action === 'approved' ? 'approve' : action === 'rejected' ? 'reject' : 'return'} a ${r.status} request`);
   if (r.current_approver_id !== a.userId && !isAdmin(a)) throw forbidden(`Step ${r.current_step} is waiting for ${r.current_approver_name ?? 'another approver'}`);
+  if (action === 'approved' && r.requester_id === a.userId) throw forbidden('อนุมัติคำขอของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นหรือผู้ดูแลระบบอนุมัติแทน');
   const step = r.current_step;
   await c.query(`update request_steps set status = $3, acted_by = $4, acted_at = now(), note = $5 where request_id = $1 and step_no = $2`, [id, step, action, a.userId, note ?? null]);
   if (action === 'approved' && step < r.step_count) {
@@ -306,7 +308,7 @@ export const definition: ServiceDefinition = {
         `${SELECT_REQ} where r.status = 'pending' and cs.approver_id = $1
            and ($2::text is null or r.no ilike $2 or r.title ilike $2 or r.requester_name ilike $2)
          order by r.submitted_at limit $3 offset $4`,
-        [a.userId, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map((r) => ({ ...r, can_act: true })));
+        [a.userId, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map((r) => ({ ...r, can_act: r.requester_id !== a.userId })));
     });
 
     /** Dashboard: my queue, the organisation's pipeline, decisions per month, speed of decisions. */

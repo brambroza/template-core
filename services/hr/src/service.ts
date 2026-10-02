@@ -163,6 +163,10 @@ async function attendanceTarget(c: Client, a: AuthContext, b: z.infer<typeof Che
     if (!emp) throw badRequest('บัญชีผู้ใช้นี้ยังไม่ได้ผูกกับข้อมูลพนักงาน — ให้ฝ่ายบุคคลระบุผู้ใช้ในหน้าพนักงาน');
     await c.query('select 1 from employees where id = $1 for update', [emp.id]);
   }
+  // "2026-02-30" must not silently roll over to 2 March
+  if (b.date && new Date(`${b.date}T00:00:00Z`).toISOString().slice(0, 10) !== b.date) {
+    throw badRequest(`ไม่มีวันที่ ${b.date} ในปฏิทิน`, { fieldErrors: { date: ['วันที่ไม่ถูกต้อง'] } });
+  }
   const explicit = b.at ?? (b.time ? `${b.date ?? localDate()}T${b.time}:00+07:00` : undefined);
   if (b.date && !b.time) throw badRequest('ระบุเวลาด้วย (HH:MM)');
   if (explicit && !manage) throw forbidden('ระบุเวลาเองได้เฉพาะผู้มีสิทธิ์บันทึกเวลาแทนพนักงาน');
@@ -540,6 +544,9 @@ export const definition: ServiceDefinition = {
           await c.query('select 1 from employees where id = $1 for update', [emp.id]); // serialise balance checks per employee
         }
         if (emp.status === 'resigned') throw conflict(`${emp.full_name} ลาออกแล้ว ยื่นใบลาไม่ได้`);
+        if (b.fromDate < String(emp.start_date)) {
+          throw badRequest(`ลาก่อนวันเริ่มงาน (${emp.start_date}) ไม่ได้`, { fieldErrors: { fromDate: [`ต้องไม่ก่อนวันเริ่มงาน ${emp.start_date}`] } });
+        }
         const type = (await c.query('select * from leave_types where id = $1', [b.leaveTypeId])).rows[0];
         if (!type || !type.active) throw badRequest('ไม่พบประเภทการลาที่เลือก');
         if (b.halfDay && !type.allow_half_day) throw badRequest(`${type.name} ลาครึ่งวันไม่ได้`);
@@ -639,6 +646,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const lv = await loadLeave(c, id, true);
         assertLeaveStatus(lv, ['pending'], 'ไม่อนุมัติ');
+        if (isOwn(a, lv)) throw conflict('พิจารณาใบลาของตนเองไม่ได้ — ถ้าไม่ต้องการลาแล้วให้กด "ยกเลิก"');
         await c.query(`update leave_requests set status = 'rejected', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note]);
         await k.emit(c, 'hr.leave_decided', { leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision: 'rejected' });
         return loadLeave(c, id);
@@ -671,7 +679,7 @@ export const definition: ServiceDefinition = {
         const { emp, at, source } = await attendanceTarget(c, a, b);
         const workDate = localDate(at);
         const existing = (await c.query('select check_in_at from attendance where employee_id = $1 and work_date = $2', [emp.id, workDate])).rows[0];
-        if (existing) throw conflict(`${emp.full_name} ลงเวลาเข้างานวันนี้แล้ว เมื่อ ${hhmm(existing.check_in_at)} น.`);
+        if (existing) throw conflict(`${emp.full_name} ลงเวลาเข้างาน${workDate === localDate() ? 'วันนี้' : `วันที่ ${workDate}`}แล้ว เมื่อ ${hhmm(existing.check_in_at)} น.`);
         const cal = await loadCalendar(c, workDate, workDate);
         const afterStart = localMinutes(at) - toMinutes(cal.schedule.start_time);
         const late = cal.isWorkday(workDate) && afterStart > cal.schedule.grace_minutes ? afterStart : 0;
@@ -693,8 +701,9 @@ export const definition: ServiceDefinition = {
            order by check_in_at desc limit 1 for update`, [emp.id, at])).rows[0];
         if (!open) {
           const done = (await c.query('select check_out_at from attendance where employee_id = $1 and work_date = $2 and check_out_at is not null', [emp.id, localDate(at)])).rows[0];
-          if (done) throw conflict(`${emp.full_name} ลงเวลาออกงานวันนี้แล้ว เมื่อ ${hhmm(done.check_out_at)} น.`);
-          throw conflict(`${emp.full_name} ยังไม่ได้ลงเวลาเข้างานวันนี้`);
+          const day = localDate(at) === localDate() ? 'วันนี้' : `วันที่ ${localDate(at)}`;
+          if (done) throw conflict(`${emp.full_name} ลงเวลาออกงาน${day}แล้ว เมื่อ ${hhmm(done.check_out_at)} น.`);
+          throw conflict(`${emp.full_name} ยังไม่ได้ลงเวลาเข้างาน${day} (หรือเวลาออกงานก่อนเวลาเข้างาน)`);
         }
         const cal = await loadCalendar(c, open.work_date, open.work_date);
         const workMinutes = Math.max(0, Math.round((at.getTime() - new Date(open.check_in_at).getTime()) / 60000));

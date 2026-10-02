@@ -17,6 +17,7 @@ drivers close a vehicle trip with odometer and fuel. Requires only `identity` (t
 - approve/reject: `pending` only (perm `booking.book.approve`, reject needs a note). cancel: `pending | confirmed` and not yet ended.
   complete: `confirmed` and already started. Owners act on their own bookings with `booking.book.create`; approvers on anyone's.
 - Completing a vehicle requires the end odometer; the start reading defaults to the vehicle's last `mileage_end`. `distance_km = end − start`.
+  The odometer only goes up: the start reading may not be below the previous trip's end (by trip date) and the end may not pass the next trip's start (400); `lastMileage` = latest trip by date.
 - `complete_mode` (`vehicle | other | null`) tells the UI which completion button to show.
 - Utilisation = confirmed/completed hours this week (Mon–Sun, clipped) ÷ (45 h × active resources).
 

@@ -196,3 +196,23 @@ describe('booking: events (for Automation alerts)', () => {
     expect((await t.published('booking.requested')).length).toBe(before);
   });
 });
+
+describe('booking — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  it('BK-01: the odometer cannot go backwards, and a late-logged trip must fit between its neighbours', async () => {
+    const truck = (await t.api('POST', '/resources', { code: 'TRUCK-QA', name: 'รถกระบะ QA', kind: 'vehicle', capacity: 2 })).body.id;
+    const t1 = (await book(truck, '2026-08-03', '08:00', '12:00')).body;
+    expect((await t.api('POST', `/bookings/${t1.id}/complete`, { mileageStart: 153000, mileageEnd: 153226 }, as(aliceUser))).body.distance_km).toBe(226);
+    const t3 = (await book(truck, '2026-08-20', '08:00', '12:00')).body;
+    // typo: start reading far below the last one
+    const back = await t.api('POST', `/bookings/${t3.id}/complete`, { mileageStart: 10, mileageEnd: 20 }, as(aliceUser));
+    expect(back.status).toBe(400);
+    expect(back.body.error.message).toContain('153226');
+    expect((await t.api('POST', `/bookings/${t3.id}/complete`, { mileageEnd: 153400 }, as(aliceUser))).body).toMatchObject({ mileage_start: 153226, distance_km: 174 });
+    // a trip in between, logged afterwards, starts from the reading before it and may not end past the next one
+    const t2 = (await book(truck, '2026-08-10', '08:00', '09:00')).body;
+    expect((await t.api('POST', `/bookings/${t2.id}/complete`, { mileageEnd: 153500 }, as(aliceUser))).status).toBe(400);
+    expect((await t.api('POST', `/bookings/${t2.id}/complete`, { mileageEnd: 153226 }, as(aliceUser))).body).toMatchObject({ mileage_start: 153226, distance_km: 0 });
+    // last reading = the latest trip by date, not the last one keyed in
+    expect((await t.api('GET', `/resources/${truck}`)).body.lastMileage).toBe(153400);
+  });
+});

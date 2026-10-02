@@ -161,8 +161,10 @@ export function evaluate(cp: { type: string; min_value: number | null; max_value
       if (input.passed === false) return { value: null, passed: false };
       throw badRequest('Validation failed', { fieldErrors: { value: [`กรอกค่าที่วัดได้ของ "${cp.name}"`] }, formErrors: [] });
     }
-    const inSpec = (cp.min_value == null || input.value >= cp.min_value) && (cp.max_value == null || input.value <= cp.max_value);
-    return { value: input.value, passed: inSpec && input.passed !== false };
+    // judge the value that is stored and shown (numeric(18,4)), so 2.05004 → 2.0500 is in a 1.95–2.05 spec and 0.1 + 0.2 equals 0.3
+    const value = Math.round((input.value + Math.sign(input.value) * Number.EPSILON) * 10000) / 10000;
+    const inSpec = (cp.min_value == null || value >= Number(cp.min_value)) && (cp.max_value == null || value <= Number(cp.max_value));
+    return { value, passed: inSpec && input.passed !== false };
   }
   if (input.passed === undefined) throw badRequest('Validation failed', { fieldErrors: { passed: [`เลือกผล ผ่าน/ไม่ผ่าน ของ "${cp.name}"`] }, formErrors: [] });
   return { value: input.value ?? null, passed: input.passed };

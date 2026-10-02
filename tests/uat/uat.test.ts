@@ -5,7 +5,7 @@
  * both into the UAT pack page.
  */
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -86,8 +86,16 @@ beforeAll(async () => {
   phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 });
 
+/** Read-merge-write: this run and the office/service run (business.test.ts) each replace only their own cases. */
+function saveShots() {
+  const old = existsSync(SHOTS_INDEX) ? JSON.parse(readFileSync(SHOTS_INDEX, 'utf8')) : {};
+  const all = { ...old, ...shots };
+  const sorted = Object.fromEntries(Object.keys(all).sort((a, b) => Number(a.slice(4)) - Number(b.slice(4))).map((k) => [k, all[k]]));
+  writeFileSync(SHOTS_INDEX, JSON.stringify(sorted, null, 2) + '\n');
+}
+
 afterAll(async () => {
-  writeFileSync(SHOTS_INDEX, JSON.stringify(shots, null, 2) + '\n');
+  if (Object.keys(shots).length) saveShots();
   await browser?.close();
   stopWeb(web);
   ai?.server.close();

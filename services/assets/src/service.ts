@@ -442,6 +442,9 @@ export const definition: ServiceDefinition = {
         const asset = await one(c, 'select * from assets where id = $1 for update', [id], 'Asset');
         assertWorkable(asset, 'dispose', true);
         if (b.disposedOn < asset.purchase_date) throw badRequest('Disposal date is before the purchase date', { fieldErrors: { disposedOn: ['วันที่ตัดจำหน่ายก่อนวันที่ซื้อ'] } });
+        // a disposal is a fact: dating it ahead would book a gain/loss on a future book value and stop depreciation early
+        const now = await today(c);
+        if (b.disposedOn > now) throw badRequest(`ตัดจำหน่ายล่วงหน้าไม่ได้ (${b.disposedOn})`, { fieldErrors: { disposedOn: [`ต้องไม่เกินวันนี้ (${now})`] } });
         const rows = schedule({ ...asset, disposed_on: b.disposedOn });
         const book = round2(asset.cost - (rows.at(-1)?.accumulated ?? 0));
         await c.query(

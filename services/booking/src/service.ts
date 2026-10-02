@@ -165,7 +165,7 @@ export const definition: ServiceDefinition = {
         r.tripsMonth = m.trips;
         r.kmMonth = m.km;
         r.fuelMonth = m.fuel;
-        r.lastMileage = (await c.query(`select mileage_end from bookings where resource_id = $1 and mileage_end is not null order by completed_at desc limit 1`, [id])).rows[0]?.mileage_end ?? null;
+        r.lastMileage = (await c.query(`select mileage_end from bookings where resource_id = $1 and status = 'completed' and mileage_end is not null order by start_at desc, completed_at desc limit 1`, [id])).rows[0]?.mileage_end ?? null;
         return r;
       });
     });
@@ -365,8 +365,22 @@ export const definition: ServiceDefinition = {
         let mileageEnd: number | null = null;
         let distance: number | null = null;
         if (bk.resource_kind === 'vehicle') {
-          mileageStart = b.mileageStart ?? (await c.query(
-            `select mileage_end from bookings where resource_id = $1 and mileage_end is not null order by completed_at desc limit 1`, [bk.resource_id])).rows[0]?.mileage_end ?? null;
+          // the odometer only goes up: readings must fit between the trips before and after this one (trips may be logged late)
+          const before = (await c.query(
+            `select no, mileage_end from bookings where resource_id = $1 and status = 'completed' and mileage_end is not null and start_at < $2
+             order by start_at desc, completed_at desc limit 1`, [bk.resource_id, bk.start_at])).rows[0] ?? null;
+          const after = (await c.query(
+            `select no, mileage_start from bookings where resource_id = $1 and status = 'completed' and mileage_start is not null and start_at > $2
+             order by start_at, completed_at limit 1`, [bk.resource_id, bk.start_at])).rows[0] ?? null;
+          mileageStart = b.mileageStart ?? before?.mileage_end ?? null;
+          if (before && mileageStart !== null && mileageStart < before.mileage_end) {
+            throw badRequest(`เลขไมล์ก่อนใช้รถ (${mileageStart}) น้อยกว่าเลขไมล์ล่าสุดของรถ (${before.mileage_end} จาก ${before.no})`,
+              { fieldErrors: { mileageStart: [`ต้องไม่น้อยกว่า ${before.mileage_end}`] } });
+          }
+          if (after && b.mileageEnd !== undefined && b.mileageEnd > after.mileage_start) {
+            throw badRequest(`เลขไมล์หลังใช้รถ (${b.mileageEnd}) มากกว่าเลขไมล์เริ่มของเที่ยวถัดไป (${after.mileage_start} จาก ${after.no})`,
+              { fieldErrors: { mileageEnd: [`ต้องไม่เกิน ${after.mileage_start}`] } });
+          }
           if (mileageStart === null || b.mileageEnd === undefined) {
             throw badRequest('กรอกเลขไมล์ก่อนและหลังใช้รถ', { fieldErrors: { ...(mileageStart === null ? { mileageStart: ['กรอกเลขไมล์ก่อนใช้รถ'] } : {}), ...(b.mileageEnd === undefined ? { mileageEnd: ['กรอกเลขไมล์หลังใช้รถ'] } : {}) } });
           }

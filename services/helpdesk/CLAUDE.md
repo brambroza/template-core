@@ -19,7 +19,7 @@ canned replies and a knowledge base. Requires only `identity` (assignee lookups;
 - First response = `start`, a public reply by a technician, or resolve.
 - Requesters (`helpdesk.ticket.create` only) see just their own tickets and never internal notes; their public reply on a
   `waiting` ticket moves it back to `in_progress`.
-- `resolve` needs a resolution; `close` (requester or technician) only from `resolved`; `reopen` only from `resolved`.
+- `resolve` needs a resolution; `close` (requester or technician) only from `resolved` — satisfaction/feedback only from the ticket's creator (403 for a technician closing someone else's ticket); `reopen` only from `resolved`.
   Disallowed transitions return 409; comments on closed tickets 409.
 - KB: readers see published articles only (`GET /articles/:id` of a draft = 404 for them); reading counts a view.
 

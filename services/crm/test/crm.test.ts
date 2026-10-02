@@ -245,3 +245,42 @@ describe('crm events (for Automation alerts)', () => {
     expect((await t.published('crm.lead_created')).length).toBe(before);
   });
 });
+
+describe('crm — QA regressions (docs/uat/bugs-0.3.md)', () => {
+  const lines = [{ description: 'เครื่องพิมพ์ฉลาก', qty: 2, unitPrice: 50000, discountPct: 10 }];
+
+  it('CRM-01: once revised, the superseded quotation cannot be accepted as well', async () => {
+    const opp = (await t.api('POST', '/opportunities', { name: 'เครื่องพิมพ์ฉลาก', customerName: 'บริษัท ทดสอบ จำกัด', value: 100000 })).body;
+    const q = (await t.api('POST', '/quotations', { customerName: 'บริษัท ทดสอบ จำกัด', opportunityId: opp.id, lines })).body;
+    await t.api('POST', `/quotations/${q.id}/send`);
+    const rev = (await t.api('POST', `/quotations/${q.id}/revise`)).body;
+    await t.api('POST', `/quotations/${rev.id}/send`);
+    expect((await t.api('POST', `/quotations/${rev.id}/accept`)).body.status).toBe('accepted');
+    const before = (await t.published('crm.quotation_accepted')).length;
+    const old = await t.api('POST', `/quotations/${q.id}/accept`);
+    expect(old.status).toBe(409);
+    expect(old.body.error.message).toContain(`${q.no}-R1`);
+    expect((await t.published('crm.quotation_accepted')).length).toBe(before);
+  });
+
+  it('CRM-02: a sent quotation past its validity cannot be accepted', async () => {
+    const q = (await t.api('POST', '/quotations', { customerName: 'ลูกค้าช้า', issueDate: '2026-09-01', validUntil: '2026-09-15', lines })).body;
+    await t.api('POST', `/quotations/${q.id}/send`);
+    const r = await t.api('POST', `/quotations/${q.id}/accept`);
+    expect(r.status).toBe(409);
+    expect(r.body.error.message).toContain('หมดอายุ');
+    // the way forward: revise and send again
+    const rev = (await t.api('POST', `/quotations/${q.id}/revise`)).body;
+    await t.api('POST', `/quotations/${rev.id}/send`);
+    expect((await t.api('POST', `/quotations/${rev.id}/accept`)).body.status).toBe('accepted');
+  });
+
+  it('CRM-03: valid-until before the issue date is refused on create and edit', async () => {
+    const bad = await t.api('POST', '/quotations', { customerName: 'X', issueDate: '2026-10-02', validUntil: '2026-09-01', lines });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.details.fieldErrors.validUntil).toBeDefined();
+    const q = (await t.api('POST', '/quotations', { customerName: 'X', issueDate: '2026-10-02', lines })).body;
+    expect((await t.api('PUT', `/quotations/${q.id}`, { customerName: 'X', validUntil: '2026-10-01', lines })).status).toBe(400);
+    expect((await t.api('PUT', `/quotations/${q.id}`, { customerName: 'X', validUntil: '2026-10-02', lines })).status).toBe(200);
+  });
+});
