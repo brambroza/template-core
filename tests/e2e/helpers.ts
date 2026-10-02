@@ -15,7 +15,7 @@ export interface Installation {
 }
 
 /** Boot a real installation: the chosen modules on real ports, each with its own database, behind a gateway. */
-export async function install(defs: ServiceDefinition[]): Promise<Installation> {
+export async function install(defs: ServiceDefinition[], extraEnv: Record<string, string> = {}): Promise<Installation> {
   const services: Record<string, Service> = {};
   const envs: Record<string, NodeJS.ProcessEnv> = {};
   const drops: (() => Promise<void>)[] = [];
@@ -23,7 +23,7 @@ export async function install(defs: ServiceDefinition[]): Promise<Installation> 
   for (const def of defs) {
     const db = await createTestDatabase(`e2e_${def.manifest.id}`);
     drops.push(db.drop);
-    envs[def.manifest.id] = { DATABASE_URL: db.url, JWT_SECRET: TEST_JWT_SECRET, INTERNAL_TOKEN: TEST_INTERNAL_TOKEN, NODE_ENV: 'test' };
+    envs[def.manifest.id] = { DATABASE_URL: db.url, JWT_SECRET: TEST_JWT_SECRET, INTERNAL_TOKEN: TEST_INTERNAL_TOKEN, NODE_ENV: 'test', ...extraEnv };
     const svc = createService(def, envs[def.manifest.id]);
     urls[def.manifest.id] = await svc.start({ port: 0, host: '127.0.0.1' });
     services[def.manifest.id] = svc;

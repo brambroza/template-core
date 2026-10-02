@@ -28,3 +28,8 @@ jobs:
         run: |
           pnpm exec playwright-core install --with-deps chromium
           pnpm test:ui
+      - name: automated UAT run (all 22 cases, screenshots)
+        run: pnpm exec vitest run --config vitest.uat.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: uat-screens, path: docs/uat/screens }

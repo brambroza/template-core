@@ -10,7 +10,10 @@
     "check": "pnpm typecheck && pnpm test && node --import tsx tools/erp/src/cli.ts verify",
     "erp": "node --import tsx tools/erp/src/cli.ts",
     "db:dev": "bash scripts/dev-db.sh",
-    "test:ui": "pnpm --filter @erp/web build && vitest run --config vitest.ui.config.ts"
+    "test:ui": "pnpm --filter @erp/web build && vitest run --config vitest.ui.config.ts",
+    "uat": "pnpm --filter @erp/web build && vitest run --config vitest.uat.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/run.json",
+    "test:report": "vitest run --reporter=default --reporter=json --outputFile.json=docs/uat/system.json && vitest run --config vitest.ui.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/browser.json",
+    "uat:pack": "pnpm test:report && pnpm uat && pnpm erp uat-report"
   },
   "devDependencies": {
     "@erp/contracts": "workspace:*",

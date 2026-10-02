@@ -1,0 +1,194 @@
+{
+  "UAT-01": [
+    {
+      "file": "UAT-01.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-02": [
+    {
+      "file": "UAT-02.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-02-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-03": [
+    {
+      "file": "UAT-03.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-04": [
+    {
+      "file": "UAT-04.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-04-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-05": [
+    {
+      "file": "UAT-05.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-05-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-06": [
+    {
+      "file": "UAT-06.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-06-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-07": [
+    {
+      "file": "UAT-07.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-08": [
+    {
+      "file": "UAT-08.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-08-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-08-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-09": [
+    {
+      "file": "UAT-09.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-10": [
+    {
+      "file": "UAT-10.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-11": [
+    {
+      "file": "UAT-11.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-12": [
+    {
+      "file": "UAT-12.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-12-2.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-12-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-13": [
+    {
+      "file": "UAT-13.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-13-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-14": [
+    {
+      "file": "UAT-14.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-15": [
+    {
+      "file": "UAT-15.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-16": [
+    {
+      "file": "UAT-16.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-17": [
+    {
+      "file": "UAT-17.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-18": [
+    {
+      "file": "UAT-18.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-18-2.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-18-3.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-19": [
+    {
+      "file": "UAT-19.jpg",
+      "device": "phone"
+    },
+    {
+      "file": "UAT-19-2.jpg",
+      "device": "phone"
+    }
+  ],
+  "UAT-20": [
+    {
+      "file": "UAT-20.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-20-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-22": [
+    {
+      "file": "UAT-22.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-22-2.jpg",
+      "device": "desktop"
+    }
+  ],
+  "UAT-21": [
+    {
+      "file": "UAT-21.jpg",
+      "device": "desktop"
+    },
+    {
+      "file": "UAT-21-2.jpg",
+      "device": "desktop"
+    }
+  ]
+}

@@ -65,6 +65,7 @@ pnpm erp new-module quality --name "Quality Control" --name-th "ควบคุ�
 pnpm erp verify
 pnpm erp ui-sync            # after adding/removing a module
 pnpm test:ui                # builds the web app, then drives it in Chromium against a real installation
+pnpm uat:pack               # rerun all tests + the 22 UAT cases with screenshots, rebuild docs/uat/uat-pack.html
 pnpm --filter @erp/web dev  # web on :3000 (GATEWAY_URL=http://localhost:8080)
 pnpm --filter @erp/mobile start   # Expo; EXPO_PUBLIC_GATEWAY_URL=http://<lan-ip>:8080
 ```

@@ -10,6 +10,7 @@
  *   license  keygen | issue --customer NAME --modules LIST [--expires YYYY-MM-DD] [--updates-until YYYY-MM-DD] | inspect TOKEN
  *   new-module <id> --name "English" --name-th "ไทย"
  *   ui-sync                                   regenerate web/mobile module registries from services/<id>/src/ui.ts
+ *   uat-report                                build docs/uat/uat-pack.html from the UAT cases, runs and screenshots
  *   verify                                    architecture rules (run in CI)
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
@@ -24,6 +25,7 @@ import { pack } from './pack.ts';
 import { scaffoldModule } from './scaffold.ts';
 import { verify } from './verify.ts';
 import { syncUi } from './ui-sync.ts';
+import { buildUatReport } from './uat-report.ts';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -123,6 +125,10 @@ function main() {
     case 'ui-sync': {
       const apps = syncUi(REPO_ROOT, manifests.map((m) => m.id));
       console.log(`Updated ${apps.join(', ') || 'no apps'} — run pnpm install if dependencies changed`);
+      return;
+    }
+    case 'uat-report': {
+      console.log(`Wrote ${buildUatReport(REPO_ROOT)}`);
       return;
     }
     case 'verify': {

@@ -226,6 +226,16 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
   .content { padding: 20px 16px 48px; }
   h1 { font-size: 1.35rem; }
   .filter { flex: 1 1 100%; }
+  /* line items stack as cards on a phone: one field per row, label shown as placeholder */
+  .lines-editor { padding: 14px; }
+  .lines-editor table, .lines-editor tbody, .lines-editor tr, .lines-editor td { display: block; width: 100%; }
+  .lines-editor thead { display: none; }
+  .lines-editor tr { border: 1px solid var(--rule-soft); border-radius: var(--radius); padding: 8px; margin-bottom: 10px; }
+  .lines-editor td { padding: 4px 0; }
+  .lines-editor td.num { width: auto; padding: 0 0 4px; font-size: .82rem; text-align: left; }
+  .lines-editor td.num::before { content: 'รายการที่ '; }
+  .lines-editor .cell-lookup { min-width: 0; }
+  .dialog form { padding: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
