@@ -301,6 +301,15 @@ describe('role templates', () => {
     expect(buyer.permissions).toContain('purchasing.po.return');
   });
 
+  it('ID-05 (bugs-0.4): the accounting role can set lock dates and override them with a reason; other roles cannot', async () => {
+    const all = (await t.api('GET', '/role-templates', undefined, admin())).body;
+    const acc = all.find((x: any) => x.id === 'accounting');
+    expect(acc.permissions).toEqual(expect.arrayContaining(['sales.lock.write', 'sales.lock.override', 'expense.lock.write', 'expense.lock.override', 'purchasing.lock.write']));
+    for (const tpl of all.filter((x: any) => x.id !== 'accounting')) {
+      expect(tpl.permissions.filter((p: string) => /\.lock\.override$/.test(p)), tpl.id).toEqual([]);
+    }
+  });
+
   it('needs identity.role.write to create and identity.user.read to list', async () => {
     const reader = { token: t.token(['identity.user.read']) };
     expect((await t.api('GET', '/role-templates', undefined, reader)).status).toBe(200);

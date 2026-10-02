@@ -28,6 +28,8 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - Templates keep segregation of duties (wave 8, tested in `tests/ui/role-templates.test.ts`): only `executive` holds `purchasing.po.approve-high` and
   `expense.claim.approve-over-limit`; no template both writes and approves POs (`purchasing` raises, receives, returns — no approve); control settings
   (`purchasing.settings.write`, `expense.settings.write`) and `inventory.hold.override` stay admin-only; `warehouse` has no `inventory.hold.release` (QC does).
+  Lock dates (bugs-0.4 ID-05): `accounting` (who already closes/reopens periods) holds `sales|expense|purchasing.lock.write` and `sales|expense.lock.override`;
+  no other template holds any `*.lock.override` (no `purchasing.lock.override` at all — a late goods receipt needs the period reopened).
   Round-2 N3 gaps closed: `it`/`technician` + `master.partner.read`, `technician` + contracts visits / helpdesk work / timesheets, `qc` + `quality.ncr.close`
   and helpdesk work (customer complaints), `purchasing` + `approvals.request.approve` (PR chain), new `planner` (วางแผนการผลิต). The demo seed
   (`tools/erp/src/demo*.ts`) creates every demo user from these templates + `staff`.

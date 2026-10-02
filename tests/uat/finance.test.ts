@@ -355,10 +355,13 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await page.getByLabel('วันที่รับเงิน').fill(today);
     await page.getByLabel('ชำระโดย').selectOption('transfer');
     await page.getByLabel('เลขที่เช็ค / อ้างอิงการโอน').fill('SCB-778899');
-    await page.getByLabel('หัก ณ ที่จ่าย').selectOption('3');
+    // wave 8 (C4): each line also has "ฐานหัก ณ ที่จ่าย (ก่อน VAT)" — the rate is the header select, matched exactly
+    await page.getByRole('combobox', { name: 'หัก ณ ที่จ่าย', exact: true }).selectOption('3');
     const row = page.locator('.lines-editor tbody tr').first();
     await pick(page, row, 'ใบกำกับ', docs.inv.no);
     await expect.poll(() => row.getByLabel('รับชำระ (รวม VAT)').inputValue()).toBe('107000');
+    // left empty = the invoice's service part before VAT (an installation job: all of it, 100,000)
+    expect(await row.getByRole('spinbutton', { name: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)' }).inputValue()).toBe('');
     await shot(page, 'UAT-52');
     await page.getByRole('button', { name: 'ออกใบเสร็จ' }).click();
     await page.getByRole('heading', { name: /^RC-/ }).waitFor();
@@ -419,6 +422,8 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await shot(page, 'UAT-54');
     const wht = await ok('acc', 'GET', `accounting/reports/wht-received?year=${year}`);
     expect(wht.months).toEqual([expect.objectContaining({ month: thisMonth, amount: 3000 })]);
+    // wave 8 (C4): the line carries the income on the customer's 50 ทวิ (service before VAT)
+    expect(wht.lines).toEqual([expect.objectContaining({ entry_date: today, partner_name: docs.customer.name, amount: 3000, tax_base: 100000 })]);
     await open(page, `/m/accounting/whtReceived?year=${year}`);
     await page.getByRole('row').filter({ hasText: 'บริษัท ลูกค้าชั้นดี จำกัด' }).filter({ hasText: '3,000.00' }).first().waitFor();
     await shot(page, 'UAT-54');
@@ -431,13 +436,25 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await dialogAction(page, 'ปิดงวด');
     await expect.poll(async () => (await ok('acc', 'GET', `accounting/periods?year=${prevMonth.slice(0, 4)}`)).find((p: any) => p.period === prevMonth)?.status).toBe('closed');
     await shot(page, 'UAT-55');
+    // wave 8 (C5): the close moves Sales / Purchasing / Expense lock dates to the month's last day (via accounting.period_closed)
+    await erp.settle();
+    expect(await ok('acc', 'GET', 'sales/lock')).toMatchObject({ lockDate: prevMonthEnd, source: 'accounting', period: prevMonth });
     // a JV dated in the closed month is refused
     const accId = async (code: string) => (await ok('acc', 'GET', `accounting/accounts?q=${code}`)).find((a: any) => a.code === code).id;
     const jv = await api('acc', 'POST', 'accounting/journals', { entryDate: prevMonthEnd, description: 'ค่าเช่าค้างจ่าย', post: true, lines: [{ accountId: await accId('52200'), debit: 5000 }, { accountId: await accId('21500'), credit: 5000 }] });
     expect(jv.status).toBe(409);
     expect(jv.body.error.message).toContain('ปิดแล้ว');
-    // sales issues a late invoice dated last month: it lands in "posting errors", not silently in this month
-    docs.lateInv = await invoiceFor('acc', docs.customer, 'ค่าขนส่ง (ออกย้อนหลัง)', 1000, prevMonthEnd);
+    // a late tax invoice dated last month: Sales refuses it without a reason (lock date) …
+    const lateOrder = await ok('acc', 'POST', 'sales/orders', {
+      customerId: docs.customer.id, customerName: docs.customer.name, customerTaxId: docs.customer.tax_id ?? undefined, customerAddress: docs.customer.address ?? undefined,
+      creditDays: 30, lines: [{ description: 'ค่าขนส่ง (ออกย้อนหลัง)', qty: 1, unitPrice: 1000 }],
+    });
+    await ok('acc', 'POST', `sales/orders/${lateOrder.id}/confirm`);
+    const refused = await api('acc', 'POST', `sales/orders/${lateOrder.id}/invoice`, { issueDate: prevMonthEnd });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.message).toContain('ปิดแล้ว');
+    // … the accountant overrides it with a reason (audited); the posting then lands in "posting errors", not silently in this month
+    docs.lateInv = await ok('acc', 'POST', `sales/orders/${lateOrder.id}/invoice`, { issueDate: prevMonthEnd, lockOverrideReason: 'ลูกค้าขอใบกำกับค่าขนส่งของเดือนก่อน' });
     await erp.settle();
     await open(page, '/m/accounting/postingErrors');
     const err = page.getByRole('row').filter({ hasText: docs.lateInv.no });
@@ -449,6 +466,8 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await page.getByRole('button', { name: 'เปิดงวดอีกครั้ง' }).click();
     await dialogAction(page, 'เปิดงวดอีกครั้ง');
     await expect.poll(async () => (await ok('acc', 'GET', `accounting/periods?year=${prevMonth.slice(0, 4)}`)).find((p: any) => p.period === prevMonth)?.status).toBe('open');
+    await erp.settle();
+    expect((await ok('acc', 'GET', 'sales/lock')).lockDate).toBe(addDays(`${prevMonth}-01`, -1)); // the accounting lock steps back
     await open(page, '/m/accounting/postingErrors');
     await page.getByRole('row').filter({ hasText: docs.lateInv.no }).getByRole('button', { name: 'ลงบัญชีอีกครั้ง' }).click();
     await page.locator('.toast').filter({ hasText: 'ลงบัญชีแล้ว' }).first().waitFor();

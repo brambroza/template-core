@@ -2,11 +2,10 @@
 
 ## 0.3.0 — 2026-10-03 · "ทั้งบริษัท" — office, service and finance modules
 
-**In numbers:** 21 modules (2 core + 19 feature, up from 9) · ~520 automated test cases in 59 test files (unit, permission,
-tenant isolation, gateway e2e, UI descriptors) · 64 UAT cases in Chromium (up from 27): UAT-01..47 passed 47/47 in wave 4,
-UAT-48..64 (company profile, role templates, payroll, month-end close, VAT/WHT, MA, LINE, attachments, audit, delegation, QC-HOLD)
-added for this release — run `pnpm uat:pack` for the full 64 before tagging ·
-roadmap 516 of 1,020 functions done (was 455 of 1,000) · 19 bundles incl. 3 new industry packs · 26 one-click bot templates (was 8).
+**In numbers:** 21 modules (2 core + 19 feature, up from 9) · ~700 automated test cases in 82 test files (unit, permission,
+tenant isolation, gateway e2e, UI descriptors, security regressions) · **64 UAT cases (UAT-01..64)** in Chromium (up from 27) — pass results:
+see `docs/uat/uat-pack.html` (rebuild with `pnpm uat:pack` before tagging) · roadmap 536 of 1,051 functions done (was 455 of 1,000) ·
+19 bundles incl. 3 new industry packs · 26 one-click bot templates (was 8).
 
 **Multi-industry modules**
 - Nine business modules for offices, services and factories: `approvals` (e-Approval / e-Memo), `hr` (employees, leave, GPS check-in),
@@ -16,7 +15,7 @@ roadmap 516 of 1,020 functions done (was 455 of 1,000) · 19 bundles incl. 3 new
 - 14 new events; quality creates inspections from goods receipts and production; quotation accepted → draft sales order.
 - CSV export on every list, CSV import with dry-run preview; demo company covers all modules.
 
-**Wave fixes from buyers** (plant manager, office HR manager, service company owner — `sales/feedback/`)
+**Wave fixes from simulated buyer reviews** (AI personas of a plant manager, office HR manager and service company owner — `sales/feedback/`; รีวิวจำลอง (AI persona) — ใช้เป็นสมมติฐาน ต้องยืนยันกับลูกค้าจริง)
 - Company profile + A4 letterhead (Revenue Code §86/4 seller block, logo, signature boxes, original/copy label) on every printed document.
 - Names from the login everywhere; leave routes to the employee's manager (org chart); locked approver chains; approval delegation.
 - Personal notifications with per-user read state; QC-HOLD quarantine; purchase returns; negative-stock anomalies.
@@ -32,7 +31,46 @@ roadmap 516 of 1,020 functions done (was 455 of 1,000) · 19 bundles incl. 3 new
   transfer list and SPS 1-10 data as CSV, `payroll.run_paid` → salary journal.
 - `contracts`: MA contracts with covered equipment/serials and SLA, PM visit generation, checklist on the phone, printable contract and
   maintenance report, billing schedule → draft service orders in sales, renewal, coverage lookup, expiry alerts.
-- Not yet (0.4, Mar 2027): e-Filing files, e-Tax Invoice, AP bills + PND3/53, bank reconciliation, bank-format payroll files.
+- Not yet: credit notes, ภ.ง.ด.1ก, employees' 13-digit IDs (0.3.x, Dec 2026) · e-Filing files, e-Tax Invoice, AP bills + PND3/53, cost of sales,
+  bank reconciliation, bank-format payroll files (0.4, Mar 2027).
+
+**Wave 6 — one connected system**
+- Events wire the finance modules together: expense lines/VAT → accounting by category, invoice issue date and purchase VAT split,
+  payroll run → salary journal, HR employees → pay profiles, unpaid leave → payroll, MA visits → PM tickets, installments → draft service orders.
+- Gateway e2e: invoice → receipt → balanced journals, payroll → journal, HR → payroll. 4 more automation templates (26).
+- Mobile camera/library/file uploads, OS dark mode, bigger shop-floor UI; web report presentation (sections, subtotals, accounting format).
+
+**Wave 7 — finance UAT and demo books**
+- UAT-48..64 (company profile, role templates, payroll, month-end close, VAT/WHT, MA, LINE, attachments, audit, delegation, QC-HOLD).
+- Demo: 42 balanced journals with a closed September, payroll for 27 people (PR-2569-09 paid, PR-2569-10 awaiting approval),
+  3 MA contracts with PM tickets and installment orders, real attachments. QA: 14 bugs, 10 fixed (`docs/uat/bugs-0.4.md`).
+
+**Wave 8 — controls and Thai tax correctness** (from the round-2 simulated buyer check and the simulated accounting-firm partner persona — `sales/feedback/`; not real customers, findings still to be confirmed by a real CPA firm)
+- Segregation of duties: a PO's creator cannot approve it, two approval limits per company (`purchasing.po.approve-high` above the
+  standard limit), receipt log with an "approver received it" exception list; whoever approved a claim/advance cannot pay it and nobody
+  pays their own; over-limit claims need `expense.claim.approve-over-limit`. Role templates follow the same split; demo users are created from them.
+- QC-HOLD: stock leaves a hold warehouse only through a QC release or a purchase return; every reduction is logged; admin override needs a reason.
+- Bangkok business dates everywhere (kernel clock, `thaiToday()`, `TODAY_SQL`) — no more "yesterday" between 00:00 and 07:00.
+- Lock dates: closing an accounting period locks tax invoices, receipts, goods receipts, returns and claim payments dated into it (override with permission + reason).
+- Tax: social-security ceiling by effective date (17,500 / 875 from Jan 2026; 20,000 in 2029; 23,000 in 2032) · output VAT on deposits
+  (deposit tax invoice `DT-…`, deducted on the final invoice) · non-claimable input VAT (entertainment, passenger cars, abbreviated or
+  sellerless receipts) booked as expense, VAT must be 7% · WHT received on the service portion or the base on the customer's 50 ทวิ ·
+  supplier tax-invoice no/date/tax ID/branch and the real receipt date at goods receipt · VAT registers with partner tax ID and branch,
+  totals equal to ภ.พ.30 · ภ.พ.30 carry-forward / carried-in, months never netted.
+- Paper: payment terms only on tax invoices and quotations, status/warehouse/outstanding never print, warning when a company buyer has no tax ID;
+  ⌘K examples from the user's own modules; ~110 server messages in Thai.
+- Still not filing-ready (0.3.x / 0.4): credit notes, AP bills + ภ.ง.ด.3/53, e-Filing files, e-Tax Invoice, employees' 13-digit IDs on
+  ภ.ง.ด.1/สปส. attachments, ภ.ง.ด.1ก, cost of sales — see `docs/roadmap/README.md`.
+
+**Security review 0.3** (`docs/security/review-0.3.md` — 3 High, 6 Medium, 12 Low/Info; all High fixed)
+- No granting beyond your own rights (users/roles), login throttling (10 failures / 15 min) with uniform errors, services refuse the
+  example secrets, download and web security headers, SSRF guard resolves DNS and blocks private ranges, LINE link-code guessing capped,
+  wider audit redaction, safe SVG logos, tokens must expire, CSV formula neutralising. Open decisions: token revocation, HTTPS install default.
+
+**AI (optional, customer's own key — `docs/ai.md`)**
+- Receipt scan fills the expense claim (vision, validated JSON, Buddhist-era dates, only real categories) and attaches the photo after saving.
+- "สรุปให้หน่อย" daily briefing on the dashboard (≤ 5 items with links, cached 10 min per user); "ค้นหาด้วย AI" in ⌘K opens a list with valid filters.
+- AI never saves on its own and reads only declared GET endpoints with the user's token.
 
 **Platform**
 - Attachments (5 MB, type sniffing, signed links, RLS) on 10 modules; audit log of every write with a history panel on detail pages.
@@ -52,8 +90,8 @@ roadmap 516 of 1,020 functions done (was 455 of 1,000) · 19 bundles incl. 3 new
 **Growth docs**
 - 12-month expansion plan, 4-week launch content, pricing/TCO calculator, objection handling and partner kit (`sales/`); multi-industry
   landing page with industry switcher, buy/rent toggle, pilot and partner sections, finance area and roadmap counters from `functions.json`.
-- Roadmap re-planned: 0.3.x (Dec 2026) pilot promises, 0.4 (Mar 2027) tax filing / AP / bank / e-Tax, 0.5 (Jun 2027) POS, marketplaces,
-  LINE OA for customers, field service, OEE, AI that works.
+- Roadmap re-planned (twice on 3 Oct): 0.3.x (Dec 2026) filing deadlines + round-2 blockers + pilot promises, 0.4 (Mar 2027) AP/ภ.ง.ด.3/53,
+  e-Filing / e-Tax, cost of sales, bank; 0.5 (Jun 2027) POS, marketplaces, LINE OA for customers, field service, OEE, AI that works.
 
 ## 0.2.0 — 2026-10-03 · "Factory OS" launch
 

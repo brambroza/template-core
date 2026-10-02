@@ -19,13 +19,14 @@ Severity: **High** = money / control / privacy can be bypassed or wrong · **Med
 | PAY-02 | payroll | Medium | Fixed | Employees cannot reach their own 50 ทวิ in the app (screen needs payroll.run.read, no self-service list) |
 | ID-02 | identity (role templates) | Medium | Fixed | "บัญชีและการเงิน" cannot confirm the MA installment orders it must invoice (403 sales.order.write) |
 | ID-04 | identity + approvals, contracts, helpdesk, quality, projects, crm, assets ui | Medium | Fixed | People pickers call `/users` (identity.user.read): supervisors cannot pick a delegate, sales cannot pick a technician, requesters cannot pick approvers |
+| ID-05 | identity (role templates) | Medium | Fixed | Wave-8 lock dates: no suggested role holds `*.lock.write` / `*.lock.override` — after a period close only the administrator can set a lock date or key a late tax invoice / receipt / claim payment with a reason |
 | ID-03 | identity (role templates) | Low | Fixed | No suggested role can return goods to the supplier (purchasing.po.return) — QC-HOLD material is stuck |
 | APV-03 | approvals | Low | Open | A delegation to a user without `approvals.request.approve`, or to an unknown user id, is accepted — the request then waits on someone who cannot act |
 | PUR-01 | purchasing / inventory | Low | Open | "ส่งคืนผู้ขาย" defaults to QC-HOLD even when nothing is held: the return drives QC-HOLD negative (recorded only as a stock anomaly) |
 | UI-04 | web (action dialogs) | Low | Open | Action dialogs with lines (ส่งคืนผู้ขาย, ปิดงานซ่อม) open with no line although one is required — the user must press "เพิ่มรายการ" first |
-| ACC-02 | accounting | Low | Open | Goods receipts carry no receipt date: purchases keyed late post on the keying day (documented gap; PO receive has no date field) |
+| ACC-02 | accounting | Low | Fixed (wave 8) | Goods receipts carry no receipt date: purchases keyed late post on the keying day (documented gap; PO receive has no date field) |
 
-Totals: 14 bugs — High 2 (2 fixed) · Medium 7 (7 fixed) · Low 5 (1 fixed, 4 open). 10 fixed, 4 open.
+Totals: 15 bugs — High 2 (2 fixed) · Medium 8 (8 fixed) · Low 5 (2 fixed, 3 open). 12 fixed, 3 open.
 
 Verified OK (no bug): trial balance / balance sheet balance after a realistic month (invoices, receipt with 3% WHT, purchases with VAT,
 expense claim with VAT, payroll); posting into a closed period → 409 for JVs and a posting error for events, retry after reopen posts on the
@@ -107,6 +108,19 @@ and 50 ทวิ; LINE link code (Thai digits) → personal push only to the lin
   quality, projects, crm and assets use it. HR / payroll / automation keep `/users` (admin screens). Web rebuilt.
 - Test: `services/identity/test/identity.test.ts` › ID-04; `tests/ui/descriptors.test.ts`; UAT-62 (delegate picked in the browser).
 
+### ID-05 — no role can use the wave-8 lock dates · identity · Medium · Fixed
+- Found re-running UAT after wave 8 (2026-10-03). Steps: accountant (template บัญชีและการเงิน) closes last month → Sales/Purchasing/Expense lock dates
+  move to its last day → the customer asks for a late tax invoice dated last month → the accountant sends `lockOverrideReason`.
+- Expected: the person who controls periods can date a document into the closed month with an audited reason, and can open the วันที่ปิดงวด screens.
+- Actual: 409 "ใช้วันที่หลังวันปิดงวด หรือให้ผู้มีสิทธิ์ข้ามการปิดงวด…" — `sales|expense|purchasing.lock.write|override` were in no role template,
+  so only the administrator could do it (and the lockSettings screens were unreachable for every suggested role).
+- Fix: the accounting template gets `sales.lock.write`, `sales.lock.override`, `expense.lock.write`, `expense.lock.override`, `purchasing.lock.write`
+  (it already closes / reopens periods, a stronger lever on the same control). No other template gets any `*.lock.override`; nobody gets
+  `purchasing.lock.override` (a late goods receipt → reopen the period).
+- Test: `services/identity/test/identity.test.ts` › ID-05; UAT-55 (refused without a reason, issued with one → posting error → reopen → retry).
+- Also found: UAT-55 passed in the previous run only by a race — the late invoice was issued before Sales had received `accounting.period_closed`.
+  The case now waits for delivery (`erp.settle()`) and checks the Sales lock date moves forward on close and back on reopen.
+
 ### ID-03 — no role can return goods to the supplier · identity · Low · Fixed
 - `purchasing.po.return` was in no role template, so QC-rejected stock in QC-HOLD could only be returned by an administrator. Added to "จัดซื้อ".
 - Test: `services/identity/test/identity.test.ts` › ID-02 (ID-03 assertion); UAT-64.
@@ -124,6 +138,8 @@ and 50 ทวิ; LINE link code (Thai digits) → personal push only to the lin
 - ส่งคืนผู้ขาย / ปิดงานซ่อม dialogs require ≥ 1 line but open with none; users must find "เพิ่มรายการ". Starting with one blank row changes existing
   UAT steps (UAT-19 clicks "เพิ่มรายการ"), so it is left for the UI owner.
 
-### ACC-02 — goods receipts post on the keying day · accounting / purchasing · Low · Open
-- `purchasing.goods_received` has no date and PO receive takes none, so goods received on the 30th but keyed on the 1st post next month
+### ACC-02 — goods receipts post on the keying day · accounting / purchasing · Low · Fixed (wave 8)
+- Wave 8: PO receive takes `receivedDate` (default Thai today, not in the future, lock-date guarded), `purchasing.goods_received` carries it and
+  accounting posts on it. Tests: `services/purchasing/test/lock-dates.test.ts`, `services/accounting/test/vat-register.test.ts`.
+- Originally: `purchasing.goods_received` had no date and PO receive took none, so goods received on the 30th but keyed on the 1st post next month
   (already listed under Gaps in services/accounting/CLAUDE.md). Needs `receivedDate` on receive + in the event.

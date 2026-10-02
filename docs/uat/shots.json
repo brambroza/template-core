@@ -55,6 +55,10 @@
     {
       "file": "UAT-07.jpg",
       "device": "desktop"
+    },
+    {
+      "file": "UAT-07-2.jpg",
+      "device": "desktop"
     }
   ],
   "UAT-08": [

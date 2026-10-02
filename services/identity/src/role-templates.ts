@@ -55,6 +55,9 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'purchasing.po.read', 'master.item.read', 'master.partner.read', 'inventory.stock.read', 'approvals.request.approve',
     'accounting.journal.read', 'accounting.journal.write', 'accounting.journal.post', 'accounting.account.write', 'accounting.period.close', 'accounting.report.read',
     'payroll.run.read', 'payroll.run.pay', 'contracts.contract.read', 'contracts.billing.read', 'contracts.billing.write',
+    // wave 8 lock dates (bugs-0.4 ID-05): the accountant who closes periods sets the modules' lock dates and may, with an audited reason, date a
+    // tax invoice / receipt / claim payment into a closed month. No purchasing.lock.override: goods receipts are the buyer's; reopen the period instead.
+    'sales.lock.write', 'sales.lock.override', 'expense.lock.write', 'expense.lock.override', 'purchasing.lock.write',
   ]),
   t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย รับสินค้าตามใบสั่งซื้อ ส่งคืนผู้ขาย และพิจารณาใบขอซื้อที่ส่งมาถึง (ไม่อนุมัติใบสั่งซื้อของตัวเอง)', [
     // po.return: QC-rejected material in QC-HOLD goes back to the supplier (bugs-0.4 ID-03 — no suggested role could do it)
