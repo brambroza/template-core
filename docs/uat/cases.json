@@ -1,6 +1,6 @@
 {
   "title": "UAT — ERP โรงงาน",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "company": "บริษัท ตัวอย่างโรงงาน จำกัด (tenant: uat-factory) · สำนักงาน/บริการ (tenant: uat-office) · การเงิน/บัญชี/เงินเดือน/สัญญา (tenant: uat-finance)",
   "roles": {
     "admin": "ผู้ดูแลระบบ (ทุกสิทธิ์)",
