@@ -1,0 +1,30 @@
+{
+  "currency": "THB",
+  "note": "ราคาตั้งต้นสำหรับทดสอบตลาด — แก้ไฟล์นี้ได้เลย ไม่ต้องแก้โค้ด. Source-code license, one installation (one legal entity). updatePlanPct = yearly updates & support as % of list price.",
+  "platform": {
+    "id": "core",
+    "name": "ERP Core Platform",
+    "nameTh": "แพลตฟอร์มหลัก",
+    "modules": ["identity", "master-data"],
+    "price": 15000,
+    "description": "Gateway, login/roles, items & partners, Thai pack, AI-ready docs. Required once per installation."
+  },
+  "modules": {
+    "inventory": { "price": 25000 },
+    "purchasing": { "price": 15000 },
+    "sales": { "price": 20000 },
+    "production": { "price": 35000 },
+    "maintenance": { "price": 25000 },
+    "costing": { "price": 25000 }
+  },
+  "bundles": [
+    { "id": "trading", "nameTh": "ซื้อมาขายไป", "modules": ["purchasing", "sales", "inventory"], "price": 49000 },
+    { "id": "factory-maintenance", "nameTh": "โรงงาน: ซ่อมบำรุง + สต็อกอะไหล่", "modules": ["maintenance", "inventory"], "price": 42000 },
+    { "id": "factory-full", "nameTh": "โรงงานครบวงจร", "modules": ["inventory", "purchasing", "sales", "production", "maintenance", "costing"], "price": 119000 }
+  ],
+  "updatePlanPct": 20,
+  "services": {
+    "setup": { "nameTh": "ติดตั้ง + ตั้งค่า + ย้ายข้อมูล", "from": 30000 },
+    "customDev": { "nameTh": "พัฒนาเพิ่มเฉพาะโรงงาน (GO Along)", "unit": "man-day", "from": 6000 }
+  }
+}

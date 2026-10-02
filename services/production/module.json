@@ -1,0 +1,18 @@
+{
+  "id": "production",
+  "name": "Production & MRP",
+  "nameTh": "วางแผนการผลิต",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Bills of materials (multi-level), production orders and material requirements. Consumes components and puts finished goods into stock when Inventory is installed; feeds actual job cost to Costing.",
+  "requires": ["identity", "master-data"],
+  "enhancedBy": ["inventory", "costing"],
+  "publishes": ["production.completed"],
+  "subscribes": [],
+  "permissions": [
+    { "key": "production.bom.read", "label": "ดูสูตรการผลิต (BOM)" },
+    { "key": "production.bom.write", "label": "จัดการสูตรการผลิต (BOM)" },
+    { "key": "production.order.read", "label": "ดูใบสั่งผลิต" },
+    { "key": "production.order.write", "label": "สร้าง/ปล่อย/ปิดใบสั่งผลิต" }
+  ]
+}

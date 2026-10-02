@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+*.log
+deploy/*/
+!deploy/.gitkeep
+keys/
+*.pem

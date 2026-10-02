@@ -1,0 +1,18 @@
+{
+  "name": "@erp/svc-inventory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/service.ts" },
+  "scripts": {
+    "start": "node --import tsx src/main.ts",
+    "dev": "node --watch --import tsx src/main.ts",
+    "test": "vitest run --root ../.. services/inventory"
+  },
+  "dependencies": {
+    "@erp/contracts": "workspace:*",
+    "@erp/kernel": "workspace:*",
+    "@erp/thai": "workspace:*",
+    "tsx": "^4.19.2"
+  }
+}

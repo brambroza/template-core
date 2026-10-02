@@ -1,0 +1,18 @@
+{
+  "id": "sales",
+  "name": "Sales",
+  "nameTh": "ขาย",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Sales orders, confirmation, delivery and Thai tax invoices (VAT 7%, amount in Thai words, Buddhist-era date, PromptPay QR). Cuts stock automatically when Inventory is installed.",
+  "requires": ["identity", "master-data"],
+  "enhancedBy": ["inventory"],
+  "publishes": ["sales.order_confirmed", "sales.delivered", "sales.invoiced"],
+  "subscribes": [],
+  "permissions": [
+    { "key": "sales.order.read", "label": "ดูใบสั่งขาย" },
+    { "key": "sales.order.write", "label": "สร้าง/ยืนยัน/ยกเลิกใบสั่งขาย" },
+    { "key": "sales.order.deliver", "label": "ส่งของ" },
+    { "key": "sales.invoice.write", "label": "ออกใบกำกับภาษี" }
+  ]
+}

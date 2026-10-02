@@ -1,0 +1,18 @@
+{
+  "id": "master-data",
+  "name": "Master Data",
+  "nameTh": "ข้อมูลหลัก",
+  "version": "0.1.0",
+  "tier": "core",
+  "description": "Items (raw material, semi-finished, finished goods, spare parts, services) and business partners (customers/suppliers) with Thai tax ID validation.",
+  "requires": ["identity"],
+  "enhancedBy": [],
+  "publishes": ["master.item_upserted", "master.partner_upserted"],
+  "subscribes": [],
+  "permissions": [
+    { "key": "master.item.read", "label": "ดูสินค้า/วัตถุดิบ" },
+    { "key": "master.item.write", "label": "จัดการสินค้า/วัตถุดิบ" },
+    { "key": "master.partner.read", "label": "ดูลูกค้า/ผู้ขาย" },
+    { "key": "master.partner.write", "label": "จัดการลูกค้า/ผู้ขาย" }
+  ]
+}

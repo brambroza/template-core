@@ -1,0 +1,16 @@
+{
+  "id": "costing",
+  "name": "Product Costing",
+  "nameTh": "ต้นทุนการผลิต",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Item cost table (moving average from purchases or manual), standard cost sheets (material + labour + overhead) and actual job cost per production order.",
+  "requires": ["identity", "master-data"],
+  "enhancedBy": ["purchasing", "production"],
+  "publishes": [],
+  "subscribes": ["purchasing.goods_received", "production.completed"],
+  "permissions": [
+    { "key": "costing.cost.read", "label": "ดูต้นทุน" },
+    { "key": "costing.cost.write", "label": "กำหนดต้นทุนและทำ cost sheet" }
+  ]
+}

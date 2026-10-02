@@ -1,0 +1,38 @@
+{
+  "name": "template-core",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "vitest run tests/e2e",
+    "check": "pnpm typecheck && pnpm test && node --import tsx tools/erp/src/cli.ts verify",
+    "erp": "node --import tsx tools/erp/src/cli.ts",
+    "db:dev": "bash scripts/dev-db.sh"
+  },
+  "devDependencies": {
+    "@erp/contracts": "workspace:*",
+    "@erp/gateway": "workspace:*",
+    "@erp/kernel": "workspace:*",
+    "@erp/svc-costing": "workspace:*",
+    "@erp/svc-identity": "workspace:*",
+    "@erp/svc-inventory": "workspace:*",
+    "@erp/svc-maintenance": "workspace:*",
+    "@erp/svc-master-data": "workspace:*",
+    "@erp/svc-production": "workspace:*",
+    "@erp/svc-purchasing": "workspace:*",
+    "@erp/svc-sales": "workspace:*",
+    "@erp/thai": "workspace:*",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

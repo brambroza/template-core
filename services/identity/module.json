@@ -1,0 +1,17 @@
+{
+  "id": "identity",
+  "name": "Identity & Access",
+  "nameTh": "ผู้ใช้และสิทธิ์",
+  "version": "0.1.0",
+  "tier": "core",
+  "description": "Tenants (companies), users, roles and login. Issues the JWT every other module trusts.",
+  "requires": [],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    { "key": "identity.user.read", "label": "ดูผู้ใช้" },
+    { "key": "identity.user.write", "label": "จัดการผู้ใช้" },
+    { "key": "identity.role.write", "label": "จัดการบทบาทและสิทธิ์" }
+  ]
+}

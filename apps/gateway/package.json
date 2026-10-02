@@ -1,0 +1,13 @@
+{
+  "name": "@erp/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/gateway.ts" },
+  "scripts": { "start": "node --import tsx src/main.ts" },
+  "dependencies": {
+    "@erp/kernel": "workspace:*",
+    "fastify": "^5.2.0",
+    "tsx": "^4.19.2"
+  }
+}

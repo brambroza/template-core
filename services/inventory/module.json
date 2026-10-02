@@ -1,0 +1,17 @@
+{
+  "id": "inventory",
+  "name": "Inventory",
+  "nameTh": "คลังสินค้า",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Warehouses, goods receipt/issue/transfer/adjustment, on-hand balances and stock card. Moves stock automatically when Purchasing, Sales, Production or Maintenance are installed.",
+  "requires": ["identity", "master-data"],
+  "enhancedBy": ["purchasing", "sales", "production", "maintenance"],
+  "publishes": ["inventory.stock_changed"],
+  "subscribes": ["purchasing.goods_received", "sales.delivered", "production.completed", "maintenance.parts_used"],
+  "permissions": [
+    { "key": "inventory.stock.read", "label": "ดูยอดคงเหลือ/สต็อกการ์ด" },
+    { "key": "inventory.move.write", "label": "รับ-จ่าย-โอน-ปรับปรุงสต็อก" },
+    { "key": "inventory.settings.write", "label": "ตั้งค่าคลัง" }
+  ]
+}
