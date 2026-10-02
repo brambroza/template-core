@@ -33,6 +33,33 @@
     },
     "automation": {
       "price": 19000
+    },
+    "approvals": {
+      "price": 15000
+    },
+    "hr": {
+      "price": 25000
+    },
+    "expense": {
+      "price": 15000
+    },
+    "assets": {
+      "price": 15000
+    },
+    "crm": {
+      "price": 20000
+    },
+    "helpdesk": {
+      "price": 15000
+    },
+    "projects": {
+      "price": 20000
+    },
+    "quality": {
+      "price": 20000
+    },
+    "booking": {
+      "price": 10000
     }
   },
   "bundles": [

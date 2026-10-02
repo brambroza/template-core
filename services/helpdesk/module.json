@@ -1,0 +1,25 @@
+{
+  "id": "helpdesk",
+  "name": "Helpdesk",
+  "nameTh": "แจ้งปัญหา",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Helpdesk module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "helpdesk.record.read",
+      "label": "ดูแจ้งปัญหา"
+    },
+    {
+      "key": "helpdesk.record.write",
+      "label": "จัดการแจ้งปัญหา"
+    }
+  ]
+}

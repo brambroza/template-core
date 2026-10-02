@@ -11,7 +11,7 @@ interface Registry {
   reload(): void;
 }
 
-const ORDER = ['maintenance', 'inventory', 'production', 'purchasing', 'sales', 'costing', 'master-data', 'identity'];
+const ORDER = ['approvals', 'hr', 'maintenance', 'quality', 'inventory', 'helpdesk', 'booking', 'expense', 'production', 'purchasing', 'sales', 'crm', 'projects', 'assets', 'costing', 'automation', 'master-data', 'identity'];
 const Ctx = createContext<Registry | null>(null);
 
 /** Installed modules (from the gateway catalog) that this app build has screens for. */

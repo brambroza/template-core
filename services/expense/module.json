@@ -1,0 +1,25 @@
+{
+  "id": "expense",
+  "name": "Expense Claims",
+  "nameTh": "เบิกค่าใช้จ่าย",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Expense Claims module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "expense.record.read",
+      "label": "ดูเบิกค่าใช้จ่าย"
+    },
+    {
+      "key": "expense.record.write",
+      "label": "จัดการเบิกค่าใช้จ่าย"
+    }
+  ]
+}

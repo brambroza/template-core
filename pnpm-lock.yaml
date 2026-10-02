@@ -17,12 +17,33 @@ importers:
       '@erp/kernel':
         specifier: workspace:*
         version: link:packages/kernel
+      '@erp/svc-approvals':
+        specifier: workspace:*
+        version: link:services/approvals
+      '@erp/svc-assets':
+        specifier: workspace:*
+        version: link:services/assets
       '@erp/svc-automation':
         specifier: workspace:*
         version: link:services/automation
+      '@erp/svc-booking':
+        specifier: workspace:*
+        version: link:services/booking
       '@erp/svc-costing':
         specifier: workspace:*
         version: link:services/costing
+      '@erp/svc-crm':
+        specifier: workspace:*
+        version: link:services/crm
+      '@erp/svc-expense':
+        specifier: workspace:*
+        version: link:services/expense
+      '@erp/svc-helpdesk':
+        specifier: workspace:*
+        version: link:services/helpdesk
+      '@erp/svc-hr':
+        specifier: workspace:*
+        version: link:services/hr
       '@erp/svc-identity':
         specifier: workspace:*
         version: link:services/identity
@@ -38,9 +59,15 @@ importers:
       '@erp/svc-production':
         specifier: workspace:*
         version: link:services/production
+      '@erp/svc-projects':
+        specifier: workspace:*
+        version: link:services/projects
       '@erp/svc-purchasing':
         specifier: workspace:*
         version: link:services/purchasing
+      '@erp/svc-quality':
+        specifier: workspace:*
+        version: link:services/quality
       '@erp/svc-sales':
         specifier: workspace:*
         version: link:services/sales
@@ -83,12 +110,33 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@erp/svc-approvals':
+        specifier: workspace:*
+        version: link:../../services/approvals
+      '@erp/svc-assets':
+        specifier: workspace:*
+        version: link:../../services/assets
       '@erp/svc-automation':
         specifier: workspace:*
         version: link:../../services/automation
+      '@erp/svc-booking':
+        specifier: workspace:*
+        version: link:../../services/booking
       '@erp/svc-costing':
         specifier: workspace:*
         version: link:../../services/costing
+      '@erp/svc-crm':
+        specifier: workspace:*
+        version: link:../../services/crm
+      '@erp/svc-expense':
+        specifier: workspace:*
+        version: link:../../services/expense
+      '@erp/svc-helpdesk':
+        specifier: workspace:*
+        version: link:../../services/helpdesk
+      '@erp/svc-hr':
+        specifier: workspace:*
+        version: link:../../services/hr
       '@erp/svc-identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -104,9 +152,15 @@ importers:
       '@erp/svc-production':
         specifier: workspace:*
         version: link:../../services/production
+      '@erp/svc-projects':
+        specifier: workspace:*
+        version: link:../../services/projects
       '@erp/svc-purchasing':
         specifier: workspace:*
         version: link:../../services/purchasing
+      '@erp/svc-quality':
+        specifier: workspace:*
+        version: link:../../services/quality
       '@erp/svc-sales':
         specifier: workspace:*
         version: link:../../services/sales
@@ -159,12 +213,33 @@ importers:
 
   apps/web:
     dependencies:
+      '@erp/svc-approvals':
+        specifier: workspace:*
+        version: link:../../services/approvals
+      '@erp/svc-assets':
+        specifier: workspace:*
+        version: link:../../services/assets
       '@erp/svc-automation':
         specifier: workspace:*
         version: link:../../services/automation
+      '@erp/svc-booking':
+        specifier: workspace:*
+        version: link:../../services/booking
       '@erp/svc-costing':
         specifier: workspace:*
         version: link:../../services/costing
+      '@erp/svc-crm':
+        specifier: workspace:*
+        version: link:../../services/crm
+      '@erp/svc-expense':
+        specifier: workspace:*
+        version: link:../../services/expense
+      '@erp/svc-helpdesk':
+        specifier: workspace:*
+        version: link:../../services/helpdesk
+      '@erp/svc-hr':
+        specifier: workspace:*
+        version: link:../../services/hr
       '@erp/svc-identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -180,9 +255,15 @@ importers:
       '@erp/svc-production':
         specifier: workspace:*
         version: link:../../services/production
+      '@erp/svc-projects':
+        specifier: workspace:*
+        version: link:../../services/projects
       '@erp/svc-purchasing':
         specifier: workspace:*
         version: link:../../services/purchasing
+      '@erp/svc-quality':
+        specifier: workspace:*
+        version: link:../../services/quality
       '@erp/svc-sales':
         specifier: workspace:*
         version: link:../../services/sales
@@ -258,6 +339,42 @@ importers:
 
   packages/ui-schema: {}
 
+  services/approvals:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/assets:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
   services/automation:
     dependencies:
       '@erp/contracts':
@@ -276,7 +393,97 @@ importers:
         specifier: ^4.19.2
         version: 4.23.15
 
+  services/booking:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
   services/costing:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/crm:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/expense:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/helpdesk:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/hr:
     dependencies:
       '@erp/contracts':
         specifier: workspace:*
@@ -384,7 +591,43 @@ importers:
         specifier: ^4.19.2
         version: 4.23.15
 
+  services/projects:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
   services/purchasing:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/quality:
     dependencies:
       '@erp/contracts':
         specifier: workspace:*

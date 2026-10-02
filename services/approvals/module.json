@@ -1,0 +1,25 @@
+{
+  "id": "approvals",
+  "name": "e-Approval",
+  "nameTh": "อนุมัติออนไลน์",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "e-Approval module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "approvals.record.read",
+      "label": "ดูอนุมัติออนไลน์"
+    },
+    {
+      "key": "approvals.record.write",
+      "label": "จัดการอนุมัติออนไลน์"
+    }
+  ]
+}

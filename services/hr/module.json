@@ -1,0 +1,25 @@
+{
+  "id": "hr",
+  "name": "HR & Attendance",
+  "nameTh": "บุคคลและลงเวลา",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "HR & Attendance module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "hr.record.read",
+      "label": "ดูบุคคลและลงเวลา"
+    },
+    {
+      "key": "hr.record.write",
+      "label": "จัดการบุคคลและลงเวลา"
+    }
+  ]
+}

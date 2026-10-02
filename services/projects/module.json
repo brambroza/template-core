@@ -1,0 +1,25 @@
+{
+  "id": "projects",
+  "name": "Projects & Timesheets",
+  "nameTh": "โครงการ",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Projects & Timesheets module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "projects.record.read",
+      "label": "ดูโครงการ"
+    },
+    {
+      "key": "projects.record.write",
+      "label": "จัดการโครงการ"
+    }
+  ]
+}

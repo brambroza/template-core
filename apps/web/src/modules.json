@@ -1,13 +1,22 @@
 {
   "packages": [
+    "@erp/svc-approvals",
+    "@erp/svc-assets",
     "@erp/svc-automation",
+    "@erp/svc-booking",
     "@erp/svc-costing",
+    "@erp/svc-crm",
+    "@erp/svc-expense",
+    "@erp/svc-helpdesk",
+    "@erp/svc-hr",
     "@erp/svc-identity",
     "@erp/svc-inventory",
     "@erp/svc-maintenance",
     "@erp/svc-master-data",
     "@erp/svc-production",
+    "@erp/svc-projects",
     "@erp/svc-purchasing",
+    "@erp/svc-quality",
     "@erp/svc-sales"
   ]
 }

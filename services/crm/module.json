@@ -1,0 +1,25 @@
+{
+  "id": "crm",
+  "name": "CRM & Quotations",
+  "nameTh": "ลูกค้าสัมพันธ์",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "CRM & Quotations module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "crm.record.read",
+      "label": "ดูลูกค้าสัมพันธ์"
+    },
+    {
+      "key": "crm.record.write",
+      "label": "จัดการลูกค้าสัมพันธ์"
+    }
+  ]
+}

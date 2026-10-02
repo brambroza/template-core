@@ -1,0 +1,25 @@
+{
+  "id": "booking",
+  "name": "Room & Vehicle Booking",
+  "nameTh": "จองห้องและรถ",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Room & Vehicle Booking module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "booking.record.read",
+      "label": "ดูจองห้องและรถ"
+    },
+    {
+      "key": "booking.record.write",
+      "label": "จัดการจองห้องและรถ"
+    }
+  ]
+}

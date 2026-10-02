@@ -276,7 +276,8 @@ export interface ModuleUi {
 }
 
 /** Icon names the apps know how to draw (lucide names). */
-export const ICONS = ['users', 'database', 'boxes', 'shopping-cart', 'receipt', 'factory', 'wrench', 'calculator', 'zap', 'bot', 'gauge'] as const;
+export const ICONS = ['users', 'database', 'boxes', 'shopping-cart', 'receipt', 'factory', 'wrench', 'calculator', 'zap', 'bot', 'gauge',
+  'stamp', 'id-card', 'wallet', 'package', 'handshake', 'life-buoy', 'kanban', 'shield-check', 'calendar'] as const;
 export type Icon = (typeof ICONS)[number];
 
 export function defineUi(ui: ModuleUi): ModuleUi {

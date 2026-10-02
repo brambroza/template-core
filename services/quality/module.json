@@ -1,0 +1,25 @@
+{
+  "id": "quality",
+  "name": "Quality Control",
+  "nameTh": "ควบคุมคุณภาพ",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Quality Control module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "quality.record.read",
+      "label": "ดูควบคุมคุณภาพ"
+    },
+    {
+      "key": "quality.record.write",
+      "label": "จัดการควบคุมคุณภาพ"
+    }
+  ]
+}

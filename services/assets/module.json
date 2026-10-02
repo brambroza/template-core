@@ -1,0 +1,25 @@
+{
+  "id": "assets",
+  "name": "Fixed Assets",
+  "nameTh": "ทรัพย์สิน",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Fixed Assets module",
+  "requires": [
+    "identity",
+    "master-data"
+  ],
+  "enhancedBy": [],
+  "publishes": [],
+  "subscribes": [],
+  "permissions": [
+    {
+      "key": "assets.record.read",
+      "label": "ดูทรัพย์สิน"
+    },
+    {
+      "key": "assets.record.write",
+      "label": "จัดการทรัพย์สิน"
+    }
+  ]
+}

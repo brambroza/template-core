@@ -15,7 +15,7 @@ export interface CatalogModule {
 }
 
 /** Business order of the menu; anything else goes before the core modules. */
-const ORDER = ['sales', 'purchasing', 'inventory', 'production', 'maintenance', 'costing'];
+const ORDER = ['crm', 'sales', 'purchasing', 'inventory', 'production', 'quality', 'maintenance', 'costing', 'projects', 'helpdesk', 'approvals', 'expense', 'hr', 'assets', 'booking', 'automation'];
 const CORE_LAST = ['master-data', 'identity'];
 
 interface Registry {
