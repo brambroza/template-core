@@ -2,7 +2,7 @@ import { auth, badRequest, loadManifest, notFound, one, parse, requirePerm, s, z
 import type { EventType } from '@erp/contracts';
 import { fileURLToPath } from 'node:url';
 import { EVENTS, TEMPLATES, eventInfo, type ActionSpec, type Condition } from './catalog.ts';
-import { describe, matches, render, sendLine, sendWebhook, webhookProblem } from './engine.ts';
+import { describe, matches, render, renderLink, sendLine, sendWebhook, webhookProblem } from './engine.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -66,7 +66,7 @@ function handlerFor(type: EventType) {
         const text = render(a.message || ev.message, data);
         if (a.type === 'notify') {
           await ctx.client.query('insert into notifications (rule_id, level, title, body, link) values ($1,$2,$3,$4,$5)',
-            [rule.id, ev.level, rule.name, text, ev.link ? render(ev.link, data) : null]);
+            [rule.id, ev.level, rule.name, text, ev.link ? renderLink(ev.link, data) : null]);
           results.push('แจ้งในแอปแล้ว');
         } else {
           const d = a.type === 'line' ? await sendLine(a.target, `${rule.name}\n${text}`, env) : await sendWebhook(a.target, { rule: rule.name, event: type, eventId: ctx.event.id, message: text, data }, env);

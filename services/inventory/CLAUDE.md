@@ -13,6 +13,7 @@ Never insert into `stock_moves` anywhere else.
 - `GET/POST /warehouses` · `PUT /settings { allowNegative }`
 - `POST /receipts` · `POST /issues` · `POST /transfers` · `POST /adjustments` (note required)
 - `GET /balances?itemId=&warehouseCode=&nonZero=` · `GET /items/:itemId/stock-card?warehouseCode=`
+- `GET/PUT /reorder-points` (min qty per item+warehouse; perm `inventory.settings.write` to set) · `GET /summary` (dashboard: skus, moves today, low stock rows)
 
 ## Events
 - publishes `inventory.stock_changed`
@@ -20,9 +21,12 @@ Never insert into `stock_moves` anywhere else.
   - `purchasing.goods_received` → receipt (auto-creates the warehouse code)
   - `sales.delivered` → issue · `production.completed` → issue components + receive finished good · `maintenance.parts_used` → issue
   - event-driven issues use `force: true` (record even if stock goes negative; the physical fact already happened)
+- publishes `inventory.low_stock` once when on-hand crosses below a reorder point → Automation alert
 
 ## Extension ideas
 Lots/serials, bin locations, stock counts, reorder points (new table + a scheduled route), valuation (FIFO) reading `unit_cost`.
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+
+Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

@@ -11,6 +11,7 @@ Item cost table, standard cost sheets, actual job cost.
 - `GET /item-costs` · `PUT /item-costs/:itemId { itemCode, cost }`
 - `POST /cost-sheets` (422 `missing_costs` if any material has no cost — never guess) · `GET /cost-sheets?itemId=` · `GET /cost-sheets/:id`
 - `GET /job-costs`
+- `GET /summary` (dashboard: items costed, sheets, jobs missing cost, material cost this month)
 
 ## Events
 - subscribes `purchasing.goods_received` (moving average), `production.completed` (job cost) — both optional
@@ -20,3 +21,5 @@ Machine-hour costing, carbon footprint per product (same BOM × emission factors
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+
+Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

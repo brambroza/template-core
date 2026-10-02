@@ -13,6 +13,7 @@ import { screenHref } from '@/lib/nav';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 import { ModuleIcon } from './Icon';
+import { safeHref } from '@/lib/href';
 
 /** Open the palette from anywhere: openCommandPalette('สต็อก ') or openCommandPalette('…', { ask: true }). */
 export function openCommandPalette(text = '', opts: { ask?: boolean } = {}) {
@@ -260,7 +261,7 @@ export function CommandPalette() {
                   <p>{m.content}</p>
                   {!!m.actions?.length && (
                     <div className="bubble-actions">
-                      {m.actions.map((a) => <button key={a.href} type="button" className="btn-primary" onClick={() => go(a.href)}>{a.label}<ArrowRight size={14} aria-hidden /></button>)}
+                      {m.actions.filter((a) => safeHref(a.href)).map((a) => <button key={a.href} type="button" className="btn-primary" onClick={() => go(a.href)}>{a.label}<ArrowRight size={14} aria-hidden /></button>)}
                     </div>
                   )}
                 </div>

@@ -12,6 +12,7 @@ Sales orders → delivery → Thai tax invoice.
 - `POST /orders` · `GET /orders?status=&q=` · `GET /orders/:id`
 - `POST /orders/:id/confirm | deliver | cancel | invoice`
 - `GET /invoices/:id` → print-ready: `issueDateTh` (2 ตุลาคม 2569), `amountText` (บาทถ้วน), customer block, lines, `promptPay` payload (env `PROMPTPAY_ID`)
+- `GET /summary` (dashboard: to confirm/deliver/invoice, revenue this month, 6-month trend)
 
 ## Events
 - publishes `sales.order_confirmed`, `sales.delivered` (→ Inventory issues stock), `sales.invoiced`
@@ -21,3 +22,5 @@ Quotations, credit limits, partial deliveries, receipts/payments, e-Tax invoice 
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+
+Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

@@ -31,6 +31,17 @@ export function render(template: string, data: unknown): string {
   });
 }
 
+/** In-app link for a notification: values are path-encoded so event data can never change where it points. */
+export function renderLink(template: string, data: unknown): string | null {
+  let ok = true;
+  const out = template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
+    const v = get(data, key);
+    if (v === undefined || v === null || v === '') ok = false;
+    return encodeURIComponent(String(v ?? ''));
+  });
+  return ok && out.startsWith('/') && !out.startsWith('//') ? out : null;
+}
+
 /** Human sentence for a rule: เมื่อ … ถ้า … ให้ … */
 export function describe(rule: { event_type: string; conditions: Condition[]; actions: ActionSpec[] }): string {
   const ev = eventInfo(rule.event_type);

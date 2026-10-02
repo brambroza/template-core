@@ -9,6 +9,7 @@ import { gsap, reducedMotion } from '@/lib/motion';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 import { toast, type ToastTone } from '@/lib/toast';
+import { safeHref } from '@/lib/href';
 
 interface Note { id: string; level: ToastTone; title: string; body?: string | null; link?: string | null; read_at: string | null; created_at: string; module: string }
 
@@ -53,7 +54,7 @@ export function NotificationBell() {
     all.sort((a, b) => b.created_at.localeCompare(a.created_at));
     if (seen.current) {
       const fresh = all.filter((n) => !seen.current!.has(n.id) && !n.read_at);
-      fresh.slice(0, 3).forEach((n) => toast({ title: n.title, body: n.body ?? undefined, tone: n.level, href: n.link ?? undefined }));
+      fresh.slice(0, 3).forEach((n) => toast({ title: n.title, body: n.body ?? undefined, tone: n.level, href: safeHref(n.link) }));
       if (fresh.length && bell.current && !reducedMotion()) gsap.fromTo(bell.current, { rotate: -18 }, { rotate: 0, duration: 0.8, ease: 'elastic.out(1.2, 0.3)' });
     }
     seen.current = new Set(all.map((n) => n.id));
@@ -91,7 +92,8 @@ export function NotificationBell() {
     if (!n.read_at) {
       api(n.module, fillPath(spec(n.module).readEndpoint, { id: n.id }), { method: 'POST' }).then(load).catch(() => {});
     }
-    if (n.link) router.push(n.link);
+    const href = safeHref(n.link);
+    if (href) router.push(href);
   };
   const readAll = async () => {
     await Promise.all(sources.map((m) => api(m.module, m.notifications.readAllEndpoint, { method: 'POST' }).catch(() => {})));

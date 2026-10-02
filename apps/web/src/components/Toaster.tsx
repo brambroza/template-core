@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Info, OctagonAlert, TriangleAlert, X } from 'lucide-react';
 import { gsap, reducedMotion } from '@/lib/motion';
 import type { ToastMsg } from '@/lib/toast';
+import { safeHref } from '@/lib/href';
 
 type Item = ToastMsg & { id: number };
 const ICON = { info: Info, ok: CheckCircle2, warn: TriangleAlert, stop: OctagonAlert };
@@ -52,7 +53,7 @@ function ToastCard({ t, onClose }: { t: Item; onClose: () => void }) {
       <div className="toast-text">
         <b>{t.title}</b>
         {t.body && <span>{t.body}</span>}
-        {t.href && <Link href={t.href} onClick={onClose}>เปิดดู</Link>}
+        {safeHref(t.href) && <Link href={safeHref(t.href)!} onClick={onClose}>เปิดดู</Link>}
       </div>
       <button type="button" className="icon-btn" aria-label="ปิด" onClick={onClose}><X size={14} aria-hidden /></button>
     </div>

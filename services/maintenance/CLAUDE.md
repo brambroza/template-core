@@ -19,9 +19,11 @@ Machines, preventive maintenance plans, work orders. Mobile-first: operators sca
 
 ## Events
 - publishes `maintenance.parts_used` when parts are recorded → Inventory issues spare parts
+- publishes `maintenance.breakdown_reported` (report) and `maintenance.work_completed` (complete) → Automation alerts
 
 ## Extension ideas
-LINE notification on breakdown, photos (store URLs), meter-based PM, MTBF/MTTR report from history.
+Photos (store URLs), meter-based PM, MTBF/MTTR report from history.
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+Also: the 3D floor widget (`GET /summary`), ⌘K commands `แจ้งซ่อม <เครื่อง> <อาการ>` / `เครื่อง <เครื่อง>`, and search over machines/work orders.

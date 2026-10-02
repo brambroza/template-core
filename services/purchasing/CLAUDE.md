@@ -12,12 +12,16 @@ Purchase orders with Thai VAT and goods receipt.
 ## API
 - `POST /purchase-orders` · `GET /purchase-orders?status=&q=` · `GET /purchase-orders/:id`
 - `POST /purchase-orders/:id/approve | cancel | receive` (receive body `{ lines?: [{ lineId, qty }] }`, omit = everything outstanding)
+- `GET /summary` (dashboard: to approve, to receive, spend this month, 6-month trend)
 
 ## Events
 - publishes `purchasing.goods_received` per receipt (only the quantities received this time, with unit price) → Inventory stock-in, Costing moving average
+- publishes `purchasing.po_created` and `purchasing.po_approved` → Automation (e.g. big-PO approval alert)
 
 ## Extension ideas
 Purchase requests, multi-level approval by amount, supplier price lists, AP invoice matching.
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+
+Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

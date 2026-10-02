@@ -18,9 +18,11 @@ services/<module>    one deployable, sellable module each (own database, module.
 tools/erp            `pnpm erp …`: catalog, quote, compose, pack, license, new-module, verify
 catalog/catalog.json prices & bundles (internal — never shipped to customers)
 tests/e2e            whole installations (all modules / partial) through the gateway
+tests/ui-e2e, tests/uat  browser tests and the UAT run (Chromium against a real installation)
+site/                landing page (internal — never shipped; `pnpm site --serve`)
 ```
 
-Modules: `identity`, `master-data` (core, always installed) · `inventory`, `purchasing`, `sales`, `production`, `maintenance`, `costing` (features).
+Modules: `identity`, `master-data` (core, always installed) · `inventory`, `purchasing`, `sales`, `production`, `maintenance`, `costing`, `automation` (features).
 Each module folder has its own `CLAUDE.md` — read it before touching that module.
 
 ## Hard rules (CI enforces most of them via `pnpm erp verify`)
@@ -83,7 +85,9 @@ export default defineUi({
   },
 });
 ```
-Full reference: docs/ui.md.
+Full reference: docs/ui.md. A module can also declare `widgets` (home dashboard: kpi/bars/pipeline/trend/floor3d/feed),
+`commands` (Thai ⌘K commands that prefill forms), `search` (palette record search) and `notifications` (the bell).
+The AI assistant (`apps/web/src/app/assist`) reads only GET endpoints declared there, with the user's token, and never writes.
 
 Tests boot the real service against a fresh database as the non-superuser `erp_app`, so RLS is really enforced.
 Use `bootTestService(definition)` → `t.api(method, url, body, { token: t.token(perms, tenantId) })`, `t.deliver(type, data)`, `t.published(type)`.

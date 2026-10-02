@@ -10,6 +10,7 @@ const compact = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFra
 const kpiText = (n: number, format?: string) => (format === 'money' ? `฿${Math.abs(n) >= 10000 ? compact.format(n) : formatValue(Math.round(n), 'qty')}` : formatValue(Math.round(n), 'qty'));
 const shortQty = (n: number) => formatValue(Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10, 'qty');
 import { screenHref } from '@/lib/nav';
+import { safeHref } from '@/lib/href';
 
 type Data = Record<string, unknown>;
 
@@ -155,7 +156,7 @@ export function Feed({ w, data }: { w: FeedWidget; data: Data }) {
   return (
     <ol className="feed" ref={ref}>
       {rows.map((r, i) => {
-        const link = w.link ? (get(r, w.link) as string | null) : null;
+        const link = w.link ? safeHref(get(r, w.link) as string | null) : undefined;
         const inner = (
           <>
             <span className={`lvl tone-${w.level ? String(get(r, w.level)) : 'info'}`} aria-hidden />

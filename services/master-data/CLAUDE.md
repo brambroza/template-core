@@ -9,6 +9,7 @@ Items and business partners. Other modules keep only snapshots (`itemId`, `itemC
 ## API (generic CRUD built by `crud()` in src/service.ts)
 - `GET /items?q=&type=&limit=&offset=` · `GET /items/:id` · `POST /items` · `PATCH /items/:id`
 - `GET /partners?q=&kind=` · `GET /partners/:id` · `POST /partners` · `PATCH /partners/:id`
+- `GET /summary` (counts of items, customers, suppliers)
 
 ## Events
 - publishes `master.item_upserted`, `master.partner_upserted` on every create/update
@@ -18,3 +19,5 @@ Item categories, units-of-measure conversion, price lists, barcodes: add columns
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+
+Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

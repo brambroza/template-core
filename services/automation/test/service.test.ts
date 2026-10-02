@@ -112,3 +112,13 @@ describe('automation service', () => {
     expect((await t.api('DELETE', `/rules/${low.id}`)).body.deleted).toBe(low.id);
   });
 });
+
+describe('notification links', () => {
+  it('encodes event values so they cannot redirect elsewhere', async () => {
+    const { renderLink } = await import('../src/engine.ts');
+    expect(renderLink('/m/inventory/stockCard/{{itemId}}', { itemId: 'abc' })).toBe('/m/inventory/stockCard/abc');
+    expect(renderLink('/m/inventory/stockCard/{{itemId}}', { itemId: '../../x?y=//evil.com' })).toBe('/m/inventory/stockCard/..%2F..%2Fx%3Fy%3D%2F%2Fevil.com');
+    expect(renderLink('{{u}}', { u: '//evil.com' })).toBeNull();
+    expect(renderLink('/m/x/{{missing}}', {})).toBeNull();
+  });
+});
