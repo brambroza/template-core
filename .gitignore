@@ -6,3 +6,6 @@ deploy/*/
 !deploy/.gitkeep
 keys/
 *.pem
+.next
+*.tsbuildinfo
+.expo

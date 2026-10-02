@@ -17,3 +17,6 @@ Item cost table, standard cost sheets, actual job cost.
 
 ## Extension ideas
 Machine-hour costing, carbon footprint per product (same BOM × emission factors instead of cost rates), quotation pricing from cost + margin.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

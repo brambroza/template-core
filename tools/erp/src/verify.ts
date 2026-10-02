@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCatalog, loadManifests } from './catalog.ts';
+import { uiOutOfSync } from './ui-sync.ts';
 
 function walk(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -56,6 +57,8 @@ export function verify(root: string): { errors: string[]; warnings: string[] } {
       }
     }
   }
+
+  for (const app of uiOutOfSync(root, [...ids])) errors.push(`${app}: module registry is out of date — run \`pnpm erp ui-sync\``);
 
   if (existsSync(join(root, 'catalog', 'catalog.json'))) {
     const cat = loadCatalog(root);

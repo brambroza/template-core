@@ -9,6 +9,7 @@
  *                                             customer deliverable containing only purchased modules
  *   license  keygen | issue --customer NAME --modules LIST [--expires YYYY-MM-DD] [--updates-until YYYY-MM-DD] | inspect TOKEN
  *   new-module <id> --name "English" --name-th "ไทย"
+ *   ui-sync                                   regenerate web/mobile module registries from services/<id>/src/ui.ts
  *   verify                                    architecture rules (run in CI)
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
@@ -22,6 +23,7 @@ import { compose } from './compose.ts';
 import { pack } from './pack.ts';
 import { scaffoldModule } from './scaffold.ts';
 import { verify } from './verify.ts';
+import { syncUi } from './ui-sync.ts';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -114,7 +116,13 @@ function main() {
     case 'new-module': {
       if (!args[0] || !flags.name || !flags['name-th']) throw new Error('new-module <id> --name "English" --name-th "ไทย"');
       const files = scaffoldModule(REPO_ROOT, args[0], flags.name, flags['name-th']);
+      syncUi(REPO_ROOT, loadManifests().map((m) => m.id));
       console.log(`Created services/${args[0]} (${files.length} files). Next: pnpm install, add a price in catalog/catalog.json, pnpm check.`);
+      return;
+    }
+    case 'ui-sync': {
+      const apps = syncUi(REPO_ROOT, manifests.map((m) => m.id));
+      console.log(`Updated ${apps.join(', ') || 'no apps'} — run pnpm install if dependencies changed`);
       return;
     }
     case 'verify': {

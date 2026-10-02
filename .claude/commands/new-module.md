@@ -10,5 +10,6 @@ Create a new module: $ARGUMENTS
 4. Write routes in `src/service.ts` following the route pattern (auth → requirePerm → parse → k.db.tx). Declare permissions in module.json.
 5. If it must react to other modules, subscribe to existing events (module.json `subscribes` + `handlers`) — never import other modules. New events: add the schema to packages/contracts first.
 6. Tests in `test/`: happy path, status/validation errors, a 403 permission check, tenant isolation; `t.deliver()` for each handler.
-7. Fill in the module's CLAUDE.md. Add a price to catalog/catalog.json if this repo has one.
-8. Run `pnpm check` and fix until green.
+7. Screens: edit `src/ui.ts` (list/form/detail per business document; mark shop-floor screens `mobile: true`). Run `pnpm erp ui-sync`.
+8. Fill in the module's CLAUDE.md. Add a price to catalog/catalog.json if this repo has one.
+9. Run `pnpm check` (includes the UI contract test) and fix until green. Optionally `pnpm test:ui`.

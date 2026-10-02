@@ -34,7 +34,7 @@ describe('inventory (standalone)', () => {
   it('blocks negative stock unless allowed', async () => {
     const res = await t.api('POST', '/issues', { warehouseCode: 'MAIN', lines: [{ ...steel, qty: 1000 }] });
     expect(res.status).toBe(409);
-    expect(res.body.error.message).toMatch(/Insufficient stock/);
+    expect(res.body.error.message).toMatch(/สต็อกไม่พอ: RM-STEEL ที่คลัง MAIN คงเหลือ 48/);
     expect(await balance(steel.itemId)).toBe(48);
     await t.api('PUT', '/settings', { allowNegative: true });
     expect((await t.api('POST', '/issues', { warehouseCode: 'MAIN', lines: [{ ...bolt, qty: 5 }] })).status).toBe(201);

@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { join } from 'node:path';
 import type { ModuleManifest } from '@erp/kernel';
 import { compose } from './compose.ts';
+import { syncUi } from './ui-sync.ts';
 
 export interface PackOptions {
   customer: string;
@@ -10,7 +11,7 @@ export interface PackOptions {
 
 const ROOT_FILES = ['pnpm-workspace.yaml', 'tsconfig.json', 'vitest.config.ts', '.gitignore', '.dockerignore', 'Dockerfile', 'CLAUDE.md', 'AGENTS.md'];
 const ROOT_DIRS = ['packages', 'apps', 'docs', '.claude', 'scripts', '.github', 'tools'];
-const skipNodeModules = (src: string) => !src.split(/[\\/]/).includes('node_modules');
+const skipNodeModules = (src: string) => !src.split(/[\\/]/).some((p) => p === 'node_modules' || p === '.next' || p === '.expo');
 /** internal-only: pricing tests and the license public key are GO Along's, not the customer's */
 const shipped = (src: string) => skipNodeModules(src) && !/tools[\\/]erp[\\/]test/.test(src);
 
@@ -33,9 +34,14 @@ export function pack(root: string, selection: string[], manifests: ModuleManifes
   }
   writeFileSync(join(outDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
 
+  // web/mobile apps include only the purchased modules' screens
+  syncUi(outDir, selection);
+
   // smoke test for exactly this installation
   mkdirSync(join(outDir, 'tests', 'e2e'), { recursive: true });
   cpSync(join(root, 'tests', 'e2e', 'helpers.ts'), join(outDir, 'tests', 'e2e', 'helpers.ts'));
+  // UI <-> API contract test discovers modules itself, so it works for any selection
+  if (existsSync(join(root, 'tests', 'ui'))) cpSync(join(root, 'tests', 'ui'), join(outDir, 'tests', 'ui'), { recursive: true });
   const ident = (id: string) => id.replace(/-(.)/g, (_, c) => c.toUpperCase());
   writeFileSync(join(outDir, 'tests', 'e2e', 'installation.test.ts'), `import { afterAll, beforeAll, expect, it } from 'vitest';
 ${selection.map((id) => `import { definition as ${ident(id)} } from '@erp/svc-${id}';`).join('\n')}

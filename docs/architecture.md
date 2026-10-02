@@ -1,7 +1,8 @@
 # สถาปัตยกรรม
 
 ```
-            web / mobile app
+     apps/web (Next.js)   apps/mobile (Expo)
+       เมนู = โมดูลที่ติดตั้ง ∩ หน้าจอที่ build มา
                    │  HTTPS (JWT)
              ┌─────▼──────┐   /api/_catalog → เมนูตามโมดูลที่ติดตั้ง
              │  gateway   │   /api/<module>/* → proxy
@@ -50,4 +51,4 @@
 - เงินใช้ `numeric(18,4)` ใน DB แต่คำนวณเป็น JS number + ปัดทศนิยม — พอสำหรับ SME ถ้าต้องแม่นระดับบัญชีให้เปลี่ยนเป็น decimal library ใน `@erp/thai`
 - gateway proxy เฉพาะ JSON (ยังไม่รองรับ upload ไฟล์)
 - dispatcher ถือ transaction ระหว่างส่ง HTTP — พอสำหรับปริมาณ SME
-- ยังไม่มี web/mobile UI ในชุดนี้ — UI เรียก `/api/_catalog` เพื่อแสดงเมนูตามโมดูลที่ซื้อ
+- Docker image ใช้ไฟล์เดียวกันทุก service (`pnpm install` ทั้ง repo) — image ใหญ่กว่าที่จำเป็น ปรับเป็น multi-stage/`pnpm deploy` ได้เมื่อขึ้น production จริง

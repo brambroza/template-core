@@ -49,7 +49,7 @@ export async function postMove(emit: Emit, c: Client, m: MoveInput, opts: MoveOp
   const after = before + m.qty;
   if (m.qty < 0 && after < 0 && !opts.force) {
     const allow = (await c.query('select allow_negative from settings')).rows[0]?.allow_negative ?? false;
-    if (!allow) throw conflict(`Insufficient stock for ${m.itemCode} in ${m.warehouseCode}: on hand ${before}, requested ${-m.qty}`);
+    if (!allow) throw conflict(`สต็อกไม่พอ: ${m.itemCode} ที่คลัง ${m.warehouseCode} คงเหลือ ${before} ต้องการจ่าย ${-m.qty}`);
   }
   const row = (await c.query<{ id: string }>(
     `insert into stock_moves (item_id, item_code, item_name, warehouse_id, qty, unit_cost, kind, ref_type, ref_id, note, created_by)

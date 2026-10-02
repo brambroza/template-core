@@ -18,3 +18,6 @@ Sales orders → delivery → Thai tax invoice.
 
 ## Extension ideas
 Quotations, credit limits, partial deliveries, receipts/payments, e-Tax invoice XML, PDF rendering (use the printable invoice JSON).
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

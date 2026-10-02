@@ -1,0 +1,12 @@
+{
+  "packages": [
+    "@erp/svc-costing",
+    "@erp/svc-identity",
+    "@erp/svc-inventory",
+    "@erp/svc-maintenance",
+    "@erp/svc-master-data",
+    "@erp/svc-production",
+    "@erp/svc-purchasing",
+    "@erp/svc-sales"
+  ]
+}

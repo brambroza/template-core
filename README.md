@@ -15,12 +15,24 @@ ERP สำหรับโรงงาน/SME ไทย ที่แยกเป�
 
 **ทุก feature module ต้องการแค่ core** — ซื้อตัวเดียวก็ใช้งานได้ ถ้าซื้อหลายตัว จะเชื่อมกันอัตโนมัติผ่าน event เช่น รับของจาก PO → สต็อกเพิ่ม + ต้นทุนเฉลี่ยอัปเดต, ปิดใบสั่งผลิต → ตัดวัตถุดิบ + รับสินค้าสำเร็จรูป + บันทึกต้นทุนจริง
 
+## หน้าจอ web และ mobile
+
+หน้าจอของแต่ละโมดูลเขียนเป็น "ข้อมูล" อยู่ในโฟลเดอร์ของโมดูลเอง (`services/<module>/src/ui.ts`) แล้ว web (Next.js) กับ mobile (Expo) วาดหน้าจอจากข้อมูลนั้น — **ขายโมดูลไหน หน้าจอโมดูลนั้นก็ติดไปด้วย** ลูกค้าที่ไม่ได้ซื้อจะไม่เห็นเมนูและไม่มีโค้ดหน้าจอนั้นในแพ็กเกจ
+
+- web: เมนูตามโมดูลที่ติดตั้ง + สิทธิ์ของผู้ใช้, ฟอร์มพร้อมค้นหาสินค้า/คู่ค้า, ปุ่มตามสถานะเอกสาร, พิมพ์ใบกำกับภาษี (QR พร้อมเพย์)
+- mobile: เฉพาะงานหน้าไลน์ (`mobile: true`) เช่น แจ้งซ่อม/ปิดงานซ่อม, รับ-จ่ายสต็อก, อนุมัติ PO, รายงานผลผลิต — สแกน QR เครื่องจักรและบาร์โค้ดสินค้าได้
+
+รายละเอียด: [docs/ui.md](docs/ui.md)
+
 ## เริ่มต้น (developer)
 
 ```bash
 pnpm install
 pnpm db:dev        # Postgres ใน Docker
 pnpm check         # typecheck + test ทุกโมดูล + e2e + ตรวจกฎสถาปัตยกรรม
+pnpm test:ui       # build web แล้วทดสอบผ่าน browser จริง
+pnpm --filter @erp/web dev        # http://localhost:3000
+pnpm --filter @erp/mobile start   # เปิดด้วย Expo Go บนมือถือ
 ```
 
 ## ขายแยกโมดูล (ฝั่ง GO Along)
@@ -42,4 +54,5 @@ pnpm erp pack sales,inventory --customer "ACME" --license <token>   # ได้�
 ```bash
 pnpm erp compose maintenance,inventory --out deploy/factory-a
 cd deploy/factory-a && cp .env.example .env && docker compose up -d --build
+# web: http://localhost:3000  ·  API gateway: http://localhost:8080
 ```

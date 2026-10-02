@@ -7,6 +7,7 @@ import { compose } from '../src/compose.ts';
 import { pack } from '../src/pack.ts';
 import { scaffoldModule } from '../src/scaffold.ts';
 import { verify } from '../src/verify.ts';
+import { syncUi } from '../src/ui-sync.ts';
 
 const manifests = loadManifests();
 const catalog = loadCatalog();
@@ -42,6 +43,8 @@ describe('compose', () => {
     const yml = readFileSync(join(out, 'docker-compose.yml'), 'utf8');
     expect(yml).toContain('MODULES: identity=http://identity:3000,master-data=http://master-data:3000,maintenance=http://maintenance:3000');
     expect(yml).not.toContain('inventory');
+    expect(yml).toContain('APP_DIR: apps/web');
+    expect(yml).toContain('GATEWAY_URL: http://gateway:8080');
     expect(readFileSync(join(out, 'init-db.sh'), 'utf8')).toContain('create database erp_master_data owner erp_app;');
   });
 });
@@ -58,6 +61,15 @@ describe('pack', () => {
     expect(readFileSync(join(out, 'tests', 'e2e', 'installation.test.ts'), 'utf8')).toContain("from '@erp/svc-inventory'");
     expect(readFileSync(join(out, 'deploy', 'erp-license.txt'), 'utf8').trim()).toBe('tok');
     expect(JSON.parse(readFileSync(join(out, 'INSTALLED_MODULES.json'), 'utf8')).customer).toBe('ACME');
+    // web + mobile include only the purchased modules' screens
+    for (const app of ['apps/web', 'apps/mobile']) {
+      const registry = readFileSync(join(out, app, 'src', 'modules.generated.ts'), 'utf8');
+      expect(registry).toContain("from '@erp/svc-inventory/ui'");
+      expect(registry).not.toContain('svc-production');
+      const appPkg = JSON.parse(readFileSync(join(out, app, 'package.json'), 'utf8'));
+      expect(Object.keys(appPkg.dependencies).filter((d) => d.startsWith('@erp/svc-')).sort()).toEqual(['@erp/svc-identity', '@erp/svc-inventory', '@erp/svc-master-data', '@erp/svc-sales']);
+    }
+    expect(existsSync(join(out, 'tests', 'ui', 'descriptors.test.ts'))).toBe(true);
     // the packed repo passes the same architecture rules on its own
     expect(verify(out).errors).toEqual([]);
   });
@@ -66,8 +78,11 @@ describe('pack', () => {
 describe('scaffold + verify', () => {
   it('creates a new module that follows the rules', () => {
     const root = join(tmp, 'scaffold');
-    cpSync(REPO_ROOT, root, { recursive: true, filter: (s) => !/node_modules|\.git$|[\\/]dist[\\/]/.test(s) });
+    cpSync(REPO_ROOT, root, { recursive: true, filter: (s) => !/node_modules|\.git$|\.next|[\\/]dist[\\/]/.test(s) });
     scaffoldModule(root, 'quality', 'Quality Control', 'ควบคุมคุณภาพ');
+    expect(existsSync(join(root, 'services', 'quality', 'src', 'ui.ts'))).toBe(true);
+    expect(verify(root).errors).toContain('apps/web: module registry is out of date — run `pnpm erp ui-sync`');
+    syncUi(root, loadManifests(root).map((m) => m.id));
     const r = verify(root);
     expect(r.errors).toEqual(['quality: no price in catalog/catalog.json']);
     expect(() => scaffoldModule(root, 'quality', 'x', 'x')).toThrow(/already exists/);

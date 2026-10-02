@@ -18,3 +18,6 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 
 ## Extension ideas
 LINE Login (new route + `users.line_user_id` in a new migration), 2FA, password reset, SSO.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

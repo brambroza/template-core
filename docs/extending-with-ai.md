@@ -6,6 +6,7 @@
 
 - `CLAUDE.md` (root) — แผนที่ระบบ + กฎเหล็ก + pattern ของ route
 - `services/<module>/CLAUDE.md` — ข้อมูล, API, event, ไอเดียต่อยอดของแต่ละโมดูล
+- `services/<module>/src/ui.ts` + [docs/ui.md](ui.md) — หน้าจอเป็นข้อมูล AI เพิ่มหน้าจอได้โดยไม่ต้องเขียน React
 - `.claude/commands/` — คำสั่งสำเร็จรูป: `/new-module`, `/add-feature`, `/add-event`, `/check`, `/upgrade`
 - test ทุกโมดูล — เป็นรั้วกันไม่ให้ AI ทำของเดิมพัง (`pnpm check`)
 

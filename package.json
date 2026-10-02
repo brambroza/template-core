@@ -4,12 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm --filter @erp/web typecheck && pnpm --filter @erp/mobile typecheck",
     "test": "vitest run",
     "test:e2e": "vitest run tests/e2e",
     "check": "pnpm typecheck && pnpm test && node --import tsx tools/erp/src/cli.ts verify",
     "erp": "node --import tsx tools/erp/src/cli.ts",
-    "db:dev": "bash scripts/dev-db.sh"
+    "db:dev": "bash scripts/dev-db.sh",
+    "test:ui": "pnpm --filter @erp/web build && vitest run --config vitest.ui.config.ts"
   },
   "devDependencies": {
     "@erp/contracts": "workspace:*",
@@ -24,8 +25,10 @@
     "@erp/svc-purchasing": "workspace:*",
     "@erp/svc-sales": "workspace:*",
     "@erp/thai": "workspace:*",
+    "@erp/ui-schema": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
+    "playwright-core": "1.56.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

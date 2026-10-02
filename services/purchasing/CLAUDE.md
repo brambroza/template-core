@@ -18,3 +18,6 @@ Purchase orders with Thai VAT and goods receipt.
 
 ## Extension ideas
 Purchase requests, multi-level approval by amount, supplier price lists, AP invoice matching.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

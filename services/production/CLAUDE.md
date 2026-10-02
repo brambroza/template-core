@@ -20,3 +20,6 @@ BOMs, production orders, material requirements.
 
 ## Extension ideas
 Routings/work centres & capacity, BOM versions, scrap reporting, MRP net requirements against Inventory balances (subscribe to `inventory.stock_changed` and keep a local balance table).
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

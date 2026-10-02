@@ -48,6 +48,15 @@ ${mods.map(svc).join('\n')}
       INTERNAL_TOKEN: \${INTERNAL_TOKEN}
       MODULES: ${mods.map((m) => `${m.id}=http://${m.id}:3000`).join(',')}
 
+  web:
+    build: { context: ${ctx}, args: { APP_DIR: apps/web } }
+    restart: unless-stopped
+    depends_on: [gateway]
+    ports: ["3000:3000"]
+    environment:
+      PORT: 3000
+      GATEWAY_URL: http://gateway:8080
+
 volumes:
   pgdata:
 `;
@@ -77,8 +86,9 @@ PROMPTPAY_ID=
    \`\`\`
    docker compose exec identity node -e "fetch('http://localhost:3000/tenants',{method:'POST',headers:{'content-type':'application/json','x-internal-token':process.env.INTERNAL_TOKEN},body:JSON.stringify({code:'mycompany',name:'My Company',admin:{email:'admin@mycompany.co.th',name:'Admin',password:'change-me-now'}})}).then(r=>r.text()).then(console.log)"
    \`\`\`
-4. Log in: \`POST http://localhost:8080/api/identity/auth/login\` with \`{"tenant":"mycompany","email":"admin@mycompany.co.th","password":"change-me-now"}\`
-5. Installed modules: \`GET http://localhost:8080/api/_catalog\`
+4. Open http://localhost:3000 and log in with company code \`mycompany\`, \`admin@mycompany.co.th\`, \`change-me-now\`
+   (API directly: \`POST http://localhost:8080/api/identity/auth/login\`; installed modules: \`GET http://localhost:8080/api/_catalog\`)
+5. Mobile app: point it at \`http://<server-ip>:8080\` (field "ที่อยู่เซิร์ฟเวอร์" on the login screen)
 `;
   const files = { 'docker-compose.yml': yml, 'init-db.sh': init, '.env.example': env, 'README.md': readme };
   for (const [name, content] of Object.entries(files)) writeFileSync(join(outDir, name), content, { mode: name.endsWith('.sh') ? 0o755 : 0o644 });

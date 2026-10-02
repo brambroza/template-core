@@ -3,3 +3,4 @@ export * from './compose.ts';
 export * from './pack.ts';
 export * from './scaffold.ts';
 export * from './verify.ts';
+export * from './ui-sync.ts';

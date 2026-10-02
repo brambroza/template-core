@@ -9,5 +9,6 @@ Add this feature: $ARGUMENTS
 3. Implement routes with the standard pattern; new permissions go in module.json.
 4. Touching another module's data? Don't. Publish/subscribe an event instead (see docs/events.md).
 5. Write tests first for the new behaviour (+ a 403 test), then make them pass.
-6. Update the module's CLAUDE.md (data, API, events).
-7. `pnpm check` must be green.
+6. Add/extend screens in `src/ui.ts` so users can reach the feature (endpoints must match the routes exactly).
+7. Update the module's CLAUDE.md (data, API, events, screens).
+8. `pnpm check` must be green.

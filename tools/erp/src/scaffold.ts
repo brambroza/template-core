@@ -14,9 +14,9 @@ export function scaffoldModule(root: string, id: string, name: string, nameTh: s
       permissions: [{ key: `${id}.record.read`, label: `ดู${nameTh}` }, { key: `${id}.record.write`, label: `จัดการ${nameTh}` }],
     }, null, 2) + '\n',
     'package.json': JSON.stringify({
-      name: `@erp/svc-${id}`, version: '0.1.0', private: true, type: 'module', exports: { '.': './src/service.ts' },
+      name: `@erp/svc-${id}`, version: '0.1.0', private: true, type: 'module', exports: { '.': './src/service.ts', './ui': './src/ui.ts' },
       scripts: { start: 'node --import tsx src/main.ts', dev: 'node --watch --import tsx src/main.ts', test: `vitest run --root ../.. services/${id}` },
-      dependencies: { '@erp/contracts': 'workspace:*', '@erp/kernel': 'workspace:*', '@erp/thai': 'workspace:*', tsx: '^4.19.2' },
+      dependencies: { '@erp/contracts': 'workspace:*', '@erp/kernel': 'workspace:*', '@erp/thai': 'workspace:*', '@erp/ui-schema': 'workspace:*', tsx: '^4.19.2' },
     }, null, 2) + '\n',
     'migrations/001_init.sql': `create table records (
   id uuid primary key default gen_random_uuid(),
@@ -28,6 +28,32 @@ export function scaffoldModule(root: string, id: string, name: string, nameTh: s
   unique (tenant_id, code)
 );
 -- @tenant records
+`,
+    'src/ui.ts': `import { defineUi } from '@erp/ui-schema';
+
+/** Screens for web + mobile. Endpoints use the same path templates as the routes in service.ts. */
+export default defineUi({
+  module: '${id}',
+  label: '${nameTh}',
+  glyph: '${[...nameTh][0] ?? id[0]}',
+  menu: [{ label: '${nameTh}', screen: 'records' }],
+  screens: {
+    records: {
+      kind: 'list', title: '${nameTh}', endpoint: '/records', perm: '${id}.record.read', mobile: true,
+      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' }],
+      create: 'recordNew', createLabel: 'เพิ่ม', rowLink: { screen: 'record' }, empty: 'ยังไม่มีรายการ',
+    },
+    recordNew: {
+      kind: 'form', title: 'เพิ่ม${nameTh}', method: 'POST', endpoint: '/records', perm: '${id}.record.write', mobile: true,
+      fields: [{ name: 'code', label: 'รหัส', type: 'text', required: true }, { name: 'name', label: 'ชื่อ', type: 'text', required: true }],
+      submitLabel: 'บันทึก', after: { screen: 'record', idFrom: 'id' },
+    },
+    record: {
+      kind: 'detail', title: '${nameTh}', endpoint: '/records/:id', perm: '${id}.record.read', heading: 'code', mobile: true,
+      fields: [{ key: 'name', label: 'ชื่อ' }, { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' }],
+    },
+  },
+});
 `,
     'src/main.ts': `import { runService } from '@erp/kernel';\nimport { definition } from './service.ts';\n\nawait runService(definition);\n`,
     'src/service.ts': `import { auth, loadManifest, one, parse, requirePerm, s, z, type ServiceDefinition } from '@erp/kernel';
@@ -97,6 +123,9 @@ TODO: describe the business process in 3–5 lines (who uses it, which documents
 
 ## API
 - GET /records, GET /records/:id, POST /records
+
+## Screens (src/ui.ts)
+- records (list) → recordNew (form) → record (detail); all marked mobile
 
 ## Events
 - publishes: (none yet) — add to module.json + @erp/contracts first

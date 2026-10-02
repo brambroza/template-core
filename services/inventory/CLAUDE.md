@@ -23,3 +23,6 @@ Never insert into `stock_moves` anywhere else.
 
 ## Extension ideas
 Lots/serials, bin locations, stock counts, reorder points (new table + a scheduled route), valuation (FIFO) reading `unit_cost`.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

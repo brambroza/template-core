@@ -22,3 +22,6 @@ Machines, preventive maintenance plans, work orders. Mobile-first: operators sca
 
 ## Extension ideas
 LINE notification on breakdown, photos (store URLs), meter-based PM, MTBF/MTTR report from history.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

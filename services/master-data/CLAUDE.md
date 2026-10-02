@@ -15,3 +15,6 @@ Items and business partners. Other modules keep only snapshots (`itemId`, `itemC
 
 ## Extension ideas
 Item categories, units-of-measure conversion, price lists, barcodes: add columns in a new migration and the field to `ITEM_COLS` + `ItemInput`.
+
+## Screens
+`src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
