@@ -6,6 +6,8 @@ export interface AuthContext {
   userId: string;
   /** permission strings, e.g. "sales.order.create", "sales.*", "*" */
   perms: string[];
+  /** display name of the signed-in user (from the token) — use it to fill "requested by" snapshots */
+  userName?: string;
 }
 
 const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
@@ -14,7 +16,7 @@ const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
 export function signToken(secret: string, ctx: AuthContext, ttlSeconds = 60 * 60 * 12): string {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, iat: now, exp: now + ttlSeconds }));
+  const payload = b64url(JSON.stringify({ sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, ...(ctx.userName ? { name: ctx.userName } : {}), iat: now, exp: now + ttlSeconds }));
   const sig = b64url(createHmac('sha256', secret).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
 }
@@ -29,7 +31,7 @@ export function verifyToken(secret: string, token: string): AuthContext {
   const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
   if (typeof claims.exp === 'number' && claims.exp < Math.floor(Date.now() / 1000)) throw unauthorized('Token expired');
   if (!claims.tid || !claims.sub) throw unauthorized('Invalid token claims');
-  return { tenantId: claims.tid, userId: claims.sub, perms: Array.isArray(claims.perms) ? claims.perms : [] };
+  return { tenantId: claims.tid, userId: claims.sub, perms: Array.isArray(claims.perms) ? claims.perms : [], ...(typeof claims.name === 'string' && claims.name ? { userName: claims.name } : {}) };
 }
 
 /** "*" grants everything, "sales.*" grants every sales permission. */

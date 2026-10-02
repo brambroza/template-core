@@ -44,7 +44,8 @@ export interface TestService {
   svc: Service;
   tenantId: string;
   otherTenantId: string;
-  token(perms?: string[], tenantId?: string): string;
+  /** sign a token; `user` sets a fixed userId / display name (default: random id, no name) */
+  token(perms?: string[], tenantId?: string, user?: { userId?: string; userName?: string }): string;
   /** call the API as an admin of `tenantId` (default: the main test tenant) */
   api<T = any>(method: string, url: string, body?: unknown, opts?: { token?: string }): Promise<ApiResult<T>>;
   /** deliver an inbound event as the gateway would */
@@ -62,7 +63,8 @@ export async function bootTestService(def: ServiceDefinition, extraEnv: Record<s
   await svc.app.ready();
   const tenantId = randomUUID();
   const otherTenantId = randomUUID();
-  const token = (perms = ['*'], tid = tenantId) => signToken(TEST_JWT_SECRET, { tenantId: tid, userId: randomUUID(), perms });
+  const token = (perms = ['*'], tid = tenantId, user: { userId?: string; userName?: string } = {}) =>
+    signToken(TEST_JWT_SECRET, { tenantId: tid, userId: user.userId ?? randomUUID(), perms, ...(user.userName ? { userName: user.userName } : {}) });
   const defaultToken = token();
   return {
     svc, tenantId, otherTenantId, token,

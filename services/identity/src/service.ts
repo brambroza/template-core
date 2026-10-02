@@ -57,7 +57,7 @@ export const definition: ServiceDefinition = {
         const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
         if (!u || !verifyPassword(body.password, u.password_hash)) throw unauthorized('Invalid credentials');
         const perms = await permissionsOf(c, u.id);
-        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms }, ttl);
+        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl);
         return { token, expiresIn: ttl, tenant, user: { id: u.id, email: u.email, name: u.name }, permissions: perms };
       });
     });
