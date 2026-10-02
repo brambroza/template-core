@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Factory OS — ERP โรงงานไทย</title>
+<meta name="description" content="ERP สำหรับโรงงาน SME ไทย เห็นภาพแบบ 2D/3D สั่งงานเป็นภาษาไทย มีบอทแจ้งเตือนอัตโนมัติและผู้ช่วย AI ซื้อเฉพาะโมดูลที่ใช้ ได้ source code ไปต่อยอดเอง">
+<meta property="og:title" content="Factory OS — ERP โรงงานไทยที่เห็นภาพและมีบอทเฝ้าให้">
+<meta property="og:description" content="เลือกซื้อทีละโมดูล ได้ source code ต่อยอดด้วย AI ได้เลย">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F5F6F5; --surface: #FFFFFF; --surface-2: #EEF0EE; --ink: #141C22; --ink-2: #56616B; --ink-3: #8A949C;
+  --line: #E1E4E1; --accent: #F5C518; --accent-deep: #C99B00; --ok: #1F9D6B; --stop: #D64535; --warn: #C98207;
+  --float: 0 1px 2px rgba(20,28,34,.05), 0 18px 48px rgba(20,28,34,.12);
+  --r: 18px; --font: 'IBM Plex Sans Thai', 'Noto Sans Thai', system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0C1115; --surface: #131A20; --surface-2: #1A232A; --ink: #E9EEF1; --ink-2: #A0ACB5; --ink-3: #6E7B85; --line: #232D35;
+    --float: 0 1px 2px rgba(0,0,0,.3), 0 18px 48px rgba(0,0,0,.5); color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] { --bg: #0C1115; --surface: #131A20; --surface-2: #1A232A; --ink: #E9EEF1; --ink-2: #A0ACB5; --ink-3: #6E7B85; --line: #232D35; color-scheme: dark; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; font-family: var(--font); color: var(--ink); background: var(--bg); line-height: 1.65; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+a { color: inherit; }
+h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+p { margin: 0; }
+.wrap { width: min(1180px, 100% - 32px); margin: 0 auto; }
+.eyebrow { font-size: .8rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-deep); }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 22px; border-radius: 12px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); transition: transform .15s, box-shadow .15s; }
+.btn:hover { transform: translateY(-1px); box-shadow: var(--float); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #141C22; }
+.tape { height: 8px; background: repeating-linear-gradient(-45deg, var(--accent) 0 8px, #141C22 8px 16px); }
+
+/* nav */
+.nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid transparent; transition: border-color .2s; }
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 24px; height: 68px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; }
+.logo i { width: 30px; height: 30px; border-radius: 8px; background: repeating-linear-gradient(-45deg, var(--accent) 0 5px, #141C22 5px 10px); }
+.nav nav { display: flex; gap: 22px; margin-left: auto; font-size: .93rem; }
+.nav nav a { text-decoration: none; color: var(--ink-2); }
+.nav nav a:hover { color: var(--ink); }
+.nav .btn { height: 40px; padding: 0 16px; }
+
+/* hero */
+.hero { position: relative; padding: 56px 0 24px; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 32px; align-items: center; }
+.hero h1 { font-size: clamp(2.2rem, 4.6vw, 3.7rem); font-weight: 700; margin: 14px 0 18px; }
+.hero h1 em { font-style: normal; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 70%, transparent) 62%); }
+.hero .lead { font-size: 1.12rem; color: var(--ink-2); max-width: 34em; }
+.hero .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 22px; }
+.hero .proof { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .88rem; color: var(--ink-2); }
+.hero .proof span::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 8px; vertical-align: middle; }
+.stage { position: relative; height: 520px; border-radius: 28px; background: radial-gradient(120% 90% at 60% 30%, var(--surface) 0%, var(--surface-2) 100%); border: 1px solid var(--line); overflow: hidden; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.stage .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); }
+.ping { position: absolute; display: flex; gap: 10px; align-items: flex-start; max-width: 260px; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--float); font-size: .82rem; opacity: 0; pointer-events: none; }
+.ping b { display: block; font-size: .84rem; }
+.ping span { color: var(--ink-2); }
+.ping i { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--stop); box-shadow: 0 0 0 4px color-mix(in srgb, var(--stop) 20%, transparent); }
+.ping.ok i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+.ping.warn i { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 20%, transparent); }
+.stage .legend { position: absolute; left: 18px; bottom: 14px; font-size: .78rem; color: var(--ink-3); }
+
+/* sections */
+section.block { padding: 96px 0; }
+.head { max-width: 720px; margin-bottom: 44px; }
+.head h2 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); margin: 10px 0 14px; }
+.head p { color: var(--ink-2); font-size: 1.05rem; }
+.pains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.pain { padding: 26px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); }
+.pain h3 { font-size: 1.1rem; margin: 14px 0 8px; }
+.pain p { color: var(--ink-2); font-size: .95rem; }
+.pain .n { font-size: 2.4rem; font-weight: 700; line-height: 1; }
+.pain .n small { font-size: .9rem; font-weight: 500; color: var(--ink-3); margin-left: 6px; }
+
+.split { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 48px; align-items: center; }
+.split.rev { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
+.split.rev > :first-child { order: 2; }
+.ticks { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 12px; }
+.ticks li { display: flex; gap: 12px; color: var(--ink-2); }
+.ticks li::before { content: ''; flex: none; width: 20px; height: 20px; margin-top: 3px; border-radius: 6px; background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3 3 7-7' fill='none' stroke='%23141C22' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
+.ticks b { color: var(--ink); font-weight: 600; }
+
+/* fake command palette */
+.pal { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--float); overflow: hidden; }
+.pal .in { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); font-size: 1.12rem; min-height: 66px; }
+.pal .in svg { flex: none; color: var(--accent-deep); }
+.pal .caret { display: inline-block; width: 2px; height: 1.2em; background: var(--ink); vertical-align: -3px; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.pal .out { padding: 10px; min-height: 170px; }
+.pal .grp { font-size: .72rem; font-weight: 600; color: var(--ink-3); letter-spacing: .05em; margin: 6px 10px; }
+.pal .row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; }
+.pal .row.on { background: var(--surface-2); }
+.pal .row .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent); color: #141C22; flex: none; font-weight: 700; }
+.pal .row.ai .ic { background: transparent; border: 1px solid var(--line); color: var(--ink-2); }
+.pal .row b { display: block; font-weight: 500; }
+.pal .row span { font-size: .86rem; color: var(--ink-2); }
+.pal .answer { margin: 6px 10px 6px auto; max-width: 88%; padding: 12px 14px; border-radius: 14px 14px 4px 14px; background: var(--surface-2); font-size: .93rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.chip { font: inherit; font-size: .86rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.chip.on { border-color: var(--ink); color: var(--ink); }
+
+/* bots */
+.rules { display: grid; gap: 12px; }
+.rule { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.rule .ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); }
+.rule p { font-size: .95rem; }
+.rule p b { font-weight: 600; }
+.rule .k { color: var(--ink-3); font-weight: 500; }
+.toggle { width: 40px; height: 24px; border-radius: 12px; background: var(--ok); position: relative; flex: none; }
+.toggle::after { content: ''; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+.phone { width: 300px; margin: 0 auto; border-radius: 40px; padding: 12px; background: #141C22; box-shadow: var(--float); }
+.phone .scr { border-radius: 30px; background: #8CABD9; min-height: 470px; padding: 18px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.phone .top { text-align: center; color: #fff; font-weight: 600; font-size: .85rem; margin-bottom: 4px; }
+.bub { align-self: flex-start; max-width: 88%; background: #fff; color: #141C22; border-radius: 4px 16px 16px 16px; padding: 9px 12px; font-size: .82rem; line-height: 1.5; opacity: 0; }
+.bub b { display: block; }
+.bub.red b { color: #C0392B; }
+.bub.green b { color: #1F7D56; }
+.bub small { display: block; color: #6b7680; margin-top: 4px; font-size: .72rem; }
+
+/* screens strip */
+.shots { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.shots { align-items: start; }
+.shot { margin: 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--float); }
+.shot img { display: block; width: 100%; height: auto; }
+.shot figcaption { padding: 12px 16px; font-size: .88rem; color: var(--ink-2); border-top: 1px solid var(--line); }
+.shot.a { grid-column: span 8; } .shot.b { grid-column: span 4; } .shot.c, .shot.d { grid-column: span 6; }
+.shot.b img { max-height: 520px; object-fit: cover; object-position: top; }
+
+/* modules / pricing */
+.mods { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.mod-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mod { position: relative; text-align: left; font: inherit; color: inherit; padding: 20px; border-radius: 16px; background: var(--surface); border: 1.5px solid var(--line); cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 6px; }
+.mod:hover { transform: translateY(-2px); box-shadow: var(--float); }
+.mod.on { border-color: var(--ink); }
+.mod.on::after { content: ''; position: absolute; top: 16px; right: 16px; width: 22px; height: 22px; border-radius: 7px; background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3 3 7-7' fill='none' stroke='%23141C22' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
+.mod.core { cursor: default; background: var(--surface-2); }
+.mod.core:hover { transform: none; box-shadow: none; }
+.mod h3 { font-size: 1.05rem; padding-right: 30px; }
+.mod .for { font-size: .78rem; color: var(--ink-3); }
+.mod p { font-size: .9rem; color: var(--ink-2); flex: 1; }
+.mod .price { font-weight: 700; margin-top: 6px; }
+.mod .needs { font-size: .76rem; color: var(--ink-3); }
+.quote { position: sticky; top: 88px; padding: 24px; border-radius: 20px; background: #141C22; color: #E9EEF1; }
+.quote h3 { font-size: 1.1rem; margin-bottom: 14px; }
+.quote ul { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; font-size: .9rem; }
+.quote li { display: flex; justify-content: space-between; gap: 12px; }
+.quote li span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quote .save { color: var(--accent); }
+.quote .total { border-top: 1px solid #2A353E; padding-top: 14px; display: flex; justify-content: space-between; align-items: baseline; }
+.quote .total b { font-size: 2rem; font-variant-numeric: tabular-nums; }
+.quote .note { font-size: .8rem; color: #9AA7B1; margin-top: 10px; }
+.quote .btn { width: 100%; justify-content: center; margin-top: 18px; }
+.bundles { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+
+/* code */
+.code { background: #0F151A; color: #D6DEE4; border-radius: 18px; padding: 22px; font: 13.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-x: auto; border: 1px solid #222C34; }
+.code .c { color: #6E7B85; } .code .k { color: #F5C518; } .code .s { color: #8FD4A8; }
+
+/* faq + contact */
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::after { content: '+'; color: var(--ink-3); font-weight: 400; }
+details[open] summary::after { content: '–'; }
+details p { color: var(--ink-2); margin-top: 8px; font-size: .95rem; }
+.contact { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 40px; padding: 40px; border-radius: 28px; background: var(--surface); border: 1px solid var(--line); }
+form.lead { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+form.lead label { display: grid; gap: 4px; font-size: .85rem; color: var(--ink-2); }
+form.lead .wide { grid-column: 1 / -1; }
+form.lead input, form.lead textarea { font: inherit; font-size: 1rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+form.lead input:focus, form.lead textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+.sent { grid-column: 1 / -1; font-size: .9rem; color: var(--ok); }
+footer { padding: 40px 0 56px; color: var(--ink-3); font-size: .85rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+[data-up] { will-change: transform, opacity; }
+
+@media (max-width: 960px) {
+  .nav nav { display: none; }
+  .hero .wrap, .split, .split.rev, .mods, .contact { grid-template-columns: minmax(0, 1fr); }
+  .split.rev > :first-child { order: 0; }
+  .stage { height: 380px; }
+  .pains, .faq { grid-template-columns: minmax(0, 1fr); }
+  .mod-grid { grid-template-columns: minmax(0, 1fr); }
+  .shot.a, .shot.b, .shot.c, .shot.d { grid-column: 1 / -1; }
+  .quote { position: static; }
+  section.block { padding: 64px 0; }
+  .contact { padding: 24px; }
+  form.lead { grid-template-columns: minmax(0, 1fr); }
+  .ping { max-width: 200px; font-size: .76rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .pal .caret { animation: none; } }
+</style>
+</head>
+<body>
+<script id="site-data" type="application/json">__DATA__</script>
+<div class="tape" aria-hidden="true"></div>
+<header class="nav" id="top">
+  <div class="wrap">
+    <a class="logo" href="#top"><i aria-hidden="true"></i><span data-bind="product">Factory OS</span></a>
+    <nav aria-label="หัวข้อ">
+      <a href="#command">สั่งงานภาษาไทย</a>
+      <a href="#bots">บอทอัตโนมัติ</a>
+      <a href="#screens">หน้าจอจริง</a>
+      <a href="#pricing">โมดูลและราคา</a>
+      <a href="#faq">คำถาม</a>
+    </nav>
+    <a class="btn primary" href="#contact">ขอเดโม</a>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">ERP สำหรับโรงงาน SME ไทย</p>
+      <h1>โรงงานที่<em>เห็นภาพ</em><br>สั่งงานเป็นภาษาไทย<br>และมีบอทเฝ้าให้</h1>
+      <p class="lead">ไม่ใช่โปรแกรมบัญชีหน้าจอเก่าๆ — เห็นเครื่องจักรทั้งโรงงานบนผัง 3 มิติ พิมพ์ “แจ้งซ่อม PRESS-01 น้ำมันรั่ว” แล้วระบบกรอกให้ บอทเตือนใน LINE ทันทีที่ของใกล้หมดหรือเครื่องเสีย และผู้ช่วย AI ตอบจากข้อมูลจริงของคุณ</p>
+      <div class="ctas">
+        <a class="btn primary" href="#contact">นัดดูเดโม 30 นาที</a>
+        <a class="btn" href="#pricing">เลือกโมดูล ดูราคาทันที</a>
+      </div>
+      <div class="proof"><span>ซื้อขาด ได้ source code</span><span>เลือกซื้อทีละโมดูล</span><span>ใบกำกับภาษีถูกต้องตามสรรพากร</span><span>ใช้บนมือถือได้</span></div>
+    </div>
+    <div class="stage" id="stage" aria-label="ภาพจำลองผังโรงงาน 3 มิติ: เครื่องจักรแต่ละเครื่องมีไฟสถานะ เครื่องที่เสียเป็นสีแดง">
+      <div class="fallback" id="fallback">กำลังโหลดผังโรงงาน…</div>
+      <div class="ping" id="p1"><i></i><div><b>PRESS-02 เสีย</b><span>บอทส่ง LINE ถึงกลุ่มช่างแล้ว · 2 วินาทีที่แล้ว</span></div></div>
+      <div class="ping warn" id="p2"><i></i><div><b>เหล็กแผ่น SPCC เหลือ 120 แผ่น</b><span>ต่ำกว่าจุดสั่งซื้อ 200 — เปิดใบสั่งซื้อให้แล้ว</span></div></div>
+      <div class="ping ok" id="p3"><i></i><div><b>ซ่อม PRESS-02 เสร็จ</b><span>เครื่องหยุด 40 นาที · ใช้สายพาน B52 1 เส้น</span></div></div>
+      <p class="legend">ลากเพื่อหมุน · ข้อมูลจำลอง</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="why">
+  <div class="wrap">
+    <div class="head" data-up>
+      <p class="eyebrow">ทำไมโรงงานถึงเปลี่ยน</p>
+      <h2>ข้อมูลอยู่ในไลน์ ในสมุด ในหัวคน — ทุกเช้าต้องโทรถามว่าอะไรเป็นอะไร</h2>
+      <p>Factory OS รวมคลัง จัดซื้อ ขาย ผลิต ซ่อมบำรุง และต้นทุน ไว้ในที่เดียว แล้วให้ทุกคนเห็นภาพเดียวกันแบบเรียลไทม์</p>
+    </div>
+    <div class="pains">
+      <article class="pain" data-up><div class="n" data-count="30">0<small>วินาที</small></div><h3>ภาพรวมทั้งโรงงานอัปเดตเอง</h3><p>ยอดขาย ของรออนุมัติ เครื่องเสีย ของใกล้หมด บนหน้าเดียว ไม่ต้องรอรายงานสิ้นเดือน</p></article>
+      <article class="pain" data-up><div class="n" data-count="1">0<small>ประโยค</small></div><h3>สั่งงานด้วยภาษาคน</h3><p>พิมพ์สิ่งที่อยากทำ ระบบหาเครื่อง หาสินค้า กรอกฟอร์มให้ คุณแค่ตรวจแล้วกดบันทึก</p></article>
+      <article class="pain" data-up><div class="n" data-count="0">0<small>บรรทัดโค้ด</small></div><h3>ตั้งบอทเองได้</h3><p>“เมื่อ PO เกิน 50,000 ให้แจ้งผู้จัดการ” — เลือกจากสูตรสำเร็จรูป หรือสร้างเองในหนึ่งนาที</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="command" style="background: var(--surface-2)">
+  <div class="wrap split">
+    <div data-up>
+      <p class="eyebrow">⌘K · สั่งงานภาษาไทย</p>
+      <h2 class="h2" style="font-size: clamp(1.7rem, 3.2vw, 2.5rem); margin: 10px 0 14px">พิมพ์เหมือนคุยกับลูกน้อง</h2>
+      <p style="color: var(--ink-2)">ช่องเดียวทำได้ทุกอย่าง: สั่งงาน ค้นหาเอกสาร กระโดดไปหน้าที่ต้องการ หรือถามผู้ช่วย AI ที่อ่านข้อมูลจริงในระบบ (และอ่านได้อย่างเดียว ไม่แอบบันทึกแทนคุณ)</p>
+      <ul class="ticks">
+        <li><span><b>แจ้งซ่อม PRESS-01 น้ำมันรั่ว</b> → เปิดใบแจ้งซ่อม เลือกเครื่องและกรอกอาการให้</span></li>
+        <li><span><b>สต็อก RM-STEEL</b> → เปิดสต็อกการ์ดของสินค้านั้นทันที</span></li>
+        <li><span><b>ผลิต FG-BRACKET 500</b> → ใบสั่งผลิตพร้อมจำนวน</span></li>
+        <li><span><b>“เดือนนี้ซื้อเหล็กไปเท่าไหร่”</b> → AI สรุปตัวเลขจริง พร้อมปุ่มเปิดเอกสาร</span></li>
+      </ul>
+      <div class="chips" id="chips" role="group" aria-label="ตัวอย่างคำสั่ง"></div>
+    </div>
+    <div class="pal" data-up aria-live="polite">
+      <div class="in"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg><span id="typed"></span><span class="caret" aria-hidden="true"></span></div>
+      <div class="out" id="palOut"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="bots">
+  <div class="wrap split rev">
+    <div data-up>
+      <p class="eyebrow">บอทอัตโนมัติ</p>
+      <h2 style="font-size: clamp(1.7rem, 3.2vw, 2.5rem); margin: 10px 0 14px">เมื่อ… ถ้า… ให้… — แค่นั้นเอง</h2>
+      <p style="color: var(--ink-2)">บอทฟังทุกเหตุการณ์ในโรงงาน แล้วแจ้งคนที่ต้องรู้ ในแอป ใน LINE หรือส่งต่อไประบบอื่นผ่าน webhook มี 8 สูตรพร้อมใช้ เปิดได้ในคลิกเดียว</p>
+      <div class="rules" style="margin-top: 26px">
+        <div class="rule" data-up><span class="ic">🛠</span><p><span class="k">เมื่อ</span> <b>มีการแจ้งเครื่องเสีย</b> <span class="k">ให้</span> <b>ส่ง LINE กลุ่มช่าง</b></p><span class="toggle" aria-label="เปิดอยู่"></span></div>
+        <div class="rule" data-up><span class="ic">📦</span><p><span class="k">เมื่อ</span> <b>สต็อกต่ำกว่าจุดสั่งซื้อ</b> <span class="k">ให้</span> <b>เตือนจัดซื้อ</b></p><span class="toggle" aria-label="เปิดอยู่"></span></div>
+        <div class="rule" data-up><span class="ic">🧾</span><p><span class="k">เมื่อ</span> <b>สร้างใบสั่งซื้อ</b> <span class="k">ถ้า</span> <b>ยอด &gt; 50,000</b> <span class="k">ให้</span> <b>แจ้งผู้จัดการ</b></p><span class="toggle" aria-label="เปิดอยู่"></span></div>
+        <div class="rule" data-up><span class="ic">⏱</span><p><span class="k">เมื่อ</span> <b>ซ่อมเสร็จ</b> <span class="k">ถ้า</span> <b>เครื่องหยุด &gt; 2 ชม.</b> <span class="k">ให้</span> <b>รายงานผู้บริหาร</b></p><span class="toggle" aria-label="เปิดอยู่"></span></div>
+      </div>
+    </div>
+    <div data-up>
+      <div class="phone" aria-label="ตัวอย่างข้อความใน LINE">
+        <div class="scr" id="line">
+          <p class="top">ช่างซ่อมบำรุง (12)</p>
+          <div class="bub red"><b>🔴 เครื่องเสีย: PRESS-02</b>เครื่องปั๊ม 110 ตัน — น้ำมันไฮดรอลิกรั่วที่กระบอกสูบ (WO-2569-0001)<small>Factory OS · 08:12</small></div>
+          <div class="bub"><b>🟡 ของใกล้หมด</b>RM-SPCC-12 เหล็กแผ่น 1.2 มม. เหลือ 120 ต่ำกว่าจุดสั่งซื้อ 200<small>Factory OS · 08:40</small></div>
+          <div class="bub green"><b>🟢 ซ่อมเสร็จ: PRESS-02</b>เครื่องหยุด 40 นาที · เปลี่ยนซีลกระบอกสูบ<small>Factory OS · 09:05</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="screens" style="background: var(--surface-2)">
+  <div class="wrap">
+    <div class="head" data-up>
+      <p class="eyebrow">หน้าจอจริง ไม่ใช่ภาพตัดต่อ</p>
+      <h2>สวย เรียบ ใช้ง่าย — ทั้งบนคอมและมือถือ</h2>
+      <p>ทุกหน้าจอในภาพนี้มาจากระบบจริงที่รันกับข้อมูลตัวอย่างของโรงงานปั๊มโลหะ ทดสอบอัตโนมัติด้วยเบราว์เซอร์จริงทุกครั้งที่แก้โค้ด</p>
+    </div>
+    <div class="shots">
+      <figure class="shot a" data-up><img src="assets/home.webp" alt="หน้าภาพรวมโรงงาน: ผัง 3 มิติ บอทแจ้งเตือน และตัวเลขแต่ละฝ่าย" loading="lazy" width="1600" height="1000"><figcaption>ภาพรวมโรงงาน — ผัง 3 มิติ + บอทแจ้งเตือนล่าสุด + ตัวเลขทุกฝ่าย</figcaption></figure>
+      <figure class="shot b" data-up><img src="assets/phone.webp" alt="หน้าภาพรวมบนมือถือโหมดมืด" loading="lazy" width="600" height="1300"><figcaption>บนมือถือ (โหมดมืด)</figcaption></figure>
+      <figure class="shot c" data-up><img src="assets/doc.webp" alt="ใบสั่งซื้อพร้อมแถบขั้นตอนเอกสาร" loading="lazy" width="1600" height="1000"><figcaption>เอกสารเดินตามขั้นตอน เห็นชัดว่าอยู่ตรงไหน</figcaption></figure>
+      <figure class="shot d" data-up><img src="assets/bots.webp" alt="หน้าสูตรอัตโนมัติสำเร็จรูป" loading="lazy" width="1600" height="1000"><figcaption>สูตรบอทสำเร็จรูป เปิดใช้ในคลิกเดียว</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="pricing">
+  <div class="wrap">
+    <div class="head" data-up>
+      <p class="eyebrow">ซื้อเฉพาะที่ใช้</p>
+      <h2>เลือกโมดูล เห็นราคาทันที</h2>
+      <p>ทุกโมดูลแยกกันเป็นระบบย่อย (microservice) ของใครของมัน ซื้อเพิ่มทีหลังได้โดยไม่ต้องรื้อ ราคานี้คือซื้อขาด source code ติดตั้ง 1 นิติบุคคล</p>
+    </div>
+    <div class="bundles" id="bundles" role="group" aria-label="ชุดแนะนำ"></div>
+    <div class="mods">
+      <div class="mod-grid" id="modGrid"></div>
+      <aside class="quote" aria-live="polite">
+        <h3>ใบเสนอราคาของคุณ</h3>
+        <ul id="qLines"></ul>
+        <div class="total"><span>รวม (ยังไม่รวม VAT)</span><b id="qTotal">฿0</b></div>
+        <p class="note" id="qNote"></p>
+        <a class="btn primary" href="#contact" id="qCta">ขอใบเสนอราคานี้</a>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="dev" style="background: var(--surface-2)">
+  <div class="wrap split">
+    <div data-up>
+      <p class="eyebrow">เป็นเจ้าของระบบจริงๆ</p>
+      <h2 style="font-size: clamp(1.7rem, 3.2vw, 2.5rem); margin: 10px 0 14px">ได้ source code ไปต่อยอดเอง — หรือให้ AI ช่วยเขียน</h2>
+      <p style="color: var(--ink-2)">ทุกโมดูลมีคู่มือสำหรับ AI (CLAUDE.md) กฎสถาปัตยกรรม และชุดทดสอบ ทีม IT ของคุณสั่ง AI เพิ่มฟีเจอร์ได้เลย โดยมีระบบตรวจว่าไม่ทำให้โมดูลอื่นพัง</p>
+      <ul class="ticks">
+        <li><span><b>หน้าจอเป็นข้อมูล</b> ประกาศหน้าจอใน ui.ts ไฟล์เดียว เว็บและมือถือแสดงให้เอง</span></li>
+        <li><span><b>แต่ละโมดูลมีฐานข้อมูลของตัวเอง</b> คุยกันผ่านเหตุการณ์ (event) เท่านั้น</span></li>
+        <li><span><b>ข้อมูลแยกบริษัทระดับฐานข้อมูล</b> (row-level security) และสิทธิ์รายฟังก์ชัน</span></li>
+        <li><span><b>ทดสอบอัตโนมัติ 130+ เคส</b> รวมเบราว์เซอร์จริงและ UAT</span></li>
+      </ul>
+    </div>
+    <pre class="code" data-up aria-label="ตัวอย่างโค้ด"><span class="c">// services/quality/src/ui.ts — โมดูลใหม่ที่ลูกค้าสร้างเอง</span>
+<span class="k">export default</span> defineUi({
+  module: <span class="s">'quality'</span>, label: <span class="s">'ควบคุมคุณภาพ'</span>, icon: <span class="s">'gauge'</span>,
+  commands: [{
+    keywords: [<span class="s">'ตรวจ'</span>], example: <span class="s">'ตรวจ LOT-0412'</span>,
+    screen: <span class="s">'inspectionNew'</span>,
+  }],
+  screens: {
+    inspectionNew: { kind: <span class="s">'form'</span>, endpoint: <span class="s">'/inspections'</span>, … },
+  },
+});
+
+<span class="c">$ pnpm erp new-module quality --name-th "ควบคุมคุณภาพ"</span>
+<span class="c">$ pnpm check   # ✓ typecheck · ✓ tests · ✓ architecture</span></pre>
+  </div>
+</section>
+
+<section class="block" id="faq">
+  <div class="wrap">
+    <div class="head" data-up><p class="eyebrow">คำถามที่พบบ่อย</p><h2>ก่อนตัดสินใจ</h2></div>
+    <div class="faq">
+      <details data-up><summary>ต้องจ่ายรายเดือนไหม</summary><p>ไม่ต้อง ราคาที่เห็นคือซื้อขาด source code ส่วนแผนอัปเดตและซัพพอร์ตรายปีเป็นตัวเลือก (ประมาณ 20% ของราคาต่อปี)</p></details>
+      <details data-up><summary>ติดตั้งที่ไหน</summary><p>บนเซิร์ฟเวอร์ของคุณเอง หรือคลาวด์ที่คุณเลือก ใช้ Docker คำสั่งเดียว ข้อมูลอยู่กับคุณทั้งหมด</p></details>
+      <details data-up><summary>ผู้ช่วย AI เอาข้อมูลเราไปไหน</summary><p>ผู้ช่วยใช้ API key ของบริษัทคุณเอง อ่านข้อมูลด้วยสิทธิ์ของผู้ใช้ที่ถามเท่านั้น และทำได้แค่อ่านกับเปิดหน้าจอ บันทึกหรืออนุมัติแทนไม่ได้ ถ้าไม่ใส่ key ระบบส่วนอื่นยังใช้ได้ครบ</p></details>
+      <details data-up><summary>ซื้อแค่โมดูลเดียวได้ไหม</summary><p>ได้ ทุกการติดตั้งมีแพลตฟอร์มหลัก (ผู้ใช้/สิทธิ์ + ข้อมูลสินค้าและคู่ค้า) แล้วเลือกโมดูลอะไรก็ได้ เช่น ซ่อมบำรุงอย่างเดียว ซื้อเพิ่มทีหลังได้</p></details>
+      <details data-up><summary>ใบกำกับภาษีถูกต้องไหม</summary><p>ใบกำกับภาษีมี VAT 7% จำนวนเงินตัวอักษรภาษาไทย วันที่ พ.ศ. เลขผู้เสียภาษี/สาขา และ QR พร้อมเพย์ สามารถปรับแบบฟอร์มให้ตรงกับของบริษัทได้</p></details>
+      <details data-up><summary>ใช้บนมือถือได้ไหม</summary><p>ได้ทั้งเว็บบนมือถือและแอป (iOS/Android) ช่างสแกน QR ที่เครื่องจักรเพื่อแจ้งซ่อม พนักงานคลังสแกนบาร์โค้ดรับ-จ่ายของได้</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="contact" style="padding-top: 24px">
+  <div class="wrap">
+    <div class="contact" data-up>
+      <div>
+        <p class="eyebrow">เริ่มต้น</p>
+        <h2 style="font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 10px 0 14px">ดูเดโมกับข้อมูลแบบโรงงานคุณ</h2>
+        <p style="color: var(--ink-2)">นัดคุย 30 นาที เราเปิดระบบจริงให้ลองสั่งงาน ลองตั้งบอท และประเมินว่าโรงงานคุณควรเริ่มจากโมดูลไหน</p>
+        <p style="margin-top: 18px; color: var(--ink-2)" id="contactLines"></p>
+      </div>
+      <form class="lead" id="lead">
+        <label>ชื่อ<input name="name" required autocomplete="name"></label>
+        <label>บริษัท/โรงงาน<input name="company" required autocomplete="organization"></label>
+        <label>เบอร์โทร<input name="phone" required inputmode="tel" autocomplete="tel"></label>
+        <label>LINE ID (ถ้ามี)<input name="line"></label>
+        <label class="wide">อยากแก้ปัญหาอะไรก่อน<textarea name="message" rows="3" placeholder="เช่น สต็อกไม่ตรง เครื่องเสียบ่อยไม่มีประวัติ"></textarea></label>
+        <input type="hidden" name="modules" id="leadModules">
+        <button class="btn primary wide" type="submit" style="justify-content: center">ขอเดโม</button>
+        <p class="sent" id="sent" hidden></p>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span data-bind="company"></span>
+    <span>ราคาไม่รวม VAT · ราคาและเงื่อนไขอาจเปลี่ยนแปลง</span>
+  </div>
+</footer>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('site-data').textContent);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hasGsap = typeof gsap !== 'undefined';
+  if (hasGsap && typeof ScrollTrigger !== 'undefined') gsap.registerPlugin(ScrollTrigger);
+  const baht = (n) => '฿' + Math.round(n).toLocaleString('th-TH');
+  document.querySelectorAll('[data-bind]').forEach((el) => { el.textContent = D.site[el.dataset.bind] ?? el.textContent; });
+
+  // nav border on scroll
+  const nav = document.querySelector('.nav');
+  addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 8), { passive: true });
+
+  // reveal on scroll
+  if (hasGsap && !reduce) {
+    gsap.from('.hero h1, .hero .eyebrow, .hero .lead, .hero .ctas, .hero .proof', { y: 18, opacity: 0, duration: .8, ease: 'power3.out', stagger: .08 });
+    gsap.from('#stage', { opacity: 0, scale: .97, duration: 1, ease: 'power3.out', delay: .15 });
+    document.querySelectorAll('[data-up]').forEach((el) => {
+      gsap.from(el, { y: 26, opacity: 0, duration: .7, ease: 'power3.out', scrollTrigger: { trigger: el, start: 'top 88%', once: true } });
+    });
+    document.querySelectorAll('[data-count]').forEach((el) => {
+      const to = Number(el.dataset.count), small = el.querySelector('small').outerHTML, o = { n: 0 };
+      gsap.to(o, { n: to, duration: 1.2, ease: 'power2.out', scrollTrigger: { trigger: el, start: 'top 90%', once: true }, onUpdate: () => { el.innerHTML = Math.round(o.n) + small; } });
+    });
+  } else {
+    document.querySelectorAll('[data-count]').forEach((el) => { el.firstChild.textContent = el.dataset.count; });
+  }
+
+  // hero notification pings
+  if (hasGsap) {
+    const pos = [['p1', '6%', '8%'], ['p2', '52%', '62%'], ['p3', '8%', '70%']];
+    pos.forEach(([id, l, t]) => Object.assign(document.getElementById(id).style, { left: l, top: t }));
+    if (reduce) pos.forEach(([id]) => gsap.set('#' + id, { opacity: 1 }));
+    else {
+      const tl = gsap.timeline({ repeat: -1, delay: 1.2 });
+      for (const [id] of pos) tl.fromTo('#' + id, { y: 14, opacity: 0, scale: .96 }, { y: 0, opacity: 1, scale: 1, duration: .5, ease: 'back.out(1.7)' }).to('#' + id, { opacity: 0, y: -10, duration: .4, delay: 2.4 });
+    }
+  }
+
+  // command palette demo
+  const demos = [
+    { text: 'แจ้งซ่อม PRESS-01 น้ำมันรั่ว', rows: [['คำสั่ง', '⚡', 'แจ้งซ่อมเครื่องจักร', '→ PRESS-01 เครื่องปั๊ม 80 ตัน · “น้ำมันรั่ว”']] },
+    { text: 'สต็อก RM-SPCC', rows: [['คำสั่ง', '⚡', 'ดูสต็อกสินค้า', '→ RM-SPCC-12 เหล็กแผ่น SPCC 1.2 มม.']] },
+    { text: 'ผลิต FG-BRK-100 500', rows: [['คำสั่ง', '⚡', 'สั่งผลิต', '→ FG-BRK-100 ขายึดเหล็ก · 500 ชิ้น']] },
+    { text: 'เดือนนี้ซื้อเหล็กไปเท่าไหร่', ai: 'เดือนนี้ซื้อเหล็กแผ่นไป 3 ใบสั่งซื้อ รวม 146,700.00 บาท มากที่สุดคือ PO-2569-0014 จากสยามเหล็กกล้า (21,699.60 บาท) ยังรออนุมัติ 1 ใบ', btn: 'เปิด PO-2569-0014' },
+  ];
+  const typed = document.getElementById('typed'), out = document.getElementById('palOut'), chips = document.getElementById('chips');
+  const seg = (s) => (window.Intl && Intl.Segmenter) ? [...new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(s)].map((x) => x.segment) : [...s];
+  let run = 0, cur = 0;
+  demos.forEach((d, i) => { const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = d.text; b.onclick = () => play(i); chips.append(b); });
+  const render = (d, done) => {
+    out.innerHTML = '';
+    if (!done) return;
+    if (d.ai) {
+      out.innerHTML = `<p class="grp">ผู้ช่วย AI</p><div class="answer"></div>`;
+      const a = out.querySelector('.answer');
+      a.textContent = d.ai;
+      const b = document.createElement('div'); b.style.marginTop = '10px'; b.innerHTML = `<span class="btn primary" style="height:34px;font-size:.85rem">${d.btn} →</span>`; a.append(b);
+    } else {
+      for (const [g, ic, t, s] of d.rows) out.insertAdjacentHTML('beforeend', `<p class="grp">${g}</p><div class="row on"><span class="ic">${ic}</span><div><b>${t}</b><span>${s}</span></div></div>`);
+      out.insertAdjacentHTML('beforeend', `<p class="grp">ผู้ช่วย AI</p><div class="row ai"><span class="ic">AI</span><div><b>ถาม AI: “${d.text}”</b><span>ตอบจากข้อมูลจริงในระบบ</span></div></div>`);
+    }
+    if (hasGsap && !reduce) gsap.from(out.children, { y: 8, opacity: 0, duration: .35, stagger: .06, ease: 'power2.out' });
+  };
+  async function play(i) {
+    const my = ++run; cur = i;
+    chips.querySelectorAll('.chip').forEach((c, k) => c.classList.toggle('on', k === i));
+    const d = demos[i], g = seg(d.text);
+    render(d, false);
+    if (reduce) { typed.textContent = d.text; render(d, true); return; }
+    for (let k = 0; k <= g.length; k++) { if (my !== run) return; typed.textContent = g.slice(0, k).join(''); await new Promise((r) => setTimeout(r, 55)); }
+    await new Promise((r) => setTimeout(r, 350)); if (my !== run) return;
+    render(d, true);
+  }
+  const auto = async () => { while (true) { await play(cur); const me = run; await new Promise((r) => setTimeout(r, 4200)); if (me !== run) continue; cur = (cur + 1) % demos.length; } };
+  if (hasGsap && typeof ScrollTrigger !== 'undefined') ScrollTrigger.create({ trigger: '#command', start: 'top 70%', once: true, onEnter: auto }); else auto();
+
+  // LINE bubbles
+  if (hasGsap) {
+    const bubs = document.querySelectorAll('.bub');
+    if (reduce) gsap.set(bubs, { opacity: 1 });
+    else gsap.timeline({ scrollTrigger: { trigger: '#line', start: 'top 75%', once: true } }).to(bubs, { opacity: 1, y: 0, duration: .45, stagger: .9, ease: 'back.out(1.6)', startAt: { y: 16 } });
+  } else document.querySelectorAll('.bub').forEach((b) => (b.style.opacity = 1));
+
+  // ---------------- module picker + live quote ----------------
+  const mods = D.modules.filter((m) => m.tier === 'feature');
+  const byId = Object.fromEntries(D.modules.map((m) => [m.id, m]));
+  const picked = new Set(['maintenance', 'inventory', 'automation']);
+  const grid = document.getElementById('modGrid');
+  const core = document.createElement('div');
+  core.className = 'mod core on';
+  core.innerHTML = `<span class="for">มีในทุกการติดตั้ง</span><h3>${D.catalog.platform.nameTh}</h3><p>ผู้ใช้และสิทธิ์ ข้อมูลสินค้าและคู่ค้า ภาษีไทย ⌘K สั่งงาน ผู้ช่วย AI แดชบอร์ด แอปมือถือ</p><span class="price">${baht(D.catalog.platform.price)}</span>`;
+  grid.append(core);
+  for (const m of mods) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'mod'; b.dataset.id = m.id; b.setAttribute('aria-pressed', 'false');
+    const needs = m.requires.filter((r) => byId[r]?.tier === 'feature');
+    b.innerHTML = `<span class="for">${m.for || ''}</span><h3>${m.nameTh}</h3><p>${m.pitch}</p>${needs.length ? `<span class="needs">ต้องมี: ${needs.map((r) => byId[r].nameTh).join(', ')}</span>` : ''}<span class="price">${baht(D.catalog.modules[m.id]?.price ?? 0)}</span>`;
+    b.onclick = () => { picked.has(m.id) ? picked.delete(m.id) : picked.add(m.id); update(); };
+    grid.append(b);
+  }
+  const bundlesEl = document.getElementById('bundles');
+  for (const bd of D.catalog.bundles) {
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'chip';
+    c.textContent = `${bd.nameTh} · ${baht(bd.price)}`;
+    c.onclick = () => { picked.clear(); bd.modules.forEach((x) => picked.add(x)); update(); };
+    bundlesEl.append(c);
+  }
+  // same rule as `pnpm erp quote`: add required modules, then the cheapest mix of non-overlapping bundles + singles
+  function resolve(sel) {
+    const out = new Set();
+    const visit = (id) => { if (out.has(id) || !byId[id]) return; out.add(id); byId[id].requires.forEach(visit); };
+    sel.forEach(visit);
+    return [...out].filter((id) => byId[id].tier === 'feature');
+  }
+  function quote(sel) {
+    const features = resolve(sel);
+    const bundles = D.catalog.bundles.filter((b) => b.modules.every((m) => features.includes(m)));
+    let best = null;
+    for (let mask = 0; mask < 1 << bundles.length; mask++) {
+      const chosen = bundles.filter((_, i) => mask & (1 << i));
+      const covered = chosen.flatMap((b) => b.modules);
+      if (new Set(covered).size !== covered.length) continue;
+      const lines = [...chosen.map((b) => ({ label: `ชุด ${b.nameTh}`, price: b.price, list: b.modules.reduce((a, m) => a + D.catalog.modules[m].price, 0) })),
+        ...features.filter((f) => !covered.includes(f)).map((f) => ({ label: byId[f].nameTh, price: D.catalog.modules[f].price }))];
+      const total = lines.reduce((a, l) => a + l.price, 0);
+      if (!best || total < best.total) best = { lines, total };
+    }
+    const lines = [{ label: D.catalog.platform.nameTh, price: D.catalog.platform.price }, ...best.lines];
+    const total = lines.reduce((a, l) => a + l.price, 0);
+    return { lines, total, features, yearly: Math.round(total * D.catalog.updatePlanPct / 100) };
+  }
+  let shown = 0;
+  function update() {
+    const q = quote([...picked]);
+    grid.querySelectorAll('button.mod').forEach((b) => { const on = q.features.includes(b.dataset.id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    document.getElementById('qLines').innerHTML = q.lines.map((l) => `<li><span>${l.label}${l.list && l.list > l.price ? ` <span class="save">ประหยัด ${baht(l.list - l.price)}</span>` : ''}</span><span>${baht(l.price)}</span></li>`).join('');
+    document.getElementById('qNote').textContent = `ซื้อขาด source code · แผนอัปเดตและซัพพอร์ตรายปี (ไม่บังคับ) ${baht(q.yearly)}/ปี · บริการติดตั้งและย้ายข้อมูลเริ่ม ${baht(D.catalog.services.setup?.from ?? 0)}`;
+    document.getElementById('leadModules').value = q.features.join(',');
+    const el = document.getElementById('qTotal');
+    if (hasGsap && !reduce) { const o = { n: shown }; gsap.to(o, { n: q.total, duration: .6, ease: 'power2.out', onUpdate: () => (el.textContent = baht(o.n)) }); }
+    else el.textContent = baht(q.total);
+    shown = q.total;
+  }
+  update();
+
+  // ---------------- contact ----------------
+  const c = D.site.contact || {};
+  const parts = [];
+  if (c.phone) parts.push(`โทร <a href="tel:${c.phone.replace(/[^0-9+]/g, '')}">${c.phone}</a>`);
+  if (c.line) parts.push(`LINE <a href="https://line.me/R/ti/p/${encodeURIComponent(c.line)}">${c.line}</a>`);
+  if (c.email) parts.push(`อีเมล <a href="mailto:${c.email}">${c.email}</a>`);
+  document.getElementById('contactLines').innerHTML = parts.join(' · ');
+  document.getElementById('lead').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    const sent = document.getElementById('sent');
+    const modulesTh = (data.modules || '').split(',').filter(Boolean).map((id) => byId[id]?.nameTh || id).join(', ');
+    if (c.leadEndpoint) {
+      try {
+        const r = await fetch(c.leadEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...data, modulesTh, source: location.href, at: new Date().toISOString() }) });
+        if (!r.ok) throw new Error();
+        sent.hidden = false; sent.textContent = 'ได้รับข้อมูลแล้ว ทีมงานจะติดต่อกลับภายใน 1 วันทำการ';
+        e.target.reset(); return;
+      } catch { /* fall through to e-mail */ }
+    }
+    const body = `ชื่อ: ${data.name}\nบริษัท: ${data.company}\nโทร: ${data.phone}\nLINE: ${data.line || '-'}\nสนใจโมดูล: ${modulesTh}\n\n${data.message || ''}`;
+    if (c.email) { location.href = `mailto:${c.email}?subject=${encodeURIComponent('ขอเดโม Factory OS — ' + data.company)}&body=${encodeURIComponent(body)}`; }
+    sent.hidden = false; sent.textContent = c.email ? 'กำลังเปิดโปรแกรมอีเมลพร้อมข้อความให้แล้ว กดส่งได้เลย' : 'ขอบคุณครับ';
+  });
+})();
+</script>
+
+<script type="module">
+// 3D factory floor in the hero — three.js, lazy, pauses when off-screen, static frame for reduced motion
+const stage = document.getElementById('stage');
+const fallback = document.getElementById('fallback');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dark = () => getComputedStyle(document.documentElement).colorScheme.includes('dark');
+try {
+  const THREE = await import('./vendor/three.module.js');
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  stage.prepend(renderer.domElement);
+  fallback.remove();
+  const scene = new THREE.Scene();
+  const ink = dark() ? 0xD9E0E5 : 0x1B252D, plateC = dark() ? 0x1E2830 : 0xFFFFFF, plateEdge = dark() ? 0x2C3842 : 0xD9DED9;
+
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 200);
+  scene.add(new THREE.HemisphereLight(0xffffff, dark() ? 0x0a0f13 : 0xdfe3df, dark() ? 1.4 : 1.8));
+  const sun = new THREE.DirectionalLight(0xffffff, dark() ? 1.6 : 2.2);
+  sun.position.set(8, 16, 6); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14 });
+  scene.add(sun);
+
+  const world = new THREE.Group(); scene.add(world);
+  const box = (w, h, d, color, opts = {}) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: .55, metalness: .05, ...opts }));
+    m.castShadow = true; m.receiveShadow = true; return m;
+  };
+  // plates (zones)
+  const zones = [{ x: -5.2, z: -1.5, w: 6, d: 5 }, { x: 2.2, z: -1.5, w: 7, d: 5 }, { x: 0, z: 4.6, w: 14, d: 3.4 }];
+  for (const zn of zones) {
+    const p = box(zn.w, .25, zn.d, plateC); p.position.set(zn.x, -.125, zn.z); world.add(p);
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(p.geometry), new THREE.LineBasicMaterial({ color: plateEdge })); edge.position.copy(p.position); world.add(edge);
+  }
+  // machines
+  const machines = [];
+  const addMachine = (x, z, w, h, d, status = 'run') => {
+    const g = new THREE.Group(); g.position.set(x, 0, z);
+    const body = box(w, h, d, status === 'down' ? 0xD64535 : ink); body.position.y = h / 2; g.add(body);
+    const top = box(w * .55, .35, d * .55, 0xF5C518); top.position.y = h + .175; g.add(top);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(.13, 16, 12), new THREE.MeshStandardMaterial({ color: status === 'down' ? 0xff5a48 : 0x3DC48D, emissive: status === 'down' ? 0xff3b2b : 0x22aa6a, emissiveIntensity: 1.2 }));
+    lamp.position.set(w / 2 - .2, h + .1, d / 2 + .01); g.add(lamp);
+    world.add(g); machines.push({ g, body, lamp, status, h }); return g;
+  };
+  [[-6.8, -2.6], [-5.2, -2.6], [-3.6, -2.6], [-6.8, -.4], [-5.2, -.4]].forEach(([x, z], i) => addMachine(x, z, 1.1, 1 + (i % 2) * .4, 1.1));
+  addMachine(0, -2.4, 1.8, 1.6, 1.4); addMachine(2.4, -2.4, 1.8, 1.6, 1.4, 'down'); addMachine(4.8, -2.4, 1.8, 1.6, 1.4);
+  addMachine(1.2, -.2, 1.4, 1.1, 1.2); addMachine(3.6, -.2, 1.4, 1.1, 1.2);
+  // conveyor + parts
+  const belt = box(12.6, .18, .8, dark() ? 0x0E1418 : 0x2B353D); belt.position.set(0, .2, 4.6); world.add(belt);
+  for (let i = -6; i <= 6; i += 1.5) { const leg = box(.12, .2, .7, 0x6E7B85); leg.position.set(i, .05, 4.6); world.add(leg); }
+  const racks = [];
+  for (let i = 0; i < 3; i++) { const r = box(1.2, 1.6 + i * .3, .9, ink); r.position.set(-5.5 + i * 1.5, (1.6 + i * .3) / 2, 6.1); world.add(r); racks.push(r); }
+  const parts = [];
+  for (let i = 0; i < 7; i++) { const pt = box(.45, .3, .45, 0xF5C518, { roughness: .4 }); pt.position.set(-6 + i * 1.9, .44, 4.6); world.add(pt); parts.push(pt); }
+
+  // camera: isometric orbit
+  let yaw = Math.PI / 4, pitch = .62, auto = !reduce, dragging = false, lx = 0, vel = 0;
+  const center = new THREE.Vector3(0, 0, 1.5);
+  function fit() {
+    const w = stage.clientWidth, h = stage.clientHeight, a = w / h;
+    renderer.setSize(w, h, false);
+    const view = 7.2 * (a < 1.3 ? 1.3 / a : 1);
+    Object.assign(camera, { left: -view * a, right: view * a, top: view, bottom: -view });
+    camera.updateProjectionMatrix();
+  }
+  function place() {
+    const R = 30;
+    camera.position.set(center.x + R * Math.cos(pitch) * Math.sin(yaw), R * Math.sin(pitch), center.z + R * Math.cos(pitch) * Math.cos(yaw));
+    camera.lookAt(center);
+  }
+  stage.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; auto = false; stage.setPointerCapture(e.pointerId); });
+  stage.addEventListener('pointermove', (e) => { if (!dragging) return; vel = (e.clientX - lx) * .006; yaw -= vel; lx = e.clientX; });
+  stage.addEventListener('pointerup', () => { dragging = false; setTimeout(() => (auto = !reduce), 2500); });
+  new ResizeObserver(fit).observe(stage);
+  fit(); place();
+
+  // the story: PRESS-02 is down (pulsing), then repaired, then another goes down
+  const down = machines[6];
+  let visible = true;
+  new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(stage);
+  const t0 = performance.now();
+  function setStatus(m, s) {
+    m.status = s;
+    m.body.material.color.set(s === 'down' ? 0xD64535 : ink);
+    m.lamp.material.color.set(s === 'down' ? 0xff5a48 : 0x3DC48D);
+    m.lamp.material.emissive.set(s === 'down' ? 0xff3b2b : 0x22aa6a);
+  }
+  if (!reduce) setInterval(() => { setStatus(down, down.status === 'down' ? 'run' : 'down'); }, 6000);
+
+  function frame() {
+    requestAnimationFrame(frame);
+    if (!visible) return;
+    const t = (performance.now() - t0) / 1000;
+    if (auto) yaw += .0016; else if (!dragging) { yaw -= vel; vel *= .92; }
+    if (!reduce) {
+      for (const p of parts) { p.position.x += .012; if (p.position.x > 6.2) p.position.x = -6.2; }
+      for (const m of machines) {
+        if (m.status === 'down') { const s = 1 + Math.sin(t * 6) * .04; m.g.scale.set(s, 1, s); m.lamp.material.emissiveIntensity = 1 + Math.sin(t * 8) * .8; }
+        else { m.g.scale.set(1, 1, 1); m.lamp.material.emissiveIntensity = 1.2; }
+      }
+    }
+    place();
+    renderer.render(scene, camera);
+  }
+  frame();
+} catch (err) {
+  fallback.textContent = 'เบราว์เซอร์นี้แสดงภาพ 3 มิติไม่ได้';
+  console.warn(err);
+}
+</script>
+</body>
+</html>

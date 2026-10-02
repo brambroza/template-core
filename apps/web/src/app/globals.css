@@ -120,7 +120,7 @@ a { color: inherit; }
 }
 .topbar .menu-toggle { display: none; }
 .cmd-trigger {
-  flex: 1; max-width: 640px; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 14px;
+  flex: 1; min-width: 0; max-width: 640px; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 14px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px; color: var(--ink-3); font: inherit; font-size: .93rem; cursor: text; text-align: left;
 }
 .cmd-trigger:hover { border-color: var(--line-strong); }
@@ -242,8 +242,8 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
 .confirm-text { margin: 0 0 12px; color: var(--ink-2); }
 
 /* ---------- detail ---------- */
-.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 1px; margin: 0 0 24px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
-.fact { padding: 14px 18px; background: var(--surface); }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0; margin: 0 0 24px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.fact { padding: 14px 18px; background: var(--surface); box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); }
 .fact dt { font-size: .78rem; color: var(--ink-3); }
 .fact dd { margin: 2px 0 0; font-weight: 500; }
 .fact dd.num { text-align: left; }

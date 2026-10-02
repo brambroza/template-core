@@ -48,7 +48,7 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(width, height);
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
       el.prepend(renderer.domElement);
       renderer.domElement.setAttribute('aria-hidden', 'true');
 
@@ -74,7 +74,8 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
       const span = Math.max(totalW, Math.max(...plates.map((p) => p.d)) * 1.6, 6);
 
       // half-height of the view: fit the layout with a little margin (isometric view shrinks it by ~0.6)
-      const view = Math.max(3, span * 0.33);
+      // narrow screens (phones) need a wider view so every plate stays in frame
+      const view = Math.max(3, span * 0.33) * (aspect < 1.4 ? Math.min(1.9, 1.4 / aspect) : 1);
       const camera = new THREE.OrthographicCamera(-view * aspect, view * aspect, view, -view, 0.1, 200);
       const radius = 30;
       let angle = Math.PI / 4;

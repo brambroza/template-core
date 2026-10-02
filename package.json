@@ -14,7 +14,8 @@
     "uat": "pnpm --filter @erp/web build && vitest run --config vitest.uat.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/run.json",
     "test:report": "vitest run --reporter=default --reporter=json --outputFile.json=docs/uat/system.json && vitest run --config vitest.ui.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/browser.json",
     "uat:pack": "pnpm test:report && pnpm uat && pnpm erp uat-report",
-    "demo": "node --import tsx tools/erp/src/demo-cli.ts"
+    "demo": "node --import tsx tools/erp/src/demo-cli.ts",
+    "site": "node --import tsx site/build.ts"
   },
   "devDependencies": {
     "@erp/contracts": "workspace:*",

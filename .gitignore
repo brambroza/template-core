@@ -9,3 +9,4 @@ keys/
 .next
 *.tsbuildinfo
 .expo
+site/dist
