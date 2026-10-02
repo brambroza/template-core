@@ -8,9 +8,9 @@
   "requires": [
     "identity"
   ],
-  "enhancedBy": [],
+  "enhancedBy": ["accounting"],
   "publishes": ["expense.claim_submitted", "expense.claim_paid"],
-  "subscribes": [],
+  "subscribes": ["accounting.period_closed", "accounting.period_reopened"],
   "permissions": [
     {
       "key": "expense.claim.read",
@@ -25,6 +25,14 @@
       "label": "อนุมัติ/ไม่อนุมัติ/ส่งกลับใบเบิกและเงินทดรอง (เห็นของทุกคน)"
     },
     {
+      "key": "expense.claim.approve-over-limit",
+      "label": "อนุมัติใบเบิกที่เกินวงเงินรายเดือน"
+    },
+    {
+      "key": "expense.settings.write",
+      "label": "ตั้งค่าการควบคุมใบเบิก (แยกผู้อนุมัติ/ผู้จ่าย)"
+    },
+    {
       "key": "expense.claim.pay",
       "label": "บันทึกจ่ายเงินและเคลียร์เงินทดรอง (เห็นของทุกคน)"
     },
@@ -35,6 +43,8 @@
     {
       "key": "expense.attachment.delete",
       "label": "ลบไฟล์แนบของผู้อื่น"
-    }
+    },
+    { "key": "expense.lock.write", "label": "ตั้งวันที่ปิดงวดการจ่ายเงิน" },
+    { "key": "expense.lock.override", "label": "จ่ายเงินย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)" }
   ]
 }

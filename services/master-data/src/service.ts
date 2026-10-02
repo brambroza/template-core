@@ -141,7 +141,7 @@ function crud(app: Parameters<ServiceDefinition['routes']>[0], k: Kernel, cfg: {
       seen.set(r.data.code, row);
       valid.push({ data: r.data, provided: Object.keys(input) });
     });
-    if (!body.dryRun && errors.length) throw badRequest(`Import rejected: ${errors.length} problem(s) in the file, nothing was saved`, { errors });
+    if (!body.dryRun && errors.length) throw badRequest(`นำเข้าไม่สำเร็จ: ไฟล์มีปัญหา ${errors.length} จุด — ยังไม่ได้บันทึกข้อมูลใด`, { errors });
 
     return k.db.tx(a.tenantId, async (c) => {
       const existing = new Set((await c.query(`select code from ${cfg.table} where code = any($1)`, [valid.map((v) => v.data.code)])).rows.map((r) => r.code));

@@ -1,4 +1,4 @@
-import { auth, badRequest, hasPerm, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, TODAY_SQL, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { bookValueAt, closedMonthIndex, depreciationIn, monthIndex, monthlyAmount, periodOf, round2, schedule } from './depreciation.ts';
 
@@ -88,7 +88,7 @@ const AuditInput = z.object({ location: z.string().trim().min(1).max(200), note:
 
 const ASSET_SELECT = `select a.*, c.code as category_code, c.name as category_name from assets a join asset_categories c on c.id = a.category_id`;
 const like = (q?: string) => (q ? `%${q}%` : null);
-const today = async (c: Client): Promise<string> => (await c.query(`select current_date::text as d`)).rows[0].d;
+const today = async (c: Client): Promise<string> => (await c.query(`select ${TODAY_SQL}::text as d`)).rows[0].d;
 
 /** Add live depreciation numbers (as of `asOf`) to an asset row. */
 function withBook(a: any, asOf: string) {
@@ -131,8 +131,8 @@ async function detail(c: Client, a: any) {
 }
 
 function assertWorkable(a: { code: string; status: string }, what: string, allowLost = false) {
-  if (a.status === 'disposed') throw conflict(`Cannot ${what} ${a.code}: asset is disposed`);
-  if (a.status === 'lost' && !allowLost) throw conflict(`Cannot ${what} ${a.code}: asset is lost`);
+  if (a.status === 'disposed') throw conflict(`ทำรายการกับ ${a.code} ไม่ได้ — ทรัพย์สินจำหน่ายแล้ว`);
+  if (a.status === 'lost' && !allowLost) throw conflict(`ทำรายการกับ ${a.code} ไม่ได้ — ทรัพย์สินถูกบันทึกว่าสูญหาย`);
 }
 
 async function reportRepair(k: Kernel, c: Client, assetId: string, b: z.infer<typeof RepairInput>, userId: string) {
@@ -235,7 +235,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const cat = await one(c, 'select * from asset_categories where id = $1', [b.categoryId], 'Category');
         const salvage = b.salvageValue ?? round2(b.cost * cat.salvage_pct / 100);
-        if (salvage > b.cost) throw badRequest('Salvage value exceeds cost', { fieldErrors: { salvageValue: ['มูลค่าซากต้องไม่เกินราคาทุน'] } });
+        if (salvage > b.cost) throw badRequest(`มูลค่าซากต้องไม่เกินราคาทุน`, { fieldErrors: { salvageValue: ['มูลค่าซากต้องไม่เกินราคาทุน'] } });
         const code = b.code ?? (await nextDocNo(c, 'AS', new Date(b.purchaseDate)));
         const status = b.custodianId ? 'in_use' : 'in_storage';
         const row = (await c.query(
@@ -373,7 +373,7 @@ export const definition: ServiceDefinition = {
           `update assets set custodian_id = $2, custodian_name = $3, location = $4, status = $5, lost_on = null where id = $1`,
           [id, b.custodianId ?? null, b.custodianId ? b.custodianName ?? null : null, location, status]);
         await c.query(
-          `insert into asset_assignments (asset_id, custodian_id, custodian_name, location, assigned_on, note, created_by) values ($1,$2,$3,$4,coalesce($5::date, current_date),$6,$7)`,
+          `insert into asset_assignments (asset_id, custodian_id, custodian_name, location, assigned_on, note, created_by) values ($1,$2,$3,$4,coalesce($5::date, ${TODAY_SQL}),$6,$7)`,
           [id, b.custodianId ?? null, b.custodianId ? b.custodianName ?? null : null, location, b.assignedOn ?? null, b.note ?? (cur.status === 'lost' ? 'พบทรัพย์สินที่สูญหาย' : null), a.userId]);
         return hideMoney(await loadAsset(c, id), a);
       });
@@ -436,11 +436,11 @@ export const definition: ServiceDefinition = {
       const b = parse(CompleteRepairInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const r = await one(c, 'select * from asset_repairs where id = $1 for update', [id], 'Repair');
-        if (r.status !== 'open') throw conflict('Repair is already done');
+        if (r.status !== 'open') throw conflict(`งานซ่อมนี้เสร็จแล้ว`);
         const asset = await one(c, 'select id, code, status from assets where id = $1 for update', [r.asset_id], 'Asset');
         assertWorkable(asset, 'complete a repair of');
         await c.query(
-          `update asset_repairs set status = 'done', completed_on = coalesce($2::date, current_date), cost = coalesce($3, cost), vendor = coalesce($4, vendor) where id = $1`,
+          `update asset_repairs set status = 'done', completed_on = coalesce($2::date, ${TODAY_SQL}), cost = coalesce($3, cost), vendor = coalesce($4, vendor) where id = $1`,
           [id, b.completedOn ?? null, b.cost ?? null, b.vendor ?? null]);
         const open = await c.query(`select 1 from asset_repairs where asset_id = $1 and status = 'open'`, [r.asset_id]);
         if (!open.rowCount && asset.status === 'in_repair') {
@@ -460,7 +460,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const asset = await one(c, 'select * from assets where id = $1 for update', [id], 'Asset');
         assertWorkable(asset, 'dispose', true);
-        if (b.disposedOn < asset.purchase_date) throw badRequest('Disposal date is before the purchase date', { fieldErrors: { disposedOn: ['วันที่ตัดจำหน่ายก่อนวันที่ซื้อ'] } });
+        if (b.disposedOn < asset.purchase_date) throw badRequest(`วันที่จำหน่ายต้องไม่ก่อนวันที่ซื้อ`, { fieldErrors: { disposedOn: ['วันที่ตัดจำหน่ายก่อนวันที่ซื้อ'] } });
         // a disposal is a fact: dating it ahead would book a gain/loss on a future book value and stop depreciation early
         const now = await today(c);
         if (b.disposedOn > now) throw badRequest(`ตัดจำหน่ายล่วงหน้าไม่ได้ (${b.disposedOn})`, { fieldErrors: { disposedOn: [`ต้องไม่เกินวันนี้ (${now})`] } });
@@ -556,7 +556,7 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ code: s.code }), req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const au = await one(c, 'select * from asset_audits where id = $1 for update', [id], 'Audit');
-        if (au.status !== 'open') throw conflict(`Audit ${au.no} is closed`);
+        if (au.status !== 'open') throw conflict(`รอบตรวจนับ ${au.no} ปิดแล้ว`);
         const line = (await c.query('select * from asset_audit_lines where audit_id = $1 and asset_code = $2', [id, b.code])).rows[0];
         let result: string;
         let message: string;
@@ -587,7 +587,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const au = await one(c, 'select * from asset_audits where id = $1 for update', [id], 'Audit');
-        if (au.status !== 'open') throw conflict(`Audit ${au.no} is already closed`);
+        if (au.status !== 'open') throw conflict(`รอบตรวจนับ ${au.no} ปิดไปแล้ว`);
         await c.query(`update asset_audit_lines set result = case when scanned_at is null then 'missing' else 'found' end where audit_id = $1 and expected`, [id]);
         await c.query(`update asset_audits set status = 'closed', closed_at = now() where id = $1`, [id]);
         return loadAudit(c, id);
@@ -601,11 +601,11 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const au = await one(c, 'select * from asset_audits where id = $1 for update', [id], 'Audit');
-        if (au.status !== 'closed') throw conflict(`Close audit ${au.no} before marking assets lost`);
+        if (au.status !== 'closed') throw conflict(`ปิดรอบตรวจนับ ${au.no} ก่อน แล้วจึงบันทึกทรัพย์สินที่ไม่พบว่าสูญหาย`);
         const missing = (await c.query(`select * from asset_audit_lines where audit_id = $1 and result = 'missing' and not marked_lost`, [id])).rows;
-        if (!missing.length) throw conflict(`Audit ${au.no} has no missing assets to mark lost`);
+        if (!missing.length) throw conflict(`รอบตรวจนับ ${au.no} ไม่มีทรัพย์สินที่ไม่พบ`);
         for (const l of missing) {
-          await c.query(`update assets set status = 'lost', lost_on = current_date where id = $1 and status not in ('disposed', 'lost')`, [l.asset_id]);
+          await c.query(`update assets set status = 'lost', lost_on = ${TODAY_SQL} where id = $1 and status not in ('disposed', 'lost')`, [l.asset_id]);
           await c.query('update asset_audit_lines set marked_lost = true where id = $1', [l.id]);
         }
         return loadAudit(c, id);

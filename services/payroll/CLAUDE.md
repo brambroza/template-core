@@ -7,6 +7,11 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
 
 ## Data
 - `payroll_settings` (one row per tenant): `rules` jsonb = overrides of `PayrollRules` (src/calc.ts), `sso_employer_account`, `sso_branch`
+  (SSO rates/band in this json are legacy — see `sso_rules`; only `sso.includeOvertime` is still a plain setting)
+- `sso_rules` (migration 003, C1): effective-dated SSO rates and wage band — `effective_from`, `employee_rate`, `employer_rate`, `wage_min`, `wage_max`, `note`.
+  Rows with `tenant_id` null = the **statutory schedule shipped with the software** (seeded by the migration, mirrored by `STATUTORY_SSO_SCHEDULE`
+  in calc.ts): 1,650–15,000 until 2025 · 17,500 (max 875) from 1 Jan 2026 / 2569 (cabinet Dec 2025) · 20,000 from 2029 / 2572 · 23,000 from 2032 / 2575;
+  readable by every tenant (policy `sso_rules_statutory_read`), writable by none. Rows with a tenant = that company's own rule (e.g. a temporary rate cut).
 - `pay_profiles`: snapshot of the HR employee (`employee_code` unique per tenant, `employee_name`, optional `employee_id`, department, position),
   `user_id` (identity user — unique per tenant — sees own payslips), `pay_type monthly | daily`, `base_salary` / `daily_wage`, `start_date` / `end_date`,
   `bank_name` + `bank_account_last4`, `sso_enrolled`, `pvd_employee_pct` / `pvd_employer_pct` (0–15), tax allowances (`tax_spouse`, `tax_children`,
@@ -26,8 +31,13 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
   daily = daily wage × `work_days` (empty → `defaultDailyWorkDays` (26) pro-rata, with a warning). Recurring earnings pro-rate like the salary.
 - **OT**: hourly rate = salary ÷ 30 ÷ 8 (monthly) or daily wage ÷ 8; hours × 1 (monthly staff on a holiday) / 1.5 / 2 (daily staff on a holiday) / 3 — all multipliers are settings.
 - **Unpaid leave** (monthly only): days × salary ÷ 30, never more than the salary.
-- **SSO**: rate (5%) × wage clamped to [1,650, 15,000], half-up to whole baht, employee and employer. SSO wage = salary − unpaid + earnings flagged `sso`
+- **SSO**: rate (5%) × wage clamped to [wage_min, wage_max] **of the rule in force on the 1st of the pay month** (C1: 2025 → 15,000/750,
+  2026 → 17,500/875 …), half-up to whole baht, employee and employer. Rule choice: the latest `sso_rules` row with `effective_from` ≤ the 1st of the month;
+  on the same date the company row wins; a later statutory step supersedes an earlier company row. So recalculating an old month never picks up a new
+  ceiling. The tax projection (`projectedSso`) uses the run month's rule. SSO wage = salary − unpaid + earnings flagged `sso`
   (+ OT only if `ssoIncludeOvertime`). Not enrolled → 0.
+  Legacy: a company whose saved settings json had non-default SSO numbers (≠ 5%/5%/1,650/15,000) keeps them as a company rule from the month it saved
+  them (read in `loadRules`; turned into a real row on the next settings save). Migrations cannot do that (they run under RLS).
 - **PVD**: % × (salary − unpaid). Employee 2–15%, employer ≥ employee (400 otherwise).
 - **WHT ภ.ง.ด.1**: annualised with YTD correction. Regular income (salary − unpaid + taxable recurring earnings) projected = YTD regular +
   this month + full month × (remaining periods − 1); remaining = 13 − month (1 in a leaver's last month). Tax on projection + YTD irregular, minus tax
@@ -51,14 +61,18 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
   later (new run, or calculate's re-sync) start with the month's Σ days and mark them `applied`. Run already approved/paid → `late` (key in by hand).
   Cancelling an approved leave in HR publishes nothing — reduce `unpaid_leave_days` by hand.
 - Settings: legal numbers live in `payroll_settings.rules` merged over `DEFAULT_RULES`; brackets must ascend and end with `upTo: null`.
+  `PUT /settings` SSO rate/band values that differ from the rule in force on `ssoEffectiveFrom` (default: 1st of the current month) are stored as a
+  company `sso_rules` row from that date (upsert per date); unchanged values add nothing. `GET /settings` shows the rule in force this month
+  (`ssoRuleFrom`, `ssoRuleSource`) and the whole schedule (`ssoRules`).
 
 ## API
-- `GET/PUT /settings` (PUT: `payroll.setup.write`)
+- `GET/PUT /settings` (PUT: `payroll.setup.write`; `ssoEffectiveFrom` dates a changed SSO rate/band)
+- `GET /sso-rules` (schedule, newest first: `source` ตามกฎหมาย | บริษัทกำหนดเอง, `max_contribution`) · `DELETE /sso-rules/:id` (company rows only — statutory → 404; `payroll.setup.write`)
 - `GET /profiles` (`q`, `active`, `payType`, `department`) · `POST /profiles` · `GET/PATCH /profiles/:id` (detail has `items`, `recent`)
 - `POST /profiles/import { rows, dryRun }` — upsert by employee code (Thai `รายเดือน/รายวัน`, `ใช่/ไม่`, dd/mm/พ.ศ. accepted; full account → last 4)
 - `GET /items` (`q`, `kind`, `profileId`, `active`) · `POST /profiles/:id/items` · `PATCH /items/:id` · `DELETE /items/:id`
 - `GET /runs` (`q`, `status`, `year` ค.ศ./พ.ศ.) · `POST /runs { period, payDate, note }` · `GET /runs/:id` (with `lines`, `problems`)
-- `POST /runs/:id/calculate | approve | reopen | pay { paidDate, reference } | cancel { note }`
+- `POST /runs/:id/calculate | approve | reopen | pay { paidDate?, reference } | cancel { note }` — `paidDate` default = `thaiToday()` (kernel clock, Asia/Bangkok; wave 8 — never the DB's UTC day)
 - `GET /payslips` (`q`, `runId`, `period`, `profileId`) · `GET /payslips/:id` (YTD, baht text) · `PUT /payslips/:id/inputs`
 - `POST /inputs/import { rows, dryRun }` — columns period, employeeCode, workDays, ot1/ot15/ot2/ot3Hours, unpaidLeaveDays, bonus, otherIncome, otherDeduction, note
 - `GET /my-payslips` (`year`, `q`) · `GET /my-payslips/:id` — `payroll.payslip.self`, own + paid only
@@ -80,7 +94,8 @@ Salaries are visible only with `payroll.profile.read` / `payroll.run.read`.
 `myPayslips` / `myPayslip` (mobile, printable), `runs` → `runNew` → `runDetail` (flow, actions calculate/approve/pay/reopen/cancel, printable summary),
 `payslips` (row action กรอก OT/วันลา, CSV import of inputs) → `payslipDetail` (printable payslip), `profiles` (CSV import) → `profileNew`/`profileEdit`/`profileDetail`
 (add recurring item), `items` (edit/delete), `bankRuns` → `bankTransfer` (CSV via list export), `ssoRuns` → `ssoReport`, `pnd1Runs` → `pnd1Report` (printable),
-`certificates` → `certificate` (50 ทวิ printable, ต้นฉบับ/สำเนา), `settings` / `settingsEdit`, `leaveInputs` (unpaid leave from HR).
+`certificates` → `certificate` (50 ทวิ printable, ต้นฉบับ/สำเนา), `settings` (+ SSO schedule table) / `settingsEdit`, `ssoRules` (row: delete a company rule),
+`leaveInputs` (unpaid leave from HR).
 Widgets: kpi, run pipeline, 6-month net trend. ⌘K: `สลิป`, `ทำเงินเดือน`, `เงินเดือนพนักงาน EMP-001`, `50 ทวิ`.
 
 ## Extension ideas

@@ -20,6 +20,8 @@ Sales pipeline for B2B SMEs: leads → opportunities → quotations, with follow
 - `valid_until` defaults to issue date + 30 days. Only drafts can be edited (`PUT`); `revise` copies a sent/rejected/expired quote
   (once) into a new draft keeping the validity length.
 - Sending a quote moves its opportunity from `prospect` to `proposal`. Accepting marks the opportunity `won` with `value = quote.net`.
+- Dates (wave 8, round-2 #4): issue date (also of a revision), the +30-day validity, "past validity", accept and `expire-due` use `thaiToday()` from the kernel clock
+  (Asia/Bangkok) — never SQL `current_date` (UTC: 00:00–07:00 would be yesterday). Test: `test/thai-dates.test.ts` (`setClock`).
 - `valid_until` before `issue_date` → 400. Accept → 409 when the quote is past `valid_until` (revise it) or was superseded by a revision.
 - `POST /quotations/expire-due { asOf? }` expires sent quotes past validity — idempotent, run daily.
 - All status changes not allowed in the current state return 409.
@@ -43,6 +45,7 @@ Permissions: `crm.lead.read|write`, `crm.activity.write`, `crm.quote.read|write|
 ## Screens
 `src/ui.ts`: leads/lead/leadNew/leadEdit, opportunities/opportunity/opportunityNew/opportunityEdit, myActivities/activities/activityNew,
 quotes/quote (printable)/quoteNew. Widgets: KPI, pipeline (open stages), won-value trend. ⌘K: `เสนอราคา <ลูกค้า> <หมายเหตุ>`, `ลีด <บริษัท>`,
+Quote paper: company payment note printed as "เงื่อนไขการชำระเงิน" (`print.footer: 'payment'`); status, linked opportunity and reject reason never print (`print: false` / status badge).
 `เยี่ยมลูกค้า`, `งานติดตาม`; search over leads, opportunities, quotations. Mobile: leads, lead detail actions, log activity/visit, my activities.
 
 ## Recommended roles (identity settings — not code)

@@ -63,7 +63,7 @@ export default defineUi({
         { name: 'email', label: 'อีเมล', type: 'email' },
         { name: 'website', label: 'เว็บไซต์', type: 'text' },
         { name: 'signatureLabels', label: 'ช่องลายเซ็นเริ่มต้น', type: 'text', help: 'คั่นด้วยจุลภาค เช่น ผู้จัดทำ, ผู้อนุมัติ — ใช้กับเอกสารที่ไม่ได้กำหนดเอง' },
-        { name: 'footerNote', label: 'หมายเหตุท้ายเอกสาร', type: 'textarea', help: 'พิมพ์ท้ายทุกเอกสาร เช่น เงื่อนไขการชำระเงิน' },
+        { name: 'footerNote', label: 'หมายเหตุท้ายเอกสาร', type: 'textarea', help: 'เงื่อนไขการชำระเงิน เช่น "ชำระภายใน 30 วัน…" — พิมพ์เฉพาะท้ายใบกำกับภาษี/ใบแจ้งหนี้และใบเสนอราคา (ไม่พิมพ์บนใบสั่งซื้อ ใบเสร็จ สลิป ใบเบิก)' },
         { name: 'logo', label: 'โลโก้บริษัท', type: 'image', help: 'ไฟล์รูป PNG, JPEG หรือ SVG ไม่เกิน 300 KB — พิมพ์ที่หัวเอกสารทุกฉบับ' },
       ],
       after: { screen: 'company' },

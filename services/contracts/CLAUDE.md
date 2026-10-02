@@ -20,7 +20,8 @@ helpdesk and sales — both only through events / typed-in numbers, never calls 
 - `expiry_notices` (contract + `YYYY-MM`: one expiring alert per contract per month)
 
 ## Behaviour
-- Dates are Thailand dates (`Asia/Bangkok`): SQL `TODAY` expression in service.ts, `todayBkk()` in `src/schedule.ts`.
+- Dates are Thailand dates (`Asia/Bangkok`): SQL `TODAY` = kernel `TODAY_SQL` (the kernel clock's Thai day), `todayBkk()` in `src/schedule.ts` = kernel `thaiDate(now())`;
+  default `done_on` / `invoiced_on` are computed in TS (wave 8 — testable with `setClock`, see test/thai-dates.test.ts).
 - Lazy expiry: every list/detail/summary read turns `active` contracts whose `end_date` has passed into `expired`.
 - Edit (`PUT`) only while `draft` (409 otherwise). Ids without display names keep the stored snapshot (the edit form loads ids only);
   `items` omitted = keep the equipment, `checklistText` (textarea, one item per line, leading "-", "•", "1." dropped) wins over `checklist[]`.

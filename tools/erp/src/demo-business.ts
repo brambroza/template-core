@@ -18,6 +18,8 @@ export interface BusinessCtx {
   /** log in as another demo user (password demo1234) */
   loginAs: (email: string) => Promise<Call>;
   has: (module: string) => boolean;
+  /** installed module ids (role templates keep only their permissions) */
+  modules: string[];
   items: Record<string, Item>;
   partners: Record<string, any>;
 }
@@ -76,32 +78,38 @@ const PW = 'demo1234';
 const NEW_USERS: [string, string][] = [
   ['hr@demo.co.th', 'นภาพร ใจงาม'], ['acc@demo.co.th', 'สุดารัตน์ บุญมา'], ['it@demo.co.th', 'ธนากร พึ่งบุญ'], ['qc@demo.co.th', 'อรุณี ทองดี'],
 ];
-const SELF_SERVICE = [
-  'approvals.request.read', 'approvals.request.write', 'approvals.request.approve', 'expense.claim.read', 'expense.claim.write',
-  'hr.leave.request', 'hr.attendance.self', 'booking.resource.read', 'booking.book.create', 'helpdesk.ticket.create', 'helpdesk.kb.read',
-  'projects.project.read', 'projects.task.write', 'projects.timesheet.log', 'assets.asset.read', 'assets.repair.report',
-  'automation.notify.read', 'payroll.payslip.self',
-];
-const SERVICE_TEAM = ['helpdesk.ticket.create', 'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.read', 'helpdesk.kb.write'];
-const EXTRA_ROLES: [string, string[]][] = [
-  ['พนักงาน (บริการตนเอง)', SELF_SERVICE],
-  ['ฝ่ายบุคคล', ['hr.*', 'identity.user.read', 'payroll.profile.read', 'payroll.profile.write', 'payroll.run.read', 'payroll.run.write', 'payroll.setup.write']],
-  ['ทีมบริการ (Helpdesk)', SERVICE_TEAM],
-  ['ควบคุมคุณภาพ', ['quality.*', 'master.item.read', 'master.partner.read', 'inventory.stock.read']],
-  ['ฝ่ายขาย CRM', ['crm.*', 'master.item.read', 'master.partner.read', 'contracts.contract.read', 'contracts.contract.write', 'contracts.visit.read']],
-  ['ช่างบริการ MA', ['contracts.contract.read', 'contracts.visit.read', 'contracts.visit.work']],
-  ['ผู้จัดการโครงการ', ['projects.*']],
-];
 /**
- * Roles made from Identity's role templates (wave 4) — only the permissions of installed modules. Accounting gets receipts/AR and the
- * money columns of the asset register; IT manages the assets but without `assets.finance.read` (cost and book value stay hidden).
+ * Wave 8 (round-2 N3): every demo user gets Identity's suggested role templates — exactly what a customer gets from
+ * "สร้างจากแม่แบบ" — plus self-service (พนักงานทั่วไป). No hand-made `inventory.*`-style roles, so what buyers try in the demo
+ * is what they will have on day one. Template ids per user (the admin keeps `*`).
  */
-const TEMPLATE_ROLES: [string, string][] = [['accounting', 'บัญชีและการเงิน'], ['it', 'ไอที / helpdesk'], ['executive', 'ผู้บริหาร']];
-const EXTRA_BY_USER: Record<string, string[]> = {
-  'store@demo.co.th': [], 'buyer@demo.co.th': [], 'sales@demo.co.th': ['ฝ่ายขาย CRM'], 'tech@demo.co.th': ['ทีมบริการ (Helpdesk)', 'ช่างบริการ MA'],
-  'plan@demo.co.th': ['ผู้จัดการโครงการ'], 'hr@demo.co.th': ['ฝ่ายบุคคล'], 'acc@demo.co.th': ['บัญชีและการเงิน'],
-  'it@demo.co.th': ['ไอที / helpdesk', 'ผู้จัดการโครงการ'], 'qc@demo.co.th': ['ควบคุมคุณภาพ', 'ทีมบริการ (Helpdesk)', 'ผู้จัดการโครงการ'],
+export const DEMO_USER_TEMPLATES: Record<string, string[]> = {
+  'store@demo.co.th': ['warehouse'], 'buyer@demo.co.th': ['purchasing'], 'sales@demo.co.th': ['sales'], 'tech@demo.co.th': ['technician'],
+  'plan@demo.co.th': ['pm', 'planner'], 'hr@demo.co.th': ['hr'], 'acc@demo.co.th': ['accounting'], 'it@demo.co.th': ['it'], 'qc@demo.co.th': ['qc'],
 };
+/** templates every demo user also gets; `executive` is created for the admin screens (ผู้บริหาร) but no demo user holds it */
+const BASE_TEMPLATES = ['staff'];
+
+/**
+ * Roles made from Identity's role templates (`POST /roles/from-template`), keeping only the installed modules' permissions.
+ * A role whose name already exists is reused (re-running on an existing company). Returns template id → role id.
+ */
+export async function templateRoles(call: Call, modules: string[], templates: string[]): Promise<Record<string, string>> {
+  const byName: Record<string, string> = {};
+  for (const r of await call<any[]>('GET', '/api/identity/roles')) byName[r.name] = r.id;
+  const list = await call<any[]>('GET', `/api/identity/role-templates?modules=${modules.join(',')}`);
+  const out: Record<string, string> = {};
+  for (const id of templates) {
+    const tpl = list.find((x) => x.id === id);
+    if (!tpl) throw new Error(`demo seed: unknown role template ${id}`);
+    out[id] = byName[tpl.name] ?? (await call('POST', '/api/identity/roles/from-template', { template: id, modules })).id;
+  }
+  return out;
+}
+
+/** role ids of a demo user: their templates + self-service */
+export const demoRoleIds = (email: string, roles: Record<string, string>) =>
+  [...new Set([...(DEMO_USER_TEMPLATES[email] ?? []), ...BASE_TEMPLATES].map((t) => roles[t]).filter(Boolean))];
 
 type User = { id: string; name: string; email: string };
 interface Ctx extends BusinessCtx {
@@ -212,25 +220,16 @@ async function finale(x: Ctx) {
   }
 }
 
-/** Extra users and roles, self-service for everybody, then one session per user. */
+/** Extra users, everybody on Identity's role templates + self-service, then one session per user. */
 async function people(base: BusinessCtx): Promise<Ctx> {
   const { call } = base;
-  const roleIds: Record<string, string> = {};
-  for (const r of await call<any[]>('GET', '/api/identity/roles')) roleIds[r.name] = r.id;
-  for (const [name, permissions] of EXTRA_ROLES) {
-    if (!roleIds[name]) roleIds[name] = (await call('POST', '/api/identity/roles', { name, permissions })).id;
-  }
-  for (const [template, name] of TEMPLATE_ROLES) {
-    if (!roleIds[name]) roleIds[name] = (await call('POST', '/api/identity/roles/from-template', { template, name })).id;
-  }
+  const templates = [...new Set([...Object.values(DEMO_USER_TEMPLATES).flat(), ...BASE_TEMPLATES, 'executive', 'supervisor'])];
+  const roles = await templateRoles(call, base.modules, templates);
   const existing = await call<any[]>('GET', '/api/identity/users');
   const have = new Set(existing.map((u) => u.email));
   await Promise.all(NEW_USERS.filter(([e]) => !have.has(e)).map(([email, name]) => call('POST', '/api/identity/users', { email, name, password: PW, roleIds: [] })));
   const all = await call<any[]>('GET', '/api/identity/users');
-  await Promise.all(all.filter((u) => u.email in EXTRA_BY_USER).map((u) => {
-    const ids = [...(u.roles as string[]), 'พนักงาน (บริการตนเอง)', ...EXTRA_BY_USER[u.email]].map((n) => roleIds[n]).filter(Boolean);
-    return call('PUT', `/api/identity/users/${u.id}/roles`, { roleIds: [...new Set(ids)] });
-  }));
+  await Promise.all(all.filter((u) => u.email in DEMO_USER_TEMPLATES).map((u) => call('PUT', `/api/identity/users/${u.id}/roles`, { roleIds: demoRoleIds(u.email, roles) })));
   const users: Record<string, User> = {};
   for (const u of all) {
     const key = u.email.split('@')[0];
@@ -451,23 +450,29 @@ async function seedExpense(x: Ctx) {
   ] as const).map(async ([code, name, monthlyLimit, requiresReceipt, note]) => {
     cat[code] = (await call('POST', '/api/expense/categories', { code, name, monthlyLimit, requiresReceipt, note: note || undefined })).id;
   }));
-  type L = [number, string, string, number, number?, string?];
+  /** C3: the seller of a line with VAT — a full tax invoice with the seller's tax ID lets the VAT be claimed (else it is part of the expense) */
+  type Seller = { name: string; taxId?: string; branch?: string; type?: 'full_tax_invoice' | 'abbreviated' | 'none' };
+  type L = [number, string, string, number, number?, string?, Seller?];
   const claim = async (who: string, purpose: string, daysAgo: number, lines: L[], end: 'draft' | 'submitted' | 'approved' | 'paid' | 'rejected' | 'returned', note?: string, paidDaysAgo = Math.max(daysAgo - 5, 0)) => {
     const c = await as[who]('POST', '/api/expense/claims', {
       purpose, claimantName: u[who].name, department: dept[who], claimDate: dayBack(daysAgo), submit: end !== 'draft',
-      lines: lines.map(([back, code, description, amount, vat, receiptNo]) => ({ expenseDate: dayBack(back), categoryId: cat[code], description, amount, vat: vat ?? 0, receiptNo })),
+      lines: lines.map(([back, code, description, amount, vat, receiptNo, seller]) => ({
+        expenseDate: dayBack(back), categoryId: cat[code], description, amount, vat: vat ?? 0, receiptNo,
+        ...(seller ? { vendorName: seller.name, vendorTaxId: seller.taxId, vendorBranch: seller.branch, receiptType: seller.type ?? 'full_tax_invoice' } : {}),
+      })),
     });
     if (end === 'approved' || end === 'paid') await call('POST', `/api/expense/claims/${c.id}/approve`, {});
-    if (end === 'paid') await call('POST', `/api/expense/claims/${c.id}/pay`, { method: 'transfer', paidDate: dayBack(paidDaysAgo), reference: `KBANK-${String(c.no).slice(-4)}` });
+    // segregation of duties (wave 8): the MD approves, accounting records the payment
+    if (end === 'paid') await as.acc('POST', `/api/expense/claims/${c.id}/pay`, { method: 'transfer', paidDate: dayBack(paidDaysAgo), reference: `KBANK-${String(c.no).slice(-4)}` });
     if (end === 'rejected' || end === 'returned') await call('POST', `/api/expense/claims/${c.id}/${end === 'rejected' ? 'reject' : 'return'}`, { note });
     return c;
   };
   await claim('sales', 'เยี่ยมลูกค้า คูลแอร์ แมนูแฟคเจอริ่ง อมตะนคร', 52, [[53, 'FUEL', 'เติมน้ำมันรถกระบะ 3ฒก 8173', 1200, 0, 'PTT-558812'], [53, 'TOLL', 'ทางด่วนบูรพาวิถี ไป-กลับ', 180]], 'paid');
-  await claim('tech', 'ซื้ออะไหล่ด่วน ซ่อม PRESS-02 (ซื้อหน้าร้าน)', 46, [[47, 'PARTS', 'โอริง + ข้อต่อไฮดรอลิก 3/8"', 2450, 171.5, 'INV-6602']], 'paid');
+  await claim('tech', 'ซื้ออะไหล่ด่วน ซ่อม PRESS-02 (ซื้อหน้าร้าน)', 46, [[47, 'PARTS', 'โอริง + ข้อต่อไฮดรอลิก 3/8"', 2450, 171.5, 'INV-6602', { name: 'หจก. ช่างไทยอะไหล่', taxId: '0103556012340', branch: '00000' }]], 'paid');
   await claim('buyer', 'ตรวจโรงงานผู้ขายรายใหม่ นิคมบางปู', 39, [[40, 'FUEL', 'น้ำมันรถส่วนตัว 62 กม.', 650, 0, 'BCP-10288'], [40, 'PERDIEM', 'เบี้ยเลี้ยง 1 วัน', 240]], 'paid');
   await claim('qc', 'ส่งชิ้นงานตัวอย่างทดสอบ Salt spray ที่แล็บภายนอก', 31, [[32, 'PARCEL', 'Kerry ส่งชิ้นงาน 5 ชิ้น', 350], [32, 'TRAVEL', 'แท็กซี่ไปรับผลทดสอบ', 420]], 'paid', undefined, 0);
-  await claim('sales', 'รับรองลูกค้า อีสเทิร์น อิเล็คทริค (ฝ่ายจัดซื้อ 4 ท่าน)', 21, [[22, 'ENTERTAIN', 'อาหารกลางวัน ร้านครัวบ้านสวน', 4800, 336, 'RC-22871']], 'approved');
-  await claim('it', 'ซื้อสาย LAN และหัว RJ45 ด่วน (ห้องประชุมใหญ่)', 16, [[16, 'OFFICE', 'สาย CAT6 1 กล่อง + หัว RJ45', 890, 62.3, 'IT-CITY-4410']], 'approved');
+  await claim('sales', 'รับรองลูกค้า อีสเทิร์น อิเล็คทริค (ฝ่ายจัดซื้อ 4 ท่าน)', 21, [[22, 'ENTERTAIN', 'อาหารกลางวัน ร้านครัวบ้านสวน', 4800, 336, 'RC-22871', { name: 'ร้านครัวบ้านสวน', taxId: '0205560004543', branch: '00000' }]], 'approved');
+  await claim('it', 'ซื้อสาย LAN และหัว RJ45 ด่วน (ห้องประชุมใหญ่)', 16, [[16, 'OFFICE', 'สาย CAT6 1 กล่อง + หัว RJ45', 890, 62.3, 'IT-CITY-4410', { name: 'บริษัท ไอที ซิตี้ จำกัด (มหาชน)', taxId: '0107537000165', branch: '00021' }]], 'approved');
   await claim('tech', 'ค่าแท็กซี่ไปซื้ออะไหล่ วงศ์สว่าง', 13, [[13, 'TRAVEL', 'แท็กซี่ไป-กลับ', 380]], 'rejected', 'ใช้รถกระบะบริษัทได้ ไม่ต้องนั่งแท็กซี่ครับ');
   await claim('store', 'ค่าน้ำมันและทางด่วน ไปรับวัตถุดิบ บางนา', 10, [[10, 'FUEL', 'น้ำมันรถกระบะ', 900, 0, 'SHELL-77120'], [10, 'TOLL', 'ทางด่วนบางนา-ชลบุรี', 120]], 'submitted');
   await claim('qc', 'ค่าน้ำมันไปตรวจรับวัตถุดิบที่ผู้ขาย', 8, [[9, 'FUEL', 'ไป สยามเหล็กกล้า บางปู', 700, 0, 'PTT-60331']], 'returned', 'ระบุเลขไมล์ไป-กลับในรายละเอียดด้วย');
@@ -475,17 +480,17 @@ async function seedExpense(x: Ctx) {
     [7, 'HOTEL', 'โรงแรมใกล้ไบเทค 2 คืน', 2800, 0, 'HT-11902'], [7, 'PERDIEM', 'เบี้ยเลี้ยง 2 วัน', 480], [7, 'FUEL', 'ขนของไปบูธ', 1500, 0, 'PTT-61107'],
   ], 'approved');
   await claim('plan', 'ค่าอาหาร OT ทีมผลิตเร่งงานคูลแอร์', 4, [[5, 'OTMEAL', 'ข้าวกล่อง 15 คน x 1 มื้อ', 900], [4, 'OTMEAL', 'ข้าวกล่อง 15 คน (ต่อ)', 450]], 'submitted');
-  await claim('sales', 'รับรองลูกค้า คูลแอร์ หลังประชุมสรุปราคาสัญญาปี 2570', 3, [[3, 'ENTERTAIN', 'อาหารเย็น ทีมจัดซื้อและวิศวกรรม 6 ท่าน', 5200, 364, 'RC-23015']], 'submitted');
+  await claim('sales', 'รับรองลูกค้า คูลแอร์ หลังประชุมสรุปราคาสัญญาปี 2570', 3, [[3, 'ENTERTAIN', 'อาหารเย็น ทีมจัดซื้อและวิศวกรรม 6 ท่าน', 5200, 364, 'RC-23015', { name: 'ภัตตาคารริมน้ำ ชลบุรี', taxId: '0205561008879', branch: '00000' }]], 'submitted');
   await claim('acc', 'ค่าไปรษณีย์ส่งเอกสารภาษีและใบวางบิล', 2, [[2, 'PARCEL', 'EMS 6 ฉบับ', 210]], 'draft');
-  await claim('it', 'ค่าวัสดุสำนักงาน หมึกพิมพ์สำรอง', 1, [[1, 'OFFICE', 'หมึก Brother TN-2460 x 2', 1780, 124.6, 'OFM-9921']], 'submitted');
+  await claim('it', 'ค่าวัสดุสำนักงาน หมึกพิมพ์สำรอง', 1, [[1, 'OFFICE', 'หมึก Brother TN-2460 x 2', 1780, 124.6, 'OFM-9921', { name: 'บริษัท ออฟฟิศเมท (ไทย) จำกัด', type: 'abbreviated' }]], 'submitted');
 
   // cash advances: the expo advance is paid and cleared against the expo claim; a new one waits for approval
   const adv = await as.sales('POST', '/api/expense/advances', { purpose: 'เงินทดรองออกบูธงาน Manufacturing Expo 2026', amount: 6000, neededBy: dayBack(8), requesterName: u.sales.name, department: dept.sales });
   await call('POST', `/api/expense/advances/${adv.id}/approve`, {});
-  await call('POST', `/api/expense/advances/${adv.id}/pay`, { method: 'cash', paidDate: dayBack(8) });
-  await call('POST', `/api/expense/advances/${adv.id}/clear`, { claimId: expo.id });
+  await as.acc('POST', `/api/expense/advances/${adv.id}/pay`, { method: 'cash', paidDate: dayBack(8) });
+  await as.acc('POST', `/api/expense/advances/${adv.id}/clear`, { claimId: expo.id });
   // the advance (6,000) was more than the claim: the salesman paid the difference back in cash, which settles the claim
-  await call('POST', `/api/expense/claims/${expo.id}/pay`, { method: 'cash', paidDate: dayBack(5), reference: 'รับคืนเงินทดรองส่วนเกินเป็นเงินสด' });
+  await as.acc('POST', `/api/expense/claims/${expo.id}/pay`, { method: 'cash', paidDate: dayBack(5), reference: 'รับคืนเงินทดรองส่วนเกินเป็นเงินสด' });
   await as.tech('POST', '/api/expense/advances', { purpose: 'เงินทดรองซื้ออะไหล่ซ่อมเครื่องปั๊ม PRESS-02', amount: 5000, neededBy: wd(1), requesterName: u.tech.name, department: dept.tech });
 }
 
@@ -821,7 +826,8 @@ async function seedProjects(x: Ctx) {
   const lastMonday = addDays(thisMonday, -7);
   const days = [...[0, 1, 2, 3, 4].map((i) => addDays(lastMonday, i)), ...[0, 1, 2, 3, 4].map((i) => addDays(thisMonday, i)).filter((d) => d <= bkkDate())]
     .filter(isWorkday);
-  const people = ['tech', 'plan', 'it', 'qc', 'acc', 'store', 'buyer', 'sales'];
+  // the project team logs hours: role templates give projects.timesheet.log to technician, pm and it (others' tasks stay unlogged)
+  const people = ['tech', 'plan', 'it'];
   await Promise.all(people.map(async (who, pi) => {
     const mine = created[who]?.filter((t) => t.project.id !== iso9001.id) ?? [];
     if (!mine.length) return;

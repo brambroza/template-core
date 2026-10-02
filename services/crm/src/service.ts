@@ -1,6 +1,7 @@
-import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { addDaysIso, auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, thaiToday, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import { bahtText, documentTotals, round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -89,8 +90,8 @@ const QuoteInput = z.object({
   lines: z.array(QuoteLine).min(1),
 });
 
-/** Today in Thailand (Asia/Bangkok, UTC+7) as YYYY-MM-DD. */
-const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+/** Today in Thailand (kernel business clock, Asia/Bangkok) as YYYY-MM-DD — never the database's UTC current_date. */
+const bangkokToday = () => thaiToday();
 /** A quotation cannot expire before it is issued. */
 function checkValidity(b: { issueDate?: string; validUntil?: string }, currentIssue?: string) {
   const issue = b.issueDate ?? currentIssue ?? bangkokToday();
@@ -217,7 +218,7 @@ export const definition: ServiceDefinition = {
       const b = parse(LeadInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const lead = await loadLead(c, id, true);
-        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`Cannot edit a ${lead.status} lead`);
+        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`แก้ไขลีดไม่ได้ — อยู่ในสถานะ "${statusTh(lead.status)}"`);
         await c.query(
           `update leads set company = $2, contact_name = $3, phone = $4, email = $5, line_id = $6, source = $7, interest = $8, note = $9,
              owner_id = coalesce($10, owner_id), owner_name = coalesce($11, owner_name), updated_at = now() where id = $1`,
@@ -234,7 +235,7 @@ export const definition: ServiceDefinition = {
         const { id } = parse(IdParam, req.params);
         return k.db.tx(a.tenantId, async (c) => {
           const lead = await loadLead(c, id, true);
-          if (!from.includes(lead.status)) throw conflict(`Cannot move a ${lead.status} lead to ${to}`);
+          if (!from.includes(lead.status)) throw conflict(`เปลี่ยนลีดจาก "${statusTh(lead.status)}" เป็น "${statusTh(to)}" ไม่ได้`);
           await c.query('update leads set status = $2, updated_at = now() where id = $1', [id, to]);
           return loadLead(c, id);
         });
@@ -249,7 +250,7 @@ export const definition: ServiceDefinition = {
       const b = parse(Reason, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const lead = await loadLead(c, id, true);
-        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`Cannot close a ${lead.status} lead`);
+        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`ปิดลีดไม่ได้ — อยู่ในสถานะ "${statusTh(lead.status)}"`);
         await c.query(`update leads set status = 'lost', lost_reason = $2, updated_at = now() where id = $1`, [id, b.reason]);
         return loadLead(c, id);
       });
@@ -264,7 +265,7 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const lead = await loadLead(c, id, true);
-        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`Cannot convert a ${lead.status} lead`);
+        if (!OPEN_LEAD.includes(lead.status)) throw conflict(`แปลงลีดเป็นโอกาสขายไม่ได้ — อยู่ในสถานะ "${statusTh(lead.status)}"`);
         const no = await nextDocNo(c, 'OP');
         const opp = (await c.query(
           `insert into opportunities (no, name, lead_id, partner_id, customer_name, value, probability, expected_close, owner_id, owner_name, note, created_by)
@@ -337,7 +338,7 @@ export const definition: ServiceDefinition = {
       const b = parse(OpportunityInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOpportunity(c, id, true);
-        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`Cannot edit a ${o.stage} opportunity`);
+        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`แก้ไขโอกาสขายไม่ได้ — อยู่ในขั้น "${statusTh(o.stage)}"`);
         await c.query(
           `update opportunities set name = $2, partner_id = $3, customer_name = $4, value = $5, probability = coalesce($6, probability), expected_close = $7,
              note = $8, owner_id = coalesce($9, owner_id), owner_name = coalesce($10, owner_name), updated_at = now() where id = $1`,
@@ -355,7 +356,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOpportunity(c, id, true);
         const next = { prospect: 'proposal', proposal: 'negotiation' }[o.stage as string];
-        if (!next) throw conflict(`Cannot advance a ${o.stage} opportunity`);
+        if (!next) throw conflict(`เลื่อนขั้นโอกาสขายไม่ได้ — อยู่ในขั้น "${statusTh(o.stage)}"`);
         await c.query('update opportunities set stage = $2, probability = greatest(probability, $3), updated_at = now() where id = $1', [id, next, STAGE_PROBABILITY[next]]);
         return loadOpportunity(c, id);
       });
@@ -367,7 +368,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOpportunity(c, id, true);
-        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`Cannot win a ${o.stage} opportunity`);
+        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`ปิดการขายไม่ได้ — โอกาสขายอยู่ในขั้น "${statusTh(o.stage)}"`);
         await c.query(`update opportunities set stage = 'won', probability = 100, won_at = now(), closed_at = now(), updated_at = now() where id = $1`, [id]);
         return loadOpportunity(c, id);
       });
@@ -380,7 +381,7 @@ export const definition: ServiceDefinition = {
       const b = parse(Reason, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOpportunity(c, id, true);
-        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`Cannot lose a ${o.stage} opportunity`);
+        if (!OPEN_STAGES.includes(o.stage)) throw conflict(`บันทึกว่าไม่สำเร็จไม่ได้ — โอกาสขายอยู่ในขั้น "${statusTh(o.stage)}"`);
         await c.query(`update opportunities set stage = 'lost', probability = 0, lost_reason = $2, closed_at = now(), updated_at = now() where id = $1`, [id, b.reason]);
         return loadOpportunity(c, id);
       });
@@ -443,7 +444,7 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ note: text(2000) }), req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const act = await one(c, 'select * from activities where id = $1 for update', [id], 'Activity');
-        if (act.done) throw conflict('Activity is already done');
+        if (act.done) throw conflict(`กิจกรรมนี้ทำเสร็จแล้ว`);
         await c.query('update activities set done = true, done_at = now(), note = coalesce($2, note) where id = $1', [id, b.note ?? null]);
         return one(c, `${ACTIVITY_SELECT} where a.id = $1`, [id], 'Activity');
       });
@@ -460,13 +461,14 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         if (b.opportunityId) await one(c, 'select id from opportunities where id = $1', [b.opportunityId], 'Opportunity');
-        const no = await nextDocNo(c, 'QT', b.issueDate ? new Date(b.issueDate) : new Date());
+        const issueDate = b.issueDate ?? bangkokToday();
+        const no = await nextDocNo(c, 'QT', new Date(issueDate));
         const q = (await c.query(
           `insert into quotations (no, base_no, opportunity_id, partner_id, customer_name, customer_tax_id, customer_branch, customer_address, contact_name,
              issue_date, valid_until, vat_mode, subtotal, discount, net, vat, gross, note, created_by)
-           values ($1,$1,$2,$3,$4,$5,$6,$7,$8, coalesce($9::date, current_date), coalesce($10::date, coalesce($9::date, current_date) + 30), $11,$12,$13,$14,$15,$16,$17,$18) returning id`,
+           values ($1,$1,$2,$3,$4,$5,$6,$7,$8, $9::date, $10::date, $11,$12,$13,$14,$15,$16,$17,$18) returning id`,
           [no, b.opportunityId ?? null, b.partnerId ?? null, b.customerName, b.customerTaxId ?? null, b.customerBranch ?? null, b.customerAddress ?? null, b.contactName ?? null,
-            b.issueDate ?? null, b.validUntil ?? null, b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, a.userId],
+            issueDate, b.validUntil ?? addDaysIso(issueDate, 30), b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, a.userId],
         )).rows[0];
         await insertLines(c, q.id, b.lines, t.amounts);
         return loadQuote(c, q.id);
@@ -478,11 +480,11 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'crm.quote.read');
       const q = parse(ListQuery.extend({ status: z.string().optional(), opportunityId: s.uuid.optional(), partnerId: s.uuid.optional() }), req.query);
       return k.db.tx(a.tenantId, async (c) => (await c.query(
-        `select q.*, (q.status = 'sent' and q.valid_until < current_date) as past_validity from quotations q
+        `select q.*, (q.status = 'sent' and q.valid_until < $7::date) as past_validity from quotations q
          where ($1::text is null or q.status = $1) and ($2::text is null or q.no ilike $2 or q.customer_name ilike $2)
            and ($3::uuid is null or q.opportunity_id = $3) and ($4::uuid is null or q.partner_id = $4)
          order by q.created_at desc limit $5 offset $6`,
-        [q.status ?? null, q.q ? `%${q.q}%` : null, q.opportunityId ?? null, q.partnerId ?? null, q.limit, q.offset])).rows);
+        [q.status ?? null, q.q ? `%${q.q}%` : null, q.opportunityId ?? null, q.partnerId ?? null, q.limit, q.offset, bangkokToday()])).rows);
     });
 
     app.get('/quotations/:id', async (req) => {
@@ -500,7 +502,7 @@ export const definition: ServiceDefinition = {
       const t = quoteTotals(b.lines, b.vatMode);
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (q.status !== 'draft') throw conflict(`Cannot edit a ${q.status} quotation`);
+        if (q.status !== 'draft') throw conflict(`แก้ไขใบเสนอราคาไม่ได้ — อยู่ในสถานะ "${statusTh(q.status)}" (ใช้ "แก้ไขเป็นฉบับใหม่")`);
         checkValidity({ issueDate: b.issueDate, validUntil: b.validUntil ?? (b.issueDate ? undefined : q.valid_until) }, q.issue_date);
         if (b.opportunityId) await one(c, 'select id from opportunities where id = $1', [b.opportunityId], 'Opportunity');
         await c.query(
@@ -523,7 +525,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (q.status !== 'draft') throw conflict(`Cannot send a ${q.status} quotation`);
+        if (q.status !== 'draft') throw conflict(`ส่งใบเสนอราคาไม่ได้ — อยู่ในสถานะ "${statusTh(q.status)}"`);
         await c.query(`update quotations set status = 'sent', sent_at = now(), updated_at = now() where id = $1`, [id]);
         if (q.opportunity_id) {
           await c.query(`update opportunities set stage = 'proposal', probability = greatest(probability, $2), updated_at = now() where id = $1 and stage = 'prospect'`,
@@ -540,12 +542,12 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (q.status !== 'sent') throw conflict(`Cannot accept a ${q.status} quotation`);
+        if (q.status !== 'sent') throw conflict(`บันทึกลูกค้าตอบรับไม่ได้ — ใบเสนอราคาอยู่ในสถานะ "${statusTh(q.status)}"`);
         if (q.revised_by) {
           const rev = (await c.query('select no from quotations where id = $1', [q.revised_by])).rows[0];
           throw conflict(`${q.no} ถูกแก้ไขเป็น ${rev?.no ?? 'ฉบับใหม่'} แล้ว — ตอบรับฉบับล่าสุดแทน`);
         }
-        if ((await c.query('select $1::date < current_date as past', [q.valid_until])).rows[0].past) {
+        if (q.valid_until && String(q.valid_until).slice(0, 10) < bangkokToday()) {
           throw conflict(`${q.no} หมดอายุตั้งแต่ ${q.valid_until} — ออกฉบับแก้ไข (revise) แล้วส่งให้ลูกค้าใหม่`);
         }
         await c.query(`update quotations set status = 'accepted', decided_at = now(), updated_at = now() where id = $1`, [id]);
@@ -575,7 +577,7 @@ export const definition: ServiceDefinition = {
       const b = parse(Reason, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (q.status !== 'sent') throw conflict(`Cannot reject a ${q.status} quotation`);
+        if (q.status !== 'sent') throw conflict(`บันทึกลูกค้าปฏิเสธไม่ได้ — ใบเสนอราคาอยู่ในสถานะ "${statusTh(q.status)}"`);
         await c.query(`update quotations set status = 'rejected', reject_reason = $2, decided_at = now(), updated_at = now() where id = $1`, [id, b.reason]);
         return loadQuote(c, id);
       });
@@ -587,7 +589,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (!['draft', 'sent'].includes(q.status)) throw conflict(`Cannot expire a ${q.status} quotation`);
+        if (!['draft', 'sent'].includes(q.status)) throw conflict(`ปิดเป็นหมดอายุไม่ได้ — ใบเสนอราคาอยู่ในสถานะ "${statusTh(q.status)}"`);
         await c.query(`update quotations set status = 'expired', decided_at = now(), updated_at = now() where id = $1`, [id]);
         return loadQuote(c, id);
       });
@@ -601,7 +603,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const r = await c.query(
           `update quotations set status = 'expired', decided_at = now(), updated_at = now()
-           where status = 'sent' and valid_until < coalesce($1::date, current_date) returning id, no`, [b.asOf ?? null]);
+           where status = 'sent' and valid_until < $1::date returning id, no`, [b.asOf ?? bangkokToday()]);
         return { expired: r.rows, message: r.rowCount ? `หมดอายุ ${r.rowCount} ใบ: ${r.rows.map((x) => x.no).join(', ')}` : 'ไม่มีใบเสนอราคาที่หมดอายุ' };
       });
     });
@@ -614,17 +616,17 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const q = await loadQuote(c, id, true);
-        if (!['sent', 'rejected', 'expired'].includes(q.status)) throw conflict(`Cannot revise a ${q.status} quotation`);
-        if (q.revised_by) throw conflict(`${q.no} was already revised`);
+        if (!['sent', 'rejected', 'expired'].includes(q.status)) throw conflict(`แก้ไขเป็นฉบับใหม่ไม่ได้ — ใบเสนอราคาอยู่ในสถานะ "${statusTh(q.status)}"`);
+        if (q.revised_by) throw conflict(`${q.no} มีฉบับแก้ไขแล้ว — แก้จากฉบับล่าสุด`);
         const rev = (await c.query('select coalesce(max(revision), 0) + 1 as n from quotations where base_no = $1', [q.base_no])).rows[0].n;
         const days = q.valid_until ? Math.max(0, Math.round((Date.parse(q.valid_until) - Date.parse(q.issue_date)) / 86400000)) : 30;
         const copy = (await c.query(
           `insert into quotations (no, base_no, revision, revision_of, opportunity_id, partner_id, customer_name, customer_tax_id, customer_branch, customer_address,
              contact_name, issue_date, valid_until, vat_mode, subtotal, discount, net, vat, gross, note, created_by)
            select $2::text || '-R' || $3::int, base_no, $3::int, id, opportunity_id, partner_id, customer_name, customer_tax_id, customer_branch, customer_address,
-             contact_name, current_date, current_date + $4::int, vat_mode, subtotal, discount, net, vat, gross, note, $5
+             contact_name, $6::date, $6::date + $4::int, vat_mode, subtotal, discount, net, vat, gross, note, $5
            from quotations where id = $1 returning id`,
-          [id, q.base_no, rev, days, a.userId],
+          [id, q.base_no, rev, days, a.userId, bangkokToday()],
         )).rows[0];
         await c.query(
           `insert into quotation_lines (quotation_id, line_no, item_id, item_code, item_name, description, qty, unit_price, discount_pct, amount)
@@ -654,9 +656,9 @@ export const definition: ServiceDefinition = {
            from opportunities`, [a.userId])).rows[0];
         const months = (await c.query(
           `select to_char(m, 'YYYY-MM') as month, coalesce(sum(o.value), 0) as total, count(o.id)::int as deals
-           from generate_series(date_trunc('month', current_date) - interval '5 months', date_trunc('month', current_date), interval '1 month') m
-           left join opportunities o on o.stage = 'won' and date_trunc('month', o.won_at) = m
-           group by m order by m`)).rows;
+           from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m
+           left join opportunities o on o.stage = 'won' and date_trunc('month', o.won_at at time zone 'Asia/Bangkok') = m
+           group by m order by m`, [bangkokToday()])).rows;
         const rows = (await c.query(
           `select id, no, name, customer_name, stage, value, probability, expected_close from opportunities
            where stage in ('prospect', 'proposal', 'negotiation') order by expected_close nulls last, created_at desc limit 40`)).rows;

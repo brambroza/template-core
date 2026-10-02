@@ -101,9 +101,11 @@ describe('one system: sales → accounting, HR → payroll → accounting, expen
     const staff = signToken(TEST_JWT_SECRET, { tenantId, userId: randomUUID(), userName: 'สมชาย', perms: ['expense.claim.read', 'expense.claim.write'] });
     const fuel = (await api('POST', '/api/expense/categories', { code: 'FUEL', name: 'ค่าน้ำมัน' })).body;
     const cl = (await api('POST', '/api/expense/claims', { purpose: 'ไปหาลูกค้า', submit: true,
-      lines: [{ expenseDate: today, categoryId: fuel.id, amount: 1000, vat: 70 }] }, staff)).body;
+      lines: [{ expenseDate: today, categoryId: fuel.id, amount: 1000, vat: 70, receiptNo: 'PTT-1', vendorName: 'ปตท.', vendorTaxId: '0107544000108' }] }, staff)).body; // full tax invoice → creditable
     expect((await api('POST', `/api/expense/claims/${cl.id}/approve`, {})).status).toBe(200);
-    expect((await api('POST', `/api/expense/claims/${cl.id}/pay`, { method: 'transfer', paidDate: today })).status).toBe(200);
+    // wave 8 segregation of duties: the approver (admin) may not record the payment — finance does
+    const cashier = signToken(TEST_JWT_SECRET, { tenantId, userId: randomUUID(), userName: 'การเงิน', perms: ['expense.claim.read', 'expense.claim.pay'] });
+    expect((await api('POST', `/api/expense/claims/${cl.id}/pay`, { method: 'transfer', paidDate: today }, cashier)).status).toBe(200);
     await erp.settle();
     const j = await journal((await journals('expense.claim_paid'))[0].id);
     expect(line(j, '52520')).toMatchObject({ debit: 1000 }); // ค่าน้ำมันเชื้อเพลิง (default category map)

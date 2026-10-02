@@ -13,6 +13,7 @@ Requires only `identity` (approvers are picked from `/users` and stored as snaps
 - `delegations` — `from_user_id/name` (the approver) → `to_user_id/name` (stands in), `starts_on`..`ends_on` (Bangkok calendar dates, inclusive), `note`, `cancelled_at`
 
 ## Behaviour
+- Today (delegations in force, "ended" checks) = SQL `TODAY_SQL` from the kernel: the kernel clock's Thai day (`app.today`, set by `db.tx`; follows `setClock` in tests — wave 8).
 - **Requester name comes from the token** (`auth(req).userName`): on create, and on edit by the requester themself, a typed `requesterName` is ignored.
   Only tokens without a name (old sessions) fall back to the body; an approvals admin editing someone else's request may set it.
 - Steps are copied from the type when the request is created. **`lock_approvers` (default true)**: requesters cannot pick approvers on create (403 unless the list equals

@@ -1,19 +1,22 @@
 import { auth, conflict, forbidden, hasPerm, loadManifest, notFound, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
-import { ensureHoldWarehouse, fmtQty, postMove, warehouse, type Emit, type MoveInput } from './stock.ts';
+import { ensureHoldWarehouse, fmtQty, postMove, reduceHold, warehouse, type Emit, type MoveInput, type MoveOptions } from './stock.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
 const Line = s.itemLine.extend({ unitCost: s.money.optional() });
 const Ref = { refType: z.string().max(50).optional(), refId: z.string().max(100).optional(), note: z.string().max(500).optional() };
+/** wave 8: admin override for taking stock out of a hold warehouse outside the hold flow (perm inventory.hold.override) — the reason is recorded */
+const Override = { overrideHoldReason: z.string().trim().min(5, 'ระบุเหตุผลอย่างน้อย 5 ตัวอักษร').max(500).optional().or(z.literal('').transform(() => undefined)) };
 const ReceiptInput = z.object({ warehouseCode: s.code, lines: z.array(Line).min(1), ...Ref });
-const IssueInput = z.object({ warehouseCode: s.code, lines: z.array(s.itemLine).min(1), ...Ref });
-const TransferInput = z.object({ fromWarehouseCode: s.code, toWarehouseCode: s.code, lines: z.array(s.itemLine).min(1), note: Ref.note })
+const IssueInput = z.object({ warehouseCode: s.code, lines: z.array(s.itemLine).min(1), ...Ref, ...Override });
+const TransferInput = z.object({ fromWarehouseCode: s.code, toWarehouseCode: s.code, lines: z.array(s.itemLine).min(1), note: Ref.note, ...Override })
   .refine((v) => v.fromWarehouseCode !== v.toWarehouseCode, 'from and to warehouse must differ');
 const AdjustInput = z.object({
   warehouseCode: s.code,
   lines: z.array(s.itemLine.extend({ qty: z.number().finite().refine((n) => n !== 0, 'qty must not be 0') })).min(1),
   note: z.string().min(1).max(500),
+  ...Override,
 });
 
 const SettingsInput = z.object({ allowNegative: z.boolean().optional(), receiveIntoHoldWhenInspected: z.boolean().optional() })
@@ -23,17 +26,31 @@ const IdParam = z.object({ id: s.uuid });
 
 type Item = Pick<MoveInput, 'itemId' | 'itemCode' | 'itemName'>;
 
-/** Stock in a hold warehouse (QC-HOLD) may only leave with inventory.hold.release — rejected material must not reach the line. */
-async function guardHold(c: Client, a: AuthContext, code: string) {
+/**
+ * Stock in a hold warehouse (QC-HOLD) leaves only through the hold flow — "ปล่อยเข้าคลัง" (`POST /holds/:id/release`, QC decision + note)
+ * or a return to the supplier — never by a normal issue / transfer / negative adjustment, whatever the user's permissions (wave 8,
+ * round-2 N2: a store clerk issued rejected steel). The one exception is an admin override: perm `inventory.hold.override` + a reason,
+ * written on the stock card and in the hold log (the holds are reduced so the hold list keeps matching the stock).
+ * Returns the move options to use for moves out of `code` (undefined = not a hold warehouse).
+ */
+async function guardHold(c: Client, a: AuthContext, code: string, reason: string | undefined): Promise<MoveOptions | undefined> {
   const wh = await warehouse(c, code);
-  if (wh.isHold && !hasPerm(a, 'inventory.hold.release')) {
-    throw forbidden(`คลัง ${code} เป็นคลังกักกัน QC — ของที่รอตัดสิน/ไม่ผ่าน QC จ่ายหรือโอนออกได้เฉพาะผู้มีสิทธิ์ "ปล่อยของจากคลังกักกัน" (inventory.hold.release)`);
+  if (!wh.isHold) return undefined;
+  if (!reason) {
+    throw forbidden(`คลัง ${code} เป็นคลังกักกัน QC — ของที่รอตัดสิน/ไม่ผ่าน QC ออกจากคลังนี้ได้เฉพาะ "ปล่อยเข้าคลัง" ในหน้ากักกัน QC (ผลตัดสินพร้อมเหตุผล) หรือ "ส่งคืนผู้ขาย" เท่านั้น — จ่าย/โอน/ปรับลดตรงไม่ได้`);
   }
+  if (!hasPerm(a, 'inventory.hold.override')) {
+    throw forbidden(`บังคับจ่ายออกจากคลังกักกัน ${code} ได้เฉพาะผู้มีสิทธิ์ "บังคับจ่ายออกจากคลังกักกัน" (inventory.hold.override) — ให้ใช้ "ปล่อยเข้าคลัง" ในหน้ากักกัน QC`);
+  }
+  return { holdLog: { kind: 'override', userName: a.userName ?? null } };
 }
+const overrideNote = (reason: string | undefined, note: string | undefined | null) =>
+  reason ? [`บังคับออกจากคลังกักกัน: ${reason}`, note].filter(Boolean).join(' · ') : note;
 
 /** transfer_out + transfer_in with the same reference (both through postMove). */
 async function transfer(em: Emit, c: Client, item: Item, from: string, to: string, qty: number, ref: { refType: string; refId: string; note?: string | null; userId?: string | null }, force = false) {
-  await postMove(em, c, { ...item, qty: -qty, warehouseCode: from, kind: 'transfer_out', ...ref }, { autoCreateWarehouse: force, force });
+  // the hold flow itself (release, QC verdict) keeps qc_holds in step
+  await postMove(em, c, { ...item, qty: -qty, warehouseCode: from, kind: 'transfer_out', ...ref }, { autoCreateWarehouse: force, force, holdManaged: true });
   await postMove(em, c, { ...item, qty, warehouseCode: to, kind: 'transfer_in', ...ref }, { autoCreateWarehouse: force });
 }
 
@@ -42,7 +59,8 @@ async function readSettings(c: Client) {
   return { allowNegative: r?.allow_negative ?? false, receiveIntoHoldWhenInspected: r?.receive_into_hold ?? false };
 }
 
-const HOLD_STATUS_TH: Record<string, string> = { pending: 'รอผล QC', rejected: 'ไม่ผ่าน รอตัดสิน', released: 'ปล่อยแล้ว', returned: 'ส่งคืนผู้ขายแล้ว' };
+const HOLD_STATUS_TH: Record<string, string> = { pending: 'รอผล QC', rejected: 'ไม่ผ่าน รอตัดสิน', released: 'ปล่อยแล้ว', returned: 'ส่งคืนผู้ขายแล้ว', forced_out: 'ถูกจ่ายออกนอกขั้นตอน (ดูเหตุผล)' };
+const LOG_TH: Record<string, string> = { release: 'ปล่อยเข้าคลัง (ผลตัดสิน)', return: 'ส่งคืนผู้ขาย', override: 'บังคับจ่ายออก (ผู้ดูแลระบบ)', external: 'ตัดออกโดยเอกสารโมดูลอื่น' };
 const thHold = (h: any) => ({ ...h, status_th: HOLD_STATUS_TH[h.status] ?? h.status });
 const REF_TH: Record<string, string> = {
   sales_order: 'ส่งของตามใบสั่งขาย', production_order: 'ผลิต (ตัดวัตถุดิบ)', work_order: 'ใบสั่งซ่อม (อะไหล่)', purchase_order: 'รับตามใบสั่งซื้อ',
@@ -106,10 +124,11 @@ export const definition: ServiceDefinition = {
       const b = parse(IssueInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        await guardHold(c, a, b.warehouseCode);
+        const hold = await guardHold(c, a, b.warehouseCode, b.overrideHoldReason);
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
-        for (const l of b.lines) out.push(await postMove(em, c, { ...l, qty: -l.qty, warehouseCode: b.warehouseCode, kind: 'issue', refType: b.refType, refId: b.refId, note: b.note, userId: a.userId }));
+        const note = hold ? overrideNote(b.overrideHoldReason, b.note) : b.note;
+        for (const l of b.lines) out.push(await postMove(em, c, { ...l, qty: -l.qty, warehouseCode: b.warehouseCode, kind: 'issue', refType: b.refType, refId: b.refId, note, userId: a.userId }, hold));
         return { moves: out };
       });
     });
@@ -120,12 +139,13 @@ export const definition: ServiceDefinition = {
       const b = parse(TransferInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        await guardHold(c, a, b.fromWarehouseCode);
+        const hold = await guardHold(c, a, b.fromWarehouseCode, b.overrideHoldReason);
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
+        const note = hold ? overrideNote(b.overrideHoldReason, b.note) : b.note;
         for (const l of b.lines) {
-          out.push(await postMove(em, c, { ...l, qty: -l.qty, warehouseCode: b.fromWarehouseCode, kind: 'transfer_out', refType: 'transfer', note: b.note, userId: a.userId }));
-          out.push(await postMove(em, c, { ...l, warehouseCode: b.toWarehouseCode, kind: 'transfer_in', refType: 'transfer', note: b.note, userId: a.userId }));
+          out.push(await postMove(em, c, { ...l, qty: -l.qty, warehouseCode: b.fromWarehouseCode, kind: 'transfer_out', refType: 'transfer', note, userId: a.userId }, hold));
+          out.push(await postMove(em, c, { ...l, warehouseCode: b.toWarehouseCode, kind: 'transfer_in', refType: 'transfer', note, userId: a.userId }));
         }
         return { moves: out };
       });
@@ -137,10 +157,11 @@ export const definition: ServiceDefinition = {
       const b = parse(AdjustInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        if (b.lines.some((l) => l.qty < 0)) await guardHold(c, a, b.warehouseCode);
+        const hold = b.lines.some((l) => l.qty < 0) ? await guardHold(c, a, b.warehouseCode, b.overrideHoldReason) : undefined;
         const em: Emit = (t, d) => k.emit(c, t, d);
         const out = [];
-        for (const l of b.lines) out.push(await postMove(em, c, { ...l, warehouseCode: b.warehouseCode, kind: 'adjust', refType: 'adjustment', note: b.note, userId: a.userId }));
+        const note = hold ? overrideNote(b.overrideHoldReason, b.note)! : b.note;
+        for (const l of b.lines) out.push(await postMove(em, c, { ...l, warehouseCode: b.warehouseCode, kind: 'adjust', refType: 'adjustment', note, userId: a.userId }, hold));
         return { moves: out };
       });
     });
@@ -248,7 +269,9 @@ export const definition: ServiceDefinition = {
       const q = parse(z.object({ status: z.string().optional(), itemId: s.uuid.optional() }), req.query);
       const statuses = q.status ? q.status.split(',') : null;
       return k.db.tx(a.tenantId, async (c) => (await c.query(
-        `select * from qc_holds where ($1::text[] is null or status = any($1)) and ($2::uuid is null or item_id = $2) order by created_at desc limit 500`,
+        `select h.*, coalesce((select sum(m.qty) from stock_moves m join warehouses w on w.id = m.warehouse_id
+                                where m.item_id = h.item_id and w.code = h.hold_warehouse_code), 0) as hold_on_hand
+         from qc_holds h where ($1::text[] is null or h.status = any($1)) and ($2::uuid is null or h.item_id = $2) order by h.created_at desc limit 500`,
         [statuses, q.itemId ?? null])).rows.map(thHold));
     });
 
@@ -259,6 +282,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const h = (await c.query('select * from qc_holds where id = $1', [id])).rows[0];
         if (!h) throw notFound('QC hold');
+        h.log = (await c.query('select * from qc_hold_log where hold_id = $1 order by created_at, id', [id])).rows.map((r) => ({ ...r, kind_th: LOG_TH[r.kind] ?? r.kind }));
         return thHold(h);
       });
     });
@@ -280,12 +304,8 @@ export const definition: ServiceDefinition = {
         const em: Emit = (t, d) => k.emit(c, t, d);
         await transfer(em, c, { itemId: h.item_id, itemCode: h.item_code, itemName: h.item_name ?? undefined }, h.hold_warehouse_code, to, qty,
           { refType: 'qc_release', refId: h.inspection_no, note: b.note, userId: a.userId });
-        const left = Number(h.qty) - qty;
-        const r = (await c.query(
-          `update qc_holds set qty = $2::numeric, status = case when $2::numeric <= 0 then 'released' else status end,
-             note = concat_ws(' · ', note, $3::text), updated_at = now() where id = $1 returning *`,
-          [id, left < 1e-9 ? 0 : left, `ปล่อย ${fmtQty(qty)} ไป ${to}: ${b.note}`])).rows[0];
-        return thHold(r);
+        await reduceHold(c, id, qty, 'released', { kind: 'release', refType: 'qc_release', refId: h.inspection_no, note: `ไป ${to}: ${b.note}`, userId: a.userId, userName: a.userName ?? null });
+        return thHold((await c.query('select * from qc_holds where id = $1', [id])).rows[0]);
       });
     });
 
@@ -368,21 +388,19 @@ export const definition: ServiceDefinition = {
       const wh = await warehouse(client, e.warehouseCode, true);
       for (const l of e.lines) {
         await postMove(emit, client, { ...l, qty: -l.qty, warehouseCode: e.warehouseCode, kind: 'issue', unitCost: l.unitPrice, refType: 'purchase_return', refId: e.returnNo,
-          note: l.reason ? `ส่งคืนผู้ขาย ${e.supplierName}: ${l.reason}` : `ส่งคืนผู้ขาย ${e.supplierName}` }, { autoCreateWarehouse: true, force: true });
+          note: l.reason ? `ส่งคืนผู้ขาย ${e.supplierName}: ${l.reason}` : `ส่งคืนผู้ขาย ${e.supplierName}` }, { autoCreateWarehouse: true, force: true, holdManaged: wh.isHold });
         if (!wh.isHold) continue;
-        // settle the QC holds of this item, oldest first
+        // settle the QC holds of this item: rejected first (that is what goes back), then pending, oldest first
         let left = l.qty;
         const holds = (await client.query(
-          `select id, qty from qc_holds where item_id = $1 and hold_warehouse_code = $2 and status = 'rejected' and qty > 0 order by created_at for update`,
+          `select id, qty from qc_holds where item_id = $1 and hold_warehouse_code = $2 and status in ('rejected', 'pending') and qty > 0
+           order by (status = 'rejected') desc, created_at for update`,
           [l.itemId, e.warehouseCode])).rows;
         for (const h of holds) {
           if (left <= 1e-9) break;
           const take = Math.min(left, Number(h.qty));
           left -= take;
-          await client.query(
-            `update qc_holds set qty = qty - $2, status = case when qty - $2 <= 0 then 'returned' else status end,
-               note = concat_ws(' · ', note, $3::text), updated_at = now() where id = $1`,
-            [h.id, take, `ส่งคืน ${fmtQty(take)} (${e.returnNo})`]);
+          await reduceHold(client, h.id, take, 'returned', { kind: 'return', refType: 'purchase_return', refId: e.returnNo, note: l.reason ?? null });
         }
       }
     },

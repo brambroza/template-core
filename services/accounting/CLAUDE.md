@@ -13,7 +13,9 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
   `status draft → posted → reversed`, `draft → cancelled`; `source_type` manual | reversal | <event type>, `source_id` (invoice/receipt/claim/return id;
   the event id for goods receipts), `source_event_id`, totals, `reversal_of` / `reversed_by`, created/posted by (+ names from the token).
   Unique (source_type, source_id) for non-cancelled entries and unique source_event_id → one journal per source document.
-- `journal_lines` — `account_id`, `debit` xor `credit` (≥ 0), `description`, partner snapshot (`partner_id`, `partner_name`), `tax_base` (ฐานภาษี on VAT/WHT lines).
+- `journal_lines` — `account_id`, `debit` xor `credit` (≥ 0), `description`, partner snapshot (`partner_id`, `partner_name`), `tax_base` (ฐานภาษี on VAT/WHT lines);
+  (migration 003, C7/C8) the tax invoice behind a VAT line: `tax_invoice_no`, `tax_invoice_date`, `tax_party_name`, `tax_party_tax_id`, `tax_party_branch`
+  (from the event: sales invoice + buyer tax ID/branch; supplier invoice keyed in at goods receipt; the seller on an expense-claim line).
 - `fiscal_periods` — `period` 'YYYY-MM' (Christian year), `open|closed`, who/when closed and reopened. No row = open.
 - `posting_rules` — (event_type, leg) → `account_id` (null = not mapped), `side`, Thai `label`. Seeded with the defaults in `src/chart.ts`.
 - `category_mappings` (migration 002) — expense-claim category → account: `category_code` (unique, case-insensitive), optional `category_name` (fallback match),
@@ -32,20 +34,23 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
   by `reverse`: a new posted JV with debit/credit swapped (`source_type 'reversal'`), the original becomes `reversed`. Reports count `posted` + `reversed`.
 - **Periods**: posting, posting-on-create, reversing and auto-posting into a closed month → 409 (`งวดบัญชี … ปิดแล้ว`). Closing a month with drafts → 409.
   Drafts may still be keyed into a closed month. Reopen → 409 if already open.
+  Close publishes `accounting.period_closed { period, lastDate, closedByName }` and reopen `accounting.period_reopened { period, firstDate, reopenedByName }` (wave 8, C5)
+  → Sales / Purchasing / Expense move their lock date so tax invoices, receipts, goods receipts and payments can't be dated into a closed month.
 - **Auto-posting** (`postEvent`, handlers): idempotent by event id (kernel inbox) **and** by source document; runs inside a savepoint and **never throws** —
   a missing / inactive / group account in a rule, a closed period or any DB error is stored in `posting_errors` (the event is acknowledged). Users fix the
   rule or reopen the period, then `retry` (re-runs the stored payload) or `dismiss` (book it by hand). Zero-amount events post nothing.
   Posting date = the document date the event carries (`issueDate` / `paidDate` / `receivedDate` / `returnDate` / `receiptDate`), else the event's `occurredAt` in Asia/Bangkok.
+  Default dates (`todayTh()`: JVs without a date, reports) use the kernel business clock (`thaiDate(now())`; tests freeze it with `setClock`).
   Created-by name "ระบบ (ลงบัญชีอัตโนมัติ)".
 
 | event | journal (default accounts) |
 | --- | --- |
-| `sales.invoiced` | Dr 11300 ลูกหนี้ (gross) / Cr 41000 รายได้ (gross − vat) / Cr 21200 ภาษีขาย (vat, tax_base = net); partner = customer |
-| `sales.payment_received` kind `payment` | Dr 11100 เงินสด (method cash) or 11200 เงินฝาก (transfer/cheque/card) `received` + Dr 11600 ภาษีถูกหัก ณ ที่จ่าย `whtAmount` + Dr 21700 เงินมัดจำรับ `depositApplied` / Cr 11300 ลูกหนี้ (sum of debits; note if ≠ total) |
-| `sales.payment_received` kind `deposit` | Dr เงินสด/เงินฝาก / Cr 21700 เงินมัดจำรับ (`total`) |
+| `sales.invoiced` | Dr 11300 ลูกหนี้ (gross) / Cr 41000 รายได้ (gross − vat) / Cr 21200 ภาษีขาย (vat, tax_base = net); partner = customer. With `depositApplied` (wave 8, C2): + Dr 21700 เงินมัดจำรับ (`depositApplied.net`, rule `deposit`) and revenue = gross − vat + `depositApplied.net` (full value); VAT = only the remaining VAT the invoice charges |
+| `sales.payment_received` kind `payment` | Dr 11100 เงินสด (method cash) or 11200 เงินฝาก (transfer/cheque/card) `received` + Dr 11600 ภาษีถูกหัก ณ ที่จ่าย `whtAmount` (tax_base = `whtBase`, C4: sales computes it on the service part) + Dr 21700 เงินมัดจำรับ `depositApplied` / Cr 11300 ลูกหนี้ (sum of debits; note if ≠ total) |
+| `sales.payment_received` kind `deposit` | Dr เงินสด/เงินฝาก (`total`) / Cr 21700 เงินมัดจำรับ (`net`) + Cr 21200 ภาษีขาย (`vat`, tax_base = net, rule `vat`, ref = deposit tax invoice `taxInvoiceNo`) — wave 8, C2: a deposit is a tax point. No `vat` (old payloads / non-VAT deposit): Cr 21700 `total` |
 | `purchasing.goods_received` | with `net`+`vat` (or `vatMode` + line `vatRate`, default 7%): Dr 11400 สินค้าคงเหลือ (net) + Dr 11500 ภาษีซื้อ (vat, tax_base = net) / Cr 21100 เจ้าหนี้ (gross). Old payloads: Σ qty × unitPrice, no VAT split (note on the JV). One JV per event (partial receipts) |
 | `purchasing.goods_returned` | with totals: Dr 21100 เจ้าหนี้ (gross) / Cr 11400 (net) + Cr 11500 ภาษีซื้อ (vat). Old payloads: Σ qty × unitPrice both sides |
-| `expense.claim_paid` | with `lines`: one Dr per expense account (category → `category_mappings` by code, then name; unmapped → rule `expense` 53900, listed in the JV note) + Dr 11500 ภาษีซื้อ (Σ vat, tax_base = Σ amount of lines with VAT) / Cr 11100 เงินสด (`payMethod` cash, rule `cash`) or 11200 เงินฝาก (rule `bank`) = Σ (amount + vat); note when ≠ `total` or an advance was cleared. Old payloads: Dr 53900 / Cr bank `total` |
+| `expense.claim_paid` | with `lines`: one Dr per expense account (category → `category_mappings` by code, then name; unmapped → rule `expense` 53900, listed in the JV note; **C3: a line with `vatClaimable: false` adds its VAT to the expense**, noted on the JV) + Dr 11500 ภาษีซื้อ for claimable VAT only — one line per seller tax invoice (tax_base = amount, seller name/tax ID/branch, receipt no, expense date) when the lines carry the seller, else one line Σ vat (old payloads) / Cr 11100 เงินสด (`payMethod` cash, rule `cash`) or 11200 เงินฝาก (rule `bank`) = Σ (amount + vat); note when ≠ `total` or an advance was cleared. Old payloads: Dr 53900 / Cr bank `total` |
 | `payroll.run_paid` | one line per `postings[]` entry, `category` = rule leg: Dr 52100 เงินเดือน, 52130 ค่าล่วงเวลา, 52150 เบี้ยเลี้ยง, 52140 โบนัส, 52100 เงินได้อื่น, 52110 ประกันสังคมนายจ้าง, 52120 กองทุนสำรองเลี้ยงชีพนายจ้าง / Cr 21400 ประกันสังคมค้างจ่าย, 21300 ภ.ง.ด.1 ค้างจ่าย, 21410 กองทุนสำรองเลี้ยงชีพค้างจ่าย, 11720 ลูกหนี้พนักงาน (เงินกู้/หักอื่น), 11200 เงินฝาก (สุทธิ). Source = `runId` (one JV per run). Unknown category → posting error |
 
 - **Reports** (posted + reversed only; calendar fiscal year):
@@ -53,7 +58,13 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
   - general ledger `from`–`to` per account (or all accounts) — opening (ยอดยกมา), lines with running balance in the account's normal direction, closing (ยอดยกไป).
   - P&L for a month + YTD: sections revenue, cost of sales, gross profit, SG&A, other income, profit before tax, income tax, net profit (by `category`).
   - balance sheet as of a date: by category; equity + "prior years' unclosed P&L" + "current year net profit" (no closing entries needed); `totals.difference` = 0.
-  - VAT (ภ.พ.30) by month: output (role `vat_output`) and input (role `vat_input`) tax + base (`tax_base`), net payable / excess; `vat/lines` = the ภาษีขาย / ภาษีซื้อ register.
+  - VAT (ภ.พ.30) by month: output (role `vat_output`) and input (role `vat_input`) tax + base (`tax_base`; a reduction — purchase return, reversal — is negative).
+    **C11**: months are never netted — `net` = this month's output − input, `carried_in` = ภาษีชำระเกินยกมา (excess of the previous month; the chain starts at the
+    first month with VAT postings, across years), `payable`, `carry_forward` = ยอดภาษีซื้อเกินยกไป (assumes carry-forward, not a cash refund). Year row / `totals`:
+    Σ payable, `carryForward` out of December, `carriedIntoYear`; `totals.net` is kept for old clients only.
+  - `vat/lines` = the ภาษีขาย / ภาษีซื้อ register (C7/C8): per VAT line `tax_invoice_date`, `document_no` (the tax invoice number; the source reference when unknown),
+    `party_name` (seller/buyer — not the claimant), `party_tax_id`, `party_branch_label` (สำนักงานใหญ่ / สาขา n), base and tax with the sign of the
+    posting (returns negative), `ref` / `no` as references. Register totals = the ภ.พ.30 summary of the month.
   - WHT received (role `wht_receivable`): lines per receipt, by month and by customer, and the account balance (to chase 50 ทวิ and offset ภ.ง.ด.50/51).
 - Summary: revenue/expense/net this month (Bangkok), AR / AP / cash+bank balances, VAT payable (output − input), deposits held, drafts, open posting errors,
   `months[]` (6 × revenue, expense, net), `rows` (recent JVs with in-app `link`).
@@ -75,14 +86,23 @@ Permissions: `accounting.journal.read` (chart, journals, rules, errors, periods)
 
 ## Events
 - subscribes `sales.invoiced`, `sales.payment_received`, `purchasing.goods_received`, `purchasing.goods_returned`, `expense.claim_paid`, `payroll.run_paid` (table above)
-- publishes none
+- publishes `accounting.period_closed`, `accounting.period_reopened` (wave 8)
 
 ## Gaps
 - Closed in wave 5: invoice issue date, goods-receipt VAT split, expense category/VAT/pay method/paid date, payroll journal.
-- `purchasing.goods_received` has no receipt id (source = event id) — VAT is booked at receipt, as if the supplier's tax invoice came with the goods.
+- `purchasing.goods_received` has no receipt id (source = event id) — VAT is booked at receipt; the supplier's invoice no/date/tax ID shows in the register
+  when the store keyed it in at receipt (optional). A supplier invoice arriving later still needs a JV.
 - Cash advances (`expense` advances) publish no event → the advance payment is not booked; a claim that clears an advance is credited in full to cash/bank (JV note).
-- No supplier-invoice (AP bill) or supplier-payment event, no depreciation / COGS (inventory issue value) events → book by JV.
-- Deposits: no output VAT on deposits (sales issues no deposit tax invoice yet). WHT received has no base (`wht_base` not in the event).
+- No supplier-invoice (AP bill) or supplier-payment event, no depreciation events → book by JV.
+- **C6 — cost of sales (next step, not built):** today a delivery posts nothing, so ต้นทุนขาย is 0 and inventory only grows. Design:
+  1. `costing` (it owns the moving-average cost) subscribes `sales.delivered` and publishes a new event `costing.delivery_costed`
+     `{ orderId, orderNo, deliveryDate, warehouseCode, lines[{ itemId, itemCode, qty, unitCost, amount }], total }` — the value issued at the average cost at
+     delivery time (append its zod schema in contracts; costing lists it in `publishes`; accounting adds it to `subscribes` / `enhancedBy` costing).
+  2. accounting posts Dr 51100 ต้นทุนขาย (role `cogs`; new rule leg `cogs`, append to `DEFAULT_RULES`) / Cr 11400 สินค้าคงเหลือ (`inventory`) on `deliveryDate`,
+     source = orderId + delivery seq (one JV per delivery), partner = customer; a sales return (future `sales.returned`) reverses it at the same cost.
+  3. without costing installed: periodic method — a month-end JV from the stock count (inventory module's valuation report) — document it in the UI.
+  Same pattern later for production issues (WIP) and scrap.
+- Closed in wave 8: output VAT on deposits (C2) and period close → module lock dates (C5). WHT received now carries its base (`whtBase`, C4).
 
 ## Screens
 `src/ui.ts` (area `finance`, icon `book`): jvList (row post), jvNew (lines, post now), jvEdit, jvDetail (flow, lines, post / edit lines / cancel / reverse,

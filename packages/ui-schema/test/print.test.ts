@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { branchText, buyerInfo, signatureBoxes, companyContactLine, companyProblems, formatTaxId, isPrintable, printSpec, type DetailScreen } from '../src/index.ts';
+import { branchText, buyerBranchText, buyerInfo, buyerProblems, isJuristicTaxId, looksLikeCompany, printsOnPaper, signatureBoxes, companyContactLine, companyProblems, formatTaxId, isPrintable, printSpec, type DetailScreen } from '../src/index.ts';
 
 const base: DetailScreen = { kind: 'detail', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders/:id', heading: 'no', fields: [] };
 
@@ -11,14 +11,14 @@ describe('print spec', () => {
   });
 
   it('keeps `printable: true` working with defaults (title = screen title, company signatures)', () => {
-    expect(printSpec({ ...base, printable: true })).toEqual({ title: 'ใบสั่งซื้อ', signatures: [], copyLabel: false, legal: 'none' });
+    expect(printSpec({ ...base, printable: true })).toEqual({ title: 'ใบสั่งซื้อ', signatures: [], copyLabel: false, legal: 'none', footer: false });
     expect(printSpec({ ...base, printable: true }, ['ผู้จัดทำ', ' '])).toMatchObject({ signatures: [{ label: 'ผู้จัดทำ' }] });
   });
 
   it('uses the screen print options over the defaults', () => {
     const s = { ...base, print: { title: 'ใบกำกับภาษี / ใบเสร็จรับเงิน', signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'], copyLabel: true, legal: 'tax-invoice' as const } };
-    expect(printSpec(s, ['ไม่ใช้'])).toEqual({ title: 'ใบกำกับภาษี / ใบเสร็จรับเงิน', signatures: [{ label: 'ผู้รับเงิน' }, { label: 'ผู้มีอำนาจลงนาม' }], copyLabel: true, legal: 'tax-invoice' });
-    expect(printSpec({ ...base, print: {} })).toEqual({ title: 'ใบสั่งซื้อ', signatures: [], copyLabel: false, legal: 'none' });
+    expect(printSpec(s, ['ไม่ใช้'])).toEqual({ title: 'ใบกำกับภาษี / ใบเสร็จรับเงิน', signatures: [{ label: 'ผู้รับเงิน' }, { label: 'ผู้มีอำนาจลงนาม' }], copyLabel: true, legal: 'tax-invoice', footer: 'payment' });
+    expect(printSpec({ ...base, print: {} })).toEqual({ title: 'ใบสั่งซื้อ', signatures: [], copyLabel: false, legal: 'none', footer: false });
     // an explicit empty list means "no signature boxes", not "use the company default"
     expect(printSpec({ ...base, print: { signatures: [] } }, ['ผู้จัดทำ'])!.signatures).toEqual([]);
   });
@@ -32,6 +32,44 @@ describe('print spec', () => {
     expect(signatureBoxes(spec, { steps: [{ approver_name: 'ก' }] })).toEqual([{ label: 'ผู้ขออนุมัติ', name: undefined }, { label: 'ผู้อนุมัติ', name: 'ก' }]);
     // signers alone do not pull in the company default labels
     expect(printSpec({ ...base, print: { signers: { path: 'steps', label: 'ผู้อนุมัติ' } } }, ['ผู้จัดทำ'])!.signatures).toEqual([]);
+  });
+});
+
+describe('print footer and paper visibility', () => {
+  it('prints the company payment note only where it belongs', () => {
+    expect(printSpec({ ...base, print: { legal: 'tax-invoice' } })!.footer).toBe('payment');
+    expect(printSpec({ ...base, print: { legal: 'receipt' } })!.footer).toBe(false);
+    expect(printSpec({ ...base, print: { title: 'ใบสั่งซื้อ' } })!.footer).toBe(false);
+    expect(printSpec({ ...base, printable: true })!.footer).toBe(false);
+    expect(printSpec({ ...base, print: { footer: 'payment' } })!.footer).toBe('payment');
+    expect(printSpec({ ...base, print: { footer: true } })!.footer).toBe(true);
+    expect(printSpec({ ...base, print: { legal: 'tax-invoice', footer: false } })!.footer).toBe(false);
+  });
+
+  it('keeps status badges and print:false fields on screen only', () => {
+    expect(printsOnPaper({})).toBe(true);
+    expect(printsOnPaper({ format: 'money' })).toBe(true);
+    expect(printsOnPaper({ print: false })).toBe(false);
+    expect(printsOnPaper({ format: 'status' })).toBe(false);
+    expect(printsOnPaper({ format: 'status', print: true })).toBe(true);
+  });
+
+  it('warns (on screen) when a company buyer of a tax invoice has no tax ID, and defaults a juristic branch to head office', () => {
+    expect(looksLikeCompany('บริษัท ทดสอบ จำกัด')).toBe(true);
+    expect(looksLikeCompany('ห้างหุ้นส่วนจำกัด ก')).toBe(true);
+    expect(looksLikeCompany('หจก. ข')).toBe(true);
+    expect(looksLikeCompany('คุณสมชาย ใจดี')).toBe(false);
+    expect(isJuristicTaxId('0105558123451')).toBe(true);
+    expect(isJuristicTaxId('1-1001-00123-45-1')).toBe(false);
+    expect(buyerProblems({ name: 'บริษัท ก จำกัด', keys: [] }, 'tax-invoice')).toEqual(['ลูกค้าไม่มีเลขผู้เสียภาษี — ใบกำกับภาษีแบบเต็มต้องระบุ']);
+    expect(buyerProblems({ name: 'บริษัท ก จำกัด', keys: [] }, 'receipt')).toEqual([]);
+    expect(buyerProblems({ name: 'คุณสมชาย', keys: [] }, 'tax-invoice')).toEqual([]);
+    expect(buyerProblems({ name: 'บริษัท ก จำกัด', taxId: '0105558123451', branch: '00001', keys: [] }, 'tax-invoice')).toEqual([]);
+    expect(buyerProblems({ name: 'บริษัท ก จำกัด', taxId: '0105558123451', keys: [] }, 'tax-invoice')[0]).toMatch(/สาขา/);
+    expect(buyerProblems(null, 'tax-invoice')).toEqual([]);
+    expect(buyerBranchText({ name: 'x', taxId: '0105558123451', branch: '00001', keys: [] })).toBe('สาขาที่ 00001');
+    expect(buyerBranchText({ name: 'x', taxId: '0105558123451', keys: [] })).toBe('สำนักงานใหญ่');
+    expect(buyerBranchText({ name: 'x', taxId: '3100100123451', keys: [] })).toBe('');
   });
 });
 

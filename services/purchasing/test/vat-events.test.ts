@@ -6,7 +6,8 @@ import { parseEvent } from '@erp/contracts';
 import { definition } from '../src/service.ts';
 
 let t: TestService;
-beforeAll(async () => { t = await bootTestService(definition); });
+// one test user creates and approves here; segregation of duties is covered in sod.test.ts
+beforeAll(async () => { t = await bootTestService(definition); await t.api('PUT', '/settings', { creatorCannotApprove: false }); });
 afterAll(async () => { await t?.close(); });
 
 const steel = { itemId: randomUUID(), itemCode: 'RM-STEEL-V', itemName: 'เหล็กแผ่น' };

@@ -140,7 +140,8 @@ export interface SeedResult { tenant: string; email: string; password: string; c
 export async function seedDemo(stack: DemoStack, opts: { tenant?: string; installed?: string[] } = {}): Promise<SeedResult> {
   const tenant = opts.tenant ?? 'demo';
   const email = 'admin@demo.co.th', password = 'demo1234';
-  const has = (m: string) => (opts.installed ?? Object.keys(stack.services)).includes(m);
+  const modules = opts.installed ?? Object.keys(stack.services);
+  const has = (m: string) => modules.includes(m);
   const prov = await fetch(`${stack.urls.identity}/tenants`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-token': stack.internalToken },
     body: JSON.stringify({ code: tenant, name: 'บริษัท สยามพาร์ท เมทัลเวิร์ค จำกัด', admin: { email, name: 'สมศักดิ์ ศรีสวัสดิ์', password } }),
@@ -173,20 +174,12 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     await seedAutomation(call);
   }
 
-  // ---------------- people & roles ----------------
-  const roles: Record<string, string> = {};
-  for (const [name, permissions] of [
-    ['พนักงานคลัง', ['inventory.*', 'master.item.read']],
-    ['จัดซื้อ', ['purchasing.*', 'master.*', 'inventory.stock.read']],
-    ['ฝ่ายขาย', ['sales.*', 'master.*', 'inventory.stock.read']],
-    ['ช่างซ่อมบำรุง', ['maintenance.*', 'master.item.read', 'inventory.stock.read']],
-    ['วางแผนการผลิต', ['production.*', 'master.item.read', 'inventory.stock.read', 'costing.cost.read']],
-  ] as const) roles[name] = (await call('POST', '/api/identity/roles', { name, permissions })).id;
-  for (const [mail, name, role] of [
-    ['store@demo.co.th', 'สมชาย คลังดี', 'พนักงานคลัง'], ['buyer@demo.co.th', 'วิไลวรรณ จัดซื้อ', 'จัดซื้อ'],
-    ['sales@demo.co.th', 'ปิยะพงษ์ ขายเก่ง', 'ฝ่ายขาย'], ['tech@demo.co.th', 'ประเสริฐ ช่างใหญ่', 'ช่างซ่อมบำรุง'],
-    ['plan@demo.co.th', 'กมลชนก วางแผน', 'วางแผนการผลิต'],
-  ] as const) await call('POST', '/api/identity/users', { email: mail, name, password: 'demo1234', roleIds: [roles[role]] });
+  // ---------------- people & roles: Identity's suggested role templates, as a customer would set them up (wave 8, round-2 N3) ----------------
+  const roles = await business.templateRoles(call, modules, ['staff', 'warehouse', 'purchasing', 'sales', 'technician', 'pm', 'planner']);
+  for (const [mail, name] of [
+    ['store@demo.co.th', 'สมชาย คลังดี'], ['buyer@demo.co.th', 'วิไลวรรณ จัดซื้อ'], ['sales@demo.co.th', 'ปิยะพงษ์ ขายเก่ง'],
+    ['tech@demo.co.th', 'ประเสริฐ ช่างใหญ่'], ['plan@demo.co.th', 'กมลชนก วางแผน'],
+  ] as const) await call('POST', '/api/identity/users', { email: mail, name, password: 'demo1234', roleIds: business.demoRoleIds(mail, roles) });
 
   // ---------------- master data ----------------
   const items: Record<string, { itemId: string; itemCode: string; itemName: string }> = {};
@@ -243,13 +236,22 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
 
   // ---------------- purchasing: 6 months of buying ----------------
   if (has('purchasing')) {
+    // segregation of duties (wave 8): the buyer raises the PO, the MD (admin) approves it, the store receives the goods
+    const buyer = await loginAs('buyer@demo.co.th');
+    const store = has('inventory') ? await loginAs('store@demo.co.th') : call;
     const buy = async (when: string, supplier: string, wh: string, lines: [string, number, number][], receive: boolean, approve = true) => {
-      const po = await call('POST', '/api/purchasing/purchase-orders', {
+      const po = await buyer('POST', '/api/purchasing/purchase-orders', {
         supplierId: partners[supplier].id, supplierName: partners[supplier].name, warehouseCode: wh, orderDate: notAfterToday(when),
         lines: lines.map(([c, qty, unitPrice]) => ({ ...items[c], qty, unitPrice })),
       });
       if (approve) await call('POST', `/api/purchasing/purchase-orders/${po.id}/approve`);
-      if (receive) await call('POST', `/api/purchasing/purchase-orders/${po.id}/receive`, {});
+      // C8: the supplier's tax invoice came with the goods (number/date/tax ID → the purchase VAT register)
+      if (receive) {
+        await store('POST', `/api/purchasing/purchase-orders/${po.id}/receive`, {
+          supplierInvoiceNo: `IV${String(po.no).slice(-7).replace('-', '')}`, supplierInvoiceDate: notAfterToday(when),
+          ...(partners[supplier].tax_id ? { supplierTaxId: partners[supplier].tax_id, supplierBranch: '00000' } : {}),
+        });
+      }
       return po;
     };
     for (let m = 5; m >= 1; m--) {
@@ -348,7 +350,7 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
   }
 
   // office & service modules: HR, approvals, expense, booking, CRM, helpdesk, projects, assets, QC results
-  await business.seedBusiness({ call, loginAs, has, items, partners });
+  await business.seedBusiness({ call, loginAs, has, modules, items, partners });
 
   await settle();
   // from now on (the visitor's own goods receipts) lots waiting for incoming QC sit in QC-HOLD until they pass

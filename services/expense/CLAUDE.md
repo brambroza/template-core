@@ -4,11 +4,14 @@ Employees claim what they paid for the company (fuel, travel, entertainment, hot
 Cash advances (เงินทดรองจ่าย) are paid out before the trip and cleared against the claim afterwards. Requires only `identity`.
 
 ## Data
-- `expense_categories` — `code`, `name`, `monthly_limit?` (per person per calendar month, incl. VAT), `requires_receipt`, `note`, `active`
+- `expense_categories` — `code`, `name`, `monthly_limit?` (per person per calendar month, incl. VAT), `requires_receipt`, `note`, `active`,
+  `vat_claimable` (migration 004, C3: may its VAT be credited as ภาษีซื้อ; null = decided from the name — see Behaviour)
 - `claims` — `EXP-2569-0001`, claimant (`claimant_id` = token user, `claimant_name`, `department`), `purpose`, `claim_date`,
   `status draft → submitted → approved → paid`, or `rejected | returned | cancelled`; `net`, `vat`, `total`; `over_limit`, `warnings` jsonb;
   `last_note`, `approved_by` + `approved_by_name`, pay info (`paid_date`, `pay_method transfer|cash|cheque`, `pay_reference`, `paid_by` + `paid_by_name`), cleared advance (`advance_id`, `advance_no`, `advance_amount`)
-- `claim_lines` — `expense_date`, category snapshot (`category_id/code/name`, `receipt_required`), `description`, `amount`, `vat`, `total`, `receipt_no`
+- `claim_lines` — `expense_date`, category snapshot (`category_id/code/name`, `receipt_required`), `description`, `amount`, `vat`, `total`, `receipt_no`,
+  (migration 004) `receipt_type full_tax_invoice | abbreviated | none`, seller `vendor_name` / `vendor_tax_id` / `vendor_branch`, `vat_claimable` (computed on save;
+  null = line written before C3, treated as claimable)
 - `advances` — `ADV-2569-0001`, requester (`requester_id` = token user, `requester_name`), `approved_by_name`, `paid_by` + `paid_by_name`, `purpose`, `amount`, `needed_by`, `status requested → approved → paid → cleared` or `rejected | cancelled`,
   pay info, clearing (`claim_id` unique, `claim_no`, `claim_total`, `settle_amount = claim_total - amount`)
 
@@ -19,38 +22,57 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 - Monthly limit **never blocks**: on create / line change / submit / reject / cancel the claim's `warnings` are recomputed —
   usage = the claimant's line totals in that category and month on every claim not rejected/cancelled (incl. drafts). `over_limit` = any limit warning.
   Warnings are a snapshot of the claim's last change; other claims are not re-evaluated.
-- Lines: VAT ≤ amount and expense date ≤ today (Bangkok) (400). Submitting a claim totalling 0 → 400. Approvers cannot approve their own claim or advance (403).
+- Lines: VAT ≤ amount and expense date ≤ today (Bangkok) (400). **C3**: VAT must be 0 or 7% of the amount (± 1 baht) — else 400 Thai
+  ("ไม่ใช่ 7% …"; a shop not registered for VAT = VAT 0, total in the amount). `vendorTaxId` must be a valid 13-digit tax ID (400).
+- **Input VAT eligibility (C3, §82/5)**: a line's VAT is claimable only when the category is claimable **and** `receiptType` = `full_tax_invoice`
+  **and** the seller's tax ID is given. `receiptType` defaults to `full_tax_invoice` when VAT > 0, else `none`. Category default: `vatClaimable` given on
+  create/update, else false when the name/code matches ค่ารับรอง / entertain / รถยนต์นั่ง / รถเก๋ง / passenger car (ภาษีซื้อต้องห้าม), true otherwise
+  (existing categories with null are decided the same way when read). Non-claimable VAT never blocks: a `vat` warning per line ("… VAT 336.00 บาท ลงเป็นค่าใช้จ่าย"),
+  the claim shows `input_vat` (creditable) and `vat_expensed`; the total paid to the employee is unchanged. Submitting a claim totalling 0 → 400. Approvers cannot approve their own claim or advance (403).
 - `requires_receipt`: a line without `receiptNo` gives a `receipt` warning on drafts and **blocks submit** (400).
 - Owner actions (edit, lines, submit, cancel) — claimant, or a user with `expense.claim.approve`. Approve / reject (note) / return (note) — `expense.claim.approve`. Pay — `expense.claim.pay`.
 - Visibility: users with approve or pay perms see everybody; everyone else only their own (others' records → 404).
 - Advance clearing (`expense.claim.pay`): advance must be `paid`, the claim must be the same employee's, `approved` (not yet paid — a paid claim cannot absorb the advance, 409), and not already clearing another advance.
   `settle_amount > 0` company pays more; `< 0` employee returns cash (`settle_text` in Thai). The claim's `net_payable = total - advance_amount`.
 - Wrong status → 409.
+- Segregation of duties (wave 8, round-2 blocker #1): `settings.separate_payer` (default **true**, no row = default) — whoever approved a claim/advance
+  cannot record its payment, and nobody pays their own claim/advance (403 Thai). Claims over a monthly limit (re-checked at approval with
+  `refreshWarnings`) can be approved only with `expense.claim.approve-over-limit` (executive template), so the line approver / accounting cannot.
+- Dates (wave 8, round-2 #4 / C10): claim date, claim / advance paid date and "this month" in limits, reports and the dashboard use `thaiToday()` (kernel clock,
+  Asia/Bangkok) — never SQL `current_date` (UTC: 00:00–07:00 would be yesterday). `paidDate` may not be in the future (400).
+- Lock date (wave 8, C5; kernel `_lock_date`): claim and advance payments dated on/before it → 409 unless `expense.lock.override` + `lockOverrideReason` (in `_audit`).
+  Moves forward on `accounting.period_closed`, steps back on `accounting.period_reopened`; manual `POST /lock`.
 
 - Attachments (`claim`, `advance` via kernel `/_attachments`): visibility follows the record; the owner may add/remove files only while a claim is `draft|submitted|returned` (advance: `requested`) — afterwards 409 (bugs-0.4 EXP-06). Approvers/payers may still add (transfer slip); `expense.attachment.delete` may delete.
 
 ## API
 - `GET/POST /categories` (`?q`, `?active`) · `GET/PUT /categories/:id` (detail has `used_this_month` — company-wide for approvers/payers, the caller's own spend for staff)
-- `POST /claims { purpose, department?, claimantName? (nameless tokens only), claimDate?, lines[{ expenseDate, categoryId, description?, amount, vat?, receiptNo? }], submit? }` → includes `warnings`
+- `POST /claims { purpose, department?, claimantName? (nameless tokens only), claimDate?, lines[{ expenseDate, categoryId, description?, amount, vat?, receiptNo?,
+  receiptType?, vendorName?, vendorTaxId?, vendorBranch? }], submit? }` → includes `warnings`, `input_vat`, `vat_expensed`
+- categories: `vatClaimable?` on POST / PUT; reads return the effective `vat_claimable` (+ `vat_claimable_set`)
 - `GET /claims` (`?q`, `?status`, `?mine=1`, `?from`, `?to`, `limit` 200) · `GET /my-claims` · `GET /claims/:id` · `PUT /claims/:id` · `PUT /claims/:id/lines`
-- `POST /claims/:id/submit | approve {note?} | reject {note} | return {note} | pay {method, paidDate?, reference?} | cancel`
+- `POST /claims/:id/submit | approve {note?} | reject {note} | return {note} | pay {method, paidDate?, reference?, lockOverrideReason?} | cancel`
 - `POST /advances` · `GET /advances` · `GET /advances/:id` · `POST /advances/:id/approve | reject {note} | pay | cancel | clear {claimId}`
 - `GET /reports/by-category?month=YYYY-MM` · `GET /reports/outstanding` → `{ items (approved claims to pay), advances (paid, not cleared), toPayTotal, advanceTotal }`
+- `GET /lock` (`expense.claim.pay` or `expense.lock.write`) · `POST /lock { lockDate | null }` (`expense.lock.write`, not in the future) · advance `pay` also takes `paidDate?`, `lockOverrideReason?`
+- `GET /settings` (`expense.claim.read`) → `{ separatePayer }` · `PUT /settings { separatePayer }` (`expense.settings.write`, admin only)
 - `GET /summary` → `toApprove, overLimit, toPay, toPayAmount, paidThisMonth, claimedThisMonth, myOpen, advancesToApprove, advancesOutstanding, byCategory[], months[{month,total,claims}], rows[]`
 
-Permissions: `expense.claim.read | write | approve | pay`, `expense.category.write`.
+Permissions: `expense.claim.read | write | approve | pay`, `expense.claim.approve-over-limit`, `expense.settings.write`, `expense.category.write`, `expense.lock.write` (set the lock date), `expense.lock.override` (pay into a locked period with a reason).
 
 ## Events
 - publishes `expense.claim_submitted` (claimId, no, claimantName, total, overLimit, claimantId — after limit warnings are refreshed) on submit (also `POST /claims { submit: true }`).
 - publishes `expense.claim_paid` (claimId, no, claimantName, total, claimantId) on pay — automation's expense-paid-to-claimant alerts the claimant personally.
   Wave 5 (optional fields): `paidDate`, `payMethod` (transfer|cash|cheque), `department`, `lines[{ categoryCode, categoryName, amount (before VAT), vat, description }]`,
   and `advanceNo` / `advanceAmount` when the claim cleared a cash advance — Accounting posts each category to its mapped expense account + ภาษีซื้อ, from cash or bank, on the paid date.
-- subscribes: none. Candidates (not added): `expense.claim_approved`, advances events → an accounting module (post the expense journal).
+  Wave 8 (C3/C7, optional per line): `vatClaimable` (false → accounting puts the VAT into the expense account), `receiptType`, `expenseDate`, `vendorName`,
+  `vendorTaxId`, `vendorBranch`, `receiptNo` (the seller's tax invoice for the purchase VAT register).
+- subscribes `accounting.period_closed` / `accounting.period_reopened` (lock date; accounting is `enhancedBy`). Candidates (not added): `expense.claim_approved`, advances events → an accounting module (post the expense journal).
 
 ## Screens
 `src/ui.ts`: myClaims (mobile), claims (all, row approve), claimNew (mobile, lines), claimEdit, claimDetail (flow, lines + warnings, actions, printable),
 toPay (row action pay), advances / advancesOpen / advanceNew (mobile) / advanceDetail (flow, clear with claim lookup, printable),
-byCategory, monthly, categories / categoryNew / categoryEdit / categoryDetail.
+byCategory, monthly, categories / categoryNew / categoryEdit / categoryDetail, settings (ตั้งค่าการควบคุม: separatePayer — wave 8).
 Finance visibility: `claims` (ใบเบิกทั้งหมด), by-category, monthly and the widgets need `expense.claim.approve`; `toPay` and `advancesOpen` need `expense.claim.pay`.
 Staff (read/write only) see `myClaims`, `claimNew`, `advances` (their own) and the category rules; the API also scopes every list/report to their own rows.
 Widgets (approvers): kpi, bars (`byCategory`), trend (`months`). ⌘K: `เบิก <เรื่อง>`, `เบิกล่วงหน้า <เรื่อง>`, `รอจ่าย`, `ใบเบิกของฉัน`. Search: claims, advances.

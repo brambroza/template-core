@@ -74,7 +74,7 @@ export const definition: ServiceDefinition = {
         const m = await priceMaterials(c, b.materials);
         if (m.missing.length) {
           reply.code(422);
-          return { error: { code: 'missing_costs', message: `No cost for: ${m.missing.join(', ')}`, details: m.missing } };
+          return { error: { code: 'missing_costs', message: `ยังไม่มีต้นทุนของ: ${m.missing.join(', ')} — บันทึกราคาซื้อหรือต้นทุนมาตรฐานก่อน`, details: m.missing } };
         }
         const labor = round(b.laborHours * b.laborRatePerHour, 4);
         const overhead = round(((m.total + labor) * b.overheadPct) / 100, 4);

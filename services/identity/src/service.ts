@@ -164,14 +164,14 @@ export const definition: ServiceDefinition = {
       if (!tenant) {
         verifyPassword(body.password, DUMMY_HASH);
         noteLoginFailure(key);
-        throw unauthorized('Invalid credentials');
+        throw unauthorized(`รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง`);
       }
       return k.db.tx(tenant.id, async (c) => {
         const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
         const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
         if (!ok) {
           noteLoginFailure(key);
-          throw unauthorized('Invalid credentials');
+          throw unauthorized(`รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง`);
         }
         loginFailures.delete(key);
         const perms = await permissionsOf(c, u.id);

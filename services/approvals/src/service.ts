@@ -1,5 +1,6 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, TODAY_SQL, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -82,7 +83,8 @@ const STEP_TH: Record<string, string> = { waiting: 'รอ', approved: 'อน�
 const isAdmin = (a: AuthContext) => hasPerm(a, 'approvals.request.admin');
 
 /** Today in Thailand (delegation ranges are calendar dates). */
-const TODAY = `(now() at time zone 'Asia/Bangkok')::date`;
+/** today's Thai date in SQL — the kernel clock's day (app.today, set by db.tx; follows setClock in tests) */
+const TODAY = TODAY_SQL;
 /** SQL predicate on a delegations row `alias`: in force today. */
 const inForce = (alias: string) => `${alias}.cancelled_at is null and ${TODAY} between ${alias}.starts_on and ${alias}.ends_on`;
 /** SQL predicate: user `$p` may act for approver `col` today because of a delegation. */
@@ -163,7 +165,7 @@ async function replaceSteps(c: Client, requestId: string, approvers: { userId: s
 }
 
 function requireOwner(r: any, a: AuthContext) {
-  if (r.requester_id !== a.userId && !isAdmin(a)) throw forbidden('Only the requester (or an approvals admin) can do this');
+  if (r.requester_id !== a.userId && !isAdmin(a)) throw forbidden(`ทำได้เฉพาะผู้ขออนุมัติ หรือผู้ดูแลงานอนุมัติ`);
 }
 
 /** Tell whoever is next on the chain (automation turns this into a LINE / in-app alert). */
@@ -180,8 +182,8 @@ async function emitReachedApprover(k: Kernel, c: Client, r: any, stepNo: number)
 }
 
 async function submit(k: Kernel, c: Client, r: any, a: AuthContext) {
-  if (!['draft', 'returned'].includes(r.status)) throw conflict(`Cannot submit a ${r.status} request`);
-  if (r.step_count < 1) throw badRequest('Add at least one approver before submitting');
+  if (!['draft', 'returned'].includes(r.status)) throw conflict(`ส่งขออนุมัติไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
+  if (r.step_count < 1) throw badRequest(`เพิ่มผู้อนุมัติอย่างน้อย 1 คนก่อนส่งขออนุมัติ`);
   await c.query(`update request_steps set status = 'waiting', acted_by = null, acted_at = null, note = null where request_id = $1`, [r.id]);
   await c.query(`update requests set status = 'pending', current_step = 1, submitted_at = now(), decided_at = null, decided_by = null, last_note = null, updated_at = now() where id = $1`, [r.id]);
   await history(c, r, a, 'submitted');
@@ -191,10 +193,10 @@ async function submit(k: Kernel, c: Client, r: any, a: AuthContext) {
 /** Approve / reject / return the current step. Only that step's approver, their delegate for today, or an approvals admin may act. */
 async function decide(k: Kernel, c: Client, id: string, a: AuthContext, action: 'approved' | 'rejected' | 'returned', note: string | undefined) {
   const r = await loadRequest(c, id, a, true);
-  if (r.status !== 'pending') throw conflict(`Cannot ${action === 'approved' ? 'approve' : action === 'rejected' ? 'reject' : 'return'} a ${r.status} request`);
+  if (r.status !== 'pending') throw conflict(`${action === 'approved' ? 'อนุมัติ' : action === 'rejected' ? 'ไม่อนุมัติ' : 'ส่งกลับแก้ไข'}ไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
   const own = r.current_approver_id === a.userId;
   const deleg = own ? null : await delegationFor(c, r.current_approver_id, a.userId);
-  if (!own && !deleg && !isAdmin(a)) throw forbidden(`Step ${r.current_step} is waiting for ${r.current_approver_name ?? 'another approver'}`);
+  if (!own && !deleg && !isAdmin(a)) throw forbidden(`ขั้นที่ ${r.current_step} รอ ${r.current_approver_name ?? 'ผู้อนุมัติคนอื่น'} พิจารณา — บัญชีนี้ยังไม่ใช่ผู้อนุมัติขั้นนี้`);
   if (action === 'approved' && r.requester_id === a.userId) throw forbidden('อนุมัติคำขอของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นหรือผู้ดูแลระบบอนุมัติแทน');
   const step = r.current_step;
   // a delegate or an admin acts on behalf of the step's approver; the trail says so ("แทน …")
@@ -306,7 +308,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadType(c, id);
         const used = (await c.query('select count(*)::int as n from requests where type_id = $1', [id])).rows[0].n;
-        if (used > 0) throw conflict(`Type ${t.code} is used by ${used} request(s); deactivate it instead`);
+        if (used > 0) throw conflict(`ประเภท ${t.code} มีคำขอใช้อยู่ ${used} รายการ — ลบไม่ได้ ให้ปิดการใช้งานแทน`);
         await c.query('delete from request_types where id = $1', [id]);
         return { deleted: true, id };
       });
@@ -321,7 +323,7 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const type = await loadType(c, b.typeId);
-        if (!type.active) throw conflict(`Request type ${type.code} is inactive`);
+        if (!type.active) throw conflict(`ประเภทคำขอ ${type.code} ปิดการใช้งานแล้ว`);
         // an empty list (e.g. a form with no approver lines filled) means "use the type's default chain"
         const custom = !!b.approvers?.length && JSON.stringify(b.approvers.map((x) => x.userId)) !== JSON.stringify(type.approvers.map((x: any) => x.userId));
         if (custom && type.lock_approvers && !isAdmin(a)) throw forbidden(`ประเภทคำขอ "${type.name}" กำหนดสายอนุมัติไว้แล้ว ผู้ขอเลือกผู้อนุมัติเองไม่ได้`);
@@ -426,7 +428,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const r = await loadRequest(c, id, a, true);
         requireOwner(r, a);
-        if (!['draft', 'returned'].includes(r.status)) throw conflict(`Cannot edit a ${r.status} request`);
+        if (!['draft', 'returned'].includes(r.status)) throw conflict(`แก้ไขไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
         const set = (v: unknown) => v !== undefined;
         // the requester's own name comes from the token; a typed name only counts for an admin fixing someone else's request
         if (r.requester_id === a.userId && a.userName) b.requesterName = a.userName;
@@ -456,7 +458,7 @@ export const definition: ServiceDefinition = {
         const r = await loadRequest(c, id, a, true);
         requireOwner(r, a);
         if (r.lock_approvers && !isAdmin(a)) throw forbidden(`ประเภทคำขอ "${r.type_name}" กำหนดสายอนุมัติไว้แล้ว ผู้ขอเปลี่ยนผู้อนุมัติเองไม่ได้`);
-        if (!['draft', 'returned'].includes(r.status)) throw conflict(`Cannot change approvers of a ${r.status} request`);
+        if (!['draft', 'returned'].includes(r.status)) throw conflict(`เปลี่ยนผู้อนุมัติไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
         await replaceSteps(c, id, b.approvers);
         await history(c, r, a, 'approvers_changed', b.approvers.map((x) => x.userName ?? x.userId).join(' → '));
         return loadRequest(c, id, a);
@@ -507,7 +509,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const r = await loadRequest(c, id, a, true);
         requireOwner(r, a);
-        if (!['draft', 'pending', 'returned'].includes(r.status)) throw conflict(`Cannot cancel a ${r.status} request`);
+        if (!['draft', 'pending', 'returned'].includes(r.status)) throw conflict(`ยกเลิกไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
         await c.query(`update requests set status = 'cancelled', current_step = 0, last_note = coalesce($2, last_note), updated_at = now() where id = $1`, [id, b.note ?? null]);
         await history(c, r, a, 'cancelled', b.note);
         return loadRequest(c, id, a);

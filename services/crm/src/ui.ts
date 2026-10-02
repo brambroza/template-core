@@ -256,7 +256,7 @@ export default defineUi({
     },
     quote: {
       kind: 'detail', title: 'ใบเสนอราคา', endpoint: '/quotations/:id', perm: 'crm.quote.read', heading: 'no', attachments: { entity: 'quotation', label: 'ไฟล์ลูกค้า / ใบเสนอราคาที่เซ็นแล้ว' }, mobile: true,
-      print: { title: 'ใบเสนอราคา', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันการสั่งซื้อ'] },
+      print: { title: 'ใบเสนอราคา', footer: 'payment', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันการสั่งซื้อ'] },
       flow: {
         field: 'status',
         steps: [{ value: 'draft', label: 'ร่าง' }, { value: 'sent', label: 'ส่งลูกค้า' }, { value: 'accepted', label: 'ลูกค้าตอบรับ' }],
@@ -266,10 +266,10 @@ export default defineUi({
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'customer_tax_id', label: 'เลขผู้เสียภาษี' },
         { key: 'customer_branch', label: 'สาขา' }, { key: 'customer_address', label: 'ที่อยู่' }, { key: 'contact_name', label: 'เรียน' },
         { key: 'issue_date', label: 'วันที่', format: 'date' }, { key: 'valid_until', label: 'ยืนราคาถึง', format: 'date' },
-        { key: 'opportunity_no', label: 'โอกาสขาย' }, { key: 'revision_of_no', label: 'แก้ไขจากใบ' },
+        { key: 'opportunity_no', label: 'โอกาสขาย', print: false }, { key: 'revision_of_no', label: 'แก้ไขจากใบ' },
         { key: 'subtotal', label: 'รวมก่อนส่วนลด', format: 'money' }, { key: 'discount', label: 'ส่วนลด', format: 'money' },
         { key: 'net', label: 'ก่อน VAT', format: 'money' }, { key: 'vat', label: 'VAT 7%', format: 'money' }, { key: 'gross', label: 'ยอดรวมทั้งสิ้น', format: 'money' },
-        { key: 'gross_text', label: 'ตัวอักษร' }, { key: 'note', label: 'เงื่อนไข/หมายเหตุ' }, { key: 'reject_reason', label: 'เหตุผลที่ปฏิเสธ' },
+        { key: 'gross_text', label: 'ตัวอักษร' }, { key: 'note', label: 'เงื่อนไข/หมายเหตุ' }, { key: 'reject_reason', label: 'เหตุผลที่ปฏิเสธ', print: false },
       ],
       lines: [{
         path: 'lines', label: 'รายการ',

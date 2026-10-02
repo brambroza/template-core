@@ -64,6 +64,11 @@ export interface Column {
   hideZero?: boolean;
   /** `false`: leave this column out on phone-width screens (web) — secondary columns of a report that stays a table */
   phone?: boolean;
+  /**
+   * printed documents (detail facts and line columns): `false` = screen only, never on paper (status, owner, internal notes,
+   * receiving progress). Facts with `format: 'status'` are screen only by default; `print: true` prints them anyway.
+   */
+  print?: boolean;
 }
 
 /**
@@ -235,7 +240,7 @@ export interface DetailScreen extends ScreenBase {
   flow?: StatusFlow;
   fields: Column[];
   /** `half: true` sections sit side by side in pairs on wide screens and paper (earnings | deductions on a payslip) */
-  lines?: { path: string; label: string; columns: Column[]; half?: boolean }[];
+  lines?: { path: string; label: string; columns: Column[]; half?: boolean; /** `false`: screen only (payments received on an invoice) */ print?: boolean }[];
   actions?: Action[];
   edit?: string;
   /** shorthand for `print: {}` — printable with the default layout */
@@ -277,6 +282,13 @@ export interface PrintOptions {
   copyLabel?: boolean;
   /** legal form: 'tax-invoice' / 'receipt' print the buyer block and require the seller's tax ID */
   legal?: 'tax-invoice' | 'receipt' | 'none';
+  /**
+   * the company's document note (identity "หมายเหตุท้ายเอกสาร", usually payment terms such as "ชำระภายใน 30 วัน…"):
+   * `'payment'` = print it as the payment-terms block (invoices, quotations), `true` = print it as a plain note,
+   * `false` = never. Default: `'payment'` on `legal: 'tax-invoice'`, otherwise not printed — POs, receipts, claims,
+   * payslips, 50 ทวิ, QC/NCR and approvals never carry "please pay within 30 days".
+   */
+  footer?: boolean | 'payment';
 }
 
 export type Screen = ListScreen | FormScreen | DetailScreen;
@@ -529,6 +541,16 @@ export function fillPath(template: string, ...sources: Record<string, unknown>[]
 }
 
 /**
+ * The example shown in the ⌘K box ("พิมพ์ค้นหา หรือสั่งงาน เช่น “…”"): the first command the user can run, in module
+ * order (preferring an example with an argument) — so an office that bought approvals/hr sees its own example, never a factory item. Null when none.
+ */
+export function commandExample(modules: Pick<ModuleUi, 'commands' | 'screens'>[], perms: string[]): string | null {
+  const usable = modules.flatMap((m) => (m.commands ?? []).filter((x) => x.example && hasPerm(perms, x.perm) && hasPerm(perms, m.screens[x.screen]?.perm)));
+  // a full sentence ("ลา ป่วย ไข้หวัด") teaches more than a bare keyword ("สลิป")
+  return (usable.find((c) => c.example.trim().includes(' ')) ?? usable[0])?.example ?? null;
+}
+
+/**
  * Match typed text against a module's commands. Returns the command and the text after the keyword
  * split into the lookup word and the rest ("แจ้งซ่อม PRESS-01 น้ำมันรั่ว" -> arg "PRESS-01", rest "น้ำมันรั่ว").
  */
@@ -599,6 +621,12 @@ export const STATUS_TH: Record<string, string> = {
   pass: 'ผ่าน', fail: 'ไม่ผ่าน', conditional: 'ผ่านแบบมีเงื่อนไข', minor: 'เล็กน้อย', major: 'สำคัญ', critical: 'วิกฤต',
   room: 'ห้อง', vehicle: 'รถ', equipment: 'อุปกรณ์',
 };
+
+/** Thai wording of a status code for messages ("ร่าง", "อนุมัติแล้ว"); unknown codes come back unchanged. Server-safe. */
+export function statusTh(status: string | null | undefined): string {
+  const st = status ?? '';
+  return STATUS_TH[st] ?? st;
+}
 
 export type Tone = 'neutral' | 'progress' | 'ok' | 'warn' | 'stop';
 
@@ -954,6 +982,8 @@ export interface ResolvedPrint {
   signers?: { path: string; label: string; name?: string };
   copyLabel: boolean;
   legal: 'tax-invoice' | 'receipt' | 'none';
+  /** company note under the signatures: false = none, true = plain note, 'payment' = payment-terms block */
+  footer: boolean | 'payment';
 }
 
 export const COPY_LABELS = ['ต้นฉบับ', 'สำเนา'] as const;
@@ -980,7 +1010,47 @@ export function printSpec(screen: { kind: string; title: string; printable?: boo
     ...(p.signers ? { signers: p.signers } : {}),
     copyLabel: !!p.copyLabel,
     legal: p.legal ?? 'none',
+    footer: p.footer ?? (p.legal === 'tax-invoice' ? 'payment' : false),
   };
+}
+
+/**
+ * Whether a detail fact / line column / line section goes on paper: `print: false` never does; a `format: 'status'`
+ * badge does not unless `print: true` (a status changes after the paper leaves — "ร่าง", "ชำระครบ").
+ */
+export function printsOnPaper(f: { print?: boolean; format?: Format }): boolean {
+  if (f.print === false) return false;
+  if (f.format === 'status') return f.print === true;
+  return true;
+}
+
+/** Thai juristic-person names: บริษัท…จำกัด, ห้างหุ้นส่วน…, บจก./บมจ./หจก. */
+export function looksLikeCompany(name?: string | null): boolean {
+  return /^\s*(บริษัท|ห้างหุ้นส่วน|บจก\.?|บมจ\.?|หจก\.?)/.test(name ?? '');
+}
+
+/** A 13-digit tax ID of a juristic person starts with 0 (a personal ID card number starts with 1–8). */
+export function isJuristicTaxId(id?: string | null): boolean {
+  const d = (id ?? '').replace(/[\s-]/g, '');
+  return /^0\d{12}$/.test(d);
+}
+
+/**
+ * What the buyer block of this document lacks, in Thai, for an on-screen warning (never printed).
+ * A full tax invoice (§86/4) to a juristic person needs the buyer's tax ID and branch.
+ */
+export function buyerProblems(buyer: PartyInfo | null | undefined, legal: ResolvedPrint['legal']): string[] {
+  if (legal !== 'tax-invoice' || !buyer) return [];
+  const out: string[] = [];
+  if (!buyer.taxId && looksLikeCompany(buyer.name)) out.push('ลูกค้าไม่มีเลขผู้เสียภาษี — ใบกำกับภาษีแบบเต็มต้องระบุ');
+  if (buyer.taxId && isJuristicTaxId(buyer.taxId) && !buyer.branch) out.push('ลูกค้าไม่ได้ระบุสาขา — ใบกำกับภาษีจะพิมพ์ว่า "สำนักงานใหญ่" (แก้ที่ข้อมูลลูกค้าถ้าเป็นสาขาอื่น)');
+  return out;
+}
+
+/** Branch wording printed in the buyer block: the record's branch, else "สำนักงานใหญ่" for a juristic tax ID, else none. */
+export function buyerBranchText(buyer: PartyInfo): string {
+  if (buyer.branch) return branchText(buyer.branch);
+  return isJuristicTaxId(buyer.taxId) ? branchText('00000') : '';
 }
 
 /** The signature boxes of one record: static boxes with names filled in, then one box per `signers` row. */

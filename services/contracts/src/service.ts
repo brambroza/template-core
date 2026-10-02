@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, TODAY_SQL, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { addDays, addMonths, billingSchedule, pmDueDates, renewalPeriod, todayBkk, type BillingPlan } from './schedule.ts';
@@ -85,7 +85,8 @@ const CompleteInput = z.object({
 /* ---------------- helpers ---------------- */
 
 /** Today in Thailand, as SQL. */
-const TODAY = `((now() at time zone 'Asia/Bangkok')::date)`;
+/** today's Thai date in SQL — the kernel clock's day (app.today, set by db.tx; follows setClock in tests) */
+const TODAY = TODAY_SQL;
 
 const PLAN_LABEL = `case c.billing_plan when 'one_time' then 'ครั้งเดียว' when 'monthly' then 'รายเดือน' when 'quarterly' then 'รายไตรมาส' else 'รายปี' end`;
 const CONTRACT_SELECT = `select c.*,
@@ -594,11 +595,11 @@ export const definition: ServiceDefinition = {
         const open = (await c.query('select count(*)::int as n from visit_checks where visit_id = $1 and result is null', [id])).rows[0].n;
         if (open) throw conflict(`ยังไม่ได้บันทึกผลตรวจ ${open} รายการ — บันทึกให้ครบ หรือเลือก "รายการที่เหลือ = ผ่าน"`);
         await c.query(
-          `update visits set status = 'done', done_on = coalesce($2::date, ${TODAY}), done_at = now(), signoff_name = $3, findings = $4,
+          `update visits set status = 'done', done_on = coalesce($2::date, $7::date), done_at = now(), signoff_name = $3, findings = $4,
              started_at = coalesce(started_at, now()), completed_by_name = $5,
              technician_name = case when technician_id is null then $5 else technician_name end, technician_id = coalesce(technician_id, $6), updated_at = now()
            where id = $1`,
-          [id, b.doneOn ?? null, b.signoffName, b.findings ?? null, a.userName ?? null, a.userId]);
+          [id, b.doneOn ?? null, b.signoffName, b.findings ?? null, a.userName ?? null, a.userId, todayBkk()]);
         return loadVisit(c, id);
       });
     });
@@ -688,8 +689,8 @@ export const definition: ServiceDefinition = {
         const i = await one(c, 'select i.*, c.status, c.no from installments i join contracts c on c.id = i.contract_id where i.id = $1 for update of i', [id], 'Installment');
         if (!['active', 'expired'].includes(i.status)) throw conflict(`${i.no} สถานะ ${i.status} — วางบิลไม่ได้`);
         if (i.invoiced) throw conflict(`งวดที่ ${i.seq} ของ ${i.no} วางบิลแล้ว (${i.invoice_no})`);
-        await c.query(`update installments set invoiced = true, invoice_no = $2, invoiced_on = coalesce($3::date, ${TODAY}), invoiced_by_name = $4 where id = $1`,
-          [id, b.invoiceNo, b.invoicedOn ?? null, a.userName ?? null]);
+        await c.query(`update installments set invoiced = true, invoice_no = $2, invoiced_on = coalesce($3::date, $5::date), invoiced_by_name = $4 where id = $1`,
+          [id, b.invoiceNo, b.invoicedOn ?? null, a.userName ?? null, todayBkk()]);
         return { ...(await c.query('select * from installments where id = $1', [id])).rows[0], message: `บันทึกวางบิลงวดที่ ${i.seq} ของ ${i.no} เลขที่ ${b.invoiceNo} แล้ว` };
       });
     });

@@ -13,6 +13,7 @@ disposes assets with gain/loss, and a yearly physical audit is done by scanning 
 - `asset_audits` (`AU-2569-0001`, location, `open → closed`) · `asset_audit_lines` (expected, scanned_at, result `found | missing | unexpected`, marked_lost)
 
 ## Behaviour
+- Default dates written to rows (assignment / repair done / lost on) use kernel `TODAY_SQL` — the Thai day of the kernel clock, not the database's UTC `current_date` (wave 8).
 - Depreciation (`src/depreciation.ts`, pure): (cost − salvage) / (life × 12) per month, starting the purchase month; the last
   month absorbs rounding. A month is recognised at month end, so book value "as of" a date counts months whose last day ≤ that date.
   Method `none` or life 0 = never depreciates. Salvage defaults to cost × category %, life to the category's.

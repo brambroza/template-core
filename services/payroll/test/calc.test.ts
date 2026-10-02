@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_RULES, NO_TAX_PROFILE, NO_YTD, annualNetIncome, calculateLine, employedDays, mergeRules, postings, progressiveTax, roundBaht, ssoContribution,
+  DEFAULT_RULES, NO_TAX_PROFILE, NO_YTD, STATUTORY_SSO_SCHEDULE, annualNetIncome, buildSsoSchedule, calculateLine, employedDays, mergeRules, postings,
+  progressiveTax, roundBaht, ssoContribution, ssoFor, ssoRuleFor,
   type LineInput,
 } from '../src/calc.ts';
 
@@ -24,10 +25,42 @@ describe('social security (ประกันสังคม)', () => {
     expect(roundBaht(82.5)).toBe(83);
   });
 
-  it('follows a new ceiling from settings (e.g. 17,500) without code changes', () => {
-    const rules = mergeRules({ sso: { wageMax: 17_500 } });
-    expect(calculateLine(base({ baseSalary: 30_000 }), rules).ssoEmployee).toBe(875);
-    expect(rules.tax.personal).toBe(60_000);
+  it('C1: uses the 2026 (2569) ceiling 17,500 / max 875 from January 2026 and 15,000 / 750 before', () => {
+    const sso = (salary: number, period: string) => calculateLine(base({ baseSalary: salary, period }));
+    expect(sso(15_000, '2026-01')).toMatchObject({ ssoEmployee: 750, ssoEmployer: 750 });
+    expect(sso(17_500, '2026-01')).toMatchObject({ ssoEmployee: 875, ssoEmployer: 875 });
+    expect(sso(30_000, '2026-09')).toMatchObject({ ssoWage: 30_000, ssoEmployee: 875, ssoEmployer: 875 });
+    // the accountant's PR-2569-09 cases: 15,500 → 775 · 17,000 → 850 · 16,000 → 800 · 21,000 → 875
+    expect([15_500, 17_000, 16_000, 21_000].map((w) => sso(w, '2026-09').ssoEmployee)).toEqual([775, 850, 800, 875]);
+    // a 2025 pay month keeps the old rule even when recalculated today
+    expect(sso(30_000, '2025-12')).toMatchObject({ ssoEmployee: 750, ssoEmployer: 750 });
+    expect(sso(17_500, '2025-12').ssoEmployee).toBe(750);
+    // scheduled steps: 20,000 from 2029 (2572), 23,000 from 2032 (2575); floor stays 1,650
+    expect(sso(30_000, '2028-12').ssoEmployee).toBe(875);
+    expect(sso(30_000, '2029-01').ssoEmployee).toBe(1_000);
+    expect(sso(30_000, '2032-01').ssoEmployee).toBe(1_150);
+    expect(sso(1_000, '2026-05').ssoEmployee).toBe(83);
+  });
+
+  it('picks the rule in force on the 1st of the pay month; a company row wins on its date and a later law step supersedes it', () => {
+    expect(ssoRuleFor('2026-01', STATUTORY_SSO_SCHEDULE)!.wageMax).toBe(17_500);
+    expect(ssoRuleFor('2025-12-31', STATUTORY_SSO_SCHEDULE)!.wageMax).toBe(15_000);
+    const schedule = buildSsoSchedule(STATUTORY_SSO_SCHEDULE, [{ effectiveFrom: '2026-03-01', employeeRate: 3, employerRate: 3, wageMin: 1_650, wageMax: 17_500 }]);
+    const rules = { ...mergeRules({ sso: { includeOvertime: true } }), ssoSchedule: schedule };
+    expect(ssoFor('2026-02', rules)).toMatchObject({ employeeRate: 5, wageMax: 17_500, includeOvertime: true });
+    expect(ssoFor('2026-03', rules)).toMatchObject({ employeeRate: 3, wageMax: 17_500 });
+    expect(calculateLine(base({ period: '2026-06', baseSalary: 30_000 }), rules).ssoEmployee).toBe(525);
+    expect(ssoFor('2029-01', rules)).toMatchObject({ employeeRate: 5, wageMax: 20_000 });
+    // a stored legacy wageMax in the settings json no longer overrides the dated schedule
+    expect(calculateLine(base({ period: '2026-09', baseSalary: 30_000 }), mergeRules({ sso: { wageMax: 15_000 } })).ssoEmployee).toBe(875);
+    expect(mergeRules({}).tax.personal).toBe(60_000);
+  });
+
+  it('C1: projects SSO for the tax estimate with the 2026 maximum (875 × 12 = 10,500)', () => {
+    const r = calculateLine(base({ baseSalary: 30_000 }));
+    // 360,000 − 100,000 − 60,000 − 10,500 = 189,500 → (189,500 − 150,000) × 5% = 1,975 → ÷ 12 = 164.58
+    expect(r.tax).toMatchObject({ projectedSso: 10_500, netIncome: 189_500, annualTax: 1_975 });
+    expect(r.wht).toBe(164.58);
   });
 
   it('is zero for an employee not enrolled', () => {
@@ -46,30 +79,31 @@ describe('social security (ประกันสังคม)', () => {
 });
 
 describe('withholding tax ภ.ง.ด.1 (annualised)', () => {
+  // tax-method tests use 2025 pay months (ceiling 15,000 → 750) so the textbook numbers stay readable; 2026 is covered above
   it('30,000/month from January: net income 191,000 → 2,050 a year → 170.83 a month', () => {
-    const r = calculateLine(base({ baseSalary: 30_000 }));
+    const r = calculateLine(base({ period: '2025-01', baseSalary: 30_000 }));
     expect(r.tax).toMatchObject({ remainingPeriods: 12, projectedIncome: 360_000, projectedSso: 9_000, netIncome: 191_000, annualTax: 2_050 });
     expect(r.wht).toBe(170.83);
     expect(r.net).toBe(29_079.17);
   });
 
   it('corrects with year-to-date figures so the year adds up', () => {
-    const r = calculateLine(base({ period: '2026-10', baseSalary: 30_000, ytd: { regular: 270_000, irregular: 0, tax: 1_537.47, sso: 6_750, pvd: 0 } }));
+    const r = calculateLine(base({ period: '2025-10', baseSalary: 30_000, ytd: { regular: 270_000, irregular: 0, tax: 1_537.47, sso: 6_750, pvd: 0 } }));
     expect(r.tax.remainingPeriods).toBe(3);
     expect(r.wht).toBe(170.84);
   });
 
   it('taxes a bonus in full in the month paid (marginal method)', () => {
-    const r = calculateLine(base({ period: '2026-12', baseSalary: 30_000, bonus: 60_000, ytd: { regular: 330_000, irregular: 0, tax: 1_879.13, sso: 8_250, pvd: 0 } }));
+    const r = calculateLine(base({ period: '2025-12', baseSalary: 30_000, bonus: 60_000, ytd: { regular: 330_000, irregular: 0, tax: 1_879.13, sso: 8_250, pvd: 0 } }));
     expect(r.tax.regularPart).toBe(170.87);
     expect(r.tax.irregularPart).toBe(3_000); // 5,050 − 2,050
     expect(r.wht).toBe(3_170.87);
   });
 
   it('applies spouse / children allowances and provident fund contributions', () => {
-    expect(calculateLine(base({ baseSalary: 50_000 })).wht).toBe(1_716.67);
-    expect(calculateLine(base({ baseSalary: 50_000, tax: { ...NO_TAX_PROFILE, spouse: true, children: 2 } })).wht).toBe(716.67);
-    const pvd = calculateLine(base({ baseSalary: 30_000, pvdEmployeePct: 5, pvdEmployerPct: 5 }));
+    expect(calculateLine(base({ period: '2025-01', baseSalary: 50_000 })).wht).toBe(1_716.67);
+    expect(calculateLine(base({ period: '2025-01', baseSalary: 50_000, tax: { ...NO_TAX_PROFILE, spouse: true, children: 2 } })).wht).toBe(716.67);
+    const pvd = calculateLine(base({ period: '2025-01', baseSalary: 30_000, pvdEmployeePct: 5, pvdEmployerPct: 5 }));
     expect(pvd).toMatchObject({ pvdEmployee: 1_500, pvdEmployer: 1_500, wht: 95.83 });
   });
 
@@ -86,7 +120,7 @@ describe('withholding tax ภ.ง.ด.1 (annualised)', () => {
 describe('proration, daily wages and deductions', () => {
   it('pays a mid-month joiner by calendar days and projects tax only over the months employed', () => {
     const r = calculateLine(base({ period: '2026-10', baseSalary: 31_000, startDate: '2026-10-16' }));
-    expect(r).toMatchObject({ employedDays: 16, daysInMonth: 31, salary: 16_000, ssoEmployee: 750, wht: 0 });
+    expect(r).toMatchObject({ employedDays: 16, daysInMonth: 31, salary: 16_000, ssoEmployee: 800, wht: 0 }); // 2026 ceiling 17,500
     expect(r.tax).toMatchObject({ remainingPeriods: 3, projectedIncome: 78_000 });
     expect(calculateLine(base({ period: '2026-10', baseSalary: 31_000, startDate: '2026-10-16' }), mergeRules({ proration: 'days30' })).salary).toBe(16_533.33);
   });

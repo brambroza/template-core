@@ -356,7 +356,7 @@ describe('reports', () => {
     const m = vat.rows.find((r: any) => r.month === thisMonth);
     expect(m).toMatchObject({ output_vat: 1400, output_base: 20000, input_vat: 560, input_base: 8000, net: 840, result: 'ชำระเพิ่ม' });
     expect(vat.rows).toHaveLength(12);
-    expect(vat.table.at(-1).net).toBe(840);
+    expect(vat.table.at(-1)).toMatchObject({ net: null, payable: 840, carry_forward: 0 }); // C11: months are not netted
     const out = (await x.api('GET', '/reports/vat/lines?kind=output')).body;
     expect(out).toMatchObject({ title: 'รายงานภาษีขาย', totals: { base: 20000, vat: 1400, count: 1 } });
     expect(out.rows[0]).toMatchObject({ ref: 'INV-2569-0001', partner_name: 'บริษัท ลูกค้าดี จำกัด' });

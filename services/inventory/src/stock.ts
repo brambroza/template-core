@@ -26,6 +26,13 @@ export interface MoveOptions {
    * happened in the real world, so we record it and let the negative balance surface in reports.
    */
   force?: boolean;
+  /**
+   * The caller keeps `qc_holds` in step itself (hold release, QC verdict, return to supplier). Otherwise a move out of a hold warehouse
+   * reduces that item's holds there (rejected first, oldest first) so the hold list never shows more than is on hand, and logs it.
+   */
+  holdManaged?: boolean;
+  /** how such an automatic hold reduction is logged: `override` = admin forced it out with a reason, `external` (default) = another module's document */
+  holdLog?: { kind: 'override' | 'external'; userName?: string | null };
 }
 
 /** Code of the quarantine warehouse that QC holds go to (auto-created per tenant, flagged `is_hold`). */
@@ -63,7 +70,8 @@ export async function onHand(c: Client, itemId: string, whId: string): Promise<n
 
 /** The single write path for stock. Every movement goes through here (and emits inventory.stock_changed). */
 export async function postMove(emit: Emit, c: Client, m: MoveInput, opts: MoveOptions = {}): Promise<{ id: string; onHand: number }> {
-  const whId = await warehouseId(c, m.warehouseCode, opts.autoCreateWarehouse);
+  const wh = await warehouse(c, m.warehouseCode, opts.autoCreateWarehouse);
+  const whId = wh.id;
   // serialize concurrent moves of the same item+warehouse
   await c.query('select pg_advisory_xact_lock(hashtext($1))', [`${m.itemId}:${whId}`]);
   const before = await onHand(c, m.itemId, whId);
@@ -86,6 +94,11 @@ export async function postMove(emit: Emit, c: Client, m: MoveInput, opts: MoveOp
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [m.itemId, m.itemCode, m.itemName ?? null, m.warehouseCode, m.qty, before, after, m.refType ?? null, m.refId ?? null, opts.force ? 'event' : 'user']);
   }
+  if (m.qty < 0 && wh.isHold && !opts.holdManaged) {
+    await trimHolds(c, m.itemId, m.warehouseCode, after, {
+      kind: opts.holdLog?.kind ?? 'external', refType: m.refType ?? null, refId: m.refId ?? null, note: m.note ?? null, userId: m.userId ?? null, userName: opts.holdLog?.userName ?? null,
+    });
+  }
   await emit('inventory.stock_changed', {
     itemId: m.itemId, itemCode: m.itemCode, warehouseCode: m.warehouseCode, qtyDelta: m.qty, onHand: after,
     refType: m.refType ?? null, refId: m.refId ?? null,
@@ -98,4 +111,39 @@ export async function postMove(emit: Emit, c: Client, m: MoveInput, opts: MoveOp
     }
   }
   return { id: row.id, onHand: after };
+}
+
+export type HoldLogKind = 'release' | 'return' | 'override' | 'external';
+export interface HoldLogEntry { kind: HoldLogKind; refType?: string | null; refId?: string | null; note?: string | null; userId?: string | null; userName?: string | null }
+
+const HOLD_LOG_TH: Record<HoldLogKind, string> = { release: 'ปล่อย', return: 'ส่งคืน', override: 'บังคับจ่ายออก', external: 'ตัดออกโดยเอกสารอื่น' };
+
+/** Reduce one hold by `qty` (never below 0), set its status when emptied, and write the log row + the Thai note trail. */
+export async function reduceHold(c: Client, holdId: string, qty: number, emptyStatus: 'released' | 'returned' | 'forced_out', e: HoldLogEntry): Promise<void> {
+  const h = (await c.query('update qc_holds set qty = greatest(qty - $2::numeric, 0), status = case when qty - $2::numeric <= 0 then $3 else status end, ' +
+    `note = concat_ws(' · ', note, $4::text), updated_at = now() where id = $1 returning qty`,
+  [holdId, qty, emptyStatus, `${HOLD_LOG_TH[e.kind]} ${fmtQty(qty)}${e.refId ? ` (${e.refId})` : ''}${e.note ? `: ${e.note}` : ''}`])).rows[0];
+  await c.query(
+    `insert into qc_hold_log (hold_id, kind, qty, qty_after, ref_type, ref_id, note, user_id, user_name) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [holdId, e.kind, qty, h.qty, e.refType ?? null, e.refId ?? null, e.note ?? null, e.userId ?? null, e.userName ?? null]);
+}
+
+/**
+ * Keep the hold list consistent with the stock: when the item's open holds in this hold warehouse add up to more than is on hand now,
+ * reduce them (rejected first, then pending, oldest first) by the difference — status `forced_out` when emptied — and log each change.
+ */
+export async function trimHolds(c: Client, itemId: string, holdCode: string, onHandNow: number, e: HoldLogEntry): Promise<number> {
+  const holds = (await c.query<{ id: string; qty: number }>(
+    `select id, qty from qc_holds where item_id = $1 and hold_warehouse_code = $2 and status in ('pending', 'rejected') and qty > 0
+     order by (status = 'rejected') desc, created_at for update`, [itemId, holdCode])).rows;
+  let excess = holds.reduce((t, h) => t + Number(h.qty), 0) - Math.max(onHandNow, 0);
+  let trimmed = 0;
+  for (const h of holds) {
+    if (excess <= 1e-9) break;
+    const take = Math.min(excess, Number(h.qty));
+    await reduceHold(c, h.id, take, 'forced_out', e);
+    excess -= take;
+    trimmed += take;
+  }
+  return trimmed;
 }

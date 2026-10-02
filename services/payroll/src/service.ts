@@ -1,8 +1,11 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, notFound, one, parse, requirePerm, s, thaiToday, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import type { EventData } from '@erp/contracts';
 import { bahtText, round, toBuddhistYear } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
-import { calculateLine, mergeRules, postings, type PayrollRules, type RecurringItem, type RunTotals, type YearToDate } from './calc.ts';
+import {
+  buildSsoSchedule, calculateLine, mergeRules, postings, ssoFor, ssoRuleFor,
+  type PayrollRules, type RecurringItem, type RunTotals, type SsoRule, type YearToDate,
+} from './calc.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -124,6 +127,8 @@ const SettingsInput = z.object({
   proration: z.enum(['calendar', 'days30']), defaultDailyWorkDays: z.number().min(0).max(31),
   otX1: z.number().min(0).max(10), otX15: z.number().min(0).max(10), otX2: z.number().min(0).max(10), otX3: z.number().min(0).max(10),
   ssoEmployerAccount: z.string().trim().max(50).nullable(), ssoBranch: z.string().trim().max(50).nullable(),
+  /** C1: SSO rates/band typed here become a company rule from this date (default: 1st of the current month) */
+  ssoEffectiveFrom: s.isoDate,
 }).partial();
 
 const ListQuery = s.listQuery.extend({ limit: z.coerce.number().int().min(1).max(500).default(200) });
@@ -137,15 +142,56 @@ const STATUS_TH: Record<string, string> = { draft: 'ร่าง', calculated: '
 const PAY_TYPE_TH: Record<string, string> = { monthly: 'รายเดือน', daily: 'รายวัน' };
 const MONTH_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 const periodLabel = (p: string) => `${MONTH_TH[Number(p.slice(5, 7)) - 1]} ${Number(p.slice(0, 4)) + 543}`;
-const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+/** Today in Thailand — kernel business clock (Asia/Bangkok; tests freeze it with setClock). */
+const bangkokToday = () => thaiToday();
 const like = (q?: string) => (q?.trim() ? `%${q.trim()}%` : null);
 
 /** Anyone who manages payroll (any payroll permission except self-service) */
 const isPayrollStaff = (a: AuthContext) => ['payroll.profile.read', 'payroll.run.read'].some((p) => hasPerm(a, p));
 
-async function loadRules(c: Client): Promise<{ rules: PayrollRules; row: any }> {
+/** The SSO numbers every install had before effective-dated rules (C1): a stored copy of these is not a customisation. */
+const LEGACY_SSO = { employeeRate: 5, employerRate: 5, wageMin: 1_650, wageMax: 15_000 };
+const ymd = (d: unknown) => (d instanceof Date ? new Date(d.getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10) : String(d).slice(0, 10));
+const toRule = (r: any): SsoRule & { id?: string } => ({
+  id: r.id, effectiveFrom: ymd(r.effective_from), employeeRate: Number(r.employee_rate), employerRate: Number(r.employer_rate),
+  wageMin: Number(r.wage_min), wageMax: Number(r.wage_max), note: r.note ?? null, custom: r.tenant_id !== null,
+});
+
+/**
+ * Settings merged over the defaults, with the SSO schedule = statutory rows + this company's rows (`sso_rules`).
+ * A stored non-default SSO rate/band from before effective-dated rules keeps working as a company row from the month
+ * the settings were saved (unless the company already has a row for that date).
+ */
+async function loadRules(c: Client): Promise<{ rules: PayrollRules; row: any; schedule: (SsoRule & { id?: string })[] }> {
   const row = (await c.query('select * from payroll_settings')).rows[0] ?? null;
-  return { rules: mergeRules(row?.rules), row };
+  const rules = mergeRules(row?.rules);
+  const rows = (await c.query('select * from sso_rules order by effective_from')).rows.map(toRule);
+  const custom = rows.filter((r) => r.custom);
+  const stored = row?.rules?.sso;
+  if (stored && (['employeeRate', 'employerRate', 'wageMin', 'wageMax'] as const).some((key) => stored[key] !== undefined && Number(stored[key]) !== LEGACY_SSO[key])) {
+    const from = ymd(row.updated_at).slice(0, 7) + '-01';
+    if (!custom.some((r) => r.effectiveFrom === from)) {
+      custom.push({ effectiveFrom: from, employeeRate: rules.sso.employeeRate, employerRate: rules.sso.employerRate, wageMin: rules.sso.wageMin, wageMax: rules.sso.wageMax, note: 'จากการตั้งค่าเดิม', custom: true });
+    }
+  }
+  const statutory = rows.filter((r) => !r.custom);
+  const schedule = buildSsoSchedule(statutory, custom);
+  return { rules: { ...rules, ssoSchedule: schedule }, row, schedule };
+}
+
+const ruleRow = (r: SsoRule & { id?: string }) => ({
+  id: r.id ?? null, effective_from: r.effectiveFrom, employee_rate: r.employeeRate, employer_rate: r.employerRate, wage_min: r.wageMin, wage_max: r.wageMax,
+  max_contribution: Math.round(r.wageMax * r.employeeRate) / 100, source: r.custom ? 'บริษัทกำหนดเอง' : 'ตามกฎหมาย', custom: !!r.custom, note: r.note ?? null,
+});
+
+async function upsertSsoRule(c: Client, r: Omit<SsoRule, 'custom'>, a: AuthContext, note: string | null) {
+  await c.query(
+    `insert into sso_rules (effective_from, employee_rate, employer_rate, wage_min, wage_max, note, created_by, created_by_name)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     on conflict (coalesce(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), effective_from)
+     do update set employee_rate = excluded.employee_rate, employer_rate = excluded.employer_rate, wage_min = excluded.wage_min,
+                   wage_max = excluded.wage_max, note = excluded.note, created_by = excluded.created_by, created_by_name = excluded.created_by_name, created_at = now()`,
+    [r.effectiveFrom, r.employeeRate, r.employerRate, r.wageMin, r.wageMax, note, a.userId ?? null, a.userName ?? null]);
 }
 
 function decorateProfile(p: any) {
@@ -464,13 +510,19 @@ export const definition: ServiceDefinition = {
 
     app.get('/settings', async (req) => {
       const a = auth(req);
-      if (!isPayrollStaff(a) && !hasPerm(a, 'payroll.setup.write')) throw forbidden('Missing permission: payroll.run.read');
+      if (!isPayrollStaff(a) && !hasPerm(a, 'payroll.setup.write')) throw forbidden(`ไม่มีสิทธิ์ดูข้อมูลเงินเดือน (payroll.run.read)`);
       return k.db.tx(a.tenantId, async (c) => {
-        const { rules: r, row } = await loadRules(c);
+        const { rules: r, row, schedule } = await loadRules(c);
+        const today = bangkokToday();
+        const sso = ssoFor(today.slice(0, 7), r);
+        const inForce = ssoRuleFor(today, schedule);
         return {
           title: 'ตั้งค่าเงินเดือน ประกันสังคม และภาษี',
-          ssoEmployeeRate: r.sso.employeeRate, ssoEmployerRate: r.sso.employerRate, ssoWageMin: r.sso.wageMin, ssoWageMax: r.sso.wageMax, ssoIncludeOvertime: r.sso.includeOvertime,
-          ssoMaxContribution: Math.round((r.sso.wageMax * r.sso.employeeRate) / 100 * 100) / 100,
+          // SSO numbers in force this month (effective-dated — older months keep the rule of their own date)
+          ssoEmployeeRate: sso.employeeRate, ssoEmployerRate: sso.employerRate, ssoWageMin: sso.wageMin, ssoWageMax: sso.wageMax, ssoIncludeOvertime: sso.includeOvertime,
+          ssoMaxContribution: Math.round((sso.wageMax * sso.employeeRate) / 100 * 100) / 100,
+          ssoRuleFrom: inForce?.effectiveFrom ?? null, ssoRuleSource: inForce ? (inForce.custom ? 'บริษัทกำหนดเอง' : 'ตามกฎหมาย') : null,
+          ssoRules: schedule.map(ruleRow),
           expenseRatePct: r.tax.expenseRate * 100, expenseCap: r.tax.expenseCap,
           personalAllowance: r.tax.personal, spouseAllowance: r.tax.spouse, childAllowance: r.tax.child, child2018Allowance: r.tax.child2018, parentAllowance: r.tax.parent,
           lifeInsuranceCap: r.tax.lifeInsuranceCap, healthInsuranceCap: r.tax.healthInsuranceCap, lifeHealthCap: r.tax.lifeHealthCap, parentHealthCap: r.tax.parentHealthCap,
@@ -488,13 +540,21 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'payroll.setup.write');
       const b = parse(SettingsInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
-        const { rules: cur, row } = await loadRules(c);
+        const { rules: cur, row, schedule } = await loadRules(c);
         const pick = <T>(v: T | undefined, d: T) => (v === undefined ? d : v);
+        // C1: SSO rates/band are effective-dated rules, not plain settings. A value that differs from the rule in force on
+        // `ssoEffectiveFrom` (default: 1st of this month) becomes the company's own rule from that date; unchanged values add nothing.
+        const from = b.ssoEffectiveFrom ?? bangkokToday().slice(0, 7) + '-01';
+        const atFrom = ssoRuleFor(from, schedule) ?? { ...cur.sso, effectiveFrom: from };
+        const wanted = {
+          employeeRate: pick(b.ssoEmployeeRate, atFrom.employeeRate), employerRate: pick(b.ssoEmployerRate, atFrom.employerRate),
+          wageMin: pick(b.ssoWageMin, atFrom.wageMin), wageMax: pick(b.ssoWageMax, atFrom.wageMax),
+        };
+        if (wanted.wageMin > wanted.wageMax) throw badRequest('ฐานค่าจ้างต่ำสุดต้องไม่เกินเพดานค่าจ้าง', { fieldErrors: { ssoWageMin: ['ต้องไม่เกินเพดาน'] } });
+        const ssoChanged = (['employeeRate', 'employerRate', 'wageMin', 'wageMax'] as const).some((key) => Number(wanted[key]) !== Number(atFrom[key]));
         const next: PayrollRules = {
-          sso: {
-            employeeRate: pick(b.ssoEmployeeRate, cur.sso.employeeRate), employerRate: pick(b.ssoEmployerRate, cur.sso.employerRate),
-            wageMin: pick(b.ssoWageMin, cur.sso.wageMin), wageMax: pick(b.ssoWageMax, cur.sso.wageMax), includeOvertime: pick(b.ssoIncludeOvertime, cur.sso.includeOvertime),
-          },
+          // only includeOvertime is a plain setting; legacy band/rate keys are dropped (they live in sso_rules now)
+          sso: { ...LEGACY_SSO, includeOvertime: pick(b.ssoIncludeOvertime, cur.sso.includeOvertime) },
           tax: {
             expenseRate: b.expenseRatePct === undefined ? cur.tax.expenseRate : b.expenseRatePct / 100, expenseCap: pick(b.expenseCap, cur.tax.expenseCap),
             personal: pick(b.personalAllowance, cur.tax.personal), spouse: pick(b.spouseAllowance, cur.tax.spouse), child: pick(b.childAllowance, cur.tax.child),
@@ -508,7 +568,6 @@ export const definition: ServiceDefinition = {
           proration: pick(b.proration, cur.proration), defaultDailyWorkDays: pick(b.defaultDailyWorkDays, cur.defaultDailyWorkDays),
           ot: { x1: pick(b.otX1, cur.ot.x1), x15: pick(b.otX15, cur.ot.x15), x2: pick(b.otX2, cur.ot.x2), x3: pick(b.otX3, cur.ot.x3) },
         };
-        if (next.sso.wageMin > next.sso.wageMax) throw badRequest('ฐานค่าจ้างต่ำสุดต้องไม่เกินเพดานค่าจ้าง', { fieldErrors: { ssoWageMin: ['ต้องไม่เกินเพดาน'] } });
         const bounds = next.tax.brackets.map((x) => x.upTo);
         if (bounds.slice(0, -1).some((x, i) => x === null || (i && x <= (bounds[i - 1] as number))) || bounds[bounds.length - 1] !== null) {
           throw badRequest('ขั้นภาษีต้องเรียงจากน้อยไปมาก และขั้นสุดท้ายไม่มีเพดาน (upTo = null)', { fieldErrors: { brackets: ['ขั้นภาษีไม่ถูกต้อง'] } });
@@ -516,9 +575,31 @@ export const definition: ServiceDefinition = {
         await c.query(
           `insert into payroll_settings (rules, sso_employer_account, sso_branch) values ($1, $2, $3)
            on conflict (tenant_id) do update set rules = excluded.rules, sso_employer_account = excluded.sso_employer_account, sso_branch = excluded.sso_branch, updated_at = now()`,
-          [JSON.stringify(next), b.ssoEmployerAccount === undefined ? row?.sso_employer_account ?? null : b.ssoEmployerAccount,
+          [JSON.stringify({ ...next, ssoSchedule: undefined }), b.ssoEmployerAccount === undefined ? row?.sso_employer_account ?? null : b.ssoEmployerAccount,
             b.ssoBranch === undefined ? row?.sso_branch ?? null : b.ssoBranch]);
-        return { ok: true, rules: next };
+        // a legacy customisation (read from the old settings json) is kept as a real company row before the json is cleaned
+        for (const legacy of schedule.filter((x) => x.custom && !x.id)) await upsertSsoRule(c, legacy, a, legacy.note ?? null);
+        if (ssoChanged) await upsertSsoRule(c, { effectiveFrom: from, ...wanted }, a, 'กำหนดเองในหน้าตั้งค่า');
+        return { ok: true, rules: next, ssoRuleAdded: ssoChanged ? { effectiveFrom: from, ...wanted } : null };
+      });
+    });
+
+    /** C1: the SSO schedule (statutory + company rows) — which ceiling applies to which month */
+    app.get('/sso-rules', async (req) => {
+      const a = auth(req);
+      if (!isPayrollStaff(a) && !hasPerm(a, 'payroll.setup.write')) throw forbidden(`ไม่มีสิทธิ์ดูข้อมูลเงินเดือน (payroll.run.read)`);
+      return k.db.tx(a.tenantId, async (c) => (await loadRules(c)).schedule.map(ruleRow).reverse());
+    });
+
+    /** Remove a company SSO rule (statutory rows cannot be removed — RLS hides them from writes) */
+    app.delete('/sso-rules/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'payroll.setup.write');
+      const { id } = parse(IdParam, req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const r = await c.query('delete from sso_rules where id = $1 and tenant_id is not null returning id', [id]);
+        if (!r.rowCount) throw notFound('SSO rule');
+        return { ok: true };
       });
     });
 
@@ -946,7 +1027,8 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const run = await loadRun(c, id);
-        const { rules, row: settings } = await loadRules(c);
+        const { rules: all, row: settings } = await loadRules(c);
+        const rules = { sso: ssoFor(run.period, all) }; // the rule of the run's own month
         const rows = (await c.query(
           `select id, employee_code, employee_name, sso_wage, sso_employee, sso_employer from pay_lines where run_id = $1 and sso_enrolled and sso_employee > 0 order by employee_code`, [id])).rows
           .map((r, i) => ({ ...r, seq: i + 1, id_card: '', wage: Math.min(Number(r.sso_wage), rules.sso.wageMax) }));
@@ -1071,9 +1153,9 @@ export const definition: ServiceDefinition = {
         const months = (await c.query(
           `select to_char(m, 'YYYY-MM') as month, coalesce(sum(r.net), 0) as net, coalesce(sum(r.gross), 0) as gross,
                   coalesce(sum(r.gross + r.sso_employer + r.pvd_employer), 0) as cost, coalesce(max(r.headcount), 0)::int as headcount
-           from generate_series(date_trunc('month', current_date) - interval '5 months', date_trunc('month', current_date), interval '1 month') m
+           from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m
            left join pay_runs r on r.period = to_char(m, 'YYYY-MM') and r.status in ('approved', 'paid')
-           group by m order by m`)).rows;
+           group by m order by m`, [bangkokToday()])).rows;
         const rows = (await c.query(
           `select id, no, period, status, net, headcount from pay_runs where status <> 'cancelled' order by period desc limit 12`)).rows.map(decorateRun);
         return {

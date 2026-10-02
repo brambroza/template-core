@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, now as clockNow, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { TZ, addDays, at, dayStart, localDate, thaiRange, weekStart } from './time.ts';
@@ -205,7 +205,7 @@ export const definition: ServiceDefinition = {
            order by r.kind, r.code`, [q.kind ?? null, like(q.q)])).rows;
         const bookings = (await c.query(
           `${BK_SELECT} where b.status in ('pending', 'confirmed', 'completed') and b.start_at < $2 and b.end_at > $1 order by b.start_at`, [from, to])).rows;
-        const now = Date.now();
+        const now = clockNow().getTime();
         return resources.map((r: any) => {
           const mine = bookings.filter((b: any) => b.resource_id === r.id);
           const minutes = mine.reduce((sum: number, b: any) => {
@@ -349,7 +349,7 @@ export const definition: ServiceDefinition = {
         const bk = await loadBooking(c, id, true);
         assertOwnerOrApprover(a, bk);
         assertStatus(bk, ['pending', 'confirmed'], 'ยกเลิก');
-        if (new Date(bk.end_at).getTime() < Date.now()) throw conflict(`การจอง ${bk.no} ผ่านไปแล้ว — ใช้ "ปิดงาน" แทนการยกเลิก`);
+        if (new Date(bk.end_at).getTime() < clockNow().getTime()) throw conflict(`การจอง ${bk.no} ผ่านไปแล้ว — ใช้ "ปิดงาน" แทนการยกเลิก`);
         await c.query(`update bookings set status = 'cancelled', cancelled_by = $2, cancelled_by_name = $4, cancelled_at = now(), cancel_reason = $3 where id = $1`, [id, a.userId, b.reason ?? null, a.userName ?? null]);
         return loadBooking(c, id);
       });
@@ -364,7 +364,7 @@ export const definition: ServiceDefinition = {
         const bk = await loadBooking(c, id, true);
         assertOwnerOrApprover(a, bk);
         assertStatus(bk, ['confirmed'], 'ปิดงาน');
-        if (new Date(bk.start_at).getTime() > Date.now()) throw conflict(`การจอง ${bk.no} ยังไม่ถึงเวลาเริ่มใช้งาน`);
+        if (new Date(bk.start_at).getTime() > clockNow().getTime()) throw conflict(`การจอง ${bk.no} ยังไม่ถึงเวลาเริ่มใช้งาน`);
         let mileageStart: number | null = null;
         let mileageEnd: number | null = null;
         let distance: number | null = null;

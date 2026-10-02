@@ -185,6 +185,7 @@ export default defineUi({
     { label: 'ภ.ง.ด.1 รายเดือน', screen: 'pnd1Runs' },
     { label: 'หนังสือรับรอง 50 ทวิ', screen: 'certificates' },
     { label: 'ตั้งค่าเงินเดือน', screen: 'settings' },
+    { label: 'อัตราประกันสังคม', screen: 'ssoRules' },
   ],
   commands: [
     { id: 'myslip', label: 'สลิปเงินเดือนของฉัน', example: 'สลิป', keywords: ['สลิป', 'สลิปเงินเดือน', 'สลิปของฉัน'], screen: 'myPayslips', perm: SELF },
@@ -486,6 +487,7 @@ export default defineUi({
         { key: 'ssoEmployeeRate', label: 'ประกันสังคม ลูกจ้าง %', format: 'qty' }, { key: 'ssoEmployerRate', label: 'ประกันสังคม นายจ้าง %', format: 'qty' },
         { key: 'ssoWageMin', label: 'ฐานค่าจ้างต่ำสุด', format: 'money' }, { key: 'ssoWageMax', label: 'เพดานค่าจ้าง', format: 'money' },
         { key: 'ssoMaxContribution', label: 'เงินสมทบสูงสุด/เดือน', format: 'money' }, { key: 'ssoIncludeOvertime', label: 'นับ OT เป็นค่าจ้างประกันสังคม', format: 'boolean' },
+        { key: 'ssoRuleFrom', label: 'อัตราประกันสังคมมีผลตั้งแต่', format: 'date' }, { key: 'ssoRuleSource', label: 'ที่มาของอัตรา' },
         { key: 'ssoEmployerAccount', label: 'เลขที่บัญชีนายจ้าง (สปส.)' }, { key: 'ssoBranch', label: 'ลำดับที่สาขา (สปส.)' },
         { key: 'expenseRatePct', label: 'หักค่าใช้จ่าย 40(1) %', format: 'qty' }, { key: 'expenseCap', label: 'หักค่าใช้จ่ายไม่เกิน', format: 'money' },
         { key: 'personalAllowance', label: 'ลดหย่อนส่วนตัว', format: 'money' }, { key: 'spouseAllowance', label: 'ลดหย่อนคู่สมรส', format: 'money' },
@@ -500,7 +502,11 @@ export default defineUi({
         { key: 'otX2', label: 'ทำงานวันหยุด รายวัน (เท่า)', format: 'qty' }, { key: 'otX3', label: 'OT วันหยุด (เท่า)', format: 'qty' },
         { key: 'updatedAt', label: 'แก้ไขล่าสุด', format: 'datetime' },
       ],
-      lines: [{ path: 'brackets', label: 'อัตราภาษีเงินได้บุคคลธรรมดา (เงินได้สุทธิ)', columns: [{ key: 'from', label: 'ตั้งแต่', format: 'money' }, { key: 'label', label: 'ช่วง' }, { key: 'rate', label: 'อัตรา %', format: 'qty' }] }],
+      lines: [{ path: 'ssoRules', label: 'ตารางอัตราประกันสังคมตามวันที่มีผล (รอบเงินเดือนใช้อัตราของเดือนนั้น)', columns: [
+        { key: 'effective_from', label: 'มีผลตั้งแต่', format: 'date' }, { key: 'wage_min', label: 'ฐานต่ำสุด', format: 'money' }, { key: 'wage_max', label: 'เพดานค่าจ้าง', format: 'money' },
+        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'qty' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'qty' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
+        { key: 'source', label: 'ที่มา' }, { key: 'note', label: 'หมายเหตุ' }] },
+      { path: 'brackets', label: 'อัตราภาษีเงินได้บุคคลธรรมดา (เงินได้สุทธิ)', columns: [{ key: 'from', label: 'ตั้งแต่', format: 'money' }, { key: 'label', label: 'ช่วง' }, { key: 'rate', label: 'อัตรา %', format: 'qty' }] }],
     },
     settingsEdit: {
       kind: 'form', title: 'แก้ไขตั้งค่าเงินเดือน', method: 'PUT', endpoint: '/settings', load: '/settings', perm: 'payroll.setup.write',
@@ -509,6 +515,7 @@ export default defineUi({
         { name: 'ssoEmployerRate', label: 'ประกันสังคม นายจ้าง %', type: 'number', step: 0.1 },
         { name: 'ssoWageMin', label: 'ฐานค่าจ้างต่ำสุด (บาท)', type: 'number', step: 1 },
         { name: 'ssoWageMax', label: 'เพดานค่าจ้าง (บาท)', type: 'number', step: 1, help: 'ตรวจสอบประกาศสำนักงานประกันสังคมเรื่องการปรับเพดานค่าจ้าง' },
+        { name: 'ssoEffectiveFrom', label: 'อัตรา/เพดานที่แก้มีผลตั้งแต่', type: 'date', help: 'เพดานตามกฎหมาย (17,500 ตั้งแต่ 1 ม.ค. 2569, 20,000 ปี 2572, 23,000 ปี 2575) มีในระบบแล้ว — กรอกเฉพาะเมื่อรัฐประกาศอัตราพิเศษ เช่น ลดอัตราชั่วคราว (ว่าง = ต้นเดือนนี้)' },
         { name: 'ssoIncludeOvertime', label: 'นับ OT เป็นค่าจ้างประกันสังคม', type: 'boolean' },
         { name: 'ssoEmployerAccount', label: 'เลขที่บัญชีนายจ้าง (สปส.)', type: 'text' },
         { name: 'ssoBranch', label: 'ลำดับที่สาขา (สปส.)', type: 'text' },
@@ -536,6 +543,19 @@ export default defineUi({
         { name: 'otX3', label: 'OT วันหยุด (เท่า)', type: 'number', step: 0.1 },
       ],
       submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'settings' },
+    },
+    ssoRules: {
+      kind: 'list', title: 'อัตราประกันสังคมตามวันที่มีผล', endpoint: '/sso-rules', perm: READ,
+      columns: [
+        { key: 'effective_from', label: 'มีผลตั้งแต่', format: 'date' }, { key: 'wage_min', label: 'ฐานต่ำสุด', format: 'money' }, { key: 'wage_max', label: 'เพดานค่าจ้าง', format: 'money' },
+        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'qty' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'qty' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
+        { key: 'source', label: 'ที่มา' }, { key: 'note', label: 'หมายเหตุ' },
+      ],
+      rowActions: [
+        { id: 'delete', label: 'ลบอัตราที่บริษัทกำหนด', method: 'DELETE', endpoint: '/sso-rules/:id', perm: 'payroll.setup.write', tone: 'danger', when: { field: 'custom', in: [true] },
+          confirm: 'ลบอัตรานี้? รอบเงินเดือนที่ยังไม่อนุมัติจะใช้อัตราตามกฎหมายเมื่อคำนวณใหม่' },
+      ],
+      empty: 'ยังไม่มีอัตราประกันสังคม',
     },
   },
   widgets: [

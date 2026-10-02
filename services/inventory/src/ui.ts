@@ -65,12 +65,16 @@ export default defineUi({
     },
     transfer: {
       kind: 'form', title: 'โอนย้ายระหว่างคลัง', method: 'POST', endpoint: '/transfers', perm: 'inventory.move.write',
-      fields: [wh('fromWarehouseCode', 'จากคลัง'), wh('toWarehouseCode', 'ไปคลัง'), { name: 'note', label: 'หมายเหตุ', type: 'textarea' }],
+      fields: [wh('fromWarehouseCode', 'จากคลัง'), wh('toWarehouseCode', 'ไปคลัง'), { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
+        { name: 'overrideHoldReason', label: 'เหตุผลบังคับนำออกจากคลังกักกัน (เฉพาะผู้ดูแลระบบ)', type: 'textarea',
+        help: 'ของในคลังกักกัน QC ออกได้ทาง "ปล่อยเข้าคลัง" ในหน้ากักกัน QC หรือ "ส่งคืนผู้ขาย" เท่านั้น · ช่องนี้ใช้เมื่อผู้มีสิทธิ์บังคับจ่ายออกต้องนำออกนอกขั้นตอน — เหตุผลถูกบันทึกในสต็อกการ์ดและประวัติการกักกัน' }],
       lines: lines(), submitLabel: 'บันทึกการโอน', after: { screen: 'balances' },
     },
     adjust: {
       kind: 'form', title: 'ปรับปรุงยอดสต็อก', method: 'POST', endpoint: '/adjustments', perm: 'inventory.move.write',
-      fields: [wh('warehouseCode', 'คลัง'), { name: 'note', label: 'เหตุผล', type: 'textarea', required: true }],
+      fields: [wh('warehouseCode', 'คลัง'), { name: 'note', label: 'เหตุผล', type: 'textarea', required: true },
+        { name: 'overrideHoldReason', label: 'เหตุผลบังคับนำออกจากคลังกักกัน (เฉพาะผู้ดูแลระบบ)', type: 'textarea',
+        help: 'ของในคลังกักกัน QC ออกได้ทาง "ปล่อยเข้าคลัง" ในหน้ากักกัน QC หรือ "ส่งคืนผู้ขาย" เท่านั้น · ช่องนี้ใช้เมื่อผู้มีสิทธิ์บังคับจ่ายออกต้องนำออกนอกขั้นตอน — เหตุผลถูกบันทึกในสต็อกการ์ดและประวัติการกักกัน' }],
       lines: { name: 'lines', label: 'รายการ', min: 1, fields: [item, { ...qty, label: 'ปรับ (+ เพิ่ม / − ลด)' }] },
       submitLabel: 'บันทึกการปรับปรุง', after: { screen: 'balances' },
     },
@@ -88,12 +92,14 @@ export default defineUi({
       kind: 'list', title: 'กักกัน QC (QC-HOLD)', endpoint: '/holds', perm: 'inventory.stock.read', mobile: true,
       filters: [{ name: 'status', label: 'สถานะ', type: 'select', options: [
         { value: 'pending,rejected', label: 'ยังกักอยู่' }, { value: 'pending', label: 'รอผล QC' }, { value: 'rejected', label: 'ไม่ผ่าน รอตัดสิน' },
-        { value: 'released', label: 'ปล่อยแล้ว' }, { value: 'returned', label: 'ส่งคืนผู้ขายแล้ว' }] }],
+        { value: 'released', label: 'ปล่อยแล้ว' }, { value: 'returned', label: 'ส่งคืนผู้ขายแล้ว' }, { value: 'forced_out', label: 'ถูกจ่ายออกนอกขั้นตอน' }] }],
       columns: [
         { key: 'inspection_no', label: 'ใบตรวจ QC' }, { key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' },
         { key: 'source_ref', label: 'จากเอกสาร' }, { key: 'warehouse_code', label: 'คลังเดิม' }, { key: 'qty', label: 'กักอยู่', format: 'qty' },
-        { key: 'held_qty', label: 'กักทั้งหมด', format: 'qty' }, { key: 'status_th', label: 'สถานะ' }, { key: 'created_at', label: 'เมื่อ', format: 'datetime' },
+        { key: 'held_qty', label: 'กักทั้งหมด', format: 'qty' }, { key: 'hold_on_hand', label: 'คงเหลือในคลังกักกัน (สินค้านี้)', format: 'qty' },
+        { key: 'status_th', label: 'สถานะ' }, { key: 'created_at', label: 'เมื่อ', format: 'datetime' },
       ],
+      rowLink: { screen: 'holdDetail' },
       rowActions: [
         { id: 'release', label: 'ปล่อยเข้าคลัง', method: 'POST', endpoint: '/holds/:id/release', perm: 'inventory.hold.release', when: { field: 'status', in: ['pending', 'rejected'] },
           fields: [
@@ -103,6 +109,26 @@ export default defineUi({
           ] },
       ],
       empty: 'ไม่มีของในคลังกักกัน — เมื่อ QC ตรวจไม่ผ่าน ของจะถูกย้ายมาที่นี่อัตโนมัติ',
+    },
+    holdDetail: {
+      kind: 'detail', title: 'รายการกักกัน QC', endpoint: '/holds/:id', perm: 'inventory.stock.read', heading: 'inspection_no', mobile: true,
+      fields: [
+        { key: 'status_th', label: 'สถานะ' }, { key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'source_ref', label: 'จากเอกสาร' },
+        { key: 'warehouse_code', label: 'คลังเดิม' }, { key: 'hold_warehouse_code', label: 'คลังกักกัน' }, { key: 'held_qty', label: 'กักทั้งหมด', format: 'qty' },
+        { key: 'rejected_qty', label: 'QC ปฏิเสธ', format: 'qty' }, { key: 'qty', label: 'ยังกักอยู่', format: 'qty' }, { key: 'note', label: 'บันทึก' },
+      ],
+      lines: [{ path: 'log', label: 'ประวัติการนำออกจากคลังกักกัน', columns: [
+        { key: 'created_at', label: 'เมื่อ', format: 'datetime' }, { key: 'kind_th', label: 'การดำเนินการ' }, { key: 'qty', label: 'จำนวน', format: 'qty' },
+        { key: 'qty_after', label: 'กักเหลือ', format: 'qty' }, { key: 'ref_id', label: 'เอกสาร' }, { key: 'note', label: 'เหตุผล' }, { key: 'user_name', label: 'โดย' },
+      ] }],
+      actions: [
+        { id: 'release', label: 'ปล่อยเข้าคลัง', method: 'POST', endpoint: '/holds/:id/release', perm: 'inventory.hold.release', when: { field: 'status', in: ['pending', 'rejected'] }, tone: 'primary', mobile: true,
+          fields: [
+            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', step: 0.0001 },
+            { name: 'toWarehouseCode', label: 'ปล่อยเข้าคลัง (ว่าง = คลังเดิม)', type: 'text' },
+            { name: 'note', label: 'เหตุผล/ผลการตัดสิน (เช่น ใช้ตามสภาพ อนุมัติโดย MRB, คัดแยกแล้ว)', type: 'textarea', required: true },
+          ] },
+      ],
     },
     anomalies: {
       kind: 'list', title: 'สต็อกติดลบ/ผิดปกติ', endpoint: '/anomalies', perm: 'inventory.stock.read', mobile: true,

@@ -27,7 +27,9 @@ describe('web app — customer with Core + Inventory + Purchasing + Sales', () =
 
   beforeAll(async () => {
     erp = await install([identity, masterData, inventory, purchasing, sales]);
-    await erp.provision('trading-co');
+    const { token } = await erp.provision('trading-co');
+    // this test drives the generic screens with one admin; segregation of duties (wave 8, on by default) is covered by purchasing's sod.test.ts and UAT-07
+    await erp.call('PUT', '/api/purchasing/settings', { creatorCannotApprove: false }, token);
     web = await startWeb(erp.url, 3911);
     page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   });

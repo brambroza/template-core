@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { buyerInfo, columnTotals, COPY_LABELS, companyProblems, factSections, fillPath, get, hasPerm, matches, printSpec, repeatsAbove, routeParams, signatureBoxes, type CompanyProfile, type CopyLabel, type DetailScreen } from '@erp/ui-schema';
+import { buyerInfo, buyerProblems, columnTotals, COPY_LABELS, companyProblems, factSections, fillPath, get, hasPerm, matches, printSpec, printsOnPaper, repeatsAbove, routeParams, signatureBoxes, type CompanyProfile, type CopyLabel, type DetailScreen, type Format } from '@erp/ui-schema';
 import { Copy } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
@@ -46,6 +46,9 @@ function pairLines(lines: LinesDef[]): LinesDef[][] {
   return out;
 }
 
+/** The company-settings link belongs under company problems only, not under a buyer warning. */
+const companyProblemsShown = (problems: string[]) => problems.some((p) => p.startsWith('ข้อมูลบริษัท') || p.startsWith('ยังไม่ได้ตั้งค่าข้อมูลบริษัท'));
+
 export function DetailView({ module, screen, id }: { module: string; screen: DetailScreen; id?: string }) {
   const router = useRouter();
   const perms = loadSession()?.permissions ?? [];
@@ -75,7 +78,12 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
   const buyer = print && print.legal !== 'none' ? buyerInfo(record) : null;
   const onPaperElsewhere = new Set(buyer?.keys ?? []);
   // shown on screen only: what the company profile lacks for this document (undefined = still loading)
-  const problems = print && company !== undefined && (print.legal !== 'none' || hasPerm(perms, 'identity.company.write')) ? companyProblems(company, print.legal) : [];
+  const problems = [
+    ...(print && company !== undefined && (print.legal !== 'none' || hasPerm(perms, 'identity.company.write')) ? companyProblems(company, print.legal) : []),
+    ...(print ? buyerProblems(buyer, print.legal) : []),
+  ];
+  // facts/columns/sections that stay on screen (status badges, owner, internal notes, payments received)
+  const paperClass = (f: { print?: boolean; format?: Format }) => (print && !printsOnPaper(f) ? ' screen-only' : '');
   return (
     <article className={`screen detail${print ? ' printable print-doc' : ''}`}>
       {print && <Letterhead company={company ?? null} title={print.title} docNo={docNo} copyLabel={print.copyLabel ? copy : undefined} />}
@@ -106,7 +114,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
       {problems.length > 0 && (
         <div className="print-warning no-print" role="status">
           {problems.map((p) => <p key={p}>{p}</p>)}
-          {hasPerm(perms, 'identity.company.write') && <Link href={screenHref('identity', 'companyEdit')}>ตั้งค่าข้อมูลบริษัท</Link>}
+          {companyProblemsShown(problems) && hasPerm(perms, 'identity.company.write') && <Link href={screenHref('identity', 'companyEdit')}>ตั้งค่าข้อมูลบริษัท</Link>}
         </div>
       )}
 
@@ -122,7 +130,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
           {g.title && <h2 className="fact-section-title">{g.title}</h2>}
           <dl className="facts">
             {g.fields.map((f) => (
-              <div key={f.key} className={(f.format === 'qr' ? 'fact fact-qr' : isLong(get(record, f.key)) ? 'fact fact-wide' : 'fact') + (f.emphasis ? ' fact-key' : '') + (onPaperElsewhere.has(f.key) ? ' screen-only' : '')}>
+              <div key={f.key} className={(f.format === 'qr' ? 'fact fact-qr' : isLong(get(record, f.key)) ? 'fact fact-wide' : 'fact') + (f.emphasis ? ' fact-key' : '') + (onPaperElsewhere.has(f.key) ? ' screen-only' : paperClass(f))}>
                 <dt>{f.label}</dt>
                 <dd className={isNumeric(f.format) ? 'num' : undefined}>
                   {isUrl(get(record, f.key)) ? <CopyableUrl url={String(get(record, f.key))} /> : <Value value={get(record, f.key)} format={f.format} />}
@@ -140,19 +148,19 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
           const labelAt = Math.max(0, ls.columns.findIndex((c) => !c.total));
           if (rows.length === 0) {
             // an empty section is one quiet line, not a table header over "ไม่มีรายการ"
-            return <section key={ls.path} className="detail-lines lines-empty"><h2>{ls.label}</h2><p className="muted">ไม่มีรายการ</p></section>;
+            return <section key={ls.path} className={'detail-lines lines-empty' + paperClass(ls)}><h2>{ls.label}</h2><p className="muted">ไม่มีรายการ</p></section>;
           }
           return (
-            <section key={ls.path} className="detail-lines">
+            <section key={ls.path} className={'detail-lines' + paperClass(ls)}>
               <h2>{ls.label}</h2>
               <div className="table-wrap stack">
                 <table className="data stack" role="table">
-                  <thead role="rowgroup"><tr role="row">{ls.columns.map((c) => <th role="columnheader" key={c.key} className={isNumeric(c.format) ? 'num' : undefined}>{c.label}</th>)}</tr></thead>
+                  <thead role="rowgroup"><tr role="row">{ls.columns.map((c) => <th role="columnheader" key={c.key} className={(isNumeric(c.format) ? 'num' : '') + paperClass(c) || undefined}>{c.label}</th>)}</tr></thead>
                   <tbody role="rowgroup">
                     {rows.map((r, i) => (
                       <tr role="row" key={String(r.id ?? i)}>
                         {ls.columns.map((c) => (
-                          <td role="cell" key={c.key} className={isNumeric(c.format) ? 'num' : undefined} data-label={c.label}>
+                          <td role="cell" key={c.key} className={(isNumeric(c.format) ? 'num' : '') + paperClass(c) || undefined} data-label={c.label}>
                             {c.hideRepeats && repeatsAbove(rows, i, c.key) ? null : <Value value={get(r, c.key)} format={c.format} cell />}
                           </td>
                         ))}
@@ -163,7 +171,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
                     <tfoot role="rowgroup">
                       <tr role="row" className="r-foot">
                         {ls.columns.map((c, ci) => (
-                          <td role="cell" key={c.key} className={isNumeric(c.format) ? 'num' : undefined} data-label={c.total ? c.label : undefined}>
+                          <td role="cell" key={c.key} className={(isNumeric(c.format) ? 'num' : '') + paperClass(c) || undefined} data-label={c.total ? c.label : undefined}>
                             {c.total ? <Value value={totals[c.key]} format={c.format} /> : ci === labelAt ? 'รวม' : null}
                           </td>
                         ))}
@@ -182,7 +190,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
       {id && <AuditTrail module={module} recordId={id} />}
 
       {print && <Signatures boxes={signatureBoxes(print, record)} />}
-      {print && <PrintFooter note={company?.footer_note} />}
+      {print && print.footer && <PrintFooter note={company?.footer_note} payment={print.footer === 'payment'} />}
     </article>
   );
 }

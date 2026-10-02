@@ -7,7 +7,8 @@ export default defineUi({
   label: 'จัดซื้อ',
   glyph: 'ซ',
   icon: 'shopping-cart',
-  menu: [{ label: 'ใบสั่งซื้อ', screen: 'poList' }, { label: 'สร้างใบสั่งซื้อ', screen: 'poNew' }, { label: 'ใบส่งคืนสินค้า', screen: 'rtList' }],
+  menu: [{ label: 'ใบสั่งซื้อ', screen: 'poList' }, { label: 'สร้างใบสั่งซื้อ', screen: 'poNew' }, { label: 'ใบส่งคืนสินค้า', screen: 'rtList' },
+    { label: 'บันทึกการรับของ', screen: 'receipts' }, { label: 'ตั้งค่าการอนุมัติ', screen: 'settings' }],
   commands: [
     { id: 'po', label: 'สร้างใบสั่งซื้อ', example: 'สั่งซื้อ SUP-001', keywords: ['สั่งซื้อ', 'ซื้อ', 'po'], screen: 'poNew', perm: 'purchasing.po.write',
       arg: { lookup: { module: 'master-data', path: '/partners', query: { kind: 'supplier' }, label: ['code', 'name'], assign: { supplierId: 'id', supplierName: 'name' } } } },
@@ -55,26 +56,43 @@ export default defineUi({
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'supplier_name', label: 'ผู้ขาย' },
         { key: 'order_date', label: 'วันที่สั่ง', format: 'date' }, { key: 'expected_date', label: 'กำหนดส่ง', format: 'date' },
-        { key: 'warehouse_code', label: 'รับเข้าคลัง' }, { key: 'net', label: 'ก่อน VAT', format: 'money' },
+        { key: 'warehouse_code', label: 'รับเข้าคลัง', print: false }, { key: 'net', label: 'ก่อน VAT', format: 'money' },
         { key: 'vat', label: 'VAT 7%', format: 'money' }, { key: 'gross', label: 'ยอดรวม', format: 'money' }, { key: 'note', label: 'หมายเหตุ' },
+        { key: 'created_by_name', label: 'ผู้จัดทำ' }, { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'approved_at', label: 'อนุมัติเมื่อ', format: 'datetime' },
+        { key: 'received_by_approver', label: 'ผู้อนุมัติรับของเอง', format: 'boolean' },
       ],
       lines: [{
         path: 'lines', label: 'รายการ',
         columns: [
           { key: 'line_no', label: '#' }, { key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' },
-          { key: 'qty', label: 'สั่ง', format: 'qty' }, { key: 'received_qty', label: 'รับแล้ว', format: 'qty' }, { key: 'returned_qty', label: 'ส่งคืน', format: 'qty' },
+          { key: 'qty', label: 'สั่ง', format: 'qty' }, { key: 'received_qty', label: 'รับแล้ว', format: 'qty', print: false }, { key: 'returned_qty', label: 'ส่งคืน', format: 'qty', print: false },
           { key: 'unit_price', label: 'ราคา/หน่วย', format: 'money' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
         ],
       }, {
-        path: 'returns', label: 'ใบส่งคืนสินค้า',
+        path: 'returns', label: 'ใบส่งคืนสินค้า', print: false,
         columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'return_date', label: 'วันที่', format: 'date' }, { key: 'warehouse_code', label: 'จากคลัง' },
           { key: 'ref_no', label: 'อ้างอิง NCR' }, { key: 'gross', label: 'มูลค่ารวม VAT', format: 'money' },
         ],
+      }, {
+        path: 'receipts', label: 'การรับของ',
+        columns: [
+          { key: 'created_at', label: 'เมื่อ', format: 'datetime' }, { key: 'received_by_name', label: 'ผู้รับของ' },
+          { key: 'gross', label: 'มูลค่ารวม VAT', format: 'money' }, { key: 'supplier_invoice_no', label: 'ใบกำกับผู้ขาย' }, { key: 'supplier_invoice_date', label: 'ลงวันที่', format: 'date' },
+          { key: 'sod_note', label: 'ข้อสังเกต' },
+        ],
       }],
       actions: [
         { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/purchase-orders/:id/approve', perm: 'purchasing.po.approve', when: { field: 'status', in: ['draft'] }, tone: 'primary', mobile: true },
-        { id: 'receive', label: 'รับของที่ค้างทั้งหมด', method: 'POST', endpoint: '/purchase-orders/:id/receive', perm: 'purchasing.po.receive', when: { field: 'status', in: ['approved', 'partially_received'] }, confirm: 'บันทึกรับของทุกรายการที่ยังค้างรับ', tone: 'primary', mobile: true },
+        { id: 'receive', label: 'รับของที่ค้างทั้งหมด', method: 'POST', endpoint: '/purchase-orders/:id/receive', perm: 'purchasing.po.receive', when: { field: 'status', in: ['approved', 'partially_received'] }, confirm: 'บันทึกรับของทุกรายการที่ยังค้างรับ', tone: 'primary', mobile: true,
+          // C8: the supplier's tax invoice that came with the goods (optional — for the purchase VAT register)
+          fields: [
+            { name: 'receivedDate', label: 'วันที่รับของ (เว้นว่าง = วันนี้)', type: 'date' },
+            { name: 'supplierInvoiceNo', label: 'เลขที่ใบกำกับภาษีผู้ขาย', type: 'text' },
+            { name: 'supplierInvoiceDate', label: 'วันที่ใบกำกับภาษี', type: 'date' },
+            { name: 'supplierTaxId', label: 'เลขประจำตัวผู้เสียภาษีผู้ขาย (13 หลัก)', type: 'text' },
+            { name: 'supplierBranch', label: 'สาขาผู้ขาย (00000 = สำนักงานใหญ่)', type: 'text' },
+          ] },
         { id: 'return', label: 'ส่งคืนผู้ขาย', method: 'POST', endpoint: '/purchase-orders/:id/returns', perm: 'purchasing.po.return', when: { field: 'status', in: ['partially_received', 'received'] },
           then: { screen: 'rtDetail', idFrom: 'id' },
           fields: [
@@ -94,6 +112,28 @@ export default defineUi({
           } },
         { id: 'cancel', label: 'ยกเลิกใบสั่งซื้อ', method: 'POST', endpoint: '/purchase-orders/:id/cancel', perm: 'purchasing.po.write', when: { field: 'status', in: ['draft', 'approved'] }, confirm: 'ยกเลิกแล้วแก้กลับไม่ได้', tone: 'danger' },
       ],
+    },
+    receipts: {
+      kind: 'list', title: 'บันทึกการรับของตามใบสั่งซื้อ', endpoint: '/receipts', perm: 'purchasing.po.read',
+      filters: [{ name: 'q', label: 'ค้นหาเลขที่ PO หรือผู้ขาย', type: 'text' },
+        { name: 'byApprover', label: 'แสดง', type: 'select', options: [{ value: 'true', label: 'เฉพาะผู้อนุมัติรับของเอง (ข้อยกเว้นการแยกหน้าที่)' }, { value: 'false', label: 'รับโดยคนอื่น' }] }],
+      columns: [
+        { key: 'created_at', label: 'เมื่อ', format: 'datetime' }, { key: 'po_no', label: 'ใบสั่งซื้อ' }, { key: 'supplier_name', label: 'ผู้ขาย' },
+        { key: 'items', label: 'รายการ' }, { key: 'gross', label: 'มูลค่ารวม VAT', format: 'money' }, { key: 'approved_by_name', label: 'ผู้อนุมัติ PO' },
+        { key: 'received_by_name', label: 'ผู้รับของ' }, { key: 'by_approver', label: 'ผู้อนุมัติรับเอง', format: 'boolean' },
+      ],
+      rowLink: { screen: 'poDetail', idFrom: 'po_id' },
+      empty: 'ยังไม่มีการรับของ',
+    },
+    settings: {
+      kind: 'form', title: 'ตั้งค่าการอนุมัติใบสั่งซื้อ', method: 'PUT', endpoint: '/settings', perm: 'purchasing.settings.write', load: '/settings',
+      fields: [
+        { name: 'creatorCannotApprove', label: 'ผู้สร้างใบสั่งซื้ออนุมัติใบของตัวเองไม่ได้ (แยกหน้าที่)', type: 'boolean',
+          help: 'เปิดไว้ (แนะนำ ผู้สอบบัญชีตรวจข้อนี้) · ปิดได้เฉพาะบริษัทที่มีคนทำงานจัดซื้อคนเดียว — การรับของโดยผู้อนุมัติยังทำได้และถูกบันทึกในหน้า "บันทึกการรับของ"' },
+        { name: 'standardApprovalLimit', label: 'วงเงินอนุมัติปกติ (บาท รวม VAT)', type: 'number', step: 0.01,
+          help: 'ใบสั่งซื้อที่ยอดเกินวงเงินนี้ ต้องให้ผู้มีสิทธิ์ "อนุมัติใบสั่งซื้อวงเงินสูง" อนุมัติ · ใส่ 0 = ไม่แบ่งวงเงิน' },
+      ],
+      submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'poList' },
     },
     rtList: {
       kind: 'list', title: 'ใบส่งคืนสินค้า', endpoint: '/purchase-returns', perm: 'purchasing.po.read', mobile: true,

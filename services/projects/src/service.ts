@@ -1,5 +1,6 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, thaiToday, TODAY_SQL, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -151,19 +152,19 @@ async function loadTask(c: Client, id: string) {
 
 async function openProject(c: Client, id: string) {
   const p = await one(c, 'select id, no, status from projects where id = $1', [id], 'Project');
-  if (CLOSED_PROJECT.includes(p.status)) throw conflict(`Project ${p.no} is ${p.status}`);
+  if (CLOSED_PROJECT.includes(p.status)) throw conflict(`โครงการ ${p.no} อยู่ในสถานะ "${statusTh(p.status)}"`);
   return p;
 }
 
 async function checkMilestone(c: Client, projectId: string, milestoneId: string | null | undefined) {
   if (!milestoneId) return;
   const r = await c.query('select 1 from milestones where id = $1 and project_id = $2', [milestoneId, projectId]);
-  if (!r.rowCount) throw badRequest('Milestone does not belong to this project', { fieldErrors: { milestoneId: ['milestone นี้ไม่ได้อยู่ในโครงการ'] } });
+  if (!r.rowCount) throw badRequest(`งวดงานนี้ไม่ได้อยู่ในโครงการนี้`, { fieldErrors: { milestoneId: ['milestone นี้ไม่ได้อยู่ในโครงการ'] } });
 }
 
 /** The Monday of the week containing `date` (or today), as YYYY-MM-DD. */
 async function weekStartOf(c: Client, date?: string): Promise<string> {
-  return (await c.query(`select date_trunc('week', coalesce($1::date, current_date))::date as d`, [date ?? null])).rows[0].d;
+  return (await c.query(`select date_trunc('week', coalesce($1::date, ${TODAY_SQL}))::date as d`, [date ?? null])).rows[0].d;
 }
 
 async function loadWeek(c: Client, userId: string, start?: string) {
@@ -195,7 +196,7 @@ async function loadWeek(c: Client, userId: string, start?: string) {
 
 async function loadWeekById(c: Client, a: AuthContext, id: string, lock = false) {
   const w = await one(c, `select * from timesheet_weeks where id = $1 ${lock ? 'for update' : ''}`, [id], 'Timesheet week');
-  if (w.user_id !== a.userId && !hasPerm(a, 'projects.timesheet.approve')) throw forbidden('Missing permission: projects.timesheet.approve');
+  if (w.user_id !== a.userId && !hasPerm(a, 'projects.timesheet.approve')) throw forbidden(`ไม่มีสิทธิ์ดูชั่วโมงทำงานของผู้อื่น (projects.timesheet.approve)`);
   w.entries = (await c.query(`${ENTRY_SELECT} where e.week_id = $1 order by e.work_date, e.created_at`, [id])).rows;
   w.total_hours = w.entries.reduce((sum: number, r: any) => sum + r.hours, 0);
   return w;
@@ -204,7 +205,7 @@ async function loadWeekById(c: Client, a: AuthContext, id: string, lock = false)
 const like = (q?: string) => (q ? `%${q}%` : null);
 
 /** Today in Thailand (Asia/Bangkok, UTC+7) as YYYY-MM-DD. */
-const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+const bangkokToday = () => thaiToday();
 
 /** End date before start date: a clear Thai field error instead of the raw table constraint. */
 function checkDates(start: string | null | undefined, end: string | null | undefined) {
@@ -233,7 +234,7 @@ export const definition: ServiceDefinition = {
       checkDates(b.startDate, b.endDate);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        const no = await nextDocNo(c, 'PJ', b.startDate ? new Date(b.startDate) : new Date());
+        const no = await nextDocNo(c, 'PJ', new Date(b.startDate ?? bangkokToday()));
         const p = (await c.query(
           `insert into projects (no, name, customer_id, customer_name, manager_id, manager_name, budget, start_date, end_date, description, created_by)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
@@ -317,7 +318,7 @@ export const definition: ServiceDefinition = {
       const b = parse(ProjectPatch, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const p = await one(c, 'select * from projects where id = $1 for update', [id], 'Project');
-        if (p.status === 'cancelled') throw conflict(`Cannot edit cancelled project ${p.no}`);
+        if (p.status === 'cancelled') throw conflict(`โครงการ ${p.no} ยกเลิกแล้ว — แก้ไขไม่ได้`);
         checkDates(b.startDate === undefined ? p.start_date : b.startDate, b.endDate === undefined ? p.end_date : b.endDate);
         const map: Record<string, string> = { name: 'name', customerId: 'customer_id', customerName: 'customer_name', managerId: 'manager_id', managerName: 'manager_name', budget: 'budget', startDate: 'start_date', endDate: 'end_date', description: 'description' };
         const keys = Object.keys(map).filter((key) => (b as any)[key] !== undefined);
@@ -335,10 +336,10 @@ export const definition: ServiceDefinition = {
         const { id } = parse(IdParam, req.params);
         return k.db.tx(a.tenantId, async (c) => {
           const p = await one(c, 'select id, no, status from projects where id = $1 for update', [id], 'Project');
-          if (!rule.from.includes(p.status)) throw conflict(`Cannot ${move} project ${p.no}: status is ${p.status}`);
+          if (!rule.from.includes(p.status)) throw conflict(`ทำรายการนี้กับโครงการ ${p.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(p.status)}"`);
           await c.query(
             `update projects set status = $2, completed_at = case when $2 = 'done' then now() when $2 = 'active' then null else completed_at end,
-               start_date = case when $2 = 'active' then coalesce(start_date, current_date) else start_date end where id = $1`,
+               start_date = case when $2 = 'active' then coalesce(start_date, ${TODAY_SQL}) else start_date end where id = $1`,
             [id, rule.to]);
           return loadProject(c, id);
         });
@@ -399,7 +400,7 @@ export const definition: ServiceDefinition = {
         const { id } = parse(IdParam, req.params);
         return k.db.tx(a.tenantId, async (c) => {
           const m = await one(c, 'select * from milestones where id = $1 for update', [id], 'Milestone');
-          if (m.done === done) throw conflict(done ? 'Milestone is already done' : 'Milestone is not done');
+          if (m.done === done) throw conflict(done ? 'งวดงานนี้เสร็จแล้ว' : 'งวดงานนี้ยังไม่เสร็จ');
           await c.query('update milestones set done = $2, done_at = case when $2 then now() end where id = $1', [id, done]);
           return (await c.query('select m.*, (not m.done and m.due_date < current_date) as overdue from milestones m where id = $1', [id])).rows[0];
         });
@@ -503,8 +504,8 @@ export const definition: ServiceDefinition = {
         return k.db.tx(a.tenantId, async (c) => {
           const t = await one(c, 'select t.id, t.status, t.project_id, t.title from tasks t where t.id = $1 for update', [id], 'Task');
           const p = await one(c, 'select no, status from projects where id = $1', [t.project_id], 'Project');
-          if (p.status === 'cancelled') throw conflict(`Project ${p.no} is cancelled`);
-          if (!rule.from.includes(t.status)) throw conflict(`Cannot ${move} task "${t.title}": status is ${t.status}`);
+          if (p.status === 'cancelled') throw conflict(`โครงการ ${p.no} ยกเลิกแล้ว`);
+          if (!rule.from.includes(t.status)) throw conflict(`ทำรายการนี้กับงาน "${t.title}" ไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
           await c.query(
             `update tasks set status = $2, updated_at = now(), completed_at = case when $2 = 'done' then now() end where id = $1`, [id, rule.to]);
           return loadTask(c, id);
@@ -522,11 +523,11 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const p = await one(c, 'select id, no, status from projects where id = $1', [b.projectId], 'Project');
-        if (p.status === 'cancelled') throw conflict(`Project ${p.no} is cancelled`);
+        if (p.status === 'cancelled') throw conflict(`โครงการ ${p.no} ยกเลิกแล้ว`);
         if (b.workDate > bangkokToday()) throw badRequest(`ลงชั่วโมงล่วงหน้าไม่ได้ (${b.workDate})`, { fieldErrors: { workDate: ['วันที่ทำงานต้องไม่เกินวันนี้'] } });
         if (b.taskId) {
           const t = await c.query('select 1 from tasks where id = $1 and project_id = $2', [b.taskId, b.projectId]);
-          if (!t.rowCount) throw badRequest('Task does not belong to this project', { fieldErrors: { taskId: ['งานนี้ไม่ได้อยู่ในโครงการ'] } });
+          if (!t.rowCount) throw badRequest(`งานนี้ไม่ได้อยู่ในโครงการนี้`, { fieldErrors: { taskId: ['งานนี้ไม่ได้อยู่ในโครงการ'] } });
         }
         const member = (await c.query('select user_name from project_members where project_id = $1 and user_id = $2', [b.projectId, a.userId])).rows[0];
         // the token's name wins; old tokens fall back to the typed name or the member snapshot
@@ -537,9 +538,9 @@ export const definition: ServiceDefinition = {
            on conflict (tenant_id, user_id, week_start) do update
              set user_name = case when $4::boolean then excluded.user_name else coalesce(timesheet_weeks.user_name, excluded.user_name) end
            returning *`, [a.userId, userName, weekStart, !!a.userName])).rows[0];
-        if (week.status !== 'draft') throw conflict(`Timesheet week ${weekStart} is ${week.status}`);
+        if (week.status !== 'draft') throw conflict(`ชั่วโมงทำงานสัปดาห์ ${weekStart} อยู่ในสถานะ "${statusTh(week.status)}" — แก้ไขไม่ได้`);
         const day = (await c.query('select coalesce(sum(hours), 0) as h from timesheet_entries where user_id = $1 and work_date = $2', [a.userId, b.workDate])).rows[0].h;
-        if (day + b.hours > 24) throw badRequest(`More than 24 hours on ${b.workDate}`, { fieldErrors: { hours: [`วันนี้ลงไปแล้ว ${day} ชั่วโมง รวมเกิน 24 ชั่วโมง`] } });
+        if (day + b.hours > 24) throw badRequest(`วันที่ ${b.workDate} ลงชั่วโมงเกิน 24 ชั่วโมง`, { fieldErrors: { hours: [`วันนี้ลงไปแล้ว ${day} ชั่วโมง รวมเกิน 24 ชั่วโมง`] } });
         const e = (await c.query(
           `insert into timesheet_entries (week_id, user_id, user_name, work_date, project_id, task_id, hours, note) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
           [week.id, a.userId, userName, b.workDate, b.projectId, b.taskId ?? null, b.hours, b.note ?? null])).rows[0];
@@ -580,10 +581,10 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const weekStart = await weekStartOf(c, b.start);
         const w = (await c.query('select * from timesheet_weeks where user_id = $1 and week_start = $2 for update', [a.userId, weekStart])).rows[0];
-        if (!w) throw conflict(`No hours logged in week ${weekStart}`);
-        if (w.status !== 'draft') throw conflict(`Timesheet week ${weekStart} is already ${w.status}`);
+        if (!w) throw conflict(`สัปดาห์ ${weekStart} ยังไม่มีชั่วโมงทำงาน`);
+        if (w.status !== 'draft') throw conflict(`ชั่วโมงทำงานสัปดาห์ ${weekStart} อยู่ในสถานะ "${statusTh(w.status)}" แล้ว`);
         const n = (await c.query('select count(*)::int as n from timesheet_entries where week_id = $1', [w.id])).rows[0].n;
-        if (!n) throw conflict(`No hours logged in week ${weekStart}`);
+        if (!n) throw conflict(`สัปดาห์ ${weekStart} ยังไม่มีชั่วโมงทำงาน`);
         await c.query(`update timesheet_weeks set status = 'submitted', submitted_at = now(), reject_reason = null, user_name = coalesce($2, user_name) where id = $1`, [w.id, a.userName ?? null]);
         return loadWeek(c, a.userId, weekStart);
       });
@@ -595,8 +596,8 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const e = await one(c, `${ENTRY_SELECT} where e.id = $1`, [id], 'Timesheet entry');
-        if (e.user_id !== a.userId) throw forbidden('You can only delete your own hours');
-        if (e.week_status !== 'draft') throw conflict(`Timesheet week ${e.week_start} is ${e.week_status}`);
+        if (e.user_id !== a.userId) throw forbidden(`ลบได้เฉพาะชั่วโมงทำงานของตัวเอง`);
+        if (e.week_status !== 'draft') throw conflict(`ชั่วโมงทำงานสัปดาห์ ${e.week_start} อยู่ในสถานะ "${statusTh(e.week_status)}" — แก้ไขไม่ได้`);
         await c.query('delete from timesheet_entries where id = $1', [id]);
         return { deleted: true, id };
       });
@@ -629,7 +630,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const w = await loadWeekById(c, a, id, true);
-        if (w.status !== 'submitted') throw conflict(`Cannot approve a ${w.status} timesheet week`);
+        if (w.status !== 'submitted') throw conflict(`อนุมัติชั่วโมงทำงานไม่ได้ — อยู่ในสถานะ "${statusTh(w.status)}"`);
         if (w.user_id === a.userId) throw forbidden('อนุมัติชั่วโมงทำงานของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ');
         await c.query(`update timesheet_weeks set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);
         return loadWeekById(c, a, id);
@@ -644,7 +645,7 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ reason: z.string().trim().min(1).max(1000) }), req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const w = await loadWeekById(c, a, id, true);
-        if (w.status !== 'submitted') throw conflict(`Cannot reject a ${w.status} timesheet week`);
+        if (w.status !== 'submitted') throw conflict(`ส่งกลับชั่วโมงทำงานไม่ได้ — อยู่ในสถานะ "${statusTh(w.status)}"`);
         await c.query(`update timesheet_weeks set status = 'draft', submitted_at = null, reject_reason = $2, rejected_by_name = $3 where id = $1`, [id, b.reason, a.userName ?? null]);
         return loadWeekById(c, a, id);
       });

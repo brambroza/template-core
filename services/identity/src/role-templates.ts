@@ -32,7 +32,8 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'approvals.request.approve', 'assets.finance.read', 'automation.rule.read', 'booking.book.approve', 'costing.cost.read',
     'crm.lead.read', 'crm.quote.read', 'expense.claim.approve', 'helpdesk.ticket.read', 'hr.employee.read', 'hr.attendance.read', 'hr.leave.approve',
     'identity.user.read', 'inventory.stock.read', 'master.item.read', 'master.partner.read', 'production.bom.read', 'production.order.read',
-    'projects.project.read', 'projects.timesheet.approve', 'purchasing.po.read', 'purchasing.po.approve',
+    // wave 8: the executive is the top of the approval limits — POs above the standard limit and expense claims over the monthly limit
+    'projects.project.read', 'projects.timesheet.approve', 'purchasing.po.read', 'purchasing.po.approve', 'purchasing.po.approve-high', 'expense.claim.approve-over-limit',
     'quality.plan.read', 'quality.inspection.read', 'quality.ncr.read', 'sales.order.read', 'sales.receivable.read',
     'accounting.report.read', 'accounting.journal.read', 'payroll.run.read', 'payroll.run.approve', 'contracts.contract.read', 'contracts.billing.read',
   ]),
@@ -55,10 +56,12 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'accounting.journal.read', 'accounting.journal.write', 'accounting.journal.post', 'accounting.account.write', 'accounting.period.close', 'accounting.report.read',
     'payroll.run.read', 'payroll.run.pay', 'contracts.contract.read', 'contracts.billing.read', 'contracts.billing.write',
   ]),
-  t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย รับสินค้าตามใบสั่งซื้อ และส่งคืนผู้ขาย', [
+  t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย รับสินค้าตามใบสั่งซื้อ ส่งคืนผู้ขาย และพิจารณาใบขอซื้อที่ส่งมาถึง (ไม่อนุมัติใบสั่งซื้อของตัวเอง)', [
     // po.return: QC-rejected material in QC-HOLD goes back to the supplier (bugs-0.4 ID-03 — no suggested role could do it)
+    // no purchasing.po.approve: the buyer raises POs, a manager/executive approves them (segregation of duties, wave 8)
+    // approvals.request.approve: purchase requests (PR) route จัดซื้อ → MD; the approvals module only lets the person on the chain decide
     'purchasing.po.read', 'purchasing.po.write', 'purchasing.po.receive', 'purchasing.po.return', 'master.item.read', 'master.partner.read', 'master.partner.write',
-    'inventory.stock.read', 'quality.inspection.read',
+    'inventory.stock.read', 'quality.inspection.read', 'approvals.request.approve',
   ]),
   t('sales', 'ฝ่ายขาย', 'ลีด โอกาสขาย ใบเสนอราคา ใบสั่งขาย ลูกค้า และติดตามลูกหนี้', [
     'crm.lead.read', 'crm.lead.write', 'crm.activity.write', 'crm.quote.read', 'crm.quote.write', 'crm.quote.decide',
@@ -69,17 +72,29 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'inventory.stock.read', 'inventory.move.write', 'purchasing.po.read', 'purchasing.po.receive', 'sales.order.read', 'sales.order.deliver',
     'master.item.read', 'production.order.read',
   ]),
-  t('technician', 'ช่างซ่อมบำรุง', 'รับงานซ่อม ปิดงานซ่อม ดูประวัติเครื่องจักร และดูสต็อกอะไหล่', [
+  t('technician', 'ช่างซ่อมบำรุง', 'รับงานซ่อม ปิดงานซ่อม ดูประวัติเครื่องจักร ดูสต็อกอะไหล่ ออกงานบริการตามสัญญา MA รับงานแจ้งซ่อม และลงชั่วโมงงานโครงการ', [
     'maintenance.machine.read', 'maintenance.wo.report', 'maintenance.wo.work', 'inventory.stock.read', 'master.item.read',
+    // round-2 N3: service companies send the same technicians on MA visits and building/equipment tickets, and they log project hours
+    'master.partner.read', 'contracts.contract.read', 'contracts.visit.read', 'contracts.visit.work', 'helpdesk.ticket.read', 'helpdesk.ticket.work',
+    'projects.project.read', 'projects.timesheet.log',
   ]),
-  t('qc', 'QC ควบคุมคุณภาพ', 'แผนการตรวจ บันทึกผลตรวจ ออก NCR และปล่อยของจากคลังกักกัน', [
+  t('qc', 'QC ควบคุมคุณภาพ', 'แผนการตรวจ บันทึกผลตรวจ ออก/ปิด NCR ปล่อยของจากคลังกักกันตามผลตัดสิน และรับเรื่องร้องเรียนลูกค้า', [
     'quality.plan.read', 'quality.inspection.read', 'quality.inspection.record', 'quality.ncr.read', 'quality.ncr.write',
     'inventory.stock.read', 'inventory.hold.release', 'master.item.read', 'master.partner.read', 'production.order.read', 'purchasing.po.read',
+    // wave 8: the QC head verifies corrective actions and closes NCRs; customer complaints (after-sales tickets) land with QC
+    'quality.ncr.close', 'helpdesk.ticket.read', 'helpdesk.ticket.work',
   ]),
   t('it', 'ไอที / helpdesk', 'รับเรื่องแจ้งปัญหา แก้ไข เขียนฐานความรู้ ตั้งค่า SLA และดูแลทะเบียนทรัพย์สินไอที', [
     'helpdesk.ticket.read', 'helpdesk.ticket.work', 'helpdesk.kb.write', 'helpdesk.setup.write',
     'assets.asset.write', 'assets.audit.run', 'identity.user.read',
     'contracts.contract.read', 'contracts.visit.read', 'contracts.visit.work',
+    // round-2 N3: "บันทึกเรื่องจากลูกค้า" needs the customer list; IT staff also log hours on IT projects
+    'master.partner.read', 'projects.project.read', 'projects.timesheet.log',
+  ]),
+  t('planner', 'วางแผนการผลิต', 'สูตรการผลิต (BOM) ใบสั่งผลิต ปล่อย/ปิดงานผลิต ดูสต็อก เครื่องจักร ผล QC และต้นทุน', [
+    // wave 8: the factory demo's planner used a hand-made production.* role; this is the suggested equivalent
+    'production.bom.read', 'production.bom.write', 'production.order.read', 'production.order.write', 'master.item.read', 'inventory.stock.read',
+    'maintenance.machine.read', 'quality.inspection.read', 'costing.cost.read', 'sales.order.read', 'purchasing.po.read',
   ]),
   t('pm', 'ผู้จัดการโครงการ', 'สร้างและดูแลโครงการ งาน งวดงาน ลงชั่วโมง และอนุมัติชั่วโมงทำงานของทีม', [
     'projects.project.read', 'projects.project.write', 'projects.task.write', 'projects.timesheet.log', 'projects.timesheet.approve',

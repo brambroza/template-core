@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { signToken } from './auth.ts';
+import { now } from './clock.ts';
 import { createService, type Service, type ServiceDefinition } from './service.ts';
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/postgres';
@@ -90,7 +91,7 @@ export async function bootTestService(def: ServiceDefinition, extraEnv: Record<s
     async deliver(type, data, opts) {
       const res = await svc.app.inject({
         method: 'POST', url: '/_events', headers: { 'x-internal-token': TEST_INTERNAL_TOKEN },
-        payload: { id: opts?.id ?? randomUUID(), type, tenantId: opts?.tenantId ?? tenantId, source: 'test', occurredAt: new Date().toISOString(), data },
+        payload: { id: opts?.id ?? randomUUID(), type, tenantId: opts?.tenantId ?? tenantId, source: 'test', occurredAt: now().toISOString(), data },
       });
       return { status: res.statusCode, body: res.json() };
     },

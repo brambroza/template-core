@@ -295,11 +295,16 @@ describe('UAT — office & service modules (uat-office)', () => {
     const id = page.url().split('/').pop()!;
     await shot(page, 'UAT-30');
 
-    await as(page, 'acc');
+    // segregation of duties (wave 8): the manager approves, accounting records the payment
+    await as(page, 'admin');
     await open(page, '/m/expense/claims');
     const row = page.getByRole('row').filter({ hasText: 'EXP-2569-0001' });
     await row.getByRole('button', { name: 'อนุมัติ' }).click();
     await dialogAction(page, 'อนุมัติ');
+    await expect.poll(async () => (await api('acc', 'GET', `expense/claims/${id}`)).body.status).toBe('approved');
+    // the approver may not record the payment himself
+    expect((await api('admin', 'POST', `expense/claims/${id}/pay`, { method: 'transfer' })).status).toBe(403);
+    await as(page, 'acc');
     await open(page, '/m/expense/toPay');
     const pay = page.getByRole('row').filter({ hasText: 'EXP-2569-0001' });
     expect(await pay.innerText()).toContain('2,270.00');
@@ -329,9 +334,10 @@ describe('UAT — office & service modules (uat-office)', () => {
       lines: [{ expenseDate: today, categoryId: (await api('staff', 'GET', 'expense/categories?q=HOTEL')).body[0].id, amount: 4000, receiptNo: 'H-9' }],
     })).body;
 
+    // the manager approves the advance; accounting (not the approver) pays it out — wave 8 segregation of duties
+    expect((await api('admin', 'POST', `expense/advances/${adv}/approve`)).status).toBe(200);
     await as(page, 'acc');
     await open(page, `/m/expense/advanceDetail/${adv}`);
-    await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
     await page.getByRole('button', { name: 'บันทึกจ่ายเงินทดรอง' }).click();
     await page.getByRole('dialog').getByLabel('วิธีจ่าย').selectOption('cash');
     await dialogAction(page, 'บันทึกจ่ายเงินทดรอง');

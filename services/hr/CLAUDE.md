@@ -14,7 +14,7 @@ Employee register, leave with quotas and approval, mobile check-in/out with late
 - `attendance` (one row per employee per `work_date`: check_in_at/out_at, late_minutes, early_minutes, work_minutes, GPS in/out, note, `source self | admin`, recorded_by + `recorded_by_name`)
 
 ## Behaviour
-- Time zone is Asia/Bangkok (`src/calendar.ts`). Working day = Mon–Fri (+ Sat if `saturday_workday`) and not a holiday.
+- Time zone is Asia/Bangkok (`src/calendar.ts`); "now" (check-in time, today, resign date default, balances year) is the kernel business clock `now()` (wave 8 — tests freeze it with `setClock`). Working day = Mon–Fri (+ Sat if `saturday_workday`) and not a holiday.
 - Leave `days` counts working days only; half day = 0.5 and only for a single day of a type with `allow_half_day`.
   One request may not cross a calendar year nor start before the employee's start date (400). Approvers cannot approve or reject their own leave (409). Overlapping pending/approved leave → 409.
 - Balance per type and year (by `from_date`): quota, used (approved), pending, remaining = quota − used − pending.

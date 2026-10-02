@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Bot, CornerDownLeft, FileText, LayoutGrid, ListFilter, Loader2, Search, Sparkles, Zap } from 'lucide-react';
 import {
-  commandTarget, get, hasPerm, matchCommand, pickRecord,
+  commandExample, commandTarget, get, hasPerm, matchCommand, pickRecord,
   type CommandSpec, type ModuleUi, type SearchSpec,
 } from '@erp/ui-schema';
 import { api } from '@/lib/api';
@@ -54,6 +54,8 @@ export function CommandPalette() {
     () => modules.flatMap((m) => (m.commands ?? []).filter((c) => hasPerm(perms, c.perm) && hasPerm(perms, m.screens[c.screen]?.perm)).map((c) => ({ ...c, module: m.module }))),
     [modules, perms.join()],
   );
+  // the example comes from the user's own modules (an office never sees a factory item here)
+  const example = useMemo(() => commandExample(modules, perms), [modules, perms.join()]);
   const searches = useMemo(
     () => modules.flatMap((m) => (m.search ?? []).filter((s) => hasPerm(perms, s.perm)).map((s) => ({ ...s, module: m.module }))),
     [modules, perms.join()],
@@ -273,7 +275,7 @@ export function CommandPalette() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={chat ? 'ถามต่อ…' : 'พิมพ์คำสั่ง ค้นหา หรือถามคำถาม เช่น “แจ้งซ่อม PRESS-01 น้ำมันรั่ว”'}
+            placeholder={chat ? 'ถามต่อ…' : example ? `พิมพ์คำสั่ง ค้นหา หรือถามคำถาม เช่น “${example}”` : 'พิมพ์ค้นหาเมนู เอกสาร หรือถามคำถาม'}
             aria-label="คำสั่งหรือคำถาม"
             role="combobox"
             aria-expanded={!chat}

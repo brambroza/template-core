@@ -8,6 +8,7 @@ Machines, preventive maintenance plans, work orders. Mobile-first: operators sca
 - `settings.default_parts_warehouse` (default `SPARE`)
 
 ## Behaviour
+- Default PM `last_done_on` (work order completed without a date) uses kernel `TODAY_SQL` — the Thai day of the kernel clock, not the database's UTC `current_date` (wave 8).
 - Breakdown report sets machine `down`; completing the last open breakdown sets it back to `running`.
 - `POST /pm-plans/generate { asOf }` is idempotent (unique `pm_plan_id + due_on`) — call it daily from a scheduler.
 - Completing a PM work order moves the plan: `next_due_on = done date + interval_days`.

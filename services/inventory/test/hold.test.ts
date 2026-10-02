@@ -10,6 +10,8 @@ afterAll(async () => { await t?.close(); });
 const steel = { itemId: randomUUID(), itemCode: 'RM-SPCC-12', itemName: 'เหล็กแผ่น SPCC 1.2' };
 const sus = { itemId: randomUUID(), itemCode: 'RM-SUS304', itemName: 'สแตนเลส' };
 const seal = { itemId: randomUUID(), itemCode: 'SP-SEAL', itemName: 'ซีล' };
+const bolt = { itemId: randomUUID(), itemCode: 'SP-BOLT', itemName: 'น็อต M8' };
+const nut = { itemId: randomUUID(), itemCode: 'SP-NUT', itemName: 'หัวน็อต M8' };
 
 const bal = async (itemId: string, wh: string) => {
   const r = await t.api('GET', `/balances?itemId=${itemId}&warehouseCode=${wh}&nonZero=false`);
@@ -42,22 +44,66 @@ describe('QC quarantine (QC-HOLD)', () => {
     expect((await bal(steel.itemId, 'QC-HOLD')).onHand).toBe(8000);
   });
 
-  it('needs inventory.hold.release to issue, transfer or reduce stock out of a hold warehouse', async () => {
+  it('blocks issue, transfer and negative adjustment out of a hold warehouse for everyone — even QC with hold.release (wave 8, N2)', async () => {
     const store = t.token(['inventory.stock.read', 'inventory.move.write']);
     const issue = await t.api('POST', '/issues', { warehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: 10 }] }, { token: store });
     expect(issue.status).toBe(403);
-    expect(issue.body.error.message).toMatch(/คลัง QC-HOLD เป็นคลังกักกัน QC/);
+    expect(issue.body.error.message).toMatch(/คลัง QC-HOLD เป็นคลังกักกัน QC .*ปล่อยเข้าคลัง.*ส่งคืนผู้ขาย/);
     expect((await t.api('POST', '/transfers', { fromWarehouseCode: 'QC-HOLD', toWarehouseCode: 'MAIN', lines: [{ ...steel, qty: 10 }] }, { token: store })).status).toBe(403);
     expect((await t.api('POST', '/adjustments', { warehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: -10 }], note: 'x' }, { token: store })).status).toBe(403);
     // into the hold warehouse is fine
     expect((await t.api('POST', '/transfers', { fromWarehouseCode: 'MAIN', toWarehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: 1 }] }, { token: store })).status).toBe(201);
+    // QC may release through the hold flow only — not by a plain transfer/issue (the old bypass)
     const qa = t.token(['inventory.stock.read', 'inventory.move.write', 'inventory.hold.release']);
-    expect((await t.api('POST', '/transfers', { fromWarehouseCode: 'QC-HOLD', toWarehouseCode: 'MAIN', lines: [{ ...steel, qty: 1 }] }, { token: qa })).status).toBe(201);
-    expect((await bal(steel.itemId, 'QC-HOLD')).onHand).toBe(8000);
+    expect((await t.api('POST', '/transfers', { fromWarehouseCode: 'QC-HOLD', toWarehouseCode: 'MAIN', lines: [{ ...steel, qty: 1 }] }, { token: qa })).status).toBe(403);
+    expect((await t.api('POST', '/issues', { warehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: 1 }] }, { token: qa })).status).toBe(403);
+    // a reason alone is not enough without inventory.hold.override
+    const noPerm = await t.api('POST', '/issues', { warehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: 1 }], overrideHoldReason: 'ลูกค้าขอด่วน' }, { token: qa });
+    expect(noPerm.status).toBe(403);
+    expect(noPerm.body.error.message).toContain('inventory.hold.override');
+    // an admin override needs a real reason
+    expect((await t.api('POST', '/issues', { warehouseCode: 'QC-HOLD', lines: [{ ...steel, qty: 1 }], overrideHoldReason: 'x' })).status).toBe(400);
+    expect((await bal(steel.itemId, 'QC-HOLD')).onHand).toBe(8001);
+  });
+
+  it('admin override with a reason: recorded on the stock card, untracked stock first, then the holds are trimmed and logged', async () => {
+    const admin = t.token(['*'], t.tenantId, { userName: 'ผู้ดูแลระบบ' });
+    // the 1 kg transferred in by hand above is not under any hold: taking it leaves the hold untouched
+    const first = await t.api('POST', '/transfers', { fromWarehouseCode: 'QC-HOLD', toWarehouseCode: 'MAIN', lines: [{ ...steel, qty: 1 }], overrideHoldReason: 'ย้ายผิดคลัง โอนกลับ' }, { token: admin });
+    expect(first.status).toBe(201);
+    let h = (await t.api('GET', '/holds?status=rejected')).body.find((x: any) => x.inspection_no === 'QC-2569-0017');
+    expect(h).toMatchObject({ qty: 8000, hold_on_hand: 8000 });
+    expect((await bal(steel.itemId, 'MAIN')).onHand).toBe(10000);
+    // now out of a rejected lot itself (another item, so the steel numbers below stay as they were)
+    await t.deliver('purchasing.goods_received', { poId: randomUUID(), poNo: 'PO-2569-0009', supplierId: null, supplierName: 'สยามน็อต', warehouseCode: 'MAIN', lines: [{ ...bolt, qty: 1000, unitPrice: 1 }] });
+    await t.deliver('quality.inspection_completed', completed({ no: 'QC-2569-0030', itemId: bolt.itemId, itemCode: bolt.itemCode, itemName: bolt.itemName, qty: 1000, acceptedQty: 900, rejectedQty: 100 }));
+    const res = await t.api('POST', '/issues', { warehouseCode: 'QC-HOLD', lines: [{ ...bolt, qty: 10 }], overrideHoldReason: 'MD สั่งใช้ทำชิ้นงานทดลอง (ไม่ส่งลูกค้า)' }, { token: admin });
+    expect(res.status).toBe(201);
+    const card = (await t.api('GET', `/items/${bolt.itemId}/stock-card?warehouseCode=QC-HOLD`)).body;
+    expect(card.at(-1)).toMatchObject({ kind: 'issue', qty: -10, note: 'บังคับออกจากคลังกักกัน: MD สั่งใช้ทำชิ้นงานทดลอง (ไม่ส่งลูกค้า)' });
+    h = (await t.api('GET', `/holds?itemId=${bolt.itemId}`)).body[0];
+    expect(h).toMatchObject({ inspection_no: 'QC-2569-0030', qty: 90, hold_on_hand: 90, status: 'rejected' }); // the hold list matches the stock
+    const detail = (await t.api('GET', `/holds/${h.id}`)).body;
+    expect(detail.log).toEqual([expect.objectContaining({ kind: 'override', kind_th: 'บังคับจ่ายออก (ผู้ดูแลระบบ)', qty: 10, qty_after: 90, user_name: 'ผู้ดูแลระบบ' })]);
+    expect(detail.log[0].note).toContain('MD สั่งใช้ทำชิ้นงานทดลอง');
+    expect(detail.note).toContain('บังคับจ่ายออก 10');
+    // taking the rest empties the hold: status forced_out
+    await t.api('POST', '/adjustments', { warehouseCode: 'QC-HOLD', lines: [{ ...bolt, qty: -90 }], note: 'ทิ้งเป็นเศษเหล็ก', overrideHoldReason: 'MRB ตัดสินทำลาย ไม่ต้องส่งคืน' }, { token: admin });
+    expect((await t.api('GET', `/holds/${h.id}`)).body).toMatchObject({ qty: 0, status: 'forced_out', status_th: 'ถูกจ่ายออกนอกขั้นตอน (ดูเหตุผล)' });
+  });
+
+  it('another module issuing from QC-HOLD (legacy path) reduces the hold and logs it', async () => {
+    await t.deliver('purchasing.goods_received', { poId: randomUUID(), poNo: 'PO-2569-0010', supplierId: null, supplierName: 'สยามน็อต', warehouseCode: 'MAIN', lines: [{ ...nut, qty: 50, unitPrice: 2 }] });
+    await t.deliver('quality.inspection_completed', completed({ no: 'QC-2569-0031', itemId: nut.itemId, itemCode: nut.itemCode, itemName: nut.itemName, qty: 50, acceptedQty: 30, rejectedQty: 20 }));
+    await t.deliver('sales.delivered', { orderId: randomUUID(), orderNo: 'SO-2569-0099', customerName: 'ลูกค้า', warehouseCode: 'QC-HOLD', lines: [{ ...nut, qty: 5, unitPrice: 3 }] });
+    const h = (await t.api('GET', `/holds?itemId=${nut.itemId}`)).body[0];
+    expect(h).toMatchObject({ qty: 15, hold_on_hand: 15 });
+    const log = (await t.api('GET', `/holds/${h.id}`)).body.log;
+    expect(log).toEqual([expect.objectContaining({ kind: 'external', qty: 5, qty_after: 15, ref_type: 'sales_order', ref_id: 'SO-2569-0099' })]);
   });
 
   it('releases part of a hold back to stock with a note (perm inventory.hold.release)', async () => {
-    const h = (await t.api('GET', '/holds?status=rejected')).body[0];
+    const h = (await t.api('GET', '/holds?status=rejected')).body.find((x: any) => x.inspection_no === 'QC-2569-0017');
     const store = t.token(['inventory.stock.read', 'inventory.move.write']);
     expect((await t.api('POST', `/holds/${h.id}/release`, { qty: 500, note: 'ใช้ตามสภาพ' }, { token: store })).status).toBe(403);
     expect((await t.api('POST', `/holds/${h.id}/release`, { qty: 500 })).status).toBe(400); // note required
@@ -77,6 +123,9 @@ describe('QC quarantine (QC-HOLD)', () => {
     expect((await bal(steel.itemId, 'QC-HOLD')).onHand).toBe(0);
     const h = (await t.api('GET', '/holds')).body.find((x: any) => x.inspection_no === 'QC-2569-0017');
     expect(h).toMatchObject({ qty: 0, status: 'returned' });
+    expect((await t.api('GET', `/holds/${h.id}`)).body.log.map((l: any) => [l.kind, l.qty, l.qty_after, l.ref_id])).toEqual([
+      ['release', 500, 7500, 'QC-2569-0017'], ['return', 7500, 0, 'RT-2569-0001'],
+    ]);
     const card = (await t.api('GET', `/items/${steel.itemId}/stock-card?warehouseCode=QC-HOLD`)).body;
     expect(card.at(-1)).toMatchObject({ kind: 'issue', qty: -7500, refType: 'purchase_return', refId: 'RT-2569-0001' });
   });
@@ -111,6 +160,8 @@ describe('QC quarantine (QC-HOLD)', () => {
   it('keeps holds per tenant', async () => {
     const other = t.token(['*'], t.otherTenantId);
     expect((await t.api('GET', '/holds', undefined, { token: other })).body).toEqual([]);
+    const mine = (await t.api('GET', '/holds')).body.find((x: any) => x.inspection_no === 'QC-2569-0030');
+    expect((await t.api('GET', `/holds/${mine.id}`, undefined, { token: other })).status).toBe(404);
     expect((await t.api('GET', '/balances', undefined, { token: other })).body).toEqual([]);
   });
 });

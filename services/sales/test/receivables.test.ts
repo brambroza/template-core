@@ -75,11 +75,12 @@ describe('sales receivables — receipts', () => {
     expect((await t.api('POST', '/receipts', { method: 'cash', lines: [{ invoiceId: randomUUID(), amount: 10 }] })).status).toBe(404);
   });
 
-  it('deposits (มัดจำ) are received without an invoice and applied to invoices later', async () => {
+  it('deposits (มัดจำ) without VAT are received without an invoice and applied to invoices later by a receipt', async () => {
     const o = (await t.api('POST', '/orders', { ...custB, creditDays: 0, lines: [{ ...svc, unitPrice: 20000 }] })).body; // gross 21,400
-    const dep = await t.api('POST', '/receipts', { orderId: o.id, depositAmount: 10700, method: 'transfer' });
+    // not part of the price (e.g. a guarantee) → no tax point; VAT deposits are deducted on the tax invoice instead (deposit-vat.test.ts)
+    const dep = await t.api('POST', '/receipts', { orderId: o.id, depositAmount: 10700, method: 'transfer', depositVatMode: 'none' });
     expect(dep.status).toBe(201);
-    expect(dep.body).toMatchObject({ kind: 'deposit', title: 'ใบรับเงินมัดจำ', total: 10700, received: 10700, deposit_remaining: 10700, orderNo: o.no, customer: { name: custB.customerName } });
+    expect(dep.body).toMatchObject({ kind: 'deposit', title: 'ใบรับเงินมัดจำ', vat: 0, tax_invoice_no: null, total: 10700, received: 10700, deposit_remaining: 10700, orderNo: o.no, customer: { name: custB.customerName } });
     expect((await t.api('GET', `/orders/${o.id}`)).body.deposits).toMatchObject([{ no: dep.body.no, deposit_remaining: 10700 }]);
     expect((await t.api('GET', '/receipts?kind=deposit&open=1')).body.map((r: any) => r.no)).toEqual([dep.body.no]);
     expect((await t.api('POST', '/receipts', { depositAmount: 100, method: 'cash' })).status).toBe(400); // no customer
@@ -88,7 +89,7 @@ describe('sales receivables — receipts', () => {
     await t.api('POST', `/orders/${o.id}/confirm`);
     const inv = (await t.api('POST', `/orders/${o.id}/invoice`, { issueDate: '2026-10-02' })).body;
     // deposit is someone else's → 400; more than remaining → 400
-    const other = (await t.api('POST', '/receipts', { ...custA, depositAmount: 50, method: 'cash' })).body;
+    const other = (await t.api('POST', '/receipts', { ...custA, depositAmount: 50, method: 'cash', depositVatMode: 'none' })).body;
     expect((await t.api('POST', '/receipts', { method: 'cash', lines: [{ invoiceId: inv.id, amount: 21400 }], deposits: [{ depositId: other.id, amount: 50 }] })).status).toBe(400);
     expect((await t.api('POST', '/receipts', { method: 'cash', lines: [{ invoiceId: inv.id, amount: 21400 }], deposits: [{ depositId: dep.body.id, amount: 10700.01 }] })).status).toBe(400);
     // deposit larger than what is due after WHT → 400
@@ -154,7 +155,7 @@ describe('sales receivables — reports, permissions, tenants', () => {
   });
 
   it('form shorthand applyDepositId uses as much of the deposit as is due', async () => {
-    const dep = (await t.api('POST', '/receipts', { ...custA, depositAmount: 5000, method: 'cash' })).body;
+    const dep = (await t.api('POST', '/receipts', { ...custA, depositAmount: 5000, method: 'cash', depositVatMode: 'none' })).body;
     const { inv } = await invoice(custA, 1000); // 1,070
     const r = (await t.api('POST', '/receipts', { method: 'cash', whtPct: '3', applyDepositId: dep.id, lines: [{ invoiceId: inv.id, amount: 1070 }] })).body;
     expect(r).toMatchObject({ total: 1070, wht_amount: 30, deposit_applied: 1040, received: 0 });

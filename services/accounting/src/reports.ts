@@ -201,7 +201,18 @@ export async function balanceSheet(c: Client, asOf: string) {
 
 /* ---------------- VAT (ภ.พ.30) ---------------- */
 
+/**
+ * ภ.พ.30 by month. C7: a reduction (purchase return / credit note) reduces the base with the tax — same signs as the registers.
+ * C11: VAT is filed monthly, so months are never netted: an excess of input VAT is carried to the next month
+ * (`carried_in` = ภาษีที่ชำระเกินยกมา, `carry_forward` = ยอดภาษีซื้อเกินยกไป; the chain starts at the first month with VAT postings,
+ * earlier years included) and the year's total row shows what was actually payable, not output − input.
+ */
 export async function vatReport(c: Client, year: string) {
+  const y = Number(year);
+  const first = (await c.query(
+    `select to_char(min(j.entry_date), 'YYYY-MM') as m from journal_entries j join journal_lines l on l.journal_id = j.id
+     join accounts a on a.id = l.account_id and a.role in ('vat_output', 'vat_input') where j.status in ${EFFECTIVE}`)).rows[0]?.m as string | null;
+  const startYear = first ? Math.min(Number(first.slice(0, 4)), y) : y;
   const r = await c.query(
     `select to_char(m, 'YYYY-MM') as month,
        coalesce(sum(case when a.role = 'vat_output' then l.credit - l.debit end), 0) as output_vat,
@@ -210,34 +221,61 @@ export async function vatReport(c: Client, year: string) {
        coalesce(sum(case when a.role = 'vat_input' then case when l.debit > 0 then l.tax_base else -l.tax_base end end), 0) as input_base,
        count(l.id) filter (where a.role = 'vat_output')::int as output_count,
        count(l.id) filter (where a.role = 'vat_input')::int as input_count
-     from generate_series(make_date($1::int, 1, 1), make_date($1::int, 12, 1), interval '1 month') m
+     from generate_series(make_date($2::int, 1, 1), make_date($1::int, 12, 1), interval '1 month') m
      left join journal_entries j on date_trunc('month', j.entry_date) = m and j.status in ${EFFECTIVE}
      left join journal_lines l on l.journal_id = j.id
      left join accounts a on a.id = l.account_id and a.role in ('vat_output', 'vat_input')
-     group by m order by m`, [Number(year)]);
-  const rows = r.rows.map((x) => {
+     group by m order by m`, [y, startYear]);
+  let carry = 0;
+  const all = r.rows.map((x) => {
     const net = r2(x.output_vat - x.input_vat);
+    const carriedIn = carry;
+    const due = r2(net - carriedIn);
+    const payable = due > 0 ? due : 0;
+    carry = due < 0 ? r2(-due) : 0;
     return { month: x.month, month_th: periodTh(x.month), output_base: r2(x.output_base), output_vat: r2(x.output_vat), output_count: x.output_count,
       input_base: r2(x.input_base), input_vat: r2(x.input_vat), input_count: x.input_count, net,
-      result: net > 0 ? 'ชำระเพิ่ม' : net < 0 ? 'ภาษีซื้อเกิน (ขอคืน/ยกไป)' : '-' };
+      carried_in: carriedIn, payable, carry_forward: carry,
+      result: payable > 0 ? 'ชำระเพิ่ม' : carry > 0 ? 'ภาษีซื้อเกิน (ยกไปเดือนถัดไป)' : '-' };
   });
-  const sum = (k: 'output_vat' | 'input_vat' | 'output_base' | 'input_base' | 'net') => r2(rows.reduce((s, x) => s + x[k], 0));
-  const totals = { outputBase: sum('output_base'), outputVat: sum('output_vat'), inputBase: sum('input_base'), inputVat: sum('input_vat'), net: sum('net') };
-  const table = [...rows, { month: '', month_th: `รวมปี ${Number(year) + 543}`, output_base: totals.outputBase, output_vat: totals.outputVat, input_base: totals.inputBase, input_vat: totals.inputVat, net: totals.net, result: '' }];
+  const rows = all.filter((x) => x.month.startsWith(`${year}-`));
+  const sum = (k: 'output_vat' | 'input_vat' | 'output_base' | 'input_base' | 'net' | 'payable') => r2(rows.reduce((s, x) => s + x[k], 0));
+  const last = rows.at(-1);
+  const totals = {
+    outputBase: sum('output_base'), outputVat: sum('output_vat'), inputBase: sum('input_base'), inputVat: sum('input_vat'), net: sum('net'),
+    /** Σ of the months' payable amounts (what was paid with the returns) and the excess carried out of December */
+    payable: sum('payable'), carriedIntoYear: rows[0]?.carried_in ?? 0, carryForward: last?.carry_forward ?? 0,
+  };
+  const table = [...rows, {
+    month: '', month_th: `รวมปี ${y + 543}`, output_base: totals.outputBase, output_vat: totals.outputVat, input_base: totals.inputBase, input_vat: totals.inputVat,
+    net: null, carried_in: null, payable: totals.payable, carry_forward: totals.carryForward,
+    result: 'ยื่นรายเดือน — ไม่หักกลบข้ามเดือน',
+  }];
   return { year, totals, rows, table };
 }
 
-/** รายงานภาษีขาย / ภาษีซื้อ: each posting on a VAT account in a month. */
+/**
+ * รายงานภาษีขาย / ภาษีซื้อ: each posting on a VAT account in a month, with the tax invoice behind it (C7/C8): invoice number and date,
+ * the other party's name, tax ID and branch (null on postings made before they were carried — `ref` is the source document then).
+ * A reduction (purchase return, reversal) shows a negative base and negative tax, so the register totals equal the ภ.พ.30 summary.
+ */
 export async function vatLines(c: Client, month: string, kind: 'output' | 'input') {
   const role = kind === 'output' ? 'vat_output' : 'vat_input';
   const r = await c.query(
-    `select j.id, j.id as journal_id, j.no, j.entry_date, j.ref, j.description, l.partner_name, l.tax_base,
-       case when $2 = 'vat_output' then l.credit - l.debit else l.debit - l.credit end as vat
+    `select j.id, j.id as journal_id, j.no, j.entry_date, j.ref, j.description, l.partner_name,
+       case when (case when $2 = 'vat_output' then l.credit else l.debit end) > 0 then l.tax_base else -l.tax_base end as tax_base,
+       case when $2 = 'vat_output' then l.credit - l.debit else l.debit - l.credit end as vat,
+       l.tax_invoice_no, to_char(coalesce(l.tax_invoice_date, j.entry_date), 'YYYY-MM-DD') as tax_invoice_date,
+       coalesce(l.tax_party_name, l.partner_name) as party_name, l.tax_party_tax_id as party_tax_id, l.tax_party_branch as party_branch
      from journal_lines l join journal_entries j on j.id = l.journal_id and j.status in ${EFFECTIVE}
      join accounts a on a.id = l.account_id and a.role = $2
      where j.entry_date between $1::date and (date_trunc('month', $1::date) + interval '1 month - 1 day')::date
-     order by j.entry_date, j.no`, [`${month}-01`, role]);
-  const rows = r.rows.map((x, i) => ({ ...x, seq: i + 1, tax_base: x.tax_base === null ? null : r2(x.tax_base), vat: r2(x.vat) }));
+     order by coalesce(l.tax_invoice_date, j.entry_date), j.entry_date, j.no, l.line_no`, [`${month}-01`, role]);
+  const rows = r.rows.map((x, i) => ({
+    ...x, seq: i + 1, tax_base: x.tax_base === null ? null : r2(x.tax_base), vat: r2(x.vat),
+    party_branch_label: x.party_branch ? (/^0+$/.test(x.party_branch) ? 'สำนักงานใหญ่' : `สาขา ${x.party_branch}`) : null,
+    document_no: x.tax_invoice_no ?? x.ref,
+  }));
   return {
     month, monthTh: periodTh(month), kind, title: kind === 'output' ? 'รายงานภาษีขาย' : 'รายงานภาษีซื้อ',
     totals: { base: r2(rows.reduce((s, x) => s + (x.tax_base ?? 0), 0)), vat: r2(rows.reduce((s, x) => s + x.vat, 0)), count: rows.length },

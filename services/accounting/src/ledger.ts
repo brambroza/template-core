@@ -1,5 +1,5 @@
 /** Ledger core: chart setup, journal creation/validation, period guard and event auto-posting. */
-import { badRequest, conflict, HttpError, nextDocNo, type Client } from '@erp/kernel';
+import { badRequest, conflict, HttpError, nextDocNo, now, thaiDate, type Client } from '@erp/kernel';
 import type { EventData } from '@erp/contracts';
 import { calcVat, round } from '@erp/thai';
 import { DEFAULT_CATEGORY_MAP, DEFAULT_RULES, EVENT_TH, PAYROLL_CATEGORY_TH, STANDARD_CHART, type PostedEvent } from './chart.ts';
@@ -9,9 +9,9 @@ export const EFFECTIVE = `('posted', 'reversed')`;
 
 export const money = (n: number) => round(n, 2).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Today in Bangkok as YYYY-MM-DD. */
-export function todayTh(now = new Date()): string {
-  return new Date(now.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+/** Today in Bangkok as YYYY-MM-DD (kernel business clock), or the Bangkok day of `at`. */
+export function todayTh(at: Date = now()): string {
+  return thaiDate(at);
 }
 
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
@@ -84,6 +84,12 @@ export interface LineInput {
   partnerId?: string | null;
   partnerName?: string | null;
   taxBase?: number | null;
+  /** VAT lines (C7): the tax invoice behind this line — number/date and the other party's name, tax ID and branch (for the VAT registers) */
+  taxInvoiceNo?: string | null;
+  taxInvoiceDate?: string | null;
+  taxPartyName?: string | null;
+  taxPartyTaxId?: string | null;
+  taxPartyBranch?: string | null;
 }
 
 export interface JournalHeader {
@@ -129,9 +135,11 @@ export async function writeLines(c: Client, journalId: string, lines: Awaited<Re
   await c.query('delete from journal_lines where journal_id = $1', [journalId]);
   for (const l of lines) {
     await c.query(
-      `insert into journal_lines (journal_id, line_no, account_id, description, debit, credit, partner_id, partner_name, tax_base)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [journalId, l.n, l.accountId, l.description || null, l.debit, l.credit, l.partnerId ?? null, l.partnerName || null, l.taxBase ?? null]);
+      `insert into journal_lines (journal_id, line_no, account_id, description, debit, credit, partner_id, partner_name, tax_base,
+         tax_invoice_no, tax_invoice_date, tax_party_name, tax_party_tax_id, tax_party_branch)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [journalId, l.n, l.accountId, l.description || null, l.debit, l.credit, l.partnerId ?? null, l.partnerName || null, l.taxBase ?? null,
+        l.taxInvoiceNo || null, isoDate(l.taxInvoiceDate), l.taxPartyName || null, l.taxPartyTaxId || null, l.taxPartyBranch || null]);
   }
 }
 
@@ -246,8 +254,13 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       const partner = { partnerId: e.customerId ?? null, partnerName: e.customerName ?? null };
       header.description = `ขายเชื่อตามใบกำกับภาษี ${e.invoiceNo}${e.customerName ? ` — ${e.customerName}` : ''}`;
       add('ar', 'debit', e.gross, { ...partner, description: e.dueDate ? `ครบกำหนดชำระ ${e.dueDate}` : null });
-      add('revenue', 'credit', round(e.gross - e.vat, 2), { ...partner });
-      add('vat', 'credit', e.vat, { ...partner, taxBase: round(e.gross - e.vat, 2), description: `ภาษีขาย ${e.invoiceNo}` });
+      // wave 8 (C2): deposits whose VAT was charged on a deposit tax invoice are deducted here — clear เงินมัดจำรับ (base), revenue at full value,
+      // output VAT only on what remains (e.vat)
+      const dep = e.depositApplied;
+      if (dep) add('deposit', 'debit', dep.net, { ...partner, description: `หักเงินมัดจำ ${dep.deposits.map((d) => d.taxInvoiceNo ?? d.depositNo).join(', ')}`.slice(0, 500) });
+      add('revenue', 'credit', round(e.gross - e.vat + (dep?.net ?? 0), 2), { ...partner });
+      add('vat', 'credit', e.vat, { ...partner, taxBase: round(e.gross - e.vat, 2), description: `ภาษีขาย ${e.invoiceNo}`,
+        taxInvoiceNo: e.invoiceNo, taxInvoiceDate: e.issueDate ?? date, taxPartyName: e.customerName ?? null, taxPartyTaxId: e.customerTaxId ?? null, taxPartyBranch: e.customerBranch ?? null });
       break;
     }
     case 'sales.payment_received': {
@@ -256,14 +269,19 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       const leg = e.method === 'cash' ? 'cash' : 'bank';
       const via = { cash: 'เงินสด', transfer: 'โอนเงิน', cheque: 'เช็ค', card: 'บัตร' }[e.method];
       if (e.kind === 'deposit') {
-        header.description = `รับเงินมัดจำ ${e.receiptNo} — ${e.customerName}`;
+        header.description = `รับเงินมัดจำ ${e.receiptNo}${e.taxInvoiceNo ? ` (ใบกำกับภาษี ${e.taxInvoiceNo})` : ''} — ${e.customerName}`;
         add(leg, 'debit', e.total, { ...partner, description: via });
-        add('deposit', 'credit', e.total, { ...partner });
+        // wave 8 (C2): a deposit is a tax point — base to เงินมัดจำรับ, VAT to ภาษีขาย in the month it was received
+        const vat = round(e.vat ?? 0, 2);
+        const base = vat > 0 ? round(e.net ?? e.total - vat, 2) : e.total;
+        add('deposit', 'credit', base, { ...partner });
+        add('vat', 'credit', vat, { ...partner, taxBase: base, description: `ภาษีขาย (เงินมัดจำ) ${e.taxInvoiceNo ?? e.receiptNo}`,
+          taxInvoiceNo: e.taxInvoiceNo ?? e.receiptNo, taxInvoiceDate: e.receiptDate ?? date, taxPartyName: e.customerName, taxPartyTaxId: e.customerTaxId ?? null, taxPartyBranch: e.customerBranch ?? null });
       } else {
         const invs = e.invoices.map((i) => i.invoiceNo).join(', ');
         header.description = `รับชำระหนี้ ${e.receiptNo} — ${e.customerName}`;
         add(leg, 'debit', e.received, { ...partner, description: via });
-        add('wht', 'debit', e.whtAmount, { ...partner, description: `ลูกค้าหักภาษี ณ ที่จ่าย (รอหนังสือรับรอง 50 ทวิ) ${e.receiptNo}` });
+        add('wht', 'debit', e.whtAmount, { ...partner, description: `ลูกค้าหักภาษี ณ ที่จ่าย (รอหนังสือรับรอง 50 ทวิ) ${e.receiptNo}`, taxBase: e.whtBase ?? null });
         add('deposit', 'debit', e.depositApplied, { ...partner, description: 'หักเงินมัดจำรับ' });
         const settled = round(e.received + e.whtAmount + e.depositApplied, 2);
         add('ar', 'credit', settled, { ...partner, description: invs ? `ตัดหนี้ ${invs}` : null });
@@ -281,7 +299,10 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       if (v) {
         // stock at the price before VAT, ภาษีซื้อ separately, AP for the amount incl. VAT
         add('inventory', 'debit', v.net, { ...partner, description: items });
-        add('vat', 'debit', v.vat, { ...partner, taxBase: v.net, description: `ภาษีซื้อ ${e.poNo}` });
+        // C8: the supplier's tax invoice (number/date/tax ID/branch keyed in at receipt) for the purchase VAT register
+        add('vat', 'debit', v.vat, { ...partner, taxBase: v.net, description: `ภาษีซื้อ ${e.poNo}${e.supplierInvoiceNo ? ` ใบกำกับ ${e.supplierInvoiceNo}` : ''}`,
+          taxInvoiceNo: e.supplierInvoiceNo ?? null, taxInvoiceDate: e.supplierInvoiceDate ?? null, taxPartyName: e.supplierName,
+          taxPartyTaxId: e.supplierTaxId ?? null, taxPartyBranch: e.supplierBranch ?? null });
         add('ap', 'credit', v.gross, { ...partner });
       } else {
         header.note = GR_NOTE;
@@ -300,7 +321,7 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       if (v) {
         add('ap', 'debit', v.gross, { ...partner });
         add('inventory', 'credit', v.net, { ...partner, description: items });
-        add('vat', 'credit', v.vat, { ...partner, taxBase: v.net, description: `ลดภาษีซื้อ ${e.returnNo}` });
+        add('vat', 'credit', v.vat, { ...partner, taxBase: v.net, description: `ลดภาษีซื้อ ${e.returnNo}`, taxPartyName: e.supplierName, taxInvoiceDate: e.returnDate ?? date });
       } else {
         header.note = 'มูลค่าตามราคาต่อหน่วยในใบสั่งซื้อ (ไม่แยกภาษีซื้อ) — ลดภาษีซื้อเมื่อได้รับใบลดหนี้จากผู้ขาย';
         add('ap', 'debit', amount, { ...partner });
@@ -316,23 +337,37 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       const notes: string[] = [];
       if (e.lines?.length) {
         // one debit per expense account (category → account map; unmapped → the `expense` rule), input VAT on its own line
+        // C3: VAT that cannot be credited (vatClaimable false: ภาษีซื้อต้องห้าม, abbreviated / no tax invoice, no seller tax ID) is part of the expense
         const byAccount = new Map<string, { amount: number; names: Set<string> }>();
         const unmapped = new Set<string>();
+        let expensedVat = 0;
         for (const l of e.lines) {
           const mapped = await categoryAccount(c, l.categoryCode, l.categoryName);
           if (!mapped) unmapped.add(`${l.categoryCode} ${l.categoryName}`);
           const acc = mapped ?? account(rules, type, 'expense');
           const cur = byAccount.get(acc) ?? { amount: 0, names: new Set<string>() };
-          cur.amount = round(cur.amount + l.amount, 2);
+          const vatToExpense = l.vatClaimable === false ? l.vat : 0;
+          expensedVat = round(expensedVat + vatToExpense, 2);
+          cur.amount = round(cur.amount + l.amount + vatToExpense, 2);
           cur.names.add(l.categoryName);
           byAccount.set(acc, cur);
         }
         for (const [accountId, x] of byAccount) {
           if (x.amount > 0) lines.push({ accountId, debit: x.amount, description: [...x.names].join(', ').slice(0, 500), ...partner });
         }
-        const vat = round(e.lines.reduce((s, l) => s + l.vat, 0), 2);
-        const base = round(e.lines.filter((l) => l.vat > 0).reduce((s, l) => s + l.amount, 0), 2);
-        add('vat', 'debit', vat, { ...partner, taxBase: base, description: `ภาษีซื้อตามใบเบิก ${e.no}` });
+        const claimable = e.lines.filter((l) => l.vat > 0 && l.vatClaimable !== false);
+        if (claimable.some((l) => l.vendorTaxId || l.receiptNo)) {
+          // one ภาษีซื้อ line per seller tax invoice (C7: the register shows the seller, not the employee)
+          for (const l of claimable) {
+            add('vat', 'debit', l.vat, { ...partner, taxBase: l.amount, description: `ภาษีซื้อตามใบเบิก ${e.no}${l.receiptNo ? ` ใบกำกับ ${l.receiptNo}` : ''}`,
+              taxInvoiceNo: l.receiptNo ?? null, taxInvoiceDate: l.expenseDate ?? null, taxPartyName: l.vendorName ?? null, taxPartyTaxId: l.vendorTaxId ?? null, taxPartyBranch: l.vendorBranch ?? null });
+          }
+        } else {
+          const vat = round(claimable.reduce((s, l) => s + l.vat, 0), 2);
+          const base = round(claimable.reduce((s, l) => s + l.amount, 0), 2);
+          add('vat', 'debit', vat, { ...partner, taxBase: base, description: `ภาษีซื้อตามใบเบิก ${e.no}` });
+        }
+        if (expensedVat > 0) notes.push(`ภาษีซื้อที่เครดิตไม่ได้ ${money(expensedVat)} บาท (ภาษีซื้อต้องห้าม / ใบกำกับอย่างย่อหรือไม่มีใบกำกับเต็มรูป) ลงเป็นค่าใช้จ่าย`);
         const paid = round(e.lines.reduce((s, l) => s + l.amount + l.vat, 0), 2);
         add(payLeg, 'credit', paid, { ...partner });
         if (unmapped.size) notes.push(`หมวดที่ยังไม่จับคู่บัญชี (ลงบัญชีค่าใช้จ่ายตามกฎ): ${[...unmapped].join(', ')}`);

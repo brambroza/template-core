@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": ["sales", "purchasing", "expense", "payroll", "inventory"],
-  "publishes": [],
+  "publishes": ["accounting.period_closed", "accounting.period_reopened"],
   "subscribes": ["sales.invoiced", "sales.payment_received", "purchasing.goods_received", "purchasing.goods_returned", "expense.claim_paid", "payroll.run_paid"],
   "permissions": [
     { "key": "accounting.journal.read", "label": "ดูผังบัญชี สมุดรายวัน และกฎการลงบัญชี" },

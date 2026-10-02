@@ -48,6 +48,9 @@ export const events = {
      * Without them the receipt is booked at Σ qty × unitPrice with no VAT split.
      */
     vatMode: VatMode.optional(), net: money.optional(), vat: money.optional(), gross: money.optional(), receivedDate: z.string().optional(),
+    /** optional (wave 8, C8): the supplier's tax invoice that came with the goods — for the purchase VAT register (ภาษีซื้อ) */
+    supplierInvoiceNo: z.string().nullable().optional(), supplierInvoiceDate: z.string().nullable().optional(),
+    supplierTaxId: z.string().nullable().optional(), supplierBranch: z.string().nullable().optional(),
   }),
 
   'sales.order_confirmed': z.object({
@@ -62,6 +65,17 @@ export const events = {
     customerId: id.nullable().optional(), customerName: z.string().optional(), dueDate: z.string().optional(),
     /** optional (wave 5): the tax-invoice date (accounting posts on it) and the order's VAT mode */
     issueDate: z.string().optional(), vatMode: VatMode.optional(),
+    /** optional (wave 8, C7): the buyer's tax ID and branch printed on the tax invoice — for the sales VAT register (ภาษีขาย) */
+    customerTaxId: z.string().nullable().optional(), customerBranch: z.string().nullable().optional(),
+    /**
+     * optional (wave 8, C2): deposits (มัดจำ) whose VAT was already charged on a deposit tax invoice and are deducted on this invoice.
+     * Then `net`/`vat`/`gross` are this invoice's own base / output VAT / amount due (after the deduction); the goods' full value is
+     * `net + depositApplied.net`. Accounting: Dr AR gross + Dr เงินมัดจำรับ depositApplied.net / Cr revenue (net + depositApplied.net) / Cr ภาษีขาย vat.
+     */
+    depositApplied: z.object({
+      net: money, vat: money, gross: money,
+      deposits: z.array(z.object({ depositId: id, depositNo: z.string(), taxInvoiceNo: z.string().nullable(), net: money, vat: money, gross: money })),
+    }).optional(),
   }),
 
   'production.completed': z.object({
@@ -102,7 +116,15 @@ export const events = {
     claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money, /** optional (wave 4): claimant's user id */ claimantId: id.optional(),
     /** optional (wave 5): when / how it was paid and what was claimed — accounting maps each category to an expense account and posts input VAT */
     paidDate: z.string().optional(), payMethod: z.enum(['transfer', 'cash', 'cheque']).optional(), department: z.string().nullable().optional(),
-    lines: z.array(z.object({ categoryCode: z.string(), categoryName: z.string(), amount: money, vat: money, description: z.string().nullable().optional() })).optional(),
+    lines: z.array(z.object({
+      categoryCode: z.string(), categoryName: z.string(), amount: money, vat: money, description: z.string().nullable().optional(),
+      /**
+       * optional (wave 8, C3): false = the VAT is not creditable (ภาษีซื้อต้องห้าม category, abbreviated/no tax invoice, no seller tax ID) — post it into
+       * the expense, not ภาษีซื้อ. Absent = claimable (old payloads). C7: the seller's tax invoice for the purchase VAT register.
+       */
+      vatClaimable: z.boolean().optional(), receiptType: z.enum(['full_tax_invoice', 'abbreviated', 'none']).nullable().optional(), expenseDate: z.string().optional(),
+      vendorName: z.string().nullable().optional(), vendorTaxId: z.string().nullable().optional(), vendorBranch: z.string().nullable().optional(), receiptNo: z.string().nullable().optional(),
+    })).optional(),
     /** optional (wave 5): cash advance cleared by this claim (ADV-…) — `total − advanceAmount` was paid now */
     advanceNo: z.string().nullable().optional(), advanceAmount: money.optional(),
   }),
@@ -192,6 +214,15 @@ export const events = {
     receiptDate: z.string().optional(),
     method: z.enum(['cash', 'transfer', 'cheque', 'card']), total: money, whtAmount: money, depositApplied: money, received: money,
     invoices: z.array(z.object({ invoiceId: id, invoiceNo: z.string(), amount: money, outstanding: money })),
+    /**
+     * optional (wave 8, C2) — deposits only: a deposit is a tax point (§78(1)(ข)). `vat` = output VAT on the deposit tax invoice
+     * `taxInvoiceNo` (DT-2569-0001), `net` = its tax base (`net + vat = total`); `vat` 0 / absent = deposit with no VAT (old payloads, or not part of the price).
+     */
+    net: money.optional(), vat: money.optional(), taxInvoiceNo: z.string().nullable().optional(),
+    /** optional (wave 8, C4) — payments with WHT: the income the customer withheld on (ฐานเงินได้, before VAT; services only on a mixed invoice) */
+    whtBase: money.optional(),
+    /** optional (wave 8): the customer's tax ID / branch for the output VAT register */
+    customerTaxId: z.string().nullable().optional(), customerBranch: z.string().nullable().optional(),
   }),
 
   /* ---- wave 4: service contracts / MA (contracts) ---- */
@@ -245,6 +276,13 @@ export const events = {
     seq: z.number().int(), count: z.number().int(), dueDate: z.string(), amount: money,
     billingPlan: z.enum(['one_time', 'monthly', 'quarterly', 'yearly']), periodFrom: z.string().nullable(), periodTo: z.string().nullable(),
   }),
+
+  /* ---- wave 8: period lock (accounting → sales / purchasing / expense) ---- */
+
+  /** An accounting period (YYYY-MM) was closed. Modules that issue posting documents move their lock date forward to `lastDate`. */
+  'accounting.period_closed': z.object({ period: z.string(), lastDate: z.string(), closedByName: z.string().nullable().optional() }),
+  /** A closed period was reopened: a lock date that came from Accounting steps back to the day before `firstDate`. */
+  'accounting.period_reopened': z.object({ period: z.string(), firstDate: z.string(), reopenedByName: z.string().nullable().optional() }),
 } as const;
 
 export type EventType = keyof typeof events;

@@ -6,7 +6,8 @@ Warehouses and an append-only stock ledger. Balance = `sum(qty)` of `stock_moves
 - `warehouses` (code per tenant, `is_hold` = quarantine: on hand but never available) · `stock_moves` (signed `qty`, `kind`, `ref_type`/`ref_id` back to the source document)
 - `settings.allow_negative`, `settings.receive_into_hold` (API name `receiveIntoHoldWhenInspected`)
 - `qc_holds` — one row per QC inspection that put stock into quarantine: origin `warehouse_code`, `hold_warehouse_code` (QC-HOLD), `held_qty`, `qty` still held,
-  `status pending (waiting for QC) | rejected (failed, waiting for a decision) | released | returned`
+  `status pending (waiting for QC) | rejected (failed, waiting for a decision) | released | returned | forced_out (left outside the hold flow, see log)`
+- `qc_hold_log` (wave 8) — every reduction of a hold: `kind release | return | override | external`, `qty`, `qty_after`, `ref_type/ref_id`, `note` (reason), `user_id/user_name`
 - `stock_anomalies` — every move that left a balance below zero (`source event` = forced by another module's event, `user` = allowed by `allowNegative`), acknowledged with a note
 
 ## The one write path
@@ -20,15 +21,23 @@ balance ends below zero, emits `inventory.stock_changed`. Never insert into `sto
   (auto-created per tenant, `is_hold`), stock card ref = QC no. With `receiveIntoHoldWhenInspected` on, `quality.inspection_created` (incoming stage only)
   moves the whole lot into QC-HOLD at receipt; completion releases the accepted qty back and keeps the rejected qty on hold.
   Events without `itemId`/`warehouseCode` (older quality module) are ignored. Cancelled inspections leave stock on hold — release it by hand.
-- Stock leaves a hold warehouse (issue, transfer from, negative adjustment) only with `inventory.hold.release` (403 with a Thai message otherwise).
-  `POST /holds/:id/release` moves held qty back (note required, audit trail in `qc_holds.note`).
-- `purchasing.goods_returned` issues from its warehouse; from a hold warehouse it settles that item's `rejected` holds oldest first (`returned` when empty).
+- Wave 8 (round-2 N2): stock leaves a hold warehouse **only through the hold flow** — `POST /holds/:id/release` (QC decision, note required, perm
+  `inventory.hold.release`) or a purchase return. Normal `POST /issues`, `/transfers` (from) and negative `/adjustments` out of an `is_hold` warehouse → 403
+  for everyone, `inventory.hold.release` included. Admin override: `overrideHoldReason` (≥ 5 chars) + perm `inventory.hold.override` (no template has it);
+  the move note becomes `บังคับออกจากคลังกักกัน: <reason>`.
+- Hold list = stock: `postMove` out of a hold warehouse (override, or another module's event such as `sales.delivered` from QC-HOLD) calls `trimHolds` —
+  when the item's open holds there exceed what is left on hand, they are reduced (rejected first, then pending, oldest first; `forced_out` when empty)
+  and each reduction is logged (`override` / `external`). Untracked stock in the hold warehouse is taken first. Callers that manage holds themselves
+  (release, QC verdict, purchase return) pass `holdManaged: true`.
+- `purchasing.goods_returned` issues from its warehouse; from a hold warehouse it settles that item's `rejected` then `pending` holds oldest first (`returned` when empty), logged as `return`.
 
 ## API
 - `GET/POST /warehouses` (`isHold`) · `GET/PUT /settings { allowNegative?, receiveIntoHoldWhenInspected? }`
 - `POST /receipts` · `POST /issues` · `POST /transfers` · `POST /adjustments` (note required)
 - `GET /balances?itemId=&warehouseCode=&nonZero=` (`onHand`, `available` = 0 in hold warehouses, `isHold`) · `GET /items/:itemId/stock-card?warehouseCode=`
-- `GET /holds?status=a,b&itemId=` · `GET /holds/:id` · `POST /holds/:id/release { qty?, toWarehouseCode?, note }` (perm `inventory.hold.release`)
+- `POST /issues | /transfers | /adjustments` accept `overrideHoldReason?` (only used out of a hold warehouse, with `inventory.hold.override`)
+- `GET /holds?status=a,b&itemId=` (rows carry `hold_on_hand` = the item's on-hand in that hold warehouse) · `GET /holds/:id` (+ `log[]` with `kind_th`) ·
+  `POST /holds/:id/release { qty?, toWarehouseCode?, note }` (perm `inventory.hold.release`)
 - `GET /anomalies?open=true|false&itemId=` (with `on_hand_now`, `ref_th`) · `POST /anomalies/:id/acknowledge { note }` (perm `inventory.settings.write`)
 - `GET/PUT /reorder-points` (min qty per item+warehouse; perm `inventory.settings.write` to set) · `GET /summary` (dashboard: skus, moves today, low stock rows,
   `negative` count, `negativeRows` (label, shortQty), `onHold`, `openAnomalies`)
@@ -50,4 +59,5 @@ Lots/serials, bin locations, stock counts, reorder points (new table + a schedul
 
 Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.
 Screens added in wave 4: `holds` (กักกัน QC, row action ปล่อยเข้าคลัง), `anomalies` (สต็อกติดลบ/ผิดปกติ, row action รับทราบ), settings form loads `GET /settings`;
-widgets `stock-negative-kpi` (สต็อกติดลบ / ในคลังกักกัน / รอตรวจ) and `stock-negative-bars` (shortQty per item @ warehouse).
+wave 8: `holdDetail` (facts + ประวัติการนำออกจากคลังกักกัน log, release action), holds list column คงเหลือในคลังกักกัน, `overrideHoldReason`
+field on the transfer / adjust forms (admin override only); widgets `stock-negative-kpi` (สต็อกติดลบ / ในคลังกักกัน / รอตรวจ) and `stock-negative-bars` (shortQty per item @ warehouse).

@@ -20,6 +20,7 @@ export default defineUi({
     { label: 'ใบสั่งขาย', screen: 'soList' }, { label: 'สร้างใบสั่งขาย', screen: 'soNew' },
     { label: 'ใบกำกับ / ค้างชำระ', screen: 'invoices' }, { label: 'ใบเสร็จรับเงิน', screen: 'receipts' }, { label: 'รับมัดจำ', screen: 'depositNew' },
     { label: 'ลูกหนี้คงค้าง', screen: 'receivables' }, { label: 'อายุลูกหนี้', screen: 'aging' },
+    { label: 'วันที่ปิดงวด', screen: 'lockSettings' },
   ],
   commands: [
     { id: 'so', label: 'สร้างใบสั่งขาย', example: 'ขาย CUS-001', keywords: ['ขาย', 'สั่งขาย', 'เปิดบิล', 'so'], screen: 'soNew', perm: 'sales.order.write',
@@ -37,6 +38,15 @@ export default defineUi({
     { id: 'receipts', title: 'ใบเสร็จรับเงิน', endpoint: '/receipts', label: ['no', 'customer_name'], screen: 'receipt', perm: 'sales.receivable.read' },
   ],
   screens: {
+    /** wave 8 (C5): lock date — moves forward automatically when Accounting closes a period */
+    lockSettings: {
+      kind: 'form', title: 'วันที่ปิดงวดเอกสารขาย', method: 'POST', endpoint: '/lock', perm: 'sales.lock.write', load: '/lock',
+      fields: [
+        { name: 'lockDate', label: 'ปิดงวดถึงวันที่', type: 'date',
+          help: 'ใบกำกับภาษี ใบเสร็จ และใบรับมัดจำ ที่ลงวันที่ถึงวันนี้จะออกไม่ได้ (ยกเว้นผู้มีสิทธิ์ข้ามการปิดงวดระบุเหตุผล) · เลื่อนอัตโนมัติเมื่อฝ่ายบัญชีปิดงวด' },
+      ],
+      submitLabel: 'บันทึกวันที่ปิดงวด', after: { screen: 'invoices' },
+    },
     soList: {
       kind: 'list', title: 'ใบสั่งขาย', endpoint: '/orders', perm: 'sales.order.read', mobile: true,
       filters: [{ name: 'q', label: 'ค้นหาเลขที่ ลูกค้า หรือเลขอ้างอิง', type: 'text' }, { name: 'status', label: 'สถานะ', type: 'select', options: statuses }],
@@ -105,7 +115,7 @@ export default defineUi({
     },
     invoice: {
       kind: 'detail', title: 'ใบกำกับภาษี', endpoint: '/invoices/:id', perm: 'sales.order.read', heading: 'no',
-      print: { title: 'ใบกำกับภาษี / ใบแจ้งหนี้', legal: 'tax-invoice', copyLabel: true, signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+      print: { title: 'ใบกำกับภาษี / ใบแจ้งหนี้', legal: 'tax-invoice', copyLabel: true, footer: 'payment', signatures: ['ผู้รับสินค้า / ผู้รับบริการ', 'ผู้มีอำนาจลงนาม'] },
       fields: [
         { key: 'issueDateTh', label: 'วันที่' }, { key: 'orderNo', label: 'อ้างอิงใบสั่งขาย' }, { key: 'orderRef', label: 'อ้างอิง' },
         { key: 'dueDateTh', label: 'ครบกำหนดชำระ' },
@@ -114,7 +124,7 @@ export default defineUi({
         { key: 'subtotal', label: 'รวมก่อนส่วนลด', format: 'money' }, { key: 'discount', label: 'ส่วนลด', format: 'money' },
         { key: 'net', label: 'มูลค่าสินค้า', format: 'money' }, { key: 'vat', label: 'ภาษีมูลค่าเพิ่ม 7%', format: 'money' },
         { key: 'gross', label: 'รวมทั้งสิ้น', format: 'money' }, { key: 'amountText', label: 'ตัวอักษร' },
-        { key: 'payment_status', label: 'การชำระ', format: 'status' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' },
+        { key: 'payment_status', label: 'การชำระ', format: 'status' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money', print: false },
         { key: 'promptPay', label: 'ชำระด้วยพร้อมเพย์', format: 'qr' },
       ],
       lines: [{
@@ -125,7 +135,7 @@ export default defineUi({
           { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
         ],
       }, {
-        path: 'receipts', label: 'รับชำระแล้ว',
+        path: 'receipts', label: 'รับชำระแล้ว', print: false,
         columns: [{ key: 'no', label: 'ใบเสร็จ' }, { key: 'receipt_date', label: 'วันที่', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' }],
       }],
     },
@@ -164,7 +174,7 @@ export default defineUi({
         { name: 'receiptDate', label: 'วันที่รับเงิน', type: 'date' },
         { name: 'method', label: 'ชำระโดย', type: 'select', default: 'transfer', required: true, options: methods },
         { name: 'reference', label: 'เลขที่เช็ค / อ้างอิงการโอน', type: 'text' },
-        { name: 'whtPct', label: 'หัก ณ ที่จ่าย', type: 'select', default: '0', options: whtRates, help: 'คิดจากยอดก่อน VAT ของส่วนที่รับชำระ' },
+        { name: 'whtPct', label: 'หัก ณ ที่จ่าย', type: 'select', default: '0', options: whtRates, help: 'คิดจากฐานหัก ณ ที่จ่ายของแต่ละใบกำกับ (ค่าบริการก่อน VAT) — ขายสินค้าโดยทั่วไปไม่อยู่ในบังคับหัก ณ ที่จ่าย' },
         { name: 'applyDepositId', label: 'ใช้เงินมัดจำ', type: 'lookup',
           lookup: { path: '/receipts', query: { kind: 'deposit', open: '1' }, label: ['no', 'customer_name', 'deposit_remaining'], assign: { applyDepositId: 'id' } } },
         { name: 'applyDepositAmount', label: 'ใช้มัดจำ (บาท, ว่าง = เท่าที่ใช้ได้)', type: 'number', step: 0.01 },
@@ -176,6 +186,8 @@ export default defineUi({
           { name: 'invoiceId', label: 'ใบกำกับ', type: 'lookup', required: true,
             lookup: { path: '/invoices', query: { status: 'open' }, label: ['no', 'customer_name', 'outstanding'], assign: { invoiceId: 'id', amount: 'outstanding' } } },
           { name: 'amount', label: 'รับชำระ (รวม VAT)', type: 'number', step: 0.01, required: true },
+          { name: 'whtBase', label: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)', type: 'number', step: 0.01,
+            help: 'ตามหนังสือรับรอง 50 ทวิ ของลูกค้า — ว่าง = เฉพาะค่าบริการในใบกำกับ (ถ้าไม่มีรายการบริการ = ยอดก่อน VAT ทั้งหมด)' },
         ],
       },
       submitLabel: 'ออกใบเสร็จ', after: { screen: 'receipt', idFrom: 'id' },
@@ -204,7 +216,7 @@ export default defineUi({
         { key: 'total', label: 'จำนวนเงิน', format: 'money' }, { key: 'amountText', label: 'ตัวอักษร' },
         { key: 'wht_amount', label: 'หัก ณ ที่จ่าย', format: 'money' }, { key: 'deposit_applied', label: 'หักเงินมัดจำ', format: 'money' },
         { key: 'received', label: 'รับเงินสุทธิ', format: 'money' }, { key: 'receivedText', label: 'รับสุทธิ (ตัวอักษร)' },
-        { key: 'deposit_remaining', label: 'มัดจำคงเหลือ', format: 'money' }, { key: 'created_by_name', label: 'ผู้รับเงิน' }, { key: 'note', label: 'หมายเหตุ' },
+        { key: 'deposit_remaining', label: 'มัดจำคงเหลือ', format: 'money', print: false }, { key: 'created_by_name', label: 'ผู้รับเงิน' }, { key: 'note', label: 'หมายเหตุ' },
       ],
       lines: [{
         path: 'lines', label: 'ใบกำกับที่ชำระ',

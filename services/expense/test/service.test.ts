@@ -41,7 +41,7 @@ describe('expense', () => {
     const res = await t.api('POST', '/claims', {
       purpose: 'ไปพบลูกค้าที่ระยอง', claimantName: 'สมชาย', department: 'ขาย', claimDate: '2026-10-02',
       lines: [
-        { expenseDate: today, categoryId: fuel.id, description: 'เติมน้ำมัน', amount: 1000, vat: 70 },
+        { expenseDate: today, categoryId: fuel.id, description: 'เติมน้ำมัน', amount: 1000, vat: 70, vendorName: 'ปั๊ม ปตท. บางนา', vendorTaxId: '0105537000015', receiptNo: 'TX-001' },
         { expenseDate: today, categoryId: hotel.id, description: 'โรงแรม 1 คืน', amount: 1200, receiptNo: 'RC-889' },
       ],
     }, { token: somchai.token });

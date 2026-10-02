@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
-import { groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
+import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
 import { clearSession, loadSession, type Session } from '@/lib/session';
@@ -48,6 +48,7 @@ export function Shell({ children }: { children: ReactNode }) {
     .map((m) => ({ m, items: m.menu.filter((i) => hasPerm(perms, m.screens[i.screen]?.perm)) }))
     .filter((x) => x.items.length);
   const areas = groupByArea(visible, (x) => x.m);
+  const example = commandExample(modules, perms);
   const activeEntry = visible.find((x) => x.m.module === activeModule);
   const activeArea = activeEntry ? moduleArea(activeEntry.m) : null;
   const collapsed = userCollapsed
@@ -150,7 +151,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
           <button type="button" className="cmd-trigger" onClick={() => openCommandPalette()} aria-label="ค้นหาหรือสั่งงาน">
             <Sparkles size={18} className="spark" aria-hidden />
-            <span>พิมพ์ค้นหา หรือสั่งงาน เช่น “สต็อก RM-STEEL”</span>
+            <span>{example ? `พิมพ์ค้นหา หรือสั่งงาน เช่น “${example}”` : 'พิมพ์ค้นหาเมนู เอกสาร หรือสั่งงาน'}</span>
             <kbd>⌘K</kbd>
           </button>
           <div className="topbar-right">

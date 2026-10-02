@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, loadManifest, one, parse, requirePerm, s, z, type Client, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
+import { addDaysIso, auth, badRequest, conflict, loadManifest, one, parse, periodLastDate, requirePerm, s, z, type Client, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
 import { formatThaiDate } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, CATEGORY_TH, EVENT_TH, ROLE_TH, ROLES, TYPE_CATEGORIES, TYPE_TH, TYPES, type AccountType, type PostedEvent } from './chart.ts';
@@ -600,6 +600,8 @@ export const definition: ServiceDefinition = {
           `insert into fiscal_periods (period, status, closed_at, closed_by, closed_by_name, note) values ($1, 'closed', now(), $2, $3, $4)
            on conflict (tenant_id, period) do update set status = 'closed', closed_at = now(), closed_by = $2, closed_by_name = $3, note = coalesce($4, fiscal_periods.note)`,
           [period, a.userId, a.userName ?? null, b.note || null]);
+        // wave 8 (C5): Sales / Purchasing / Expense move their lock date so no posting document can be dated into the closed month
+        await k.emit(c, 'accounting.period_closed', { period, lastDate: periodLastDate(period), closedByName: a.userName ?? null });
         return { id: period, period, period_th: periodTh(period), status: 'closed', status_label: 'ปิดงวดแล้ว', message: `ปิดงวด ${periodTh(period)} แล้ว` };
       });
     });
@@ -614,6 +616,7 @@ export const definition: ServiceDefinition = {
         if (cur?.status !== 'closed') throw conflict(`งวด ${periodTh(period)} ยังเปิดอยู่`);
         await c.query(`update fiscal_periods set status = 'open', reopened_at = now(), reopened_by_name = $2, note = coalesce($3, note) where period = $1`,
           [period, a.userName ?? null, b.note || null]);
+        await k.emit(c, 'accounting.period_reopened', { period, firstDate: `${period}-01`, reopenedByName: a.userName ?? null });
         return { id: period, period, period_th: periodTh(period), status: 'open', status_label: 'เปิด', message: `เปิดงวด ${periodTh(period)} อีกครั้งแล้ว` };
       });
     });

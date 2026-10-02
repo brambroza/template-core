@@ -217,6 +217,10 @@ export const DEFAULT_RULES: RuleSeed[] = [
   { eventType: 'payroll.run_paid', leg: 'pvd_payable', label: 'กองทุนสำรองเลี้ยงชีพค้างจ่าย (ลูกจ้าง + นายจ้าง)', side: 'credit', code: '21410' },
   { eventType: 'payroll.run_paid', leg: 'employee_deductions', label: 'รายการหักพนักงาน (เงินกู้ / หักอื่น)', side: 'credit', code: '11720' },
   { eventType: 'payroll.run_paid', leg: 'net_pay_payable', label: 'เงินเดือนสุทธิจ่ายจากเงินฝากธนาคาร', side: 'credit', code: '11200' },
+
+  /* wave 8 (C2): VAT on deposits — appended for the lazy re-seed */
+  { eventType: 'sales.payment_received', leg: 'vat', label: 'ภาษีขาย (ใบกำกับภาษีเงินมัดจำ)', side: 'credit', code: '21200' },
+  { eventType: 'sales.invoiced', leg: 'deposit', label: 'เงินมัดจำรับ (หักในใบกำกับภาษี — ฐานภาษีของมัดจำ)', side: 'debit', code: '21700' },
 ];
 
 /** Thai labels of the payroll posting categories (`payroll.run_paid` → `postings[].category`). */

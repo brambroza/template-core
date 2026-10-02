@@ -4,17 +4,19 @@
   "nameTh": "ขาย",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Sales orders with line discounts and service lines, confirmation, delivery and Thai tax invoices (VAT 7%, amount in Thai words, Buddhist-era date, PromptPay QR) with due dates; receipts (ใบเสร็จรับเงิน) with partial payment, withholding tax and deposits (มัดจำ); receivables and aging. Cuts stock automatically when Inventory is installed; drafts a sales order from an accepted CRM quotation when CRM is installed.",
+  "description": "Sales orders with line discounts and service lines, confirmation, delivery and Thai tax invoices (VAT 7%, amount in Thai words, Buddhist-era date, PromptPay QR) with due dates; receipts (ใบเสร็จรับเงิน) with partial payment, withholding tax and deposits (มัดจำ) with a deposit tax invoice deducted on the final invoice; a lock date that follows Accounting's period close; receivables and aging. Cuts stock automatically when Inventory is installed; drafts a sales order from an accepted CRM quotation when CRM is installed.",
   "requires": ["identity", "master-data"],
-  "enhancedBy": ["inventory", "crm", "contracts"],
+  "enhancedBy": ["inventory", "crm", "contracts", "accounting"],
   "publishes": ["sales.order_confirmed", "sales.delivered", "sales.invoiced", "sales.payment_received"],
-  "subscribes": ["crm.quotation_accepted", "contracts.installment_due"],
+  "subscribes": ["crm.quotation_accepted", "contracts.installment_due", "accounting.period_closed", "accounting.period_reopened"],
   "permissions": [
     { "key": "sales.order.read", "label": "ดูใบสั่งขาย" },
     { "key": "sales.order.write", "label": "สร้าง/ยืนยัน/ยกเลิกใบสั่งขาย" },
     { "key": "sales.order.deliver", "label": "ส่งของ" },
     { "key": "sales.invoice.write", "label": "ออกใบกำกับภาษี" },
     { "key": "sales.receipt.write", "label": "ออกใบเสร็จรับเงิน / รับมัดจำ" },
-    { "key": "sales.receivable.read", "label": "ดูลูกหนี้ ใบเสร็จ และอายุลูกหนี้" }
+    { "key": "sales.receivable.read", "label": "ดูลูกหนี้ ใบเสร็จ และอายุลูกหนี้" },
+    { "key": "sales.lock.write", "label": "ตั้งวันที่ปิดงวดเอกสารขาย" },
+    { "key": "sales.lock.override", "label": "ออกใบกำกับ/ใบเสร็จย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)" }
   ]
 }

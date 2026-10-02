@@ -4,7 +4,8 @@ import { bootTestService, type TestService } from '@erp/kernel/testing';
 import { definition } from '../src/service.ts';
 
 let t: TestService;
-beforeAll(async () => { t = await bootTestService(definition); });
+// one test user creates and approves here; segregation of duties is covered in sod.test.ts
+beforeAll(async () => { t = await bootTestService(definition); await t.api('PUT', '/settings', { creatorCannotApprove: false }); });
 afterAll(async () => { await t?.close(); });
 
 const steel = { itemId: randomUUID(), itemCode: 'RM-SPCC-12', itemName: 'เหล็กแผ่น SPCC 1.2' };

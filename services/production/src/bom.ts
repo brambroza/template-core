@@ -36,7 +36,7 @@ export async function explode(c: Client, itemId: string, qty: number): Promise<R
   const leaves = new Map<string, Requirement>();
   const walk = async (bom: Bom, q: number, path: string[]) => {
     for (const comp of directComponents(bom, q)) {
-      if (path.includes(comp.itemId)) throw badRequest(`Circular BOM: ${[...path, comp.itemId].join(' -> ')}`);
+      if (path.includes(comp.itemId)) throw badRequest(`สูตรการผลิต (BOM) วนกลับมาที่ตัวเอง: ${[...path, comp.itemId].join(' → ')}`);
       const sub = await loadBom(c, comp.itemId);
       if (sub) await walk(sub, comp.qty, [...path, comp.itemId]);
       else {

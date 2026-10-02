@@ -42,6 +42,9 @@ describe('full ERP installation', () => {
       supplierName: 'Siam Steel', warehouseCode: 'MAIN',
       lines: [{ ...items['RM-STEEL'], qty: 100, unitPrice: 32 }, { ...items['SP-BOLT'], qty: 1000, unitPrice: 1.5 }],
     })).body;
+    // a one-person installation: the admin raises and approves (wave 8 SoD is on by default, the company switches it off)
+    expect((await api('POST', `/api/purchasing/purchase-orders/${po.id}/approve`)).status).toBe(403);
+    await api('PUT', '/api/purchasing/settings', { creatorCannotApprove: false });
     await api('POST', `/api/purchasing/purchase-orders/${po.id}/approve`);
     await api('POST', `/api/purchasing/purchase-orders/${po.id}/receive`);
     await erp.settle();

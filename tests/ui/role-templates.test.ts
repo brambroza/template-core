@@ -32,6 +32,31 @@ describe('role templates', () => {
     for (const t of ROLE_TEMPLATES) expect(applyTemplate(t, ids).permissions.length, t.id).toBeGreaterThan(0);
   });
 
+  const tpl = (id: string) => ROLE_TEMPLATES.find((t) => t.id === id)!.permissions;
+
+  it('give each round-2 demo role what its job needs (wave 8, N3)', () => {
+    expect(tpl('warehouse')).toEqual(expect.arrayContaining(['purchasing.po.read', 'purchasing.po.receive', 'inventory.move.write']));
+    expect(tpl('qc')).toEqual(expect.arrayContaining(['inventory.hold.release', 'quality.inspection.record']));
+    for (const id of ['it', 'pm', 'technician', 'sales']) expect(tpl(id), id).toContain('master.partner.read');
+    expect(tpl('technician')).toEqual(expect.arrayContaining(['contracts.visit.read', 'contracts.visit.work']));
+  });
+
+  it('keep segregation of duties: approval limits at the top, nobody both raises and approves POs or approves and pays claims', () => {
+    expect(tpl('executive')).toEqual(expect.arrayContaining(['purchasing.po.approve', 'purchasing.po.approve-high', 'expense.claim.approve-over-limit']));
+    for (const t of ROLE_TEMPLATES) {
+      if (t.id !== 'executive') {
+        expect(t.permissions, t.id).not.toContain('purchasing.po.approve-high');
+        expect(t.permissions, t.id).not.toContain('expense.claim.approve-over-limit');
+      }
+      // raising a PO and approving it stay in different roles
+      expect(t.permissions.includes('purchasing.po.write') && t.permissions.includes('purchasing.po.approve'), t.id).toBe(false);
+      // control settings and the quarantine override are for the administrator only
+      for (const p of ['purchasing.settings.write', 'expense.settings.write', 'inventory.hold.override']) expect(t.permissions, t.id).not.toContain(p);
+    }
+    // the store clerk moves stock but cannot release quarantined material; QC releases it through the hold flow
+    expect(tpl('warehouse')).not.toContain('inventory.hold.release');
+  });
+
   it('keep company money away from the self-service template', () => {
     const staff = ROLE_TEMPLATES.find((t) => t.id === 'staff')!;
     for (const p of ['assets.finance.read', 'expense.claim.approve', 'expense.claim.pay', 'hr.employee.read', 'helpdesk.ticket.read', 'projects.timesheet.approve']) {

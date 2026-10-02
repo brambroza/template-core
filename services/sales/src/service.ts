@@ -1,7 +1,8 @@
-import { auth, badRequest, conflict, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, guardLockDate, hasPerm, loadManifest, lockThroughPeriod, nextDocNo, one, parse, readLock, requirePerm, s, setLockDate, thaiToday, unlockPeriod, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import type { EventData } from '@erp/contracts';
-import { bahtText, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round } from '@erp/thai';
+import { bahtText, calcVat, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -36,6 +37,18 @@ const OrderInput = z.object({
   lines: z.array(OrderLine).min(1),
 });
 const IdParam = z.object({ id: s.uuid });
+const InvoiceInput = z.object({
+  issueDate: s.isoDate.optional(),
+  dueDate: s.isoDate.optional(),
+  /**
+   * wave 8 (C2): deposits with VAT (ใบกำกับภาษีเงินมัดจำ) to deduct on this tax invoice; no amount = as much as remains and is due.
+   * Omitted: every open VAT deposit taken against this order (dated on/before the invoice) is deducted, unless `applyDeposits` is false.
+   */
+  deposits: z.array(z.object({ depositId: s.uuid, amount: z.coerce.number().finite().positive().optional() })).optional(),
+  applyDeposits: z.boolean().default(true),
+  /** needed (with perm sales.lock.override) to date the invoice on/before the lock date */
+  lockOverrideReason: z.string().trim().max(500).optional(),
+});
 
 const METHODS = ['cash', 'transfer', 'cheque', 'card'] as const;
 const METHOD_TH: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', cheque: 'เช็ค', card: 'บัตรเครดิต' };
@@ -52,16 +65,30 @@ const ReceiptInput = z.object({
   reference: z.string().trim().max(200).optional(),
   note: z.string().max(1000).optional(),
   /** invoices settled by this receipt; `amount` includes the part withheld (WHT) and the part covered by deposits */
-  lines: z.array(z.object({ invoiceId: s.uuid, amount: z.coerce.number().finite().positive() })).default([]),
+  lines: z.array(z.object({
+    invoiceId: s.uuid, amount: z.coerce.number().finite().positive(),
+    /**
+     * C4: the income the customer withheld tax on (ฐานเงินได้ ตาม 50 ทวิ, before VAT). Default: the service lines' pre-VAT part of the
+     * amount paid when the invoice has service lines (no stock item), else the pre-VAT part of the amount paid.
+     */
+    whtBase: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().finite().min(0).optional()),
+  })).default([]),
   /** deposits (มัดจำ) applied to the invoices above; no amount = as much as the deposit and the amount due allow */
   deposits: z.array(z.object({ depositId: s.uuid, amount: z.coerce.number().finite().positive().optional() })).default([]),
   /** a deposit receipt (no invoice): the amount received in advance, optionally against a sales order */
   depositAmount: z.coerce.number().finite().positive().optional(),
+  /**
+   * wave 8 (C2): VAT basis of `depositAmount` — `inclusive` (default: the money received, VAT inside), `exclusive` (amount before VAT;
+   * the customer pays amount + 7%), `none` (not part of the price, e.g. a refundable guarantee — no tax point)
+   */
+  depositVatMode: z.enum(['inclusive', 'exclusive', 'none']).default('inclusive'),
   orderId: s.uuid.optional(),
   whtPct: z.coerce.number().refine((v) => WHT_RATES.includes(v), 'whtPct must be 0, 1, 2, 3 or 5').default(0),
   /** single-deposit shorthand for forms: same as deposits: [{ depositId, amount }] */
   applyDepositId: s.uuid.optional(),
   applyDepositAmount: z.coerce.number().finite().positive().optional(),
+  /** wave 8: needed (with perm sales.lock.override) to date a receipt on/before the lock date */
+  lockOverrideReason: z.string().trim().max(500).optional(),
 }).transform(({ applyDepositId, applyDepositAmount, ...b }) => {
   if (applyDepositId) b.deposits = [...b.deposits, { depositId: applyDepositId, amount: applyDepositAmount }];
   return b;
@@ -93,7 +120,7 @@ async function insertOrder(c: Client, b: NewOrder, createdBy: string | null): Pr
   const o = (await c.query(
     `insert into sales_orders (no, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, warehouse_code, order_date, vat_mode,
        subtotal, discount, net, vat, gross, note, created_by, ref, quotation_id, credit_days)
-     values ($1,$2,$3,$4,$5,$6,$7,coalesce($8::date, current_date),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
+     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
     [no, b.customerId ?? null, b.customerName, b.customerTaxId ?? null, b.customerBranch ?? null, b.customerAddress ?? null, b.warehouseCode, orderDate,
       b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, createdBy, b.ref ?? null, b.quotationId ?? null, b.creditDays],
   )).rows[0];
@@ -119,11 +146,23 @@ async function loadOrder(c: Client, id: string, lock = false) {
   return o;
 }
 
+/**
+ * C4: share of an order's value that is services (lines without a stock item), 0–1. An order with no service line → 1
+ * (the whole pre-VAT amount is the WHT base, e.g. a customer that withholds on everything); a goods-only order with service lines mixed in → their share.
+ */
+async function serviceShare(c: Client, orderId: string): Promise<number> {
+  const r = (await c.query(
+    `select coalesce(sum(amount) filter (where item_id is null), 0) as service, coalesce(sum(amount), 0) as total, count(*) filter (where item_id is null)::int as n
+     from so_lines where order_id = $1`, [orderId])).rows[0];
+  if (!r.n || !(Number(r.total) > 0)) return 1;
+  return Number(r.service) / Number(r.total);
+}
+
 /** Only lines with a stock item travel in stock events; service/description lines are not issued from stock. */
 const stockLines = (o: { lines: any[] }) => o.lines.filter((l) => l.item_id);
 
 function assertStatus(o: { status: string; no: string }, allowed: string[], action: string) {
-  if (!allowed.includes(o.status)) throw conflict(`Cannot ${action} ${o.no}: status is ${o.status}`);
+  if (!allowed.includes(o.status)) throw conflict(`ทำรายการนี้กับ ${o.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(o.status)}"`);
 }
 
 const fieldError = (field: string, message: string) => badRequest(message, { fieldErrors: { [field]: [message] } });
@@ -142,11 +181,13 @@ const asOfQuery = z.object({ asOf: s.isoDate.optional() });
 const OPEN_AS_OF = `select i.*, o.customer_id, o.customer_name,
     i.gross - coalesce((select sum(rl.amount) from receipt_lines rl join receipts p on p.id = rl.receipt_id where rl.invoice_id = i.id and p.receipt_date <= $1::date), 0) as open_amt
   from invoices i join sales_orders o on o.id = i.order_id where i.issue_date <= $1::date`;
-/** deposits received on or before $1 with what remained unapplied on that date */
+/** deposits received on or before $1 with what remained unapplied on that date (used by receipts dated, or deducted on invoices issued, on/before it) */
 const DEPOSITS_AS_OF = `select d.customer_id, d.customer_name,
-    d.total - coalesce((select sum(da.amount) from deposit_applications da join receipts p on p.id = da.receipt_id where da.deposit_id = d.id and p.receipt_date <= $1::date), 0) as remaining
+    d.total - coalesce((select sum(da.amount) from deposit_applications da left join receipts p on p.id = da.receipt_id left join invoices iv on iv.id = da.invoice_id
+                        where da.deposit_id = d.id and coalesce(p.receipt_date, iv.issue_date) <= $1::date), 0) as remaining
   from receipts d where d.kind = 'deposit' and d.receipt_date <= $1::date`;
-const bangkokToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+/** Today in Thailand (kernel business clock — the database runs in UTC). */
+const bangkokToday = () => thaiToday();
 
 export const definition: ServiceDefinition = {
   manifest,
@@ -173,24 +214,25 @@ export const definition: ServiceDefinition = {
     app.get('/summary', async (req) => {
       const a = auth(req);
       if (!hasPerm(a, 'sales.order.read')) requirePerm(a, 'sales.receivable.read');
+      const today = bangkokToday();
       return k.db.tx(a.tenantId, async (c) => {
         const n = (await c.query(
           `select count(*) filter (where status = 'draft')::int as to_confirm,
                   count(*) filter (where status = 'confirmed')::int as to_deliver,
                   count(*) filter (where status = 'delivered')::int as to_invoice from sales_orders`)).rows[0];
-        const revenue = (await c.query(`select coalesce(sum(gross), 0) as total from invoices where date_trunc('month', issue_date) = date_trunc('month', current_date)`)).rows[0].total;
+        const revenue = (await c.query(`select coalesce(sum(gross), 0) as total from invoices where date_trunc('month', issue_date) = date_trunc('month', $1::date)`, [today])).rows[0].total;
         const months = (await c.query(
           `select to_char(m, 'YYYY-MM') as month, coalesce(sum(i.gross), 0) as total
-           from generate_series(date_trunc('month', current_date) - interval '5 months', date_trunc('month', current_date), interval '1 month') m left join invoices i on date_trunc('month', i.issue_date) = m group by m order by m`)).rows;
+           from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m left join invoices i on date_trunc('month', i.issue_date) = m group by m order by m`, [today])).rows;
         const rows = (await c.query(`select id, no, customer_name, status, gross from sales_orders where status <> 'cancelled' order by created_at desc limit 24`)).rows;
         const ar = (await c.query(
           `select coalesce(sum(gross - paid_amount), 0) as outstanding,
-                  coalesce(sum(gross - paid_amount) filter (where due_date < current_date), 0) as overdue,
-                  count(*) filter (where due_date < current_date)::int as overdue_count
-           from invoices where paid_amount < gross`)).rows[0];
+                  coalesce(sum(gross - paid_amount) filter (where due_date < $1::date), 0) as overdue,
+                  count(*) filter (where due_date < $1::date)::int as overdue_count
+           from invoices where paid_amount < gross`, [today])).rows[0];
         const rc = (await c.query(
-          `select coalesce(sum(received) filter (where date_trunc('month', receipt_date) = date_trunc('month', current_date)), 0) as received_month,
-                  coalesce(sum(deposit_remaining) filter (where kind = 'deposit'), 0) as deposits from receipts`)).rows[0];
+          `select coalesce(sum(received) filter (where date_trunc('month', receipt_date) = date_trunc('month', $1::date)), 0) as received_month,
+                  coalesce(sum(deposit_remaining) filter (where kind = 'deposit'), 0) as deposits from receipts`, [today])).rows[0];
         return {
           toConfirm: n.to_confirm, toDeliver: n.to_deliver, toInvoice: n.to_invoice, revenueMonth: revenue, months, rows,
           outstanding: ar.outstanding, overdue: ar.overdue, overdueCount: ar.overdue_count, receivedMonth: rc.received_month, unappliedDeposits: rc.deposits,
@@ -257,26 +299,45 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'sales.invoice.write');
       const { id } = parse(IdParam, req.params);
-      const b = parse(z.object({ issueDate: s.isoDate.optional(), dueDate: s.isoDate.optional() }), req.body ?? {});
+      const b = parse(InvoiceInput, req.body ?? {});
       if (b.dueDate && b.issueDate && b.dueDate < b.issueDate) throw fieldError('dueDate', 'วันครบกำหนดต้องไม่ก่อนวันที่ใบกำกับ');
       // the tax point is the Thai calendar day (the database runs in UTC: before 07:00 its current_date is yesterday) — bugs-0.4 SAL-03
       const issueDate = b.issueDate ?? bangkokToday();
       if (issueDate > bangkokToday()) throw fieldError('issueDate', 'ลงวันที่ใบกำกับภาษีล่วงหน้าไม่ได้');
+      if (new Set(b.deposits?.map((d) => d.depositId)).size !== (b.deposits?.length ?? 0)) throw fieldError('deposits', 'ใบมัดจำซ้ำ');
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOrder(c, id, true);
         assertStatus(o, ['confirmed', 'delivered'], 'invoice');
+        // C5: no tax invoice into a closed VAT month
+        await guardLockDate(c, a, { module: 'sales', date: issueDate, what: 'ใบกำกับภาษี', overrideReason: b.lockOverrideReason });
         const no = await nextDocNo(c, 'INV', new Date(issueDate));
+        const ded = await depositDeductions(c, o, issueDate, b.deposits, b.applyDeposits);
+        const dn = round(ded.reduce((x, d) => x + d.net, 0));
+        const dv = round(ded.reduce((x, d) => x + d.vat, 0));
+        const dg = round(ded.reduce((x, d) => x + d.gross, 0));
+        // this tax invoice charges only what the deposit tax invoices did not: base and VAT net of the deposits (C2)
+        const vat = Math.max(0, round(o.vat - dv));
+        const gross = round(o.gross - dg);
+        const net = round(gross - vat);
         const inv = (await c.query(
-          `insert into invoices (no, order_id, issue_date, due_date, net, vat, gross)
-           values ($1, $2, coalesce($3::date, current_date), coalesce($4::date, coalesce($3::date, current_date) + $5::int), $6, $7, $8) returning id, issue_date, due_date`,
-          [no, o.id, issueDate, b.dueDate ?? null, o.credit_days, o.net, o.vat, o.gross],
+          `insert into invoices (no, order_id, issue_date, due_date, net, vat, gross, deposit_net, deposit_vat, deposit_gross)
+           values ($1, $2, $3::date, coalesce($4::date, $3::date + $5::int), $6, $7, $8, $9, $10, $11) returning id, issue_date, due_date`,
+          [no, o.id, issueDate, b.dueDate ?? null, o.credit_days, net, vat, gross, dn, dv, dg],
         )).rows[0];
+        for (const d of ded) {
+          await c.query('insert into deposit_applications (invoice_id, invoice_no, deposit_id, deposit_no, amount, net, vat) values ($1,$2,$3,$4,$5,$6,$7)',
+            [inv.id, no, d.depositId, d.depositNo, d.gross, d.net, d.vat]);
+          await c.query('update receipts set deposit_remaining = deposit_remaining - $2, deposit_vat_remaining = deposit_vat_remaining - $3 where id = $1', [d.depositId, d.gross, d.vat]);
+        }
         await c.query(`update sales_orders set status = 'invoiced' where id = $1`, [id]);
         await k.emit(c, 'sales.invoiced', {
-          invoiceId: inv.id, invoiceNo: no, orderId: o.id, net: o.net, vat: o.vat, gross: o.gross,
+          invoiceId: inv.id, invoiceNo: no, orderId: o.id, net, vat, gross,
           customerId: o.customer_id, customerName: o.customer_name, dueDate: isoDay(inv.due_date),
           issueDate: isoDay(inv.issue_date), vatMode: o.vat_mode,
+          // C7: buyer's tax ID / branch for the sales VAT register
+          customerTaxId: o.customer_tax_id ?? null, customerBranch: o.customer_branch ?? null,
+          ...(ded.length ? { depositApplied: { net: dn, vat: dv, gross: dg, deposits: ded } } : {}),
         });
         return printableInvoice(c, inv.id, k.env);
       });
@@ -295,11 +356,11 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `select * from (${INVOICE_SELECT}) x
          where ($1::text is null or ($1 = 'open' and payment_status <> 'paid') or payment_status = $1)
-           and (not $2 or (payment_status <> 'paid' and due_date < current_date))
+           and (not $2 or (payment_status <> 'paid' and due_date < $7::date))
            and ($3::uuid is null or customer_id = $3)
            and ($4::text is null or no ilike $4 or order_no ilike $4 or customer_name ilike $4 or order_ref ilike $4)
          order by due_date, no limit $5 offset $6`,
-        [q.status ?? null, overdue, q.customerId ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map(withDaysOverdue));
+        [q.status ?? null, overdue, q.customerId ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset, bangkokToday()])).rows.map(withDaysOverdue));
     });
 
     app.get('/invoices/:id', async (req) => {
@@ -329,6 +390,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         let customer: { customer_id: string | null; customer_name: string; customer_tax_id: string | null; customer_branch: string | null; customer_address: string | null } | null =
           b.customerName ? { customer_id: b.customerId ?? null, customer_name: b.customerName, customer_tax_id: b.customerTaxId ?? null, customer_branch: b.customerBranch ?? null, customer_address: b.customerAddress ?? null } : null;
+        await guardLockDate(c, a, { module: 'sales', date: receiptDate, what: isDeposit ? 'ใบรับเงินมัดจำ' : 'ใบเสร็จ', overrideReason: b.lockOverrideReason });
         const no = await nextDocNo(c, 'RC', new Date(receiptDate));
 
         if (isDeposit) {
@@ -341,17 +403,22 @@ export const definition: ServiceDefinition = {
             orderId = o.id;
           }
           if (!customer) throw fieldError('customerName', 'ระบุลูกค้า');
-          const amount = round(b.depositAmount!);
+          // C2: a deposit that is part of the price is a tax point — split VAT and issue a deposit tax invoice (DT-…) on the receipt date
+          const v = b.depositVatMode === 'none' ? null : calcVat(b.depositAmount!, b.depositVatMode);
+          const amount = v ? v.gross : round(b.depositAmount!);
+          const taxInvoiceNo = v && v.vat > 0 ? await nextDocNo(c, 'DT', new Date(receiptDate)) : null;
           const r = (await c.query(
             `insert into receipts (no, kind, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, order_id, receipt_date, method, reference,
-               total, received, deposit_remaining, note, created_by, created_by_name)
-             values ($1,'deposit',$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$11,$11,$12,$13,$14) returning id`,
+               total, received, deposit_remaining, note, created_by, created_by_name, vat_mode, net, vat, tax_invoice_no, deposit_vat_remaining)
+             values ($1,'deposit',$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$11,$11,$12,$13,$14,$15,$16,$17,$18,$17) returning id`,
             [no, customer.customer_id, customer.customer_name, customer.customer_tax_id, customer.customer_branch, customer.customer_address, orderId,
-              receiptDate, b.method, b.reference ?? null, amount, b.note ?? null, a.userId, a.userName ?? null],
+              receiptDate, b.method, b.reference ?? null, amount, b.note ?? null, a.userId, a.userName ?? null,
+              b.depositVatMode, v?.net ?? null, v?.vat ?? 0, taxInvoiceNo],
           )).rows[0];
           await k.emit(c, 'sales.payment_received', {
             receiptId: r.id, receiptNo: no, receiptDate, kind: 'deposit', customerId: customer.customer_id, customerName: customer.customer_name, method: b.method,
             total: amount, whtAmount: 0, depositApplied: 0, received: amount, invoices: [],
+            ...(v ? { net: v.net, vat: v.vat, taxInvoiceNo } : {}), customerTaxId: customer.customer_tax_id, customerBranch: customer.customer_branch,
           });
           return printableReceipt(c, r.id);
         }
@@ -366,7 +433,12 @@ export const definition: ServiceDefinition = {
           const amount = round(l.amount);
           const outstanding = round(inv.gross - inv.paid_amount);
           if (amount > outstanding) throw fieldError('lines', `รับชำระ ${amount.toFixed(2)} เกินยอดค้าง ${outstanding.toFixed(2)} ของ ${inv.no}`);
-          settled.push({ invoiceId: inv.id, invoiceNo: inv.no, amount, whtBase: inv.gross > 0 ? round((amount * inv.net) / inv.gross) : 0, outstanding: round(outstanding - amount) });
+          // C4: WHT is on services (and other income types), not on goods — default base = the service part of the amount paid, before VAT
+          const preVat = inv.gross > 0 ? round((amount * inv.net) / inv.gross) : 0;
+          const share = await serviceShare(c, inv.order_id);
+          const whtBase = l.whtBase ?? round(preVat * share);
+          if (whtBase > preVat + 0.01) throw fieldError('lines', `ฐานภาษีหัก ณ ที่จ่ายของ ${inv.no} (${whtBase.toFixed(2)}) เกินยอดก่อน VAT ของส่วนที่รับชำระ (${preVat.toFixed(2)})`);
+          settled.push({ invoiceId: inv.id, invoiceNo: inv.no, amount, whtBase: round(whtBase), outstanding: round(outstanding - amount) });
         }
         const total = round(settled.reduce((x, l) => x + l.amount, 0));
         const whtBase = round(settled.reduce((x, l) => x + l.whtBase, 0));
@@ -376,6 +448,8 @@ export const definition: ServiceDefinition = {
         for (const d of b.deposits) {
           const dep = await one(c, `select * from receipts where id = $1 and kind = 'deposit' for update`, [d.depositId], 'Deposit');
           if (!sameCustomer(customer!, dep)) throw fieldError('deposits', `มัดจำ ${dep.no} เป็นของ ${dep.customer_name}`);
+          // C2: VAT on a deposit was charged on its deposit tax invoice — it is deducted on the final tax invoice, not on a receipt
+          if (dep.vat_mode !== 'none') throw fieldError('deposits', `มัดจำ ${dep.no} ออกใบกำกับภาษีเงินมัดจำ ${dep.tax_invoice_no ?? ''} แล้ว — หักมัดจำในใบกำกับภาษีตอนออกใบกำกับ (ภาษีขายคิดเฉพาะส่วนที่เหลือ)`);
           const due = round(total - whtAmount - applied.reduce((x, y) => x + y.amount, 0));
           const amount = round(d.amount ?? Math.max(0, Math.min(Number(dep.deposit_remaining), due)));
           if (amount <= 0) throw fieldError('deposits', `มัดจำ ${dep.no} ไม่มียอดคงเหลือให้ใช้`);
@@ -406,6 +480,8 @@ export const definition: ServiceDefinition = {
           receiptId: r.id, receiptNo: no, receiptDate, kind: 'payment', customerId: cu.customer_id, customerName: cu.customer_name, method: b.method,
           total, whtAmount, depositApplied, received,
           invoices: settled.map((l) => ({ invoiceId: l.invoiceId, invoiceNo: l.invoiceNo, amount: l.amount, outstanding: l.outstanding })),
+          // C4: the income the WHT was computed on (accounting keeps it as the base of ภาษีถูกหัก ณ ที่จ่าย)
+          ...(whtAmount > 0 ? { whtBase } : {}),
         });
         return printableReceipt(c, r.id);
       });
@@ -437,6 +513,24 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'sales.receivable.read');
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, (c) => printableReceipt(c, id));
+    });
+
+    /* ---------------- lock date (C5) ---------------- */
+
+    /** Tax invoices and receipts dated on/before `lockDate` are refused (409) unless `sales.lock.override` + `lockOverrideReason`. */
+    app.get('/lock', async (req) => {
+      const a = auth(req);
+      if (!hasPerm(a, 'sales.lock.write') && !hasPerm(a, 'sales.invoice.write') && !hasPerm(a, 'sales.receipt.write')) requirePerm(a, 'sales.receivable.read');
+      return k.db.tx(a.tenantId, async (c) => ({ id: 'lock', ...(await readLock(c)) }));
+    });
+
+    /** Set the lock date by hand (`null` clears it). Accounting's period close moves it forward automatically. */
+    app.post('/lock', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'sales.lock.write');
+      const b = parse(z.object({ lockDate: z.preprocess((v) => (v === '' || v === undefined ? null : v), s.isoDate.nullable()) }), req.body ?? {});
+      if (b.lockDate && b.lockDate > bangkokToday()) throw fieldError('lockDate', 'วันที่ปิดงวดต้องไม่เกินวันนี้');
+      return k.db.tx(a.tenantId, async (c) => ({ id: 'lock', ...(await setLockDate(c, b.lockDate, a.userName ?? null)) }));
     });
 
     /* ---------------- receivables ---------------- */
@@ -493,6 +587,10 @@ export const definition: ServiceDefinition = {
   },
 
   handlers: {
+    /** Accounting closed a period → documents dated up to its last day are locked here too (forward only). */
+    'accounting.period_closed': async (e, { client }) => { await lockThroughPeriod(client, e.period, e.closedByName ?? 'ฝ่ายบัญชี (ปิดงวด)'); },
+    /** Accounting reopened a period → an accounting lock steps back before it. */
+    'accounting.period_reopened': async (e, { client }) => { await unlockPeriod(client, e.period, e.reopenedByName ?? 'ฝ่ายบัญชี (เปิดงวด)'); },
     /** CRM accepted a quotation → draft sales order with the same lines, discounts and VAT mode (once per quotation). */
     'crm.quotation_accepted': async (e, { client }) => {
       if (!e.lines?.length) return; // older CRM without line data: nothing to copy
@@ -512,6 +610,43 @@ export const definition: ServiceDefinition = {
     'contracts.installment_due': async (e, { client }) => draftInstallmentOrder(client, e),
   },
 };
+
+interface Deduction { depositId: string; depositNo: string; taxInvoiceNo: string | null; net: number; vat: number; gross: number }
+
+/**
+ * Deposits (with VAT) deducted on a tax invoice of order `o`, capped at the order's gross. The VAT part of a partial use is pro rata
+ * to the deposit; the last use takes exactly what is left, so the deposit's VAT is reversed to the satang.
+ */
+async function depositDeductions(c: Client, o: any, issueDate: string, explicit: { depositId: string; amount?: number }[] | undefined, auto: boolean): Promise<Deduction[]> {
+  let wanted: { dep: any; amount?: number }[];
+  if (explicit) {
+    wanted = [];
+    for (const d of explicit) {
+      const dep = await one(c, `select * from receipts where id = $1 and kind = 'deposit' for update`, [d.depositId], 'Deposit');
+      if (!sameCustomer(o, dep)) throw fieldError('deposits', `มัดจำ ${dep.no} เป็นของ ${dep.customer_name}`);
+      if (dep.vat_mode === 'none') throw fieldError('deposits', `มัดจำ ${dep.no} ไม่มีภาษีขาย — หักตอนรับชำระ (ใบเสร็จ) แทน`);
+      if (isoDay(dep.receipt_date) > issueDate) throw fieldError('deposits', `มัดจำ ${dep.no} ลงวันที่หลังใบกำกับ`);
+      wanted.push({ dep, amount: d.amount });
+    }
+  } else if (auto) {
+    wanted = (await c.query(
+      `select * from receipts where kind = 'deposit' and order_id = $1 and vat_mode <> 'none' and deposit_remaining > 0 and receipt_date <= $2::date
+       order by receipt_date, no for update`, [o.id, issueDate])).rows.map((dep) => ({ dep }));
+  } else return [];
+  const out: Deduction[] = [];
+  let left = round(Number(o.gross));
+  for (const { dep, amount } of wanted) {
+    const remaining = round(Number(dep.deposit_remaining));
+    const use = round(amount ?? Math.min(remaining, left));
+    if (amount !== undefined && use > remaining) throw fieldError('deposits', `หักมัดจำ ${use.toFixed(2)} เกินยอดคงเหลือ ${remaining.toFixed(2)} ของ ${dep.no}`);
+    if (use > left) throw fieldError('deposits', `หักมัดจำ ${dep.no} ${use.toFixed(2)} เกินยอดใบกำกับที่เหลือ ${left.toFixed(2)}`);
+    if (use <= 0) continue;
+    const vat = use === remaining ? round(Number(dep.deposit_vat_remaining)) : round((use * Number(dep.vat)) / Number(dep.total));
+    out.push({ depositId: dep.id, depositNo: dep.no, taxInvoiceNo: dep.tax_invoice_no ?? null, net: round(use - vat), vat, gross: use });
+    left = round(left - use);
+  }
+  return out;
+}
 
 /** `contracts.installment_due` → one draft service order (amount before VAT, VAT exclusive), ref = contract no + installment. Once per installment. */
 export async function draftInstallmentOrder(c: Client, e: EventData<'contracts.installment_due'>) {
@@ -554,6 +689,10 @@ async function printableInvoice(c: Client, id: string, env: NodeJS.ProcessEnv) {
     discount: order.discount,
     lines: order.lines,
     receipts,
+    /** wave 8 (C2): deposits deducted on this tax invoice — the goods' full value is `net + deposit_net` (VAT `vat + deposit_vat`) */
+    depositDeductions: (await c.query(
+      `select da.deposit_id, da.deposit_no, r.tax_invoice_no, r.receipt_date, da.net, da.vat, da.amount as gross
+       from deposit_applications da join receipts r on r.id = da.deposit_id where da.invoice_id = $1 order by r.receipt_date, da.deposit_no`, [id])).rows,
     promptPay: env.PROMPTPAY_ID && inv.gross > inv.paid_amount ? promptPayPayload(env.PROMPTPAY_ID, round(inv.gross - inv.paid_amount)) : null,
   };
 }
@@ -567,7 +706,13 @@ async function printableReceipt(c: Client, id: string) {
   const order = r.order_id ? (await c.query('select no from sales_orders where id = $1', [r.order_id])).rows[0] : null;
   return {
     ...r,
-    title: r.kind === 'deposit' ? 'ใบรับเงินมัดจำ' : 'ใบเสร็จรับเงิน',
+    title: r.kind === 'deposit' ? (Number(r.vat) > 0 ? 'ใบรับเงินมัดจำ / ใบกำกับภาษี' : 'ใบรับเงินมัดจำ') : 'ใบเสร็จรับเงิน',
+    /** deposit tax invoice (wave 8): base and output VAT of the deposit; `applications` = where the deposit was used */
+    vatLabel: r.kind === 'deposit' && Number(r.vat) > 0 ? `ภาษีมูลค่าเพิ่ม 7% (ฐาน ${Number(r.net).toLocaleString('th-TH', { minimumFractionDigits: 2 })})` : null,
+    applications: r.kind === 'deposit'
+      ? (await c.query(`select da.amount, da.net, da.vat, coalesce(da.invoice_no, p.no) as doc_no, case when da.invoice_id is null then 'receipt' else 'invoice' end as doc_kind
+           from deposit_applications da left join receipts p on p.id = da.receipt_id where da.deposit_id = $1 order by doc_no`, [id])).rows
+      : [],
     receiptDateTh: formatThaiDate(r.receipt_date),
     methodLabel: METHOD_TH[r.method] ?? r.method,
     amountText: bahtText(r.total),

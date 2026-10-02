@@ -1,6 +1,6 @@
 'use client';
 
-import { branchText, companyContactLine, formatTaxId, type CompanyProfile, type PartyInfo } from '@erp/ui-schema';
+import { branchText, buyerBranchText, companyContactLine, formatTaxId, type CompanyProfile, type PartyInfo } from '@erp/ui-schema';
 
 /** Company letterhead + document title block, printed at the top of the first page. */
 export function Letterhead({ company, title, docNo, copyLabel, subtitle }: { company: CompanyProfile | null; title: string; docNo: string; copyLabel?: string; subtitle?: string }) {
@@ -41,7 +41,7 @@ export function BuyerBlock({ buyer, label = 'ลูกค้า / ผู้ซ�
       {(buyer.taxId || buyer.branch) && (
         <p className="pb-meta">
           {buyer.taxId && <span>เลขประจำตัวผู้เสียภาษี {formatTaxId(buyer.taxId)}</span>}
-          {buyer.branch && <span>{branchText(buyer.branch)}</span>}
+          {buyerBranchText(buyer) && <span>{buyerBranchText(buyer)}</span>}
         </p>
       )}
     </section>
@@ -65,11 +65,15 @@ export function Signatures({ boxes }: { boxes: { label: string; name?: string }[
   );
 }
 
-/** The company's document note, printed under the signatures (page numbers come from the @page rule in globals.css). */
-export function PrintFooter({ note }: { note?: string | null }) {
+/**
+ * The company's document note, printed under the signatures only on documents whose print spec asks for it
+ * (`print.footer`); `payment` heads it as the payment terms. Page numbers come from the @page rule in globals.css.
+ */
+export function PrintFooter({ note, payment }: { note?: string | null; payment?: boolean }) {
   if (!note) return null;
   return (
-    <footer className="print-footer print-only">
+    <footer className={payment ? 'print-footer print-only pf-payment' : 'print-footer print-only'}>
+      {payment && <p className="pf-title">เงื่อนไขการชำระเงิน</p>}
       <p className="pf-note">{note}</p>
     </footer>
   );

@@ -28,15 +28,74 @@ describe('payroll settings', () => {
   it('starts from the legal defaults and validates changes', async () => {
     const s = await t.api('GET', '/settings', undefined, as('hr'));
     expect(s.status).toBe(200);
-    expect(s.body).toMatchObject({ ssoEmployeeRate: 5, ssoWageMin: 1650, ssoWageMax: 15000, ssoMaxContribution: 750, personalAllowance: 60000, expenseRatePct: 50, daysPerMonth: 30 });
+    expect(s.body).toMatchObject({ ssoEmployeeRate: 5, ssoWageMin: 1650, personalAllowance: 60000, expenseRatePct: 50, daysPerMonth: 30, ssoRuleSource: 'ตามกฎหมาย' });
+    // C1: the statutory schedule ships with the software; GET shows the rule in force this month
+    expect(s.body.ssoRules.map((r: any) => [r.effective_from, r.wage_max, r.max_contribution, r.custom])).toEqual([
+      ['1990-01-01', 15000, 750, false], ['2026-01-01', 17500, 875, false], ['2029-01-01', 20000, 1000, false], ['2032-01-01', 23000, 1150, false]]);
+    const inForce = [...s.body.ssoRules].reverse().find((r: any) => r.effective_from <= new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10));
+    expect(s.body).toMatchObject({ ssoWageMax: inForce.wage_max, ssoMaxContribution: inForce.max_contribution, ssoRuleFrom: inForce.effective_from });
     expect(s.body.brackets).toHaveLength(8);
     expect((await t.api('PUT', '/settings', { ssoWageMax: 15000 }, as('hr'))).status).toBe(403);
     expect((await t.api('PUT', '/settings', { ssoWageMin: 20000 }, as('owner'))).status).toBe(400);
     expect((await t.api('PUT', '/settings', { brackets: [{ upTo: 100, rate: 0 }] }, as('owner'))).status).toBe(400);
     const ok = await t.api('PUT', '/settings', { ssoEmployerAccount: '1000123456', ssoBranch: '000000' }, as('owner'));
     expect(ok.status).toBe(200);
-    expect((await t.api('GET', '/settings', undefined, as('hr'))).body).toMatchObject({ ssoEmployerAccount: '1000123456', ssoWageMax: 15000 });
+    expect((await t.api('GET', '/settings', undefined, as('hr'))).body).toMatchObject({ ssoEmployerAccount: '1000123456', ssoWageMax: inForce.wage_max });
     expect((await t.api('GET', '/settings', undefined, as('somchai'))).status).toBe(403);
+  });
+
+  it('C1: saving the settings form unchanged adds no SSO rule; a changed rate becomes a dated company rule that can be removed', async () => {
+    const tid = randomUUID(); // own company: the run scenario below uses the statutory schedule
+    const owner = { token: t.token(['payroll.run.read', 'payroll.setup.write'], tid, { userName: 'เจ้าของ' }) };
+    const form = (await t.api('GET', '/settings', undefined, owner)).body;
+    const same = await t.api('PUT', '/settings', { ssoEmployeeRate: form.ssoEmployeeRate, ssoWageMax: form.ssoWageMax, ssoWageMin: form.ssoWageMin, ssoIncludeOvertime: false }, owner);
+    expect(same.body.ssoRuleAdded).toBeNull();
+    expect((await t.api('GET', '/sso-rules', undefined, owner)).body.filter((r: any) => r.custom)).toEqual([]);
+    // a temporary rate cut from March 2026 (company row), validated against the band
+    expect((await t.api('PUT', '/settings', { ssoWageMin: 30000, ssoEffectiveFrom: '2026-03-01' }, owner)).status).toBe(400);
+    expect((await t.api('PUT', '/settings', { ssoEffectiveFrom: '2026-02-30' }, owner)).status).toBe(400);
+    const cut = await t.api('PUT', '/settings', { ssoEmployeeRate: 3, ssoEmployerRate: 3, ssoEffectiveFrom: '2026-03-01' }, owner);
+    expect(cut.body.ssoRuleAdded).toMatchObject({ effectiveFrom: '2026-03-01', employeeRate: 3, wageMax: 17500 });
+    const rules = (await t.api('GET', '/sso-rules', undefined, owner)).body;
+    const mine = rules.find((r: any) => r.custom);
+    expect(mine).toMatchObject({ effective_from: '2026-03-01', employee_rate: 3, max_contribution: 525, source: 'บริษัทกำหนดเอง' });
+    // it applies to that company's runs from March 2026 only; other companies keep the statutory rule
+    const p = (await t.api('POST', '/profiles', { employeeCode: 'EMP-C1', employeeName: 'ทดสอบ อัตรา', baseSalary: 30000, startDate: '2020-01-01' },
+      { token: t.token(HR_PERMS, tid) })).body;
+    const mk = async (period: string) => {
+      const r = (await t.api('POST', '/runs', { period, payDate: `${period}-25` }, { token: t.token(HR_PERMS, tid) })).body;
+      return (await t.api('POST', `/runs/${r.id}/calculate`, undefined, { token: t.token(HR_PERMS, tid) })).body.lines.find((l: any) => l.profile_id === p.id);
+    };
+    expect((await mk('2026-02')).sso_employee).toBe(875);
+    expect((await mk('2026-04')).sso_employee).toBe(525);
+    expect((await t.api('GET', '/sso-rules', undefined, { token: t.token(['payroll.run.read'], t.otherTenantId) })).body.some((r: any) => r.custom)).toBe(false);
+    // statutory rows cannot be removed, company rows only with setup permission
+    const statutory = rules.find((r: any) => !r.custom);
+    expect((await t.api('DELETE', `/sso-rules/${mine.id}`, undefined, { token: t.token(['payroll.run.read'], tid) })).status).toBe(403);
+    expect(statutory.id).toBeTruthy();
+    expect((await t.api('DELETE', `/sso-rules/${statutory.id}`, undefined, owner)).status).toBe(404);
+    expect((await t.api('DELETE', `/sso-rules/${mine.id}`, undefined, { token: t.token(['payroll.setup.write'], t.otherTenantId) })).status).toBe(404);
+    expect((await t.api('DELETE', `/sso-rules/${mine.id}`, undefined, owner)).status).toBe(200);
+    expect((await t.api('GET', '/sso-rules', undefined, owner)).body).toHaveLength(4);
+    expect((await t.api('GET', '/sso-rules', undefined, as('somchai'))).status).toBe(403);
+  });
+
+  it('C1: a company that had customised the SSO numbers before dated rules keeps them from the month it saved them', async () => {
+    const tid = randomUUID();
+    // settings json as written by the old PUT /settings (customised ceiling 16,000 saved in Feb 2026; the old default 15,000 would not count)
+    await t.svc.db.tx(tid, (c) => c.query(`insert into payroll_settings (rules, updated_at) values ($1, '2026-02-10T03:00:00Z')`,
+      [JSON.stringify({ sso: { employeeRate: 5, employerRate: 5, wageMin: 1650, wageMax: 16000, includeOvertime: true } })]));
+    const owner = { token: t.token(['payroll.run.read', 'payroll.setup.write'], tid) };
+    const rules = (await t.api('GET', '/sso-rules', undefined, owner)).body;
+    expect(rules.find((r: any) => r.custom)).toMatchObject({ effective_from: '2026-02-01', wage_max: 16000, note: 'จากการตั้งค่าเดิม' });
+    expect((await t.api('GET', '/settings', undefined, owner)).body).toMatchObject({ ssoIncludeOvertime: true, ssoRuleSource: 'บริษัทกำหนดเอง', ssoWageMax: 16000 });
+    // saving the form turns it into a real row and cleans the json; still in force
+    await t.api('PUT', '/settings', { ssoBranch: '000001' }, owner);
+    const after = (await t.api('GET', '/sso-rules', undefined, owner)).body.filter((r: any) => r.custom);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ effective_from: '2026-02-01', wage_max: 16000 });
+    expect(after[0].id).toBeTruthy();
+    expect((await t.api('GET', '/settings', undefined, owner)).body).toMatchObject({ ssoIncludeOvertime: true, ssoWageMax: 16000 });
   });
 });
 
@@ -150,15 +209,16 @@ describe('payroll run', () => {
     run = r.body;
     expect(run.status).toBe('calculated');
     const byCode = Object.fromEntries(run.lines.map((l: any) => [l.employee_code, l]));
-    // EMP-001: 30,000 + OT 10h × 125 × 1.5; opening Jan–Sep from the old system → annualised tax 170.84 + OT at the marginal rate 93.75
-    expect(byCode['EMP-001']).toMatchObject({ salary: 30000, overtime: 1875, gross: 31875, sso_employee: 750, sso_employer: 750, wht: 264.59, loans: 1000 });
-    expect(byCode['EMP-001'].net).toBe(31875 - 750 - 264.59 - 1000);
+    // EMP-001: 30,000 + OT 10h × 125 × 1.5; opening Jan–Sep from the old system; SSO 2569 ceiling 17,500 → 875.
+    // Projection 360,000 − 100,000 − 60,000 − SSO (6,750 + 875 × 3 = 9,375) = 190,625 → 2,031.25; (2,031.25 − 1,537.47) ÷ 3 = 164.59 + OT at 5% 93.75
+    expect(byCode['EMP-001']).toMatchObject({ salary: 30000, overtime: 1875, gross: 31875, sso_employee: 875, sso_employer: 875, wht: 258.34, loans: 1000 });
+    expect(byCode['EMP-001'].net).toBe(31875 - 875 - 258.34 - 1000);
     // EMP-002 joined 16 Oct: 16/31 of 31,000 + 16/31 of the 3,100 allowance; PVD 3% on the salary earned
-    expect(byCode['EMP-002']).toMatchObject({ employed_days: 16, salary: 16000, allowances: 1600, sso_wage: 17600, sso_employee: 750, pvd_employee: 480, pvd_employer: 480, wht: 0 });
+    expect(byCode['EMP-002']).toMatchObject({ employed_days: 16, salary: 16000, allowances: 1600, sso_wage: 17600, sso_employee: 875, pvd_employee: 480, pvd_employer: 480, wht: 0 });
     // EMP-003 daily 400 × 20 days, OT 4h × 50 × 1.5
     expect(byCode['EMP-003']).toMatchObject({ work_days: 20, salary: 8000, overtime: 300, sso_employee: 400 });
     expect(run.headcount).toBe(3);
-    expect(run.sso_employee).toBe(1900);
+    expect(run.sso_employee).toBe(875 + 875 + 400);
     expect(run.net).toBeCloseTo(run.gross - run.total_deductions, 2);
     // editing a calculated run recalculates it
     const again = await t.api('PUT', `/payslips/${byCode['EMP-003'].id}/inputs`, { unpaidLeaveDays: 1, workDays: 21 }, as('hr'));
@@ -170,7 +230,7 @@ describe('payroll run', () => {
     const s = await t.api('GET', `/payslips/${line1.id}`, undefined, as('hr'));
     expect(s.status).toBe(200);
     expect(s.body.earnings.map((e: any) => e.code)).toEqual(['SALARY', 'OT']);
-    expect(s.body.deductions.map((e: any) => [e.code, e.amount])).toEqual([['SSO', 750], ['WHT', 264.59], ['LOAN', 1000]]);
+    expect(s.body.deductions.map((e: any) => [e.code, e.amount])).toEqual([['SSO', 875], ['WHT', 258.34], ['LOAN', 1000]]);
     expect(s.body).toMatchObject({ ytd_income: 270000, ytd_tax: 1537.47, heading: 'EMP-001 ตุลาคม 2569', bank_text: 'กสิกรไทย ลงท้าย 7890' });
     expect(s.body.net_text).toContain('บาท');
     expect((await t.api('GET', '/payslips?period=2026-10&q=EMP-00', undefined, as('hr'))).body).toHaveLength(3);
@@ -198,11 +258,11 @@ describe('payroll run', () => {
     expect(bank.body.rows.map((r: any) => r.bank_account_last4).sort()).toEqual(['3210', '3344', '7890']);
     expect(bank.body.banks.reduce((s: number, b: any) => s + b.total, 0)).toBeCloseTo(bank.body.total, 2);
     const sso = await t.api('GET', `/runs/${run.id}/sso`, undefined, as('hr'));
-    expect(sso.body).toMatchObject({ employer_account: '1000123456', insured: 3, employee_total: 1900 + 20, employer_total: 1920, total: 3840 });
-    expect(sso.body.rows.find((r: any) => r.employee_code === 'EMP-002').wage).toBe(15000);
+    expect(sso.body).toMatchObject({ employer_account: '1000123456', insured: 3, employee_total: 2150 + 20, employer_total: 2170, total: 4340, wage_max: 17500 });
+    expect(sso.body.rows.find((r: any) => r.employee_code === 'EMP-002').wage).toBe(17500);
     const pnd = await t.api('GET', `/runs/${run.id}/pnd1`, undefined, as('hr'));
     expect(pnd.body.people).toBe(3);
-    expect(pnd.body.total_tax).toBe(264.59);
+    expect(pnd.body.total_tax).toBe(258.34);
     expect((await t.api('GET', `/runs/${run.id}/pnd1?withheldOnly=1`, undefined, as('hr'))).body.people).toBe(1);
     expect((await t.api('GET', `/runs/${run.id}/sso`, undefined, as('somchai'))).status).toBe(403);
   });
@@ -215,7 +275,7 @@ describe('payroll run', () => {
     expect(paid.body).toMatchObject({ status: 'paid', pay_reference: 'KBANK-BULK-1031' });
     const [ev] = await t.published('payroll.run_paid');
     expect(ev.data).toMatchObject({ runId: run.id, no: 'PR-2569-10', period: '2026-10', paidDate: '2026-10-31', headcount: 3 });
-    expect(ev.data.totals.wht).toBe(264.59);
+    expect(ev.data.totals.wht).toBe(258.34);
     const sum = (side: string) => Math.round(ev.data.postings.filter((p: any) => p.side === side).reduce((s: number, p: any) => s + p.amount, 0) * 100) / 100;
     expect(sum('debit')).toBe(sum('credit'));
     expect(JSON.stringify(ev.data)).not.toContain('EMP-001');
@@ -230,7 +290,7 @@ describe('payroll run', () => {
     expect(mine.body[0]).toMatchObject({ employee_code: 'EMP-001', run_no: 'PR-2569-10' });
     const slip = await t.api('GET', `/my-payslips/${mine.body[0].id}`, undefined, as('somchai'));
     expect(slip.status).toBe(200);
-    expect(slip.body).toMatchObject({ employee_code: 'EMP-001', run_status: 'paid', ytd_tax: 1802.06 });
+    expect(slip.body).toMatchObject({ employee_code: 'EMP-001', run_status: 'paid', ytd_tax: 1795.81 });
     // another employee cannot open it, and staff cannot use the HR endpoints
     expect((await t.api('GET', `/my-payslips/${mine.body[0].id}`, undefined, as('malee'))).status).toBe(404);
     expect((await t.api('GET', `/payslips/${mine.body[0].id}`, undefined, as('somchai'))).status).toBe(403);
@@ -246,7 +306,7 @@ describe('payroll run', () => {
     const calc = (await t.api('POST', `/runs/${nov.id}/calculate`, undefined, as('hr'))).body;
     const l1 = calc.lines.find((l: any) => l.employee_code === 'EMP-001');
     expect(l1.loans).toBe(500);
-    // Jan–Oct withheld 1,802.06 on 301,875; remaining Nov–Dec at 30,000: tax(331,875+60,000 … ) spread over 2 periods
+    // Jan–Oct withheld 1,795.81 on 301,875; remaining Nov–Dec at 30,000: tax(331,875+60,000 … ) spread over 2 periods
     expect(l1.tax_detail.remainingPeriods).toBe(2);
     expect(l1.wht).toBeGreaterThan(0);
     await t.api('POST', `/runs/${nov.id}/approve`, {}, as('owner'));

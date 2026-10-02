@@ -11,7 +11,7 @@ drivers close a vehicle trip with odometer and fuel. Requires only `identity` (t
 ## Behaviour
 - "Booked by" = the token's name (`auth(req).userName`); a typed `requesterName` is ignored, except for users with `booking.book.approve`
   (a secretary booking on behalf of someone) or old tokens without a name. No name at all → 400. The form field is "จองแทนผู้อื่น" (optional).
-- Local time is Asia/Bangkok (`src/time.ts`). `POST /bookings` takes `startAt`/`endAt` (ISO) or `date` + `startTime`/`endTime` (+ `endDate` for multi-day trips).
+- Local time is Asia/Bangkok (`src/time.ts`); "now" (today, past/not-started checks, utilisation) is the kernel business clock `now()` (wave 8). `POST /bookings` takes `startAt`/`endAt` (ISO) or `date` + `startTime`/`endTime` (+ `endDate` for multi-day trips).
 - `end > start` (400), max 31 days, `attendees ≤ capacity` (400 `ห้องประชุมเล็ก รับได้ 10 คน แต่ระบุผู้เข้าร่วม 12 คน`), inactive resource → 400.
 - Overlap with a `pending` or `confirmed` booking of the same resource → **409** `… ถูกจองแล้วช่วง 1/3/2570 09:00–10:00 น. (BK-…: purpose — requester)`.
   Back-to-back slots are fine. The resource row is locked while booking, so concurrent requests cannot double-book.

@@ -1,10 +1,12 @@
+import { now } from '@erp/kernel';
 /** Bookings are entered and shown in Thai local time (Asia/Bangkok, UTC+7, no daylight saving). */
 export const TZ = 'Asia/Bangkok';
 export const OFFSET = '+07:00';
 const OFFSET_MS = 7 * 3600 * 1000;
 
 const shifted = (d: Date) => new Date(d.getTime() + OFFSET_MS).toISOString();
-export const localDate = (d: Date = new Date()): string => shifted(d).slice(0, 10);
+/** Bangkok day of an instant (default: now on the kernel business clock — tests freeze it with setClock). */
+export const localDate = (d: Date = now()): string => shifted(d).slice(0, 10);
 export const hhmm = (d: Date): string => shifted(d).slice(11, 16);
 /** start of a local day as an instant */
 export const dayStart = (date: string): Date => new Date(`${date}T00:00:00${OFFSET}`);

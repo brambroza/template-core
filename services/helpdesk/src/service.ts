@@ -1,8 +1,9 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, now as clockNow, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import type { EventData } from '@erp/contracts';
 import { addBusinessSeconds, DEFAULT_CALENDAR, type BusinessCalendar } from './business-hours.ts';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -280,7 +281,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'helpdesk.ticket.create');
       const b = parse(TicketInput, req.body);
       const tech = hasPerm(a, 'helpdesk.ticket.work');
-      const now = new Date();
+      const now = clockNow();
       // only technicians back-date a ticket to when the customer reported it (never into the future)
       const reportedAt = tech && b.reportedAt ? new Date(b.reportedAt) : now;
       if (reportedAt.getTime() > now.getTime() + 5 * 60_000) throw badRequest('เวลาที่แจ้งต้องไม่เป็นเวลาในอนาคต', { fieldErrors: { reportedAt: ['ต้องไม่เป็นเวลาในอนาคต'] } });
@@ -289,7 +290,7 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const { cat, mode, responseDue, due } = await sla(c, b.categoryId, b.priority, reportedAt);
-        if (cat && !cat.active) throw conflict(`Category ${cat.code} is inactive`);
+        if (cat && !cat.active) throw conflict(`หมวด ${cat.code} ปิดการใช้งานแล้ว`);
         // only technicians pick an assignee; otherwise the category's default technician takes it
         const assignId = (tech && b.assigneeId) || cat?.default_assignee_id || null;
         const assignName = assignId && assignId === b.assigneeId ? b.assigneeName ?? null : cat?.default_assignee_name ?? null;
@@ -367,7 +368,7 @@ export const definition: ServiceDefinition = {
       const b = parse(TicketEdit, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (['resolved', 'closed'].includes(t.status)) throw conflict(`Cannot edit a ${t.status} ticket`);
+        if (['resolved', 'closed'].includes(t.status)) throw conflict(`แก้ไขเรื่องนี้ไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
         const { cat, mode, responseDue, due } = await sla(c, b.categoryId, b.priority, new Date(t.reported_at));
         await c.query(
           `update tickets set title = $2, description = $3, requester_name = $4, requester_contact = $5, channel = coalesce($6, channel), category_id = $7, category_name = $8,
@@ -387,7 +388,7 @@ export const definition: ServiceDefinition = {
       const b = parse(AssignInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (['resolved', 'closed'].includes(t.status)) throw conflict(`Cannot assign a ${t.status} ticket`);
+        if (['resolved', 'closed'].includes(t.status)) throw conflict(`มอบหมายเรื่องนี้ไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
         await c.query('update tickets set assignee_id = $2, assignee_name = $3, updated_at = now() where id = $1', [id, b.assigneeId, b.assigneeName ?? null]);
         await addComment(c, id, a, `มอบหมายให้ ${b.assigneeName ?? b.assigneeId}`, true);
         return loadTicket(c, a, id);
@@ -401,7 +402,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (!['open', 'waiting'].includes(t.status)) throw conflict(`Cannot start a ${t.status} ticket`);
+        if (!['open', 'waiting'].includes(t.status)) throw conflict(`เริ่มดำเนินการไม่ได้ — เรื่องอยู่ในสถานะ "${statusTh(t.status)}"`);
         await c.query(
           `update tickets set status = 'in_progress', assignee_name = case when assignee_id is null then $3 else assignee_name end, assignee_id = coalesce(assignee_id, $2),
              first_response_at = coalesce(first_response_at, now()), updated_at = now()
@@ -418,7 +419,7 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ reason: text(1000) }), req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (t.status !== 'in_progress') throw conflict(`Cannot put a ${t.status} ticket on hold`);
+        if (t.status !== 'in_progress') throw conflict(`พักเรื่องไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
         await c.query(`update tickets set status = 'waiting', updated_at = now() where id = $1`, [id]);
         if (b.reason) await addComment(c, id, a, `รอ: ${b.reason}`, false);
         return loadTicket(c, a, id);
@@ -435,7 +436,7 @@ export const definition: ServiceDefinition = {
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (t.status === 'closed') throw conflict('Cannot comment on a closed ticket');
+        if (t.status === 'closed') throw conflict(`เรื่องที่ปิดแล้วแสดงความเห็นไม่ได้`);
         await addComment(c, id, a, b.body, b.internal, b.authorName);
         if (tech && !b.internal) await c.query('update tickets set first_response_at = coalesce(first_response_at, now()), updated_at = now() where id = $1', [id]);
         // the requester answered: back to the technician
@@ -451,7 +452,7 @@ export const definition: ServiceDefinition = {
       const b = parse(ResolveInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (!['open', 'in_progress', 'waiting'].includes(t.status)) throw conflict(`Cannot resolve a ${t.status} ticket`);
+        if (!['open', 'in_progress', 'waiting'].includes(t.status)) throw conflict(`บันทึกแก้ไขแล้วไม่ได้ — เรื่องอยู่ในสถานะ "${statusTh(t.status)}"`);
         await c.query(
           `update tickets set status = 'resolved', resolution = $2, resolved_at = now(), first_response_at = coalesce(first_response_at, now()),
              assignee_name = case when assignee_id is null then $4 else assignee_name end, assignee_id = coalesce(assignee_id, $3), updated_at = now() where id = $1`,
@@ -469,8 +470,8 @@ export const definition: ServiceDefinition = {
       const b = parse(ReopenInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (t.status !== 'resolved') throw conflict(`Cannot reopen a ${t.status} ticket`);
-        const { due, mode } = await sla(c, t.category_id, t.priority, new Date());
+        if (t.status !== 'resolved') throw conflict(`เปิดเรื่องใหม่ไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
+        const { due, mode } = await sla(c, t.category_id, t.priority, clockNow());
         await c.query(
           `update tickets set status = 'open', resolved_at = null, reopen_count = reopen_count + 1, due_at = $2, sla_mode = $3, updated_at = now()
            where id = $1`, [id, due, mode]);
@@ -487,7 +488,7 @@ export const definition: ServiceDefinition = {
       const b = parse(CloseInput, req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const t = await loadTicket(c, a, id, true);
-        if (t.status !== 'resolved') throw conflict(`Cannot close a ${t.status} ticket`);
+        if (t.status !== 'resolved') throw conflict(`ปิดเรื่องไม่ได้ — อยู่ในสถานะ "${statusTh(t.status)}"`);
         // the satisfaction score is the requester's voice: a technician closing someone else's ticket cannot rate their own work
         if ((b.satisfaction !== undefined || b.feedback) && t.created_by !== a.userId) {
           throw forbidden('ให้คะแนนความพึงพอใจได้เฉพาะผู้แจ้งเรื่อง — ปิดเรื่องโดยไม่ต้องให้คะแนน');
@@ -609,7 +610,7 @@ export const definition: ServiceDefinition = {
         const { id } = parse(IdParam, req.params);
         return k.db.tx(a.tenantId, async (c) => {
           const art = await one(c, 'select * from kb_articles where id = $1 for update', [id], 'Article');
-          if (art.published === published) throw conflict(published ? 'Article is already published' : 'Article is not published');
+          if (art.published === published) throw conflict(published ? 'บทความนี้เผยแพร่อยู่แล้ว' : 'บทความนี้ยังไม่ได้เผยแพร่');
           return (await c.query(
             `update kb_articles set published = $2, published_at = case when $2 then now() end, updated_at = now() where id = $1 returning *`, [id, published])).rows[0];
         });

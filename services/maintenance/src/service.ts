@@ -1,5 +1,6 @@
-import { auth, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, TODAY_SQL, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -183,7 +184,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const wo = await loadWo(c, id, true);
-        if (wo.status !== 'open') throw conflict(`Cannot start ${wo.no}: status is ${wo.status}`);
+        if (wo.status !== 'open') throw conflict(`เริ่มงาน ${wo.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(wo.status)}"`);
         await c.query(`update work_orders set status = 'in_progress', started_at = now() where id = $1`, [id]);
         return loadWo(c, id);
       });
@@ -214,7 +215,7 @@ export const definition: ServiceDefinition = {
       const b = parse(CompleteInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const wo = await loadWo(c, id, true);
-        if (!['open', 'in_progress'].includes(wo.status)) throw conflict(`Cannot complete ${wo.no}: status is ${wo.status}`);
+        if (!['open', 'in_progress'].includes(wo.status)) throw conflict(`ปิดงาน ${wo.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(wo.status)}"`);
         const warehouseCode = b.warehouseCode ?? (await readSettings(c)).defaultPartsWarehouse;
         await c.query(
           `update work_orders set status = 'done', completed_at = now(), started_at = coalesce(started_at, now()), resolution = $2, downtime_minutes = $3 where id = $1`,
@@ -227,7 +228,7 @@ export const definition: ServiceDefinition = {
         if (!stillOpen.rowCount) await c.query(`update machines set status = 'running' where id = $1 and status = 'down'`, [wo.machine_id]);
         if (wo.pm_plan_id) {
           await c.query(
-            `update pm_plans set last_done_on = coalesce($2::date, current_date), next_due_on = coalesce($2::date, current_date) + interval_days where id = $1`,
+            `update pm_plans set last_done_on = coalesce($2::date, ${TODAY_SQL}), next_due_on = coalesce($2::date, ${TODAY_SQL}) + interval_days where id = $1`,
             [wo.pm_plan_id, b.doneOn ?? null]);
         }
         await k.emit(c, 'maintenance.work_completed', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, kind: wo.kind, downtimeMinutes: b.downtimeMinutes ?? null });

@@ -1,4 +1,5 @@
 /** Pure date / money arithmetic for MA contracts (no database) — unit-tested in test/schedule.test.ts. */
+import { now, thaiDate } from '@erp/kernel';
 
 export type BillingPlan = 'one_time' | 'monthly' | 'quarterly' | 'yearly';
 
@@ -8,9 +9,9 @@ const parts = (iso: string) => iso.split('-').map(Number) as [number, number, nu
 const pad = (n: number, w = 2) => String(n).padStart(w, '0');
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m = 1..12
 
-/** Today in Thailand as YYYY-MM-DD. */
-export function todayBkk(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+/** Today in Thailand as YYYY-MM-DD (kernel business clock; or the Bangkok day of `at`). */
+export function todayBkk(at: Date = now()): string {
+  return thaiDate(at);
 }
 
 /** Calendar-month addition anchored on the day of month (31 Jan + 1 month = 28/29 Feb). */

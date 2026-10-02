@@ -224,10 +224,28 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-06');
   });
 
-  it('UAT-07 อนุมัติใบสั่งซื้อ', async () => {
+  it('UAT-07 อนุมัติใบสั่งซื้อ (ผู้สร้างอนุมัติเองไม่ได้ — แยกหน้าที่)', async () => {
+    const poUrl = page.url();
+    const poId = poUrl.split('/').pop()!;
+    // the admin raised this PO: approving it himself is refused (segregation of duties, on by default — wave 8)
+    const own = await erp.call('POST', `/api/purchasing/purchase-orders/${poId}/approve`, undefined, uatToken);
+    expect(own.status).toBe(403);
+    expect(own.body.error.message).toContain('อนุมัติเองไม่ได้');
+    // the plant manager approves
+    const role = (await erp.call('POST', '/api/identity/roles', { name: 'ผู้อนุมัติใบสั่งซื้อ', permissions: ['purchasing.po.read', 'purchasing.po.approve'] }, uatToken)).body;
+    await erp.call('POST', '/api/identity/users', { email: 'md@uat.co.th', name: 'สมศักดิ์ ผู้จัดการโรงงาน', password: 'md-pass-1', roleIds: [role.id] }, uatToken);
+    await logout(page, base);
+    await login(page, base, 'uat-factory', 'md@uat.co.th', 'md-pass-1');
+    await page.goto(poUrl);
     await page.getByRole('button', { name: 'อนุมัติ' }).click();
     await page.locator('.status', { hasText: 'อนุมัติแล้ว' }).waitFor();
     expect(await page.getByRole('button', { name: 'อนุมัติ', exact: true }).count()).toBe(0);
+    expect(await fact(page, 'ผู้อนุมัติ')).toContain('สมศักดิ์ ผู้จัดการโรงงาน');
+    await shot(page, 'UAT-07');
+    await logout(page, base);
+    await login(page, base, 'uat-factory');
+    await page.goto(poUrl);
+    await page.locator('.status', { hasText: 'อนุมัติแล้ว' }).waitFor();
     expect(await page.getByRole('button', { name: 'รับของที่ค้างทั้งหมด' }).count()).toBe(1);
     await shot(page, 'UAT-07');
   });

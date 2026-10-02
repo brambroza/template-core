@@ -1,6 +1,7 @@
 import { auth, conflict, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { directComponents, explode, loadBom } from './bom.ts';
+import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -74,7 +75,7 @@ export const definition: ServiceDefinition = {
       const b = parse(OrderInput, req.body);
       reply.code(201);
       return k.db.tx(a.tenantId, async (c) => {
-        if (!(await loadBom(c, b.itemId))) throw conflict(`No BOM for ${b.itemCode}; create one first`);
+        if (!(await loadBom(c, b.itemId))) throw conflict(`ยังไม่มีสูตรการผลิต (BOM) ของ ${b.itemCode} — สร้าง BOM ก่อน`);
         const no = await nextDocNo(c, 'MO');
         return (await c.query(
           `insert into production_orders (no, item_id, item_code, item_name, qty, warehouse_code, due_date, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
@@ -127,7 +128,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOrder(c, id, true);
-        if (o.status !== 'planned') throw conflict(`Cannot release ${o.no}: status is ${o.status}`);
+        if (o.status !== 'planned') throw conflict(`ปล่อยงาน ${o.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(o.status)}"`);
         return (await c.query(`update production_orders set status = 'released' where id = $1 returning *`, [id])).rows[0];
       });
     });
@@ -138,7 +139,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOrder(c, id, true);
-        if (!['planned', 'released'].includes(o.status)) throw conflict(`Cannot cancel ${o.no}: status is ${o.status}`);
+        if (!['planned', 'released'].includes(o.status)) throw conflict(`ยกเลิก ${o.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(o.status)}"`);
         return (await c.query(`update production_orders set status = 'cancelled' where id = $1 returning *`, [id])).rows[0];
       });
     });
@@ -151,10 +152,10 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ qty: s.positiveQty.optional() }), req.body ?? {});
       return k.db.tx(a.tenantId, async (c) => {
         const o = await loadOrder(c, id, true);
-        if (o.status !== 'released') throw conflict(`Cannot complete ${o.no}: status is ${o.status}`);
+        if (o.status !== 'released') throw conflict(`ปิดงาน ${o.no} ไม่ได้ — อยู่ในสถานะ "${statusTh(o.status)}"`);
         const qty = b.qty ?? o.qty - o.completed_qty;
         const bom = await loadBom(c, o.item_id);
-        if (!bom) throw conflict(`BOM for ${o.item_code} was removed`);
+        if (!bom) throw conflict(`สูตรการผลิต (BOM) ของ ${o.item_code} ถูกลบไปแล้ว`);
         const doneQty = o.completed_qty + qty;
         const updated = (await c.query(
           `update production_orders set completed_qty = $2, status = case when $2 >= qty then 'completed' else status end where id = $1 returning *`,

@@ -14,6 +14,7 @@ canned replies and a knowledge base. Requires only core: `identity` (assignee lo
 - `ticket_comments` (`internal` note or public reply, author snapshot) · `canned_replies` · `kb_articles` (`published`, `views`)
 
 ## Behaviour
+- "Now" for a new ticket's reported time / SLA and reopen SLA is the kernel business clock `now()` (wave 8; `setClock` in tests).
 - SLA: due times = `reported_at` + category hours (no category: 4 h response / 24 h resolve); `urgent` halves both.
   Hours are **business hours** (working days/hours + holidays from the tenant calendar, `src/business-hours.ts`) unless business hours are off,
   or the ticket is `urgent` and `urgent24x7` is on (then clock hours). Example: reported 23:04 Friday, 4 h → due Monday 12:00.

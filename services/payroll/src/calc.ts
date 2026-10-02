@@ -4,6 +4,7 @@
  * Every legal number (SSO rate and wage band, tax allowances, brackets, OT multipliers) comes from `PayrollRules`
  * so a customer can follow a change in the law from the settings screen without a code change.
  * Defaults are the rules as of 2026 that we could confirm — see DEFAULT_RULES and the module CLAUDE.md.
+ * SSO rates and wage band are effective-dated (`ssoSchedule`, picked by the pay month) so a law change never rewrites old months.
  */
 import { round } from '@erp/thai';
 
@@ -58,6 +59,61 @@ export interface PayrollRules {
   defaultDailyWorkDays: number;
   /** OT multipliers of the hourly rate */
   ot: { x1: number; x15: number; x2: number; x3: number };
+  /**
+   * Effective-dated SSO rates and wage band (C1): the row in force on the 1st of the pay month wins over `sso`'s
+   * rates/band (`sso.includeOvertime` stays a company setting). Empty/absent = use `sso` as is.
+   */
+  ssoSchedule?: SsoRule[];
+}
+
+/** One effective-dated SSO rule (มาตรา 33): rates and wage band from `effectiveFrom` (YYYY-MM-DD) until the next rule. */
+export interface SsoRule {
+  effectiveFrom: string;
+  employeeRate: number;
+  employerRate: number;
+  wageMin: number;
+  wageMax: number;
+  /** true = the company's own override row; false = statutory row shipped with the software */
+  custom?: boolean;
+  note?: string | null;
+}
+
+/**
+ * Statutory SSO schedule shipped with the software (mirrored by migrations/003_sso_rules.sql seed rows).
+ * Ceiling 15,000 until 2025; cabinet-approved steps (ครม. ธ.ค. 2568): 17,500 from 1 Jan 2026 (2569), 20,000 from 2029 (2572),
+ * 23,000 from 2032 (2575). Floor 1,650, 5% + 5%. Temporary rate cuts are entered by the company as their own rows.
+ */
+export const STATUTORY_SSO_SCHEDULE: SsoRule[] = [
+  { effectiveFrom: '1990-01-01', employeeRate: 5, employerRate: 5, wageMin: 1_650, wageMax: 15_000, note: 'เพดานค่าจ้างเดิม 15,000 บาท' },
+  { effectiveFrom: '2026-01-01', employeeRate: 5, employerRate: 5, wageMin: 1_650, wageMax: 17_500, note: 'ครม. อนุมัติ ธ.ค. 2568 — เพดาน 17,500 สมทบสูงสุด 875' },
+  { effectiveFrom: '2029-01-01', employeeRate: 5, employerRate: 5, wageMin: 1_650, wageMax: 20_000, note: 'ขั้นที่ 2 ตามแผน (2572–2574) — เพดาน 20,000' },
+  { effectiveFrom: '2032-01-01', employeeRate: 5, employerRate: 5, wageMin: 1_650, wageMax: 23_000, note: 'ขั้นที่ 3 ตามแผน (2575 เป็นต้นไป) — เพดาน 23,000' },
+];
+
+/**
+ * Merge statutory and company rows into one schedule sorted by date; on the same date the company row wins.
+ * A later statutory step supersedes an earlier company override (a change in the law applies to everyone).
+ */
+export function buildSsoSchedule(statutory: SsoRule[], custom: SsoRule[] = []): SsoRule[] {
+  const byDate = new Map<string, SsoRule>();
+  for (const r of statutory) byDate.set(r.effectiveFrom, { ...r, custom: false });
+  for (const r of custom) byDate.set(r.effectiveFrom, { ...r, custom: true });
+  return [...byDate.values()].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+}
+
+/** The SSO rule in force for a pay month (YYYY-MM) or a date (YYYY-MM-DD): the latest row with effectiveFrom ≤ the 1st of that month. */
+export function ssoRuleFor(periodOrDate: string, schedule: SsoRule[]): SsoRule | null {
+  const day = periodOrDate.length === 7 ? `${periodOrDate}-01` : periodOrDate.slice(0, 7) + '-01';
+  let hit: SsoRule | null = null;
+  for (const r of schedule) if (r.effectiveFrom <= day && (!hit || r.effectiveFrom >= hit.effectiveFrom)) hit = r;
+  return hit;
+}
+
+/** `rules.sso` with the rates/band of the schedule row in force for the period (unchanged when no row applies). */
+export function ssoFor(period: string, rules: PayrollRules): PayrollRules['sso'] {
+  const r = rules.ssoSchedule?.length ? ssoRuleFor(period, rules.ssoSchedule) : null;
+  if (!r) return rules.sso;
+  return { ...rules.sso, employeeRate: r.employeeRate, employerRate: r.employerRate, wageMin: r.wageMin, wageMax: r.wageMax };
 }
 
 export const DEFAULT_BRACKETS: TaxBracket[] = [
@@ -85,6 +141,7 @@ export const DEFAULT_RULES: PayrollRules = {
   proration: 'calendar',
   defaultDailyWorkDays: 26,
   ot: { x1: 1, x15: 1.5, x2: 2, x3: 3 },
+  ssoSchedule: STATUTORY_SSO_SCHEDULE,
 };
 
 /** Deep-merge stored settings over the defaults (unknown keys ignored). */
@@ -96,6 +153,8 @@ export function mergeRules(stored: unknown): PayrollRules {
     sso: { ...DEFAULT_RULES.sso, ...(s.sso ?? {}) },
     tax: { ...DEFAULT_RULES.tax, ...(s.tax ?? {}), brackets: s.tax?.brackets?.length ? s.tax.brackets : DEFAULT_RULES.tax.brackets },
     ot: { ...DEFAULT_RULES.ot, ...(s.ot ?? {}) },
+    // the schedule never comes from the stored settings json — it lives in the sso_rules table (service passes it in)
+    ssoSchedule: DEFAULT_RULES.ssoSchedule,
   };
 }
 
@@ -361,9 +420,10 @@ export function calculateLine(i: LineInput, rules: PayrollRules = DEFAULT_RULES)
   const gross = round(salary + overtime + allowances + bonus + otherIncome, 2);
 
   // SSO
-  const ssoWage = round(salary - unpaidLeave + allowSso + (rules.sso.includeOvertime ? overtime : 0), 2);
-  const ssoEmployee = i.ssoEnrolled ? ssoContribution(ssoWage, rules.sso.employeeRate, rules.sso) : 0;
-  const ssoEmployer = i.ssoEnrolled ? ssoContribution(ssoWage, rules.sso.employerRate, rules.sso) : 0;
+  const sso = ssoFor(i.period, rules);
+  const ssoWage = round(salary - unpaidLeave + allowSso + (sso.includeOvertime ? overtime : 0), 2);
+  const ssoEmployee = i.ssoEnrolled ? ssoContribution(ssoWage, sso.employeeRate, sso) : 0;
+  const ssoEmployer = i.ssoEnrolled ? ssoContribution(ssoWage, sso.employerRate, sso) : 0;
 
   // provident fund on basic wages actually earned
   const pvdBase = salary - unpaidLeave;
@@ -383,7 +443,7 @@ export function calculateLine(i: LineInput, rules: PayrollRules = DEFAULT_RULES)
   const future = remaining - 1;
   const futureSsoWage = fullMonth + allowSsoFull;
   const projectedRegular = i.ytd.regular + taxableRegular + (fullMonth + allowTaxableFull) * future;
-  const projectedSso = i.ytd.sso + ssoEmployee + (i.ssoEnrolled ? ssoContribution(futureSsoWage, rules.sso.employeeRate, rules.sso) : 0) * future;
+  const projectedSso = i.ytd.sso + ssoEmployee + (i.ssoEnrolled ? ssoContribution(futureSsoWage, sso.employeeRate, sso) : 0) * future;
   const projectedPvd = i.ytd.pvd + pvdEmployee + round((fullMonth * nn(i.pvdEmployeePct)) / 100, 2) * future;
   const baseIncome = projectedRegular + i.ytd.irregular;
   const without = annualNetIncome(baseIncome, projectedSso, projectedPvd, i.tax, rules.tax);

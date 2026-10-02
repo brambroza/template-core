@@ -14,16 +14,23 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - `PUT /company` (`identity.company.write`) — full replace (missing optional fields become null). `taxId` must pass the 13-digit check (`isValidThaiTaxId`, dashes/spaces stripped), `branchCode` 5 digits (`00000` = สำนักงานใหญ่; `branch_text` = `branchLabel` or "สำนักงานใหญ่" / "สาขาที่ 0000x"), `logo` = base64 data URL of PNG/JPEG/SVG ≤ 300 KB whose bytes match the type, `signatureLabels` = array or comma-separated text (≤ 6).
 - `GET /users/directory?q=` (any signed-in user) — active users' `id, name, email` for people pickers (delegate, technician, assignee…); `/users` stays admin (`identity.user.read`)
 - `GET /me` · `GET/POST /users` · `PUT /users/:id/roles` · `POST /users/:id/deactivate` · `GET/POST /roles`
-- `GET /role-templates?modules=a,b&q=` (`identity.user.read`) — suggested Thai roles (ผู้บริหาร, พนักงานทั่วไป, หัวหน้างาน, ฝ่ายบุคคล, บัญชีและการเงิน, จัดซื้อ, ฝ่ายขาย, คลังสินค้า, ช่างซ่อมบำรุง, QC, ไอที, ผู้จัดการโครงการ) → `{ id, name, description, permissions, permission_count, skipped }`.
+- `GET /role-templates?modules=a,b&q=` (`identity.user.read`) — suggested Thai roles (ผู้บริหาร, พนักงานทั่วไป, หัวหน้างาน, ฝ่ายบุคคล, บัญชีและการเงิน, จัดซื้อ, ฝ่ายขาย, คลังสินค้า, ช่างซ่อมบำรุง, QC, ไอที, วางแผนการผลิต, ผู้จัดการโครงการ) → `{ id, name, description, permissions, permission_count, skipped }`.
 - `POST /roles/from-template { template, name?, modules? }` (`identity.role.write`) — creates the role (name defaults to the template's; taken → 409) with only the permissions of the
   installed modules (`modules` from the client's catalog, else an `x-erp-modules` header, else all). Returns the role + `skipped` + Thai `message`.
 
 ## Rules
 - The company profile is what makes a printed tax invoice legal (Revenue Code §86/4: seller name, address, tax ID, branch). apps/web reads it once per session for every printed document.
+- `footer_note` is printed only where a screen's `print.footer` asks (tax invoice / quotation payment terms) — not on POs, receipts, claims, payslips, 50 ทวิ, QC/NCR or approvals.
 - Never return `password_hash`. Passwords: scrypt via kernel `hashPassword`.
 - Permission strings: `<module>.<thing>.<action>`, wildcards `<module>.*` and `*`. The list of available permissions comes from installed modules' manifests (`GET /api/_catalog`), not from this module.
 - Role templates live in `src/role-templates.ts` (static — identity cannot read other modules). A permission belongs to module `m` when its prefix is `m`
   or `m` starts with `<prefix>-` (`master.*` → `master-data`). `tests/ui/role-templates.test.ts` checks every key against the repo's module.json files.
+- Templates keep segregation of duties (wave 8, tested in `tests/ui/role-templates.test.ts`): only `executive` holds `purchasing.po.approve-high` and
+  `expense.claim.approve-over-limit`; no template both writes and approves POs (`purchasing` raises, receives, returns — no approve); control settings
+  (`purchasing.settings.write`, `expense.settings.write`) and `inventory.hold.override` stay admin-only; `warehouse` has no `inventory.hold.release` (QC does).
+  Round-2 N3 gaps closed: `it`/`technician` + `master.partner.read`, `technician` + contracts visits / helpdesk work / timesheets, `qc` + `quality.ncr.close`
+  and helpdesk work (customer complaints), `purchasing` + `approvals.request.approve` (PR chain), new `planner` (วางแผนการผลิต). The demo seed
+  (`tools/erp/src/demo*.ts`) creates every demo user from these templates + `staff`.
 - Changing roles affects tokens at next login (tokens live `JWT_TTL_SECONDS`, default 12h).
 - **No granting beyond your own rights** (security review 0.3, SEC-01): `POST /roles`, `POST /roles/from-template`, `POST /users` (roleIds),
   `PUT /users/:id/roles` and `POST /users/:id/deactivate` answer 403 unless the caller holds every permission involved — the new role's,

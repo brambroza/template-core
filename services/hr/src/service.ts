@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, now, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { TZ, eachDate, hhmm, loadCalendar, loadSchedule, localDate, localMinutes, monthRange, toMinutes } from './calendar.ts';
 
@@ -255,8 +255,8 @@ async function attendanceTarget(c: Client, a: AuthContext, b: z.infer<typeof Che
   if (b.date && !b.time) throw badRequest('ระบุเวลาด้วย (HH:MM)');
   if (explicit && !manage) throw forbidden('ระบุเวลาเองได้เฉพาะผู้มีสิทธิ์บันทึกเวลาแทนพนักงาน');
   if (emp.status === 'resigned') throw conflict(`${emp.full_name} ลาออกแล้ว ลงเวลาไม่ได้`);
-  const at = explicit ? new Date(explicit) : new Date();
-  if (at.getTime() > Date.now() + 5 * 60000) throw badRequest('ลงเวลาล่วงหน้าไม่ได้');
+  const at = explicit ? new Date(explicit) : now();
+  if (at.getTime() > now().getTime() + 5 * 60000) throw badRequest('ลงเวลาล่วงหน้าไม่ได้');
   const source = explicit || emp.user_id !== a.userId ? 'admin' : 'self';
   return { emp, at, source };
 }

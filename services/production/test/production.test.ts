@@ -27,7 +27,7 @@ describe('production', () => {
   it('rejects circular BOMs', async () => {
     const res = await t.api('PUT', '/boms', { ...steel, lines: [{ ...bracket, qty: 1 }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/Circular BOM/);
+    expect(res.body.error.message).toMatch(/BOM.*วนกลับ/);
     // the failed edit rolled back: steel still has no BOM
     expect((await t.api('GET', `/boms/${steel.itemId}`)).status).toBe(404);
   });

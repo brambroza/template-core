@@ -152,7 +152,7 @@ async function seed() {
   docs.e1 = await ok('hr', 'POST', 'payroll/profiles', { employeeCode: 'E-001', employeeName: users.staff.name, userId: users.staff.id, userName: users.staff.name, baseSalary: 12000, startDate: '2024-01-15', bankName: 'กสิกรไทย', bankAccount: '123-4-56789-0' });
   docs.e2 = await ok('hr', 'POST', 'payroll/profiles', {
     employeeCode: 'E-002', employeeName: users.sup.name, userId: users.sup.id, userName: users.sup.name, baseSalary: 50000, startDate: '2020-06-01', taxSpouse: true,
-    openingYear: year, openingIncome: 50000 * before, openingSso: 750 * before, openingTax: Math.round((14600 * before / 12) * 100) / 100,
+    openingYear: year, openingIncome: 50000 * before, openingSso: 875 * before, openingTax: Math.round((14450 * before / 12) * 100) / 100, // SSO 2569: 875/month
   });
   docs.e3 = await ok('hr', 'POST', 'payroll/profiles', { employeeCode: 'E-003', employeeName: 'บุญมี รายวัน', payType: 'daily', dailyWage: 400, startDate: '2025-03-01', bankName: 'กรุงไทย', bankAccount: '222-0-11111-9' });
   // automation: personal alerts when a claim is paid (in the bell + the claimant's own LINE)
@@ -265,9 +265,10 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     const run = await ok('hr', 'GET', `payroll/runs/${ids.run}`);
     const line = (code: string) => run.lines.find((l: any) => l.employee_code === code);
     expect(line('E-001')).toMatchObject({ gross: 12000, sso_employee: 600, sso_employer: 600, wht: 0, net: 11400 });
-    expect(line('E-002')).toMatchObject({ gross: 50000, sso_wage: 50000, sso_employee: 750, sso_employer: 750 }); // capped at 15,000 × 5%
-    expect(line('E-002').wht).toBeGreaterThan(1216.6);
-    expect(line('E-002').wht).toBeLessThan(1216.8);
+    expect(line('E-002')).toMatchObject({ gross: 50000, sso_wage: 50000, sso_employee: 875, sso_employer: 875 }); // capped at 17,500 × 5% (2569)
+    // 600,000 − 100,000 − 60,000 − 60,000 (spouse) − SSO 10,500 = 369,500 → 14,450 a year → 1,204.17 a month
+    expect(line('E-002').wht).toBeGreaterThan(1204.1);
+    expect(line('E-002').wht).toBeLessThan(1204.3);
     expect(line('E-003')).toMatchObject({ salary: 10400, overtime: 750, gross: 11150, sso_wage: 10400, sso_employee: 520 }); // OT is not SSO wage
     expect((await api('hr', 'POST', `payroll/runs/${ids.run}/approve`, {})).status).toBe(403);
 
@@ -376,7 +377,7 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await ok('buyer', 'POST', `purchasing/purchase-orders/${po.id}/receive`, {});
     docs.po = po;
     // an employee's fuel claim with VAT, approved by the head and paid by finance
-    const claim = await ok('staff2', 'POST', 'expense/claims', { purpose: 'ส่งเอกสารให้ลูกค้า', submit: true, lines: [{ expenseDate: today, categoryId: docs.fuel.id, amount: 1000, vat: 70, receiptNo: 'PTT-123' }] });
+    const claim = await ok('staff2', 'POST', 'expense/claims', { purpose: 'ส่งเอกสารให้ลูกค้า', submit: true, lines: [{ expenseDate: today, categoryId: docs.fuel.id, amount: 1000, vat: 70, receiptNo: 'PTT-123', receiptType: 'full_tax_invoice', vendorName: 'ปตท. สาขาบางนา', vendorTaxId: '0107544000108', vendorBranch: '00123' }] });
     await ok('sup', 'POST', `expense/claims/${claim.id}/approve`, {});
     await ok('acc', 'POST', `expense/claims/${claim.id}/pay`, { method: 'transfer', paidDate: today, reference: 'KBANK-EXP-1' });
     await erp.settle();

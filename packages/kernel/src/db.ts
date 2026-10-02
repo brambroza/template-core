@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 import { toBuddhistYear } from '@erp/thai';
+import { thaiToday } from './clock.ts';
 
 // numeric -> JS number (money/qty are numeric(18,4); fine for SME volumes, see docs/architecture.md)
 pg.types.setTypeParser(1700, (v) => (v === null ? null : Number(v)));
@@ -43,7 +44,9 @@ export function createDb(url: string): Db {
     rawTx,
     tx: (tenantId, fn) =>
       rawTx(async (c) => {
-        await c.query(`select set_config('app.tenant_id', $1, true)`, [tenantId]);
+        // business time zone for the transaction: any SQL current_date / now()::date / date_trunc is the Thai day, not UTC (round-2 #4).
+        // Services still pass explicit dates computed with thaiToday(); SQL that needs "today" uses TODAY_SQL (= app.today, follows setClock).
+        await c.query(`select set_config('app.tenant_id', $1, true), set_config('TimeZone', 'Asia/Bangkok', true), set_config('app.today', $2, true)`, [tenantId, thaiToday()]);
         return fn(c);
       }),
     close: () => pool.end(),
@@ -51,6 +54,12 @@ export function createDb(url: string): Db {
 }
 
 const TENANT_EXPR = `nullif(current_setting('app.tenant_id', true), '')::uuid`;
+
+/**
+ * SQL expression for today's business date inside `db.tx`: the kernel clock's Thai day (`thaiToday()`, follows `setClock` in tests),
+ * falling back to the Bangkok day of now() outside db.tx. Use it instead of `current_date` in queries.
+ */
+export const TODAY_SQL = `(coalesce(nullif(current_setting('app.today', true), '')::date, (now() at time zone 'Asia/Bangkok')::date))`;
 
 /** SQL that turns a table into a tenant-isolated table. Applied for every `-- @tenant <table>` line. */
 export function tenantTableSql(table: string): string {
@@ -80,10 +89,13 @@ create table if not exists _audit (
   user_id text, user_name text, method text not null, route text not null, entity_id text, status int not null, summary jsonb);
 create index if not exists _audit_at on _audit (tenant_id, at desc);
 create index if not exists _audit_entity on _audit (tenant_id, entity_id, at desc);
+create table if not exists _lock_date (
+  tenant_id uuid primary key, lock_date date, source text check (source in ('accounting', 'manual')), period text,
+  updated_at timestamptz not null default now(), updated_by_name text);
 `;
 
 /** Kernel tables holding tenant data: row-level security exactly like a `-- @tenant` business table. */
-export const KERNEL_TENANT_TABLES = ['_attachments', '_audit'] as const;
+export const KERNEL_TENANT_TABLES = ['_attachments', '_audit', '_lock_date'] as const;
 
 /**
  * Apply `migrations/*.sql` in name order, once each.
@@ -116,7 +128,8 @@ export async function migrate(db: Db, dir: string): Promise<string[]> {
  * Next document number for the current tenant, Thai style: `PO-2569-0001`.
  * Must be called inside `db.tx(...)` so it shares the business transaction.
  */
-export async function nextDocNo(c: Client, prefix: string, date = new Date()): Promise<string> {
+/** Next document number for the Thai (Buddhist-era) year of `date` — default: today in Bangkok, so 1 Jan 00:00–07:00 is already the new year. */
+export async function nextDocNo(c: Client, prefix: string, date: Date = new Date(`${thaiToday()}T00:00:00Z`)): Promise<string> {
   const year = toBuddhistYear(date);
   const r = await c.query<{ last: number }>(
     `insert into _doc_seq (tenant_id, prefix, year, last) values (${TENANT_EXPR}, $1, $2, 1)

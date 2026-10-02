@@ -18,6 +18,7 @@ Requires `identity` + `master-data` only; `purchasing` and `production` enhance 
 - `corrective_actions` — `CA-2569-0001`, NCR link, action, owner snapshot, `due_on`, `status open → done → verified`; overdue = open and past due.
 
 ## Behaviour
+- "Today" (corrective-action overdue flags) = kernel `thaiToday()` (Asia/Bangkok), not the server's local zone (wave 8).
 - Sample size: fixed qty (never more than the lot) or `ceil(qty × % / 100)`, at least 1. Can be overridden on a manual inspection.
 - A checkpoint fails when a measured value (rounded to the stored 4 decimals; min/max inclusive) is outside min/max, or when it is marked failed (`/fail`). Measure checkpoints need a value; others need pass/fail.
 - Recording any result moves a pending inspection to `in_progress`. Complete needs every checkpoint recorded (409 otherwise).

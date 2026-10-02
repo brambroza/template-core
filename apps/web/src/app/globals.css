@@ -468,7 +468,7 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
 /* ---------- print: documents only ---------- */
 @media print {
   body { background: #fff; }
-  .rail, .panel-nav, .topbar, .no-print, .skip, .flow { display: none !important; }
+  .rail, .panel-nav, .topbar, .no-print, .skip, .flow, .toasts { display: none !important; }
   .shell { display: block; }
   .content { padding: 0; max-width: none; }
   .print-only { display: block !important; }
@@ -643,6 +643,8 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
   .print-footer { margin-top: 5mm; padding-top: 1.5mm; border-top: .5pt solid #999; font-size: 8.5pt; color: #333; break-inside: avoid; }
   .print-footer p { margin: 0; }
   .pf-note { white-space: pre-line; }
+  .pf-payment { border: .75pt solid #888; border-radius: 1.5mm; padding: 2mm 3mm; color: #111; }
+  .pf-title { font-weight: 700; font-size: 9pt; margin-bottom: .5mm !important; }
   .pf-company { color: #666; }
 }
 

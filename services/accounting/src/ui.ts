@@ -344,9 +344,10 @@ export default defineUi({
       filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }],
       columns: [
         { key: 'month_th', label: 'เดือนภาษี' }, acc('output_base', 'ยอดขาย (ฐานภาษี)', true), acc('output_vat', 'ภาษีขาย', true),
-        acc('input_base', 'ยอดซื้อ (ฐานภาษี)', true), acc('input_vat', 'ภาษีซื้อ', true), acc('net', 'ชำระเพิ่ม (ขอคืน)', true), { key: 'result', label: 'ผล' },
+        acc('input_base', 'ยอดซื้อ (ฐานภาษี)', true), acc('input_vat', 'ภาษีซื้อ', true), acc('net', 'ภาษีเดือนนี้ (ขาย − ซื้อ)'),
+        acc('carried_in', 'ภาษีชำระเกินยกมา'), acc('payable', 'ชำระเพิ่ม', true), acc('carry_forward', 'ยอดภาษีซื้อเกินยกไป'), { key: 'result', label: 'ผล' },
       ],
-      report: { subtitle: 'ปีภาษี {year|year}', totalLabel: 'รวมทั้งปี' },
+      report: { subtitle: 'ปีภาษี {year|year} — ยื่นรายเดือน ภาษีซื้อเกินยกไปเดือนถัดไป (ไม่หักกลบทั้งปี)', totalLabel: 'รวมทั้งปี' },
     },
     vatLines: {
       kind: 'list', title: 'รายงานภาษีขาย / ภาษีซื้อ', endpoint: '/reports/vat/lines', rows: 'rows', perm: REPORT,
@@ -355,8 +356,9 @@ export default defineUi({
         { name: 'month', label: 'เดือนภาษี (เว้นว่าง = เดือนนี้)', type: 'month' },
       ],
       columns: [
-        { key: 'seq', label: 'ลำดับ' }, { key: 'entry_date', label: 'วันที่', format: 'date' }, { key: 'ref', label: 'เลขที่ใบกำกับ/เอกสาร' },
-        { key: 'partner_name', label: 'ชื่อผู้ซื้อ/ผู้ขาย' }, { key: 'no', label: 'สมุดรายวัน' }, acc('tax_base', 'มูลค่าสินค้า/บริการ', true), acc('vat', 'ภาษีมูลค่าเพิ่ม', true),
+        { key: 'seq', label: 'ลำดับ' }, { key: 'tax_invoice_date', label: 'วันที่ใบกำกับ', format: 'date' }, { key: 'document_no', label: 'เลขที่ใบกำกับภาษี' },
+        { key: 'party_name', label: 'ชื่อผู้ซื้อ/ผู้ขาย' }, { key: 'party_tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'party_branch_label', label: 'สำนักงานใหญ่/สาขา' },
+        acc('tax_base', 'มูลค่าสินค้า/บริการ', true), acc('vat', 'ภาษีมูลค่าเพิ่ม', true), { key: 'no', label: 'สมุดรายวัน', phone: false }, { key: 'ref', label: 'เอกสารอ้างอิง', phone: false },
       ],
       report: { subtitle: '{title} เดือนภาษี {monthTh}' },
       rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },

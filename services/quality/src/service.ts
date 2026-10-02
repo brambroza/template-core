@@ -1,7 +1,4 @@
-import {
-  auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z,
-  type Client, type EventHandlers, type HandlerContext, type ServiceDefinition,
-} from '@erp/kernel';
+import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, thaiToday, z, type Client, type EventHandlers, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -44,9 +41,9 @@ const thNcr = (n: any) => ({
 });
 const thCa = (a: any) => ({ ...a, status_th: TH.caStatus[a.status], overdue: a.status === 'open' && !!a.due_on && a.due_on < today(), overdue_th: a.status === 'open' && !!a.due_on && a.due_on < today() ? 'เลยกำหนด' : '' });
 
+/** Today in Thailand (kernel business clock) — not the server's local zone. */
 function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return thaiToday();
 }
 
 function specText(r: { unit?: string | null; target?: number | null; min_value?: number | null; max_value?: number | null }) {
@@ -250,7 +247,7 @@ async function loadInspection(c: Client, id: string, lock = false) {
 /** Records one checkpoint result; moves a pending inspection to in_progress. */
 async function recordResult(c: Client, resultId: string, input: z.infer<typeof ResultInput>, userId: string, inspectionId?: string) {
   const r = await one(c, 'select * from inspection_results where id = $1 for update', [resultId], 'Inspection result');
-  if (inspectionId && r.inspection_id !== inspectionId) throw badRequest(`Result ${resultId} does not belong to this inspection`);
+  if (inspectionId && r.inspection_id !== inspectionId) throw badRequest(`ผลตรวจที่ส่งมาไม่ได้อยู่ในใบตรวจนี้`);
   const ins = await one(c, 'select id, no, status from inspections where id = $1 for update', [r.inspection_id], 'Inspection');
   if (!['pending', 'in_progress'].includes(ins.status)) throw conflict(`บันทึกผลไม่ได้: งานตรวจ ${ins.no} สถานะ ${TH.status[ins.status]}`);
   const e = evaluate(r, input);

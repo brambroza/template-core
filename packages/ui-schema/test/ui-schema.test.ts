@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commandTarget, matchCommand, pickRecord, prefillFromQuery, fillPath, formatValue, get, hasPerm, matches, missingRequired, statusTone, toBody, type Screen } from '../src/index.ts';
+import { commandExample, commandTarget, matchCommand, pickRecord, prefillFromQuery, fillPath, formatValue, get, hasPerm, matches, missingRequired, statusTone, toBody, type Screen } from '../src/index.ts';
 
 describe('ui-schema helpers', () => {
   it('fills endpoint templates from several sources', () => {
@@ -87,5 +87,20 @@ describe('areas', () => {
       ['commercial', ['crm', 'sales']],
       ['settings', ['identity']],
     ]);
+  });
+});
+
+describe('commandExample (⌘K placeholder)', () => {
+  const mod = (name: string, example: string, perm?: string) => ({
+    module: name, screens: { s: { kind: 'list', perm } }, commands: [{ id: 'c', label: name, example, keywords: [name], screen: 's', perm }],
+  }) as unknown as Parameters<typeof commandExample>[0][number];
+  it('takes the first command the user may run, in module order', () => {
+    const mods = [mod('inventory', 'สต็อก RM-STEEL', 'inventory.stock.read'), mod('approvals', 'ขออนุมัติ ซื้อโน้ตบุ๊ก', 'approvals.request.create')];
+    expect(commandExample(mods, ['approvals.request.create'])).toBe('ขออนุมัติ ซื้อโน้ตบุ๊ก');
+    expect(commandExample(mods, ['*'])).toBe('สต็อก RM-STEEL');
+    expect(commandExample(mods, [])).toBeNull();
+    expect(commandExample([], ['*'])).toBeNull();
+    expect(commandExample([mod('payroll', 'สลิป'), mod('hr', 'ลา ป่วย ไข้หวัด')], ['*'])).toBe('ลา ป่วย ไข้หวัด');
+    expect(commandExample([mod('payroll', 'สลิป')], ['*'])).toBe('สลิป');
   });
 });

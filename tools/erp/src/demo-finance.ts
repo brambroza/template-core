@@ -134,7 +134,9 @@ function openingBalances(pay: Pay, startDate: string | null) {
   if (!months) return {};
   const items = (pay.items ?? []).reduce((sum, [, , amount]) => sum + amount, 0);
   const ssoWage = pay.salary + (pay.items ?? []).filter(([, , , sso]) => sso).reduce((sum, [, , amount]) => sum + amount, 0);
-  const sso = Math.round(Math.min(Math.max(ssoWage, 1650), 15000) * 0.05);
+  // C1: statutory SSO ceiling of that year (17,500 from 2026/2569, 20,000 from 2029, 23,000 from 2032) — same schedule as payroll's sso_rules
+  const ceiling = year >= 2032 ? 23_000 : year >= 2029 ? 20_000 : year >= 2026 ? 17_500 : 15_000;
+  const sso = Math.round(Math.min(Math.max(ssoWage, 1650), ceiling) * 0.05);
   const pvd = Math.round(pay.salary * (pay.pvd ?? 0)) / 100;
   const income = (pay.salary + items) * 12;
   const net = income - Math.min(income * 0.5, 100_000) - 60_000 - (pay.spouse ? 60_000 : 0) - (pay.children ?? 0) * 30_000 - (pay.parents ?? 0) * 30_000

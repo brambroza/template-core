@@ -1,11 +1,11 @@
-import type { Client } from '@erp/kernel';
+import { now, type Client } from '@erp/kernel';
 
 /** Thai factories run on Asia/Bangkok (UTC+7, no daylight saving). All "today"/late maths use it. */
 export const TZ = 'Asia/Bangkok';
 const OFFSET_MS = 7 * 3600 * 1000;
 
-/** 'YYYY-MM-DD' of an instant in Bangkok time. */
-export const localDate = (d: Date = new Date()): string => new Date(d.getTime() + OFFSET_MS).toISOString().slice(0, 10);
+/** 'YYYY-MM-DD' of an instant in Bangkok time (default: now on the kernel business clock — tests freeze it with setClock). */
+export const localDate = (d: Date = now()): string => new Date(d.getTime() + OFFSET_MS).toISOString().slice(0, 10);
 /** minutes since local midnight */
 export const localMinutes = (d: Date): number => {
   const x = new Date(d.getTime() + OFFSET_MS);

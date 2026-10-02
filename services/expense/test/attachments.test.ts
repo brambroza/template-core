@@ -67,6 +67,7 @@ describe('expense attachments — QA regressions (bugs-0.4)', () => {
   it('EXP-06: once a claim is approved the claimant can no longer remove or swap its receipts; finance still can add the transfer slip', async () => {
     const owner = t.token(STAFF, t.tenantId, { userId: randomUUID(), userName: 'สมศรี' });
     const finance = t.token([...STAFF, 'expense.claim.approve', 'expense.claim.pay'], t.tenantId, { userId: randomUUID(), userName: 'การเงิน' });
+    const approver = t.token([...STAFF, 'expense.claim.approve'], t.tenantId, { userId: randomUUID(), userName: 'หัวหน้า' });
     const admin = t.token(['*'], t.tenantId, { userId: randomUUID(), userName: 'ผู้ดูแล' });
     const cat = (await t.api('GET', '/categories')).body[0] ?? (await t.api('POST', '/categories', { code: 'TAXI', name: 'ค่าแท็กซี่' })).body;
     const claim = (await t.api('POST', '/claims', { purpose: 'แท็กซี่ไปลูกค้า', submit: true, lines: [{ expenseDate: today, categoryId: cat.id, amount: 300 }] }, { token: owner })).body;
@@ -76,8 +77,9 @@ describe('expense attachments — QA regressions (bugs-0.4)', () => {
     const extra = (await t.api('POST', '/_attachments', { ref, fileName: 'ผิดไฟล์.jpg', dataBase64: JPG.toString('base64') }, { token: owner })).body;
     expect((await t.api('DELETE', `/_attachments/${extra.id}`, undefined, { token: owner })).status).toBe(200);
 
-    await t.api('POST', `/claims/${claim.id}/approve`, {}, { token: finance });
-    await t.api('POST', `/claims/${claim.id}/pay`, { method: 'transfer' }, { token: finance });
+    // wave 8: the approver may not also pay (separatePayer)
+    expect((await t.api('POST', `/claims/${claim.id}/approve`, {}, { token: approver })).status).toBe(200);
+    expect((await t.api('POST', `/claims/${claim.id}/pay`, { method: 'transfer' }, { token: finance })).status).toBe(200);
     const del = await t.api('DELETE', `/_attachments/${up.id}`, undefined, { token: owner });
     expect(del.status).toBe(409);
     expect(del.body.error.message).toContain('จ่ายแล้ว');

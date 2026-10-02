@@ -11,7 +11,8 @@
   ],
   "enhancedBy": [
     "inventory",
-    "costing"
+    "costing",
+    "accounting"
   ],
   "publishes": [
     "purchasing.goods_received",
@@ -19,7 +20,7 @@
     "purchasing.po_approved",
     "purchasing.goods_returned"
   ],
-  "subscribes": [],
+  "subscribes": ["accounting.period_closed", "accounting.period_reopened"],
   "permissions": [
     {
       "key": "purchasing.po.read",
@@ -34,6 +35,14 @@
       "label": "อนุมัติใบสั่งซื้อ"
     },
     {
+      "key": "purchasing.po.approve-high",
+      "label": "อนุมัติใบสั่งซื้อวงเงินสูง (เกินวงเงินปกติ)"
+    },
+    {
+      "key": "purchasing.settings.write",
+      "label": "ตั้งค่าการอนุมัติใบสั่งซื้อ (แยกหน้าที่ / วงเงิน)"
+    },
+    {
       "key": "purchasing.po.receive",
       "label": "รับสินค้าตามใบสั่งซื้อ"
     },
@@ -44,6 +53,14 @@
     {
       "key": "purchasing.attachment.delete",
       "label": "ลบไฟล์แนบของผู้อื่น"
+    },
+    {
+      "key": "purchasing.lock.write",
+      "label": "ตั้งวันที่ปิดงวดเอกสารจัดซื้อ"
+    },
+    {
+      "key": "purchasing.lock.override",
+      "label": "รับสินค้า/ส่งคืนย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)"
     }
   ]
 }
