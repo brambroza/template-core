@@ -91,6 +91,24 @@ export const definition: ServiceDefinition = {
         [q.status ?? null, q.limit, q.offset])).rows);
     });
 
+    /** Dashboard numbers: orders by stage and output this month. */
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'production.order.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const n = (await c.query(
+          `select count(*) filter (where status = 'planned')::int as planned, count(*) filter (where status = 'released')::int as released,
+                  coalesce(sum(completed_qty) filter (where date_trunc('month', created_at) = date_trunc('month', now())), 0) as output_month,
+                  count(*) filter (where status in ('planned', 'released') and due_date < current_date)::int as late
+           from production_orders`)).rows[0];
+        const rows = (await c.query(
+          `(select id, no, item_code, qty, completed_qty, status, due_date from production_orders where status in ('planned', 'released') order by due_date nulls last, created_at)
+           union all
+           (select id, no, item_code, qty, completed_qty, status, due_date from production_orders where status = 'completed' order by created_at desc limit 8)`)).rows;
+        return { planned: n.planned, released: n.released, outputMonth: n.output_month, late: n.late, rows };
+      });
+    });
+
     /** Order + its material requirements (MRP view for the planner / shop floor). */
     app.get('/orders/:id', async (req) => {
       const a = auth(req);

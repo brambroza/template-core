@@ -64,12 +64,14 @@ export interface HandlerContext {
   event: EventEnvelope;
   /** emit a follow-up event in the same transaction */
   emit: <T extends EventType>(type: T, data: EventData<T>) => Promise<string>;
+  /** the service's environment (for handlers that call out, e.g. LINE/webhooks) */
+  env: NodeJS.ProcessEnv;
 }
 
 export type EventHandlers = { [T in EventType]?: (data: EventData<T>, ctx: HandlerContext) => Promise<void> };
 
 /** Process one inbound event exactly once per module (inbox de-duplication inside the tenant transaction). */
-export async function receiveEvent(db: Db, source: string, handlers: EventHandlers, raw: unknown): Promise<'handled' | 'duplicate' | 'ignored'> {
+export async function receiveEvent(db: Db, source: string, handlers: EventHandlers, raw: unknown, env: NodeJS.ProcessEnv = {}): Promise<'handled' | 'duplicate' | 'ignored'> {
   const envelope = EventEnvelope.parse(raw);
   const type = envelope.type;
   if (!isKnownEvent(type)) return 'ignored';
@@ -79,7 +81,7 @@ export async function receiveEvent(db: Db, source: string, handlers: EventHandle
   return db.tx(envelope.tenantId, async (client) => {
     const first = await client.query('insert into _inbox (id, type) values ($1, $2) on conflict do nothing returning id', [envelope.id, type]);
     if (first.rowCount === 0) return 'duplicate';
-    await handler(data, { client, tenantId: envelope.tenantId, event: envelope, emit: (t, d) => emit(client, source, t, d) });
+    await handler(data, { client, tenantId: envelope.tenantId, event: envelope, emit: (t, d) => emit(client, source, t, d), env });
     return 'handled';
   });
 }

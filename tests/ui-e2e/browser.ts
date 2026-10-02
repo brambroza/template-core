@@ -29,7 +29,7 @@ export async function login(page: Page, base: string, tenant: string, email = 'a
   await page.getByLabel('อีเมล').fill(email);
   await page.getByLabel('รหัสผ่าน').fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await page.getByRole('heading', { name: 'เริ่มทำงาน' }).waitFor();
+  await page.getByRole('heading', { name: 'ภาพรวมโรงงาน' }).waitFor();
 }
 
 export async function logout(page: Page, base: string) {

@@ -43,7 +43,7 @@ function LookupInput({ field, module, values, onChange, error, compact }: FieldP
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [chosen, setChosen] = useState<string>('');
+  const [chosen, setChosen] = useState<string>(() => String(values[`__label.${field.name}`] ?? ''));
   const box = useRef<HTMLDivElement>(null);
   const { rows, loading } = useLookup(module, field, text, open);
   const selected = values[field.name];
@@ -51,6 +51,10 @@ function LookupInput({ field, module, values, onChange, error, compact }: FieldP
   useEffect(() => {
     if (!selected) setChosen('');
   }, [selected]);
+  const given = values[`__label.${field.name}`];
+  useEffect(() => {
+    if (given) setChosen(String(given));
+  }, [given]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };

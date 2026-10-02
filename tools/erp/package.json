@@ -3,6 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@erp/kernel": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@erp/gateway": "workspace:*",
+    "@erp/kernel": "workspace:*",
+    "@erp/svc-costing": "workspace:*",
+    "@erp/svc-identity": "workspace:*",
+    "@erp/svc-inventory": "workspace:*",
+    "@erp/svc-maintenance": "workspace:*",
+    "@erp/svc-master-data": "workspace:*",
+    "@erp/svc-production": "workspace:*",
+    "@erp/svc-purchasing": "workspace:*",
+    "@erp/svc-sales": "workspace:*",
+    "pg": "^8.13.1"
+  }
 }

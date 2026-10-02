@@ -48,6 +48,23 @@ describe('inventory (standalone)', () => {
   });
 });
 
+describe('reorder points and dashboard', () => {
+  it('publishes low_stock once when stock crosses below the reorder point', async () => {
+    const pump = { itemId: randomUUID(), itemCode: 'SP-PUMP', itemName: 'ปั๊ม' };
+    await t.api('POST', '/receipts', { warehouseCode: 'MAIN', lines: [{ ...pump, qty: 10 }] });
+    expect((await t.api('PUT', '/reorder-points', { ...pump, warehouseCode: 'MAIN', minQty: 5 })).status).toBe(200);
+    await t.api('POST', '/issues', { warehouseCode: 'MAIN', lines: [{ ...pump, qty: 4 }] }); // 6, still above
+    await t.api('POST', '/issues', { warehouseCode: 'MAIN', lines: [{ ...pump, qty: 2 }] }); // 4, crosses
+    await t.api('POST', '/issues', { warehouseCode: 'MAIN', lines: [{ ...pump, qty: 1 }] }); // 3, already low
+    const low = (await t.published('inventory.low_stock')).filter((e) => e.data.itemCode === 'SP-PUMP');
+    expect(low.map((e) => e.data.onHand)).toEqual([4]);
+    const sum = await t.api('GET', '/summary');
+    expect(sum.body.lowStock).toBe(1);
+    expect(sum.body.rows[0]).toMatchObject({ itemCode: 'SP-PUMP', low: true, minQty: 5, onHand: 3 });
+    expect((await t.api('PUT', '/reorder-points', { ...pump, warehouseCode: 'MAIN', minQty: 1 }, { token: t.token(['inventory.stock.read']) })).status).toBe(403);
+  });
+});
+
 describe('inventory (reacting to other modules)', () => {
   it('receives goods from purchasing into an auto-created warehouse', async () => {
     const r = await t.deliver('purchasing.goods_received', {

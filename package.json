@@ -13,12 +13,14 @@
     "test:ui": "pnpm --filter @erp/web build && vitest run --config vitest.ui.config.ts",
     "uat": "pnpm --filter @erp/web build && vitest run --config vitest.uat.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/run.json",
     "test:report": "vitest run --reporter=default --reporter=json --outputFile.json=docs/uat/system.json && vitest run --config vitest.ui.config.ts --reporter=default --reporter=json --outputFile.json=docs/uat/browser.json",
-    "uat:pack": "pnpm test:report && pnpm uat && pnpm erp uat-report"
+    "uat:pack": "pnpm test:report && pnpm uat && pnpm erp uat-report",
+    "demo": "node --import tsx tools/erp/src/demo-cli.ts"
   },
   "devDependencies": {
     "@erp/contracts": "workspace:*",
     "@erp/gateway": "workspace:*",
     "@erp/kernel": "workspace:*",
+    "@erp/svc-automation": "workspace:*",
     "@erp/svc-costing": "workspace:*",
     "@erp/svc-identity": "workspace:*",
     "@erp/svc-inventory": "workspace:*",

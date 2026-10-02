@@ -6,7 +6,16 @@ export default defineUi({
   module: 'purchasing',
   label: 'จัดซื้อ',
   glyph: 'ซ',
+  icon: 'shopping-cart',
   menu: [{ label: 'ใบสั่งซื้อ', screen: 'poList' }, { label: 'สร้างใบสั่งซื้อ', screen: 'poNew' }],
+  commands: [
+    { id: 'po', label: 'สร้างใบสั่งซื้อ', example: 'สั่งซื้อ SUP-001', keywords: ['สั่งซื้อ', 'ซื้อ', 'po'], screen: 'poNew', perm: 'purchasing.po.write',
+      arg: { lookup: { module: 'master-data', path: '/partners', query: { kind: 'supplier' }, label: ['code', 'name'], assign: { supplierId: 'id', supplierName: 'name' } } } },
+    { id: 'approve', label: 'ใบสั่งซื้อรออนุมัติ', example: 'รออนุมัติ', keywords: ['รออนุมัติ', 'อนุมัติ'], screen: 'poList', perm: 'purchasing.po.read' },
+  ],
+  search: [
+    { id: 'pos', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders', label: ['no', 'supplier_name'], screen: 'poDetail', perm: 'purchasing.po.read' },
+  ],
   screens: {
     poList: {
       kind: 'list', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders', perm: 'purchasing.po.read', mobile: true,
@@ -40,6 +49,7 @@ export default defineUi({
     },
     poDetail: {
       kind: 'detail', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders/:id', perm: 'purchasing.po.read', heading: 'no', mobile: true, printable: true,
+      flow: { field: 'status', steps: [{ value: 'draft', label: 'ร่าง' }, { value: 'approved', label: 'อนุมัติ' }, { value: 'partially_received', label: 'รับบางส่วน' }, { value: 'received', label: 'รับครบ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'supplier_name', label: 'ผู้ขาย' },
         { key: 'order_date', label: 'วันที่สั่ง', format: 'date' }, { key: 'expected_date', label: 'กำหนดส่ง', format: 'date' },
@@ -61,4 +71,9 @@ export default defineUi({
       ],
     },
   },
+  widgets: [
+    { id: 'po-kpi', kind: 'kpi', title: 'จัดซื้อ', endpoint: '/summary', perm: 'purchasing.po.read', size: 'sm', href: 'poList',
+      items: [{ key: 'toApprove', label: 'รออนุมัติ', format: 'qty', tone: 'warn' }, { key: 'toReceive', label: 'รอรับของ', format: 'qty' }, { key: 'spendMonth', label: 'ยอดซื้อเดือนนี้', format: 'money' }] },
+    { id: 'po-trend', kind: 'trend', title: 'ยอดซื้อ 6 เดือน', endpoint: '/summary', perm: 'purchasing.po.read', size: 'md', href: 'poList', rows: 'months', x: 'month', y: 'total', format: 'money' },
+  ],
 });

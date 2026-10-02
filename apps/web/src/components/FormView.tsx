@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { fillPath, get, initialValues, missingRequired, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { fillPath, get, initialValues, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { FieldRow, LinesEditor, type Values } from './Fields';
@@ -11,7 +11,9 @@ const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 export function FormView({ module, screen, id }: { module: string; screen: FormScreen; id?: string }) {
   const router = useRouter();
-  const [values, setValues] = useState<Values>(() => initialValues(screen.fields));
+  const search = useSearchParams();
+  // values passed by the command palette / assistant: ?f.qty=500&f.itemId=…&l.itemId=RM-STEEL
+  const [values, setValues] = useState<Values>(() => ({ ...initialValues(screen.fields), ...prefillFromQuery(search.entries()) }));
   const [lines, setLines] = useState<Values[]>(() => (screen.lines ? [initialValues(screen.lines.fields)] : []));
   const [loading, setLoading] = useState(!!screen.load);
   const [busy, setBusy] = useState(false);
@@ -19,6 +21,12 @@ export function FormView({ module, screen, id }: { module: string; screen: FormS
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({});
   const params = routeParams(screen.load ?? screen.endpoint, id);
+  const qs = search.toString();
+  const firstQs = useRef(qs);
+  useEffect(() => {
+    // a new command while this form is open: apply its values (the first render already used them)
+    if (qs !== firstQs.current) setValues((v) => ({ ...v, ...prefillFromQuery(new URLSearchParams(qs).entries()) }));
+  }, [qs]);
 
   useEffect(() => {
     if (!screen.load) return;

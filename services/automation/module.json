@@ -1,0 +1,28 @@
+{
+  "id": "automation",
+  "name": "Automation & Alerts",
+  "nameTh": "ระบบอัตโนมัติ",
+  "version": "0.2.0",
+  "tier": "feature",
+  "description": "No-code rules: when something happens in any installed module (stock low, machine down, big PO, invoice issued…), check conditions and notify in the app, on LINE or by webhook. Ships with ready-made rule templates.",
+  "requires": ["identity"],
+  "enhancedBy": ["inventory", "purchasing", "sales", "production", "maintenance"],
+  "publishes": [],
+  "subscribes": [
+    "inventory.low_stock",
+    "purchasing.po_created",
+    "purchasing.po_approved",
+    "purchasing.goods_received",
+    "sales.order_confirmed",
+    "sales.delivered",
+    "sales.invoiced",
+    "production.completed",
+    "maintenance.breakdown_reported",
+    "maintenance.work_completed"
+  ],
+  "permissions": [
+    { "key": "automation.rule.read", "label": "ดูกฎอัตโนมัติ" },
+    { "key": "automation.rule.write", "label": "สร้าง/แก้ไขกฎอัตโนมัติ" },
+    { "key": "automation.notify.read", "label": "รับการแจ้งเตือน" }
+  ]
+}

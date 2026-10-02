@@ -36,6 +36,19 @@ export function pack(root: string, selection: string[], manifests: ModuleManifes
 
   // web/mobile apps include only the purchased modules' screens
   syncUi(outDir, selection);
+  // no other workspace package may depend on a module that is not in this package
+  for (const dir of ['tools/erp', 'apps/gateway']) {
+    const pj = join(outDir, dir, 'package.json');
+    if (!existsSync(pj)) continue;
+    const p = JSON.parse(readFileSync(pj, 'utf8'));
+    for (const field of ['dependencies', 'devDependencies']) {
+      for (const dep of Object.keys(p[field] ?? {})) {
+        const m = dep.match(/^@erp\/svc-(.+)$/);
+        if (m && !selection.includes(m[1])) delete p[field][dep];
+      }
+    }
+    writeFileSync(pj, JSON.stringify(p, null, 2) + '\n');
+  }
 
   // smoke test for exactly this installation
   mkdirSync(join(outDir, 'tests', 'e2e'), { recursive: true });

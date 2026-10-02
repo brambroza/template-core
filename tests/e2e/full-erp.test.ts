@@ -87,6 +87,17 @@ describe('full ERP installation', () => {
     expect(card.map((r: any) => r.refType)).toEqual(['purchase_order', 'production_order', 'work_order']);
   });
 
+  it('summarises every module for the dashboard', async () => {
+    const [inv, po, so, mo, mt, cs, md] = await Promise.all(['inventory', 'purchasing', 'sales', 'production', 'maintenance', 'costing', 'master-data'].map((m) => api('GET', `/api/${m}/summary`)));
+    expect(inv.body.skus).toBe(3);
+    expect(po.body.toReceive).toBe(0);
+    expect(so.body.revenueMonth).toBe(802.5);
+    expect(mo.body.outputMonth).toBe(20);
+    expect(mt.body.machines).toHaveLength(1);
+    expect(cs.body.itemsCosted).toBe(2);
+    expect(md.body).toMatchObject({ items: 3 });
+  });
+
   it('rejects calls without a token at every module', async () => {
     expect((await erp.call('GET', '/api/sales/orders')).status).toBe(401);
     expect((await erp.call('GET', '/api/inventory/balances')).status).toBe(401);

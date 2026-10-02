@@ -70,6 +70,8 @@ describe('pack', () => {
       expect(Object.keys(appPkg.dependencies).filter((d) => d.startsWith('@erp/svc-')).sort()).toEqual(['@erp/svc-identity', '@erp/svc-inventory', '@erp/svc-master-data', '@erp/svc-sales']);
     }
     expect(existsSync(join(out, 'tests', 'ui', 'descriptors.test.ts'))).toBe(true);
+    const toolsPkg = JSON.parse(readFileSync(join(out, 'tools', 'erp', 'package.json'), 'utf8'));
+    expect(Object.keys(toolsPkg.dependencies).filter((d) => d.startsWith('@erp/svc-')).sort()).toEqual(['@erp/svc-identity', '@erp/svc-inventory', '@erp/svc-master-data', '@erp/svc-sales']);
     // the packed repo passes the same architecture rules on its own
     expect(verify(out).errors).toEqual([]);
   });

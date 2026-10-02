@@ -111,6 +111,45 @@ export const definition: ServiceDefinition = {
          order by m.item_code, w.code`, [q.itemId ?? null, q.warehouseCode ?? null])).rows);
     });
 
+    app.get('/reorder-points', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      return k.db.tx(a.tenantId, async (c) => (await c.query('select * from reorder_points order by item_code, warehouse_code')).rows);
+    });
+
+    app.put('/reorder-points', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.settings.write');
+      const b = parse(z.object({ itemId: s.uuid, itemCode: s.code, itemName: z.string().optional(), warehouseCode: s.code, minQty: s.money }), req.body);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `insert into reorder_points (item_id, item_code, item_name, warehouse_code, min_qty) values ($1,$2,$3,$4,$5)
+         on conflict (tenant_id, item_id, warehouse_code) do update set item_code = $2, item_name = $3, min_qty = $5, updated_at = now() returning *`,
+        [b.itemId, b.itemCode, b.itemName ?? null, b.warehouseCode, b.minQty])).rows[0]);
+    });
+
+    /** Dashboard numbers: stock levels against reorder points. */
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.stock.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const rows = (await c.query(
+          `with bal as (
+             select m.item_id, m.item_code, max(m.item_name) as item_name, w.code as warehouse_code, sum(m.qty) as on_hand
+             from stock_moves m join warehouses w on w.id = m.warehouse_id group by m.item_id, m.item_code, w.code)
+           select b.item_code as "itemCode", b.item_name as "itemName", b.warehouse_code as "warehouseCode", b.on_hand as "onHand",
+                  r.min_qty as "minQty", (r.min_qty is not null and b.on_hand < r.min_qty) as "low"
+           from bal b left join reorder_points r on r.item_id = b.item_id and r.warehouse_code = b.warehouse_code
+           order by (r.min_qty is not null and b.on_hand < r.min_qty) desc, b.on_hand desc limit 12`)).rows;
+        const totals = (await c.query(
+          `select count(distinct item_id)::int as skus, count(distinct warehouse_id)::int as warehouses,
+                  count(*) filter (where created_at > now() - interval '1 day')::int as moves_today from stock_moves`)).rows[0];
+        const low = (await c.query(
+          `select count(*)::int as n from reorder_points r where r.min_qty > coalesce((select sum(m.qty) from stock_moves m join warehouses w on w.id = m.warehouse_id
+             where m.item_id = r.item_id and w.code = r.warehouse_code), 0)`)).rows[0].n;
+        return { skus: totals.skus, warehouses: totals.warehouses, movesToday: totals.moves_today, lowStock: low, rows };
+      });
+    });
+
     app.get('/items/:itemId/stock-card', async (req) => {
       const a = auth(req);
       requirePerm(a, 'inventory.stock.read');

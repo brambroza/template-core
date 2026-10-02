@@ -44,6 +44,14 @@ describe('purchasing', () => {
     expect(events[0].data).toMatchObject({ warehouseCode: 'RM', supplierName: 'Siam Steel', lines: [{ itemCode: 'RM-STEEL', unitPrice: 33 }] });
   });
 
+  it('announces creation and approval, and summarises work to do', async () => {
+    expect((await t.published('purchasing.po_created')).length).toBeGreaterThanOrEqual(3);
+    expect((await t.published('purchasing.po_approved')).length).toBe(2);
+    const sum = await t.api('GET', '/summary');
+    expect(sum.body).toMatchObject({ toApprove: 1, toReceive: 1 }); // PO-0001 draft, PO-0002 approved but not received
+    expect(sum.body.months).toHaveLength(6);
+  });
+
   it('lists by status and hides other tenants', async () => {
     const received = await t.api('GET', '/purchase-orders?status=received');
     expect(received.body).toHaveLength(1);

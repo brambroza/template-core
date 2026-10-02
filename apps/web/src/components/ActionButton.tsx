@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fillPath, initialValues, missingRequired, toBody, type Action } from '@erp/ui-schema';
+import { fillPath, get, initialValues, missingRequired, toBody, type Action } from '@erp/ui-schema';
 import { api, ApiError } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
 /**
@@ -35,6 +36,8 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
       const body = action.fields?.length || action.lines ? toBody(action.fields ?? [], values, action.lines, filledLines) : undefined;
       const result = await api(module, fillPath(action.endpoint, values, params), { method: action.method, body });
       setOpen(false);
+      if (action.toast) toast({ title: action.label, body: String(get(result, action.toast) ?? ''), tone: 'info' });
+      else toast({ title: `${action.label} — เรียบร้อย`, tone: action.tone === 'danger' ? 'warn' : 'ok' });
       onDone(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'ทำรายการไม่สำเร็จ');

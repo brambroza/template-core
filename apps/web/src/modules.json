@@ -1,5 +1,6 @@
 {
   "packages": [
+    "@erp/svc-automation",
     "@erp/svc-costing",
     "@erp/svc-identity",
     "@erp/svc-inventory",

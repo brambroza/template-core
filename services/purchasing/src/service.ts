@@ -49,6 +49,7 @@ export const definition: ServiceDefinition = {
             [po.id, i + 1, l.itemId, l.itemCode, l.itemName ?? null, l.qty, l.unitPrice, t.amounts[i]],
           );
         }
+        await k.emit(c, 'purchasing.po_created', { poId: po.id, poNo: no, supplierName: b.supplierName, gross: t.gross });
         return loadPo(c, po.id);
       });
     });
@@ -60,6 +61,26 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `select * from purchase_orders where ($1::text is null or status = $1) and ($2::text is null or no ilike $2 or supplier_name ilike $2)
          order by created_at desc limit $3 offset $4`, [q.status ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows);
+    });
+
+    /** Dashboard numbers: what needs action, spend per month, recent orders. */
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'purchasing.po.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const n = (await c.query(
+          `select count(*) filter (where status = 'draft')::int as to_approve,
+                  count(*) filter (where status in ('approved', 'partially_received'))::int as to_receive,
+                  coalesce(sum(gross) filter (where status <> 'cancelled' and status <> 'draft' and date_trunc('month', order_date) = date_trunc('month', current_date)), 0) as spend_month
+           from purchase_orders`)).rows[0];
+        const months = (await c.query(
+          `select to_char(m, 'YYYY-MM') as month, coalesce(sum(p.gross), 0) as total
+           from generate_series(date_trunc('month', current_date) - interval '5 months', date_trunc('month', current_date), interval '1 month') m
+           left join purchase_orders p on date_trunc('month', p.order_date) = m and p.status not in ('draft', 'cancelled')
+           group by m order by m`)).rows;
+        const rows = (await c.query(`select id, no, supplier_name, status, gross from purchase_orders where status <> 'cancelled' order by created_at desc limit 24`)).rows;
+        return { toApprove: n.to_approve, toReceive: n.to_receive, spendMonth: n.spend_month, months, rows };
+      });
     });
 
     app.get('/purchase-orders/:id', async (req) => {
@@ -77,6 +98,7 @@ export const definition: ServiceDefinition = {
         const po = await loadPo(c, id, true);
         if (po.status !== 'draft') throw conflict(`Cannot approve a ${po.status} purchase order`);
         await c.query(`update purchase_orders set status = 'approved', approved_by = $2, approved_at = now() where id = $1`, [id, a.userId]);
+        await k.emit(c, 'purchasing.po_approved', { poId: po.id, poNo: po.no, supplierName: po.supplier_name, gross: po.gross });
         return loadPo(c, id);
       });
     });

@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
-import { fillPath, get, hasPerm, matches, routeParams, type ListScreen } from '@erp/ui-schema';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useReveal } from '@/lib/motion';
+import { fillPath, get, hasPerm, listRows, matches, routeParams, type ListScreen } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
@@ -20,11 +21,13 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const params = routeParams(screen.endpoint, id);
+  const tableRef = useRef<HTMLDivElement>(null);
+  useReveal(tableRef, 'tbody tr', [rows?.length ?? -1]);
 
   const load = useCallback(async () => {
     try {
       setError('');
-      setRows(await api(module, fillPath(screen.endpoint, params), { query: filters }));
+      setRows(listRows(screen, await api(module, fillPath(screen.endpoint, params), { query: filters })));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
       setRows([]);
@@ -64,7 +67,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
 
       {error && <p className="form-error" role="alert">{error}</p>}
 
-      <div className="table-wrap">
+      <div className="table-wrap" ref={tableRef}>
         <table className="data">
           <thead>
             <tr>
@@ -87,7 +90,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
                   {rowActions.length > 0 && (
                     <td className="row-actions" onClick={(e) => e.stopPropagation()}>
                       {rowActions.filter((a) => matches(row, a.when)).map((a) => (
-                        <ActionButton key={a.id} action={a} module={module} params={row} onDone={() => setTick((t) => t + 1)} />
+                        <ActionButton key={a.id} action={a} module={module} params={row} onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined)) : setTick((t) => t + 1))} />
                       ))}
                     </td>
                   )}

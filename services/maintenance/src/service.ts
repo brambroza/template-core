@@ -52,6 +52,25 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    /** Dashboard numbers + every machine with its live status (drives the 3D floor). */
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'maintenance.machine.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const machines = (await c.query(
+          `select m.id, m.code, m.name, coalesce(m.location, '') as location, m.status,
+                  count(w.id) filter (where w.status in ('open', 'in_progress'))::int as open_work_orders
+           from machines m left join work_orders w on w.machine_id = m.id
+           where m.status <> 'retired' group by m.id order by m.location nulls last, m.code`)).rows;
+        const n = (await c.query(
+          `select count(*) filter (where status in ('open', 'in_progress'))::int as open_wo,
+                  coalesce(sum(downtime_minutes) filter (where date_trunc('month', completed_at) = date_trunc('month', now())), 0)::int as downtime_month
+           from work_orders`)).rows[0];
+        const pmDue = (await c.query(`select count(*)::int as n from pm_plans where active and next_due_on <= current_date + 7`)).rows[0].n;
+        return { machines, running: machines.filter((m: any) => m.status === 'running').length, down: machines.filter((m: any) => m.status === 'down').length, openWorkOrders: n.open_wo, downtimeMonth: n.downtime_month, pmDue7d: pmDue };
+      });
+    });
+
     app.get('/machines/:id/history', async (req) => {
       const a = auth(req);
       requirePerm(a, 'maintenance.machine.read');
@@ -114,7 +133,12 @@ export const definition: ServiceDefinition = {
           `insert into work_orders (no, machine_id, kind, title, description, reported_by) values ($1,$2,'breakdown',$3,$4,$5) returning id`,
           [no, b.machineId, b.title, b.description ?? null, a.userId])).rows[0];
         await c.query(`update machines set status = 'down' where id = $1`, [b.machineId]);
-        return loadWo(c, wo.id);
+        const full = await loadWo(c, wo.id);
+        await k.emit(c, 'maintenance.breakdown_reported', {
+          workOrderId: full.id, workOrderNo: full.no, machineId: full.machine_id, machineCode: full.machine_code, machineName: full.machine_name,
+          title: full.title, description: full.description,
+        });
+        return full;
       });
     });
 
@@ -168,6 +192,7 @@ export const definition: ServiceDefinition = {
             `update pm_plans set last_done_on = coalesce($2::date, current_date), next_due_on = coalesce($2::date, current_date) + interval_days where id = $1`,
             [wo.pm_plan_id, b.doneOn ?? null]);
         }
+        await k.emit(c, 'maintenance.work_completed', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, kind: wo.kind, downtimeMinutes: b.downtimeMinutes ?? null });
         if (b.parts.length) {
           await k.emit(c, 'maintenance.parts_used', { workOrderId: wo.id, workOrderNo: wo.no, machineCode: wo.machine_code, warehouseCode: b.warehouseCode, parts: b.parts });
         }

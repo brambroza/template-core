@@ -9,11 +9,23 @@ export default defineUi({
   module: 'maintenance',
   label: 'ซ่อมบำรุง',
   glyph: 'บ',
+  icon: 'wrench',
   menu: [
     { label: 'งานซ่อม', screen: 'woList' },
     { label: 'แจ้งซ่อม', screen: 'woNew' },
     { label: 'เครื่องจักร', screen: 'machines' },
     { label: 'แผน PM', screen: 'pmList' },
+  ],
+  commands: [
+    { id: 'report', label: 'แจ้งซ่อมเครื่องจักร', example: 'แจ้งซ่อม PRESS-01 น้ำมันรั่ว', keywords: ['แจ้งซ่อม', 'ซ่อม', 'เครื่องเสีย', 'เสีย'], screen: 'woNew', perm: 'maintenance.wo.report',
+      arg: { lookup: { path: '/machines', label: ['code', 'name'], assign: { machineId: 'id' } } }, restField: 'title' },
+    { id: 'history', label: 'ประวัติเครื่องจักร', example: 'เครื่อง CNC-01', keywords: ['เครื่อง', 'ประวัติเครื่อง', 'machine'], screen: 'machineHistory', perm: 'maintenance.machine.read',
+      arg: { lookup: { path: '/machines', label: ['code', 'name'], assign: { machineId: 'id' } }, openId: 'id' } },
+    { id: 'jobs', label: 'งานซ่อมที่ค้าง', example: 'งานซ่อม', keywords: ['งานซ่อม', 'งานค้าง'], screen: 'woList', perm: 'maintenance.machine.read' },
+  ],
+  search: [
+    { id: 'machines', title: 'เครื่องจักร', endpoint: '/machines', label: ['code', 'name', 'location'], screen: 'machineHistory', perm: 'maintenance.machine.read' },
+    { id: 'workOrders', title: 'งานซ่อม', endpoint: '/work-orders', label: ['no', 'machine_code', 'title'], screen: 'woDetail', perm: 'maintenance.machine.read' },
   ],
   screens: {
     woList: {
@@ -32,6 +44,7 @@ export default defineUi({
     },
     woDetail: {
       kind: 'detail', title: 'งานซ่อม', endpoint: '/work-orders/:id', perm: 'maintenance.machine.read', heading: 'no', mobile: true,
+      flow: { field: 'status', steps: [{ value: 'open', label: 'แจ้ง' }, { value: 'in_progress', label: 'กำลังซ่อม' }, { value: 'done', label: 'เสร็จ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'machine_code', label: 'เครื่อง' }, { key: 'machine_name', label: 'ชื่อเครื่อง' },
         { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'title', label: 'อาการ/งาน' }, { key: 'description', label: 'รายละเอียด' },
@@ -103,4 +116,10 @@ export default defineUi({
       submitLabel: 'บันทึกแผน', after: { screen: 'pmList' },
     },
   },
+  widgets: [
+    { id: 'floor', kind: 'floor3d', title: 'ผังโรงงาน', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'lg', href: 'machines',
+      rows: 'machines', code: 'code', name: 'name', status: 'status', group: 'location', badge: 'open_work_orders', link: { screen: 'machineHistory' } },
+    { id: 'mt-kpi', kind: 'kpi', title: 'ซ่อมบำรุง', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'sm', href: 'woList',
+      items: [{ key: 'down', label: 'เครื่องเสียตอนนี้', format: 'qty', tone: 'stop' }, { key: 'openWorkOrders', label: 'งานซ่อมค้าง', format: 'qty', tone: 'warn' }, { key: 'pmDue7d', label: 'PM ใน 7 วัน', format: 'qty' }] },
+  ],
 });

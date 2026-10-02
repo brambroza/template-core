@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
+import { FlowStepper } from './FlowStepper';
 import { isNumeric, Value } from './Value';
 
 export function DetailView({ module, screen, id }: { module: string; screen: DetailScreen; id?: string }) {
@@ -36,12 +37,14 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
         <div className="screen-actions no-print">
           {actions.map((a) => (
             <ActionButton key={a.id} action={a} module={module} params={{ ...params, ...record }}
-              onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, get(res, a.then.idFrom))) : load())} />
+              onDone={(res) => (a.then ? router.push(screenHref(module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined)) : load())} />
           ))}
           {screen.edit && <Link className="btn" href={screenHref(module, screen.edit, id)}>แก้ไข</Link>}
           {screen.printable && <button type="button" className="btn" onClick={() => window.print()}>พิมพ์</button>}
         </div>
       </header>
+
+      {screen.flow && <FlowStepper flow={screen.flow} record={record} />}
 
       <dl className="facts">
         {screen.fields.filter((f) => { const v = get(record, f.key); return v !== null && v !== undefined && v !== ''; }).map((f) => (

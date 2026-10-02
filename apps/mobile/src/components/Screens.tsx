@@ -2,7 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  fillPath, get, hasPerm, initialValues, matches, missingRequired, routeParams, toBody,
+  fillPath, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
@@ -26,7 +26,7 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   const load = useCallback(async () => {
     try {
       setError('');
-      setRows(await api(ui.module, fillPath(screen.endpoint, params)));
+      setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params))));
     } catch (e) {
       setError((e as Error).message);
       setRows([]);
@@ -171,7 +171,7 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
   const done = (a: Action, res: any) => {
     setActive(null);
     setBusy(null);
-    if (a.then && isMobile(ui, a.then.screen)) router.push(screenPath(ui.module, a.then.screen, get(res, a.then.idFrom)));
+    if (a.then && isMobile(ui, a.then.screen)) router.push(screenPath(ui.module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined));
     else load();
   };
   const press = async (a: Action) => {

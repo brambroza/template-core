@@ -103,6 +103,19 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, (c) => one(c, 'select * from cost_sheets where id = $1', [id], 'Cost sheet'));
     });
 
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'costing.cost.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const n = (await c.query(
+          `select (select count(*)::int from item_costs) as items, (select count(*)::int from cost_sheets) as sheets,
+                  (select count(*)::int from job_costs where cardinality(missing_costs) > 0) as jobs_missing,
+                  (select coalesce(sum(material_cost), 0) from job_costs where date_trunc('month', created_at) = date_trunc('month', now())) as material_month`)).rows[0];
+        const rows = (await c.query(`select item_code, avg_cost from item_costs order by avg_cost desc limit 10`)).rows;
+        return { itemsCosted: n.items, sheets: n.sheets, jobsMissingCost: n.jobs_missing, materialMonth: n.material_month, rows };
+      });
+    });
+
     app.get('/job-costs', async (req) => {
       const a = auth(req);
       requirePerm(a, 'costing.cost.read');

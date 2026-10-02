@@ -92,7 +92,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 
   app.get('/_health', { config: { public: true } }, async () => ({ status: 'ok', module: manifest.id, version: manifest.version }));
   app.get('/_manifest', { config: { public: true } }, async () => manifest);
-  app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body) }));
+  app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body, env) }));
 
   const ready = Promise.resolve(def.routes(app, kernel));
 

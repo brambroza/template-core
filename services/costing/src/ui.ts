@@ -8,6 +8,7 @@ export default defineUi({
   module: 'costing',
   label: 'ต้นทุน',
   glyph: 'ต',
+  icon: 'calculator',
   menu: [
     { label: 'ต้นทุนสินค้า', screen: 'costs' },
     { label: 'ใบคำนวณต้นทุน', screen: 'sheets' },
@@ -69,4 +70,10 @@ export default defineUi({
       empty: 'จะมีข้อมูลเมื่อรายงานผลผลิตจากโมดูลวางแผนการผลิต',
     },
   },
+  widgets: [
+    { id: 'cost-kpi', kind: 'kpi', title: 'ต้นทุน', endpoint: '/summary', perm: 'costing.cost.read', size: 'sm', href: 'costs',
+      items: [{ key: 'itemsCosted', label: 'สินค้ามีต้นทุน', format: 'qty' }, { key: 'materialMonth', label: 'ค่าวัตถุดิบเดือนนี้', format: 'money' }, { key: 'jobsMissingCost', label: 'งานที่ขาดต้นทุน', format: 'qty', tone: 'warn' }] },
+    { id: 'cost-bars', kind: 'bars', title: 'ต้นทุนเฉลี่ยต่อหน่วยสูงสุด', endpoint: '/summary', perm: 'costing.cost.read', size: 'md', href: 'costs',
+      rows: 'rows', label: 'item_code', value: 'avg_cost', format: 'money' },
+  ],
 });

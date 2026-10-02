@@ -97,6 +97,14 @@ export const definition: ServiceDefinition = {
   manifest,
   migrationsDir: fileURLToPath(new URL('../migrations', import.meta.url)),
   routes(app, k) {
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'master.item.read');
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select (select count(*)::int from items where active) as items, (select count(*)::int from partners where active and kind in ('customer', 'both')) as customers,
+                (select count(*)::int from partners where active and kind in ('supplier', 'both')) as suppliers`)).rows[0]);
+    });
+
     crud(app, k, { path: '/items', table: 'items', perm: 'master.item', label: 'Item', input: ItemInput, map: ITEM_COLS, filter: (q) => (q.type ? ['type', q.type] : null), publish: emitItem });
     crud(app, k, { path: '/partners', table: 'partners', perm: 'master.partner', label: 'Partner', input: PartnerInput, map: PARTNER_COLS, filter: (q) => (q.kind ? ['kind', q.kind] : null), publish: emitPartner });
   },

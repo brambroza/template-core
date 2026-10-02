@@ -15,14 +15,22 @@ export default defineUi({
   module: 'inventory',
   label: 'คลังสินค้า',
   glyph: 'ค',
+  icon: 'boxes',
   menu: [
     { label: 'ยอดคงเหลือ', screen: 'balances' },
     { label: 'รับเข้า', screen: 'receipt' },
     { label: 'จ่ายออก', screen: 'issue' },
     { label: 'โอนย้าย', screen: 'transfer' },
     { label: 'ปรับปรุงยอด', screen: 'adjust' },
+    { label: 'จุดสั่งซื้อ', screen: 'reorder' },
     { label: 'คลัง', screen: 'warehouses' },
     { label: 'ตั้งค่า', screen: 'settings' },
+  ],
+  commands: [
+    { id: 'stock', label: 'ดูสต็อกสินค้า', example: 'สต็อก RM-STEEL', keywords: ['สต็อก', 'เช็คสต็อก', 'ของเหลือ', 'stock'], screen: 'stockCard', perm: 'inventory.stock.read',
+      arg: { lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } }, openId: 'id' } },
+    { id: 'receive', label: 'รับของเข้าคลัง', example: 'รับของ', keywords: ['รับของ', 'รับเข้า', 'receive'], screen: 'receipt', perm: 'inventory.move.write' },
+    { id: 'issue', label: 'เบิก/จ่ายของออก', example: 'เบิกของ', keywords: ['เบิกของ', 'จ่ายของ', 'เบิก', 'issue'], screen: 'issue', perm: 'inventory.move.write' },
   ],
   screens: {
     balances: {
@@ -63,6 +71,16 @@ export default defineUi({
       lines: { name: 'lines', label: 'รายการ', min: 1, fields: [item, { ...qty, label: 'ปรับ (+ เพิ่ม / − ลด)' }] },
       submitLabel: 'บันทึกการปรับปรุง', after: { screen: 'balances' },
     },
+    reorder: {
+      kind: 'list', title: 'จุดสั่งซื้อ (สต็อกขั้นต่ำ)', endpoint: '/reorder-points', perm: 'inventory.stock.read',
+      columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'warehouse_code', label: 'คลัง' }, { key: 'min_qty', label: 'ขั้นต่ำ', format: 'qty' }],
+      create: 'reorderSet', createLabel: 'ตั้งจุดสั่งซื้อ', empty: 'ยังไม่ได้ตั้งจุดสั่งซื้อ ตั้งไว้แล้วระบบจะเตือนเมื่อของใกล้หมด',
+    },
+    reorderSet: {
+      kind: 'form', title: 'ตั้งจุดสั่งซื้อ', method: 'PUT', endpoint: '/reorder-points', perm: 'inventory.settings.write',
+      fields: [item, wh('warehouseCode', 'คลัง'), { name: 'minQty', label: 'สต็อกขั้นต่ำ', type: 'number', required: true }],
+      submitLabel: 'บันทึกจุดสั่งซื้อ', after: { screen: 'reorder' },
+    },
     warehouses: {
       kind: 'list', title: 'คลัง', endpoint: '/warehouses', perm: 'inventory.stock.read',
       columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }],
@@ -79,4 +97,10 @@ export default defineUi({
       submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'balances' },
     },
   },
+  widgets: [
+    { id: 'stock-kpi', kind: 'kpi', title: 'คลังสินค้า', endpoint: '/summary', perm: 'inventory.stock.read', size: 'sm', href: 'balances',
+      items: [{ key: 'skus', label: 'รายการในคลัง', format: 'qty' }, { key: 'lowStock', label: 'ต่ำกว่าจุดสั่งซื้อ', format: 'qty', tone: 'warn' }, { key: 'movesToday', label: 'เคลื่อนไหววันนี้', format: 'qty' }] },
+    { id: 'stock-bars', kind: 'bars', title: 'ระดับสต็อกเทียบจุดสั่งซื้อ', endpoint: '/summary', perm: 'inventory.stock.read', size: 'md', href: 'balances',
+      rows: 'rows', label: 'itemCode', value: 'onHand', threshold: 'minQty', format: 'qty' },
+  ],
 });

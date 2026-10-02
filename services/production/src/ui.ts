@@ -9,7 +9,15 @@ export default defineUi({
   module: 'production',
   label: 'วางแผนการผลิต',
   glyph: 'ผ',
+  icon: 'factory',
   menu: [{ label: 'ใบสั่งผลิต', screen: 'moList' }, { label: 'สูตรการผลิต (BOM)', screen: 'bomList' }],
+  commands: [
+    { id: 'mo', label: 'สั่งผลิต', example: 'ผลิต FG-BRACKET 500', keywords: ['ผลิต', 'สั่งผลิต', 'mo'], screen: 'moNew', perm: 'production.order.write',
+      arg: { lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } } }, restField: 'qty' },
+  ],
+  search: [
+    { id: 'mos', title: 'ใบสั่งผลิต', endpoint: '/orders', label: ['no', 'item_code', 'item_name'], screen: 'moDetail', perm: 'production.order.read' },
+  ],
   screens: {
     moList: {
       kind: 'list', title: 'ใบสั่งผลิต', endpoint: '/orders', perm: 'production.order.read', mobile: true,
@@ -32,6 +40,7 @@ export default defineUi({
     },
     moDetail: {
       kind: 'detail', title: 'ใบสั่งผลิต', endpoint: '/orders/:id', perm: 'production.order.read', heading: 'no', mobile: true,
+      flow: { field: 'status', steps: [{ value: 'planned', label: 'วางแผน' }, { value: 'released', label: 'ปล่อยงาน' }, { value: 'completed', label: 'ผลิตเสร็จ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'item_code', label: 'สินค้า' }, { key: 'item_name', label: 'ชื่อ' },
         { key: 'qty', label: 'สั่งผลิต', format: 'qty' }, { key: 'completed_qty', label: 'ผลิตแล้ว', format: 'qty' },
@@ -65,4 +74,11 @@ export default defineUi({
       submitLabel: 'บันทึกสูตร', after: { screen: 'bomDetail', idFrom: 'item_id' },
     },
   },
+  widgets: [
+    { id: 'mo-kpi', kind: 'kpi', title: 'การผลิต', endpoint: '/summary', perm: 'production.order.read', size: 'sm', href: 'moList',
+      items: [{ key: 'released', label: 'กำลังผลิต', format: 'qty' }, { key: 'late', label: 'เลยกำหนด', format: 'qty', tone: 'stop' }, { key: 'outputMonth', label: 'ผลผลิตเดือนนี้', format: 'qty', tone: 'ok' }] },
+    { id: 'mo-pipeline', kind: 'pipeline', title: 'สายการผลิต', endpoint: '/summary', perm: 'production.order.read', size: 'lg', href: 'moList',
+      rows: 'rows', field: 'status', title2: 'no', subtitle: 'item_code', link: { screen: 'moDetail' },
+      stages: [{ value: 'planned', label: 'วางแผน' }, { value: 'released', label: 'กำลังผลิต' }, { value: 'completed', label: 'ผลิตเสร็จ' }] },
+  ],
 });

@@ -28,9 +28,14 @@ export default defineUi({
   module: 'master-data',
   label: 'ข้อมูลหลัก',
   glyph: 'ห',
+  icon: 'database',
   menu: [
     { label: 'สินค้าและวัตถุดิบ', screen: 'items' },
     { label: 'ลูกค้าและผู้ขาย', screen: 'partners' },
+  ],
+  search: [
+    { id: 'items', title: 'สินค้า', endpoint: '/items', label: ['code', 'name'], screen: 'itemEdit', perm: 'master.item.read' },
+    { id: 'partners', title: 'ลูกค้า/ผู้ขาย', endpoint: '/partners', label: ['code', 'name'], screen: 'partnerEdit', perm: 'master.partner.read' },
   ],
   screens: {
     items: {

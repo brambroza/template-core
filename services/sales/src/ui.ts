@@ -6,7 +6,16 @@ export default defineUi({
   module: 'sales',
   label: 'ขาย',
   glyph: 'ข',
+  icon: 'receipt',
   menu: [{ label: 'ใบสั่งขาย', screen: 'soList' }, { label: 'สร้างใบสั่งขาย', screen: 'soNew' }],
+  commands: [
+    { id: 'so', label: 'สร้างใบสั่งขาย', example: 'ขาย CUS-001', keywords: ['ขาย', 'สั่งขาย', 'เปิดบิล', 'so'], screen: 'soNew', perm: 'sales.order.write',
+      arg: { lookup: { module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'],
+        assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address' } } } },
+  ],
+  search: [
+    { id: 'orders', title: 'ใบสั่งขาย', endpoint: '/orders', label: ['no', 'customer_name'], screen: 'soDetail', perm: 'sales.order.read' },
+  ],
   screens: {
     soList: {
       kind: 'list', title: 'ใบสั่งขาย', endpoint: '/orders', perm: 'sales.order.read', mobile: true,
@@ -40,6 +49,7 @@ export default defineUi({
     },
     soDetail: {
       kind: 'detail', title: 'ใบสั่งขาย', endpoint: '/orders/:id', perm: 'sales.order.read', heading: 'no', mobile: true,
+      flow: { field: 'status', steps: [{ value: 'draft', label: 'ร่าง' }, { value: 'confirmed', label: 'ยืนยัน' }, { value: 'delivered', label: 'ส่งของ' }, { value: 'invoiced', label: 'ออกใบกำกับ' }], exits: [{ value: 'cancelled', label: 'ยกเลิก' }] },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'customer_tax_id', label: 'เลขผู้เสียภาษี' },
         { key: 'order_date', label: 'วันที่', format: 'date' }, { key: 'warehouse_code', label: 'ส่งจากคลัง' },
@@ -79,4 +89,9 @@ export default defineUi({
       }],
     },
   },
+  widgets: [
+    { id: 'so-kpi', kind: 'kpi', title: 'ขาย', endpoint: '/summary', perm: 'sales.order.read', size: 'sm', href: 'soList',
+      items: [{ key: 'toDeliver', label: 'รอส่งของ', format: 'qty', tone: 'warn' }, { key: 'toInvoice', label: 'รอออกใบกำกับ', format: 'qty' }, { key: 'revenueMonth', label: 'ยอดขายเดือนนี้', format: 'money', tone: 'ok' }] },
+    { id: 'so-trend', kind: 'trend', title: 'ยอดขาย 6 เดือน', endpoint: '/summary', perm: 'sales.order.read', size: 'md', href: 'soList', rows: 'months', x: 'month', y: 'total', format: 'money' },
+  ],
 });

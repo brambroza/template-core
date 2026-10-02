@@ -64,6 +64,24 @@ export const definition: ServiceDefinition = {
          order by created_at desc limit $3 offset $4`, [q.status ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows);
     });
 
+    /** Dashboard numbers: orders to act on, invoiced revenue per month, recent orders. */
+    app.get('/summary', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'sales.order.read');
+      return k.db.tx(a.tenantId, async (c) => {
+        const n = (await c.query(
+          `select count(*) filter (where status = 'draft')::int as to_confirm,
+                  count(*) filter (where status = 'confirmed')::int as to_deliver,
+                  count(*) filter (where status = 'delivered')::int as to_invoice from sales_orders`)).rows[0];
+        const revenue = (await c.query(`select coalesce(sum(gross), 0) as total from invoices where date_trunc('month', issue_date) = date_trunc('month', current_date)`)).rows[0].total;
+        const months = (await c.query(
+          `select to_char(m, 'YYYY-MM') as month, coalesce(sum(i.gross), 0) as total
+           from generate_series(date_trunc('month', current_date) - interval '5 months', date_trunc('month', current_date), interval '1 month') m left join invoices i on date_trunc('month', i.issue_date) = m group by m order by m`)).rows;
+        const rows = (await c.query(`select id, no, customer_name, status, gross from sales_orders where status <> 'cancelled' order by created_at desc limit 24`)).rows;
+        return { toConfirm: n.to_confirm, toDeliver: n.to_deliver, toInvoice: n.to_invoice, revenueMonth: revenue, months, rows };
+      });
+    });
+
     app.get('/orders/:id', async (req) => {
       const a = auth(req);
       requirePerm(a, 'sales.order.read');

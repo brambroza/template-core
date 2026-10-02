@@ -6,6 +6,7 @@ export default defineUi({
   module: 'identity',
   label: 'ผู้ใช้และสิทธิ์',
   glyph: 'ส',
+  icon: 'users',
   menu: [
     { label: 'ผู้ใช้', screen: 'users' },
     { label: 'บทบาทและสิทธิ์', screen: 'roles' },

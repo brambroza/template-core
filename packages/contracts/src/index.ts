@@ -30,6 +30,13 @@ export const events = {
     refType: z.string().nullable(), refId: z.string().nullable(),
   }),
 
+  'inventory.low_stock': z.object({
+    itemId: id, itemCode: z.string(), itemName: z.string().optional(), warehouseCode: z.string(), onHand: qty, minQty: qty,
+  }),
+
+  'purchasing.po_created': z.object({ poId: id, poNo: z.string(), supplierName: z.string(), gross: money }),
+  'purchasing.po_approved': z.object({ poId: id, poNo: z.string(), supplierName: z.string(), gross: money }),
+
   'purchasing.goods_received': z.object({
     poId: id, poNo: z.string(), supplierId: id.nullable(), supplierName: z.string(), warehouseCode: z.string(),
     lines: z.array(ItemQtyPrice).min(1),
@@ -45,6 +52,14 @@ export const events = {
   'production.completed': z.object({
     orderId: id, orderNo: z.string(), item: ItemRef, qty, warehouseCode: z.string(),
     components: z.array(ItemQty),
+  }),
+
+  'maintenance.breakdown_reported': z.object({
+    workOrderId: id, workOrderNo: z.string(), machineId: id, machineCode: z.string(), machineName: z.string(), title: z.string(),
+    description: z.string().nullable(),
+  }),
+  'maintenance.work_completed': z.object({
+    workOrderId: id, workOrderNo: z.string(), machineCode: z.string(), kind: z.string(), downtimeMinutes: z.number().nullable(),
   }),
 
   'maintenance.parts_used': z.object({

@@ -30,6 +30,8 @@ describe('maintenance', () => {
     expect((await t.api('GET', '/machines/by-code/PRESS-01')).body.status).toBe('running');
     const ev = await t.published('maintenance.parts_used');
     expect(ev[0].data).toMatchObject({ machineCode: 'PRESS-01', warehouseCode: 'SPARE', parts: [{ itemCode: 'SP-SEAL', qty: 2 }] });
+    expect((await t.published('maintenance.breakdown_reported'))[0].data).toMatchObject({ machineCode: 'PRESS-01', title: 'น้ำมันรั่ว' });
+    expect((await t.published('maintenance.work_completed'))[0].data).toMatchObject({ kind: 'breakdown', downtimeMinutes: 90 });
     const hist = await t.api('GET', `/machines/${press.id}/history`);
     expect(hist.body).toMatchObject({ totalDowntimeMinutes: 90, breakdowns: 1 });
   });
@@ -44,5 +46,8 @@ describe('maintenance', () => {
     const plans = await t.api('GET', '/pm-plans');
     expect(plans.body.find((p: any) => p.id === plan.id)).toMatchObject({ last_done_on: '2026-10-03', next_due_on: '2026-11-02' });
     expect((await t.published('maintenance.parts_used'))).toHaveLength(1); // PM without parts publishes nothing
+    const sum = await t.api('GET', '/summary');
+    expect(sum.body).toMatchObject({ running: 1, down: 0, openWorkOrders: 0, downtimeMonth: 90 });
+    expect(sum.body.machines[0]).toMatchObject({ code: 'PRESS-01', status: 'running', open_work_orders: 0 });
   });
 });

@@ -60,5 +60,12 @@ export async function postMove(emit: Emit, c: Client, m: MoveInput, opts: MoveOp
     itemId: m.itemId, itemCode: m.itemCode, warehouseCode: m.warehouseCode, qtyDelta: m.qty, onHand: after,
     refType: m.refType ?? null, refId: m.refId ?? null,
   });
+  // publish once when stock crosses below the reorder point (not on every move while already low)
+  if (m.qty < 0) {
+    const rp = (await c.query<{ min_qty: number }>('select min_qty from reorder_points where item_id = $1 and warehouse_code = $2', [m.itemId, m.warehouseCode])).rows[0];
+    if (rp && before >= rp.min_qty && after < rp.min_qty) {
+      await emit('inventory.low_stock', { itemId: m.itemId, itemCode: m.itemCode, itemName: m.itemName, warehouseCode: m.warehouseCode, onHand: after, minQty: rp.min_qty });
+    }
+  }
   return { id: row.id, onHand: after };
 }
