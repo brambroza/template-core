@@ -38,6 +38,20 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   const detailCols = screen.columns.slice(1);
   const link = screen.rowLink && isMobile(ui, screen.rowLink.screen) ? screen.rowLink : undefined;
   const canCreate = screen.create && isMobile(ui, screen.create) && hasPerm(perms(), ui.screens[screen.create].perm);
+  const rowActions = (screen.rowActions ?? []).filter((a) => a.mobile && hasPerm(perms(), a.perm));
+  const [active, setActive] = useState<{ a: Action; row: Record<string, unknown> } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const done = (a: Action, res: any) => {
+    setActive(null);
+    setBusy(null);
+    if (a.then && isMobile(ui, a.then.screen)) router.push(screenPath(ui.module, a.then.screen, a.then.idFrom ? get(res, a.then.idFrom) : undefined));
+    else load();
+  };
+  const press = async (a: Action, row: Record<string, unknown>) => {
+    if (a.fields?.length || a.lines || a.confirm) return setActive({ a, row });
+    setBusy(`${a.id}:${String(row.id)}`);
+    try { done(a, await api(ui.module, fillPath(a.endpoint, row), { method: a.method })); } catch (e) { setError((e as Error).message); setBusy(null); }
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -67,9 +81,17 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
                 </View>
               );
             })}
+            {rowActions.some((a) => matches(item, a.when)) && (
+              <View style={st.rowActions}>
+                {rowActions.filter((a) => matches(item, a.when)).map((a) => (
+                  <Button key={a.id} label={a.label} tone={a.tone} busy={busy === `${a.id}:${String(item.id)}`} onPress={() => press(a, item)} />
+                ))}
+              </View>
+            )}
           </Pressable>
         )}
       />
+      {active && <ActionModal action={active.a} module={ui.module} params={active.row} onClose={() => setActive(null)} onDone={(res) => done(active.a, res)} />}
     </View>
   );
 }
@@ -224,6 +246,7 @@ const st = StyleSheet.create({
   bar: { paddingHorizontal: 16, paddingTop: 12 },
   row: { padding: 14, gap: 4 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: c.ink },
+  rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   rowLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   fact: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.ruleSoft, gap: 2 },
 });

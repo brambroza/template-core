@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { formatValue, statusTone, type Format } from '@erp/ui-schema';
-import { c, toneColor } from '../lib/theme';
+import { c, radius, toneColor } from '../lib/theme';
 
 export function Button({ label, onPress, tone = 'default', disabled, busy }: { label: string; onPress: () => void; tone?: 'primary' | 'danger' | 'default'; disabled?: boolean; busy?: boolean }) {
   return (
@@ -52,17 +52,17 @@ export function Tape({ height = 10 }: { height?: number }) {
 }
 
 export const s = StyleSheet.create({
-  btn: { minHeight: 48, paddingHorizontal: 18, borderRadius: 4, borderWidth: 1, borderColor: c.rule, backgroundColor: c.paper, alignItems: 'center', justifyContent: 'center' },
+  btn: { minHeight: 48, paddingHorizontal: 18, borderRadius: radius, borderWidth: 1, borderColor: c.rule, backgroundColor: c.paper, alignItems: 'center', justifyContent: 'center' },
   btnPrimary: { backgroundColor: c.signal, borderColor: c.signalDeep },
   btnDanger: { borderColor: c.stop },
   btnText: { fontSize: 16, fontWeight: '600', color: c.ink },
   status: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   value: { fontSize: 16, color: c.ink },
-  card: { backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, borderRadius: 4 },
-  error: { color: '#7D241C', backgroundColor: '#FBEDEB', borderLeftWidth: 4, borderLeftColor: c.stop, padding: 12, fontSize: 15, marginVertical: 8 },
+  card: { backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, borderRadius: radius + 4, overflow: 'hidden' },
+  error: { color: '#7D241C', backgroundColor: '#FBEDEB', borderLeftWidth: 4, borderLeftColor: c.stop, borderRadius: 8, padding: 12, fontSize: 15, marginVertical: 8 },
   label: { fontSize: 14, fontWeight: '600', color: c.ink, marginBottom: 4 },
   muted: { fontSize: 13, color: c.inkSoft },
-  input: { minHeight: 48, borderWidth: 1, borderColor: c.rule, borderRadius: 4, paddingHorizontal: 12, fontSize: 16, color: c.ink, backgroundColor: c.paper },
+  input: { minHeight: 48, borderWidth: 1, borderColor: c.rule, borderRadius: radius, paddingHorizontal: 12, fontSize: 16, color: c.ink, backgroundColor: c.paper },
   h1: { fontSize: 22, fontWeight: '700', color: c.ink },
 });

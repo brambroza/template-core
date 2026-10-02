@@ -184,8 +184,8 @@ const st = StyleSheet.create({
   option: { paddingVertical: 14, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: c.ruleSoft, backgroundColor: c.paper },
   optionMain: { fontSize: 16, fontWeight: '600', color: c.ink },
   backdrop: { flex: 1, backgroundColor: 'rgba(31,42,51,0.45)', justifyContent: 'center', padding: 24 },
-  menu: { backgroundColor: c.paper, borderRadius: 4, overflow: 'hidden' },
-  lineCard: { backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, borderRadius: 4, padding: 12, marginBottom: 10 },
+  menu: { backgroundColor: c.paper, borderRadius: 12, overflow: 'hidden' },
+  lineCard: { backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, borderRadius: 12, padding: 12, marginBottom: 10 },
   lineHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   fieldError: { color: c.stop, fontSize: 13, marginTop: 4 },
 });

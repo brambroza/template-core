@@ -1,17 +1,19 @@
-/** Same shop-floor palette as the web app. */
+/** Same palette as the web app (modern minimal: ink on quiet greys, one safety-yellow accent). */
 export const c = {
-  ink: '#1F2A33',
-  inkSoft: '#4A5762',
-  concrete: '#EEF0EC',
+  ink: '#141C22',
+  inkSoft: '#5B6670',
+  concrete: '#F5F6F5',
   paper: '#FFFFFF',
-  rule: '#C9CEC7',
-  ruleSoft: '#E1E4DE',
-  signal: '#F2C230',
-  signalDeep: '#D9A80F',
-  ok: '#2E7D5B',
-  warn: '#C27C0E',
-  stop: '#B83A2E',
-  progress: '#2F5D8A',
+  rule: '#E3E6E3',
+  ruleSoft: '#EFF1EF',
+  signal: '#F5C518',
+  signalDeep: '#D9A800',
+  ok: '#1F9D6B',
+  warn: '#C98207',
+  stop: '#D64535',
+  progress: '#3B6FD8',
 };
+
+export const radius = 12;
 
 export const toneColor = { neutral: c.inkSoft, progress: c.progress, ok: c.ok, warn: c.warn, stop: c.stop } as const;

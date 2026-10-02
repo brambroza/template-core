@@ -30,7 +30,7 @@ export default function Login() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.ink }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
-        <View style={{ backgroundColor: c.paper, borderRadius: 4, overflow: 'hidden' }}>
+        <View style={{ backgroundColor: c.paper, borderRadius: 12, overflow: 'hidden' }}>
           <Tape height={12} />
           <View style={{ padding: 20, gap: 14 }}>
             <Text style={s.h1}>เข้าสู่ระบบ</Text>
