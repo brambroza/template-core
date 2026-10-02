@@ -104,8 +104,47 @@ export interface ListScreen extends ScreenBase {
   actions?: Action[];
   /** buttons on each row; endpoint params are filled from the row */
   rowActions?: Action[];
+  /** bulk import from a CSV file (web): dry-run preview, then the real import — see ImportSpec */
+  import?: ImportSpec;
   empty?: string;
 }
+
+/**
+ * CSV bulk import on a list screen. `endpoint` is a POST route of this module that accepts
+ * `{ rows: Record<string, unknown>[], dryRun?: boolean }` (values arrive as text from the file) and answers
+ * an ImportResult. File headers are matched to `columns` by label or by key (case-insensitive, a trailing "*" ignored).
+ */
+export interface ImportSpec {
+  endpoint: string;
+  perm?: string;
+  columns: ImportColumn[];
+  /** file name of the downloadable empty template (header row only), e.g. "items-template.csv" */
+  template?: string;
+}
+
+export interface ImportColumn {
+  key: string;
+  label: string;
+  required?: boolean;
+}
+
+/** `row` is 1-based in the request's `rows`; `field` is a column key when the problem is in one cell. */
+export interface ImportRowError {
+  row: number;
+  field?: string;
+  message: string;
+}
+
+/** What an import endpoint answers. In a dry run `created`/`updated` are what WOULD happen. */
+export interface ImportResult {
+  dryRun: boolean;
+  total: number;
+  created: number;
+  updated: number;
+  errors: ImportRowError[];
+}
+
+export const IMPORT_MAX_ROWS = 2000;
 
 export interface FormScreen extends ScreenBase {
   kind: 'form';
@@ -530,6 +569,7 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
     const where = `${ui.module}.${id}`;
     if (s.kind === 'list') {
       out.push({ module: ui.module, method: 'GET', path: s.endpoint, where });
+      if (s.import) out.push({ module: ui.module, method: 'POST', path: s.import.endpoint, where: `${where}.import` });
       lookups(s.filters, where);
       s.actions?.forEach((a) => action(a, where));
       s.rowActions?.forEach((a) => action(a, `${where}.row`));
@@ -546,8 +586,28 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
   return out;
 }
 
-/** Screens referenced from menus, links and actions must exist. */
+/** Screens referenced from menus, links and actions must exist; import columns must be unambiguous. */
 export function brokenLinks(ui: ModuleUi): string[] {
+  const problems: string[] = [];
+  for (const [id, s] of Object.entries(ui.screens)) {
+    if (s.kind !== 'list' || !s.import) continue;
+    if (!s.import.columns.length) problems.push(`${ui.module}: ${id}.import has no columns`);
+    const keys = new Set<string>();
+    const names = new Map<string, string>();
+    for (const col of s.import.columns) {
+      if (keys.has(col.key)) problems.push(`${ui.module}: ${id}.import column "${col.key}" is declared twice`);
+      keys.add(col.key);
+      for (const n of [headerKey(col.key), headerKey(col.label)]) {
+        const prev = names.get(n);
+        if (prev !== undefined && prev !== col.key) problems.push(`${ui.module}: ${id}.import header "${n}" matches both "${prev}" and "${col.key}"`);
+        names.set(n, col.key);
+      }
+    }
+  }
+  return [...problems, ...brokenScreenLinks(ui)];
+}
+
+function brokenScreenLinks(ui: ModuleUi): string[] {
   const ids = new Set(Object.keys(ui.screens));
   const refs: [string, string][] = ui.menu.map((m) => [m.screen, `menu "${m.label}"`]);
   for (const [id, s] of Object.entries(ui.screens)) {
@@ -569,4 +629,172 @@ export function brokenLinks(ui: ModuleUi): string[] {
     if ((w.kind === 'pipeline' || w.kind === 'floor3d') && w.link) refs.push([w.link.screen, `widget.${w.id}.link`]);
   }
   return refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`);
+}
+
+/* ---------------- CSV export / import (pure; used by web lists and the import dialog) ---------------- */
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** "2026-10-02" -> "02/10/2569"; ISO timestamps use local time (+ " 14:05" with time). Plain text, as Thai Excel users read it. */
+export function csvDate(value: string, withTime = false): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) return `${m[3]}/${m[2]}/${Number(m[1]) + 543}`;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const date = `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear() + 543}`;
+  return withTime ? `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : date;
+}
+
+const NUMERIC_FORMATS: Format[] = ['money', 'qty', 'percent'];
+
+/** One cell's text for a CSV export: numbers stay plain (no grouping) so Excel can sum them; codes get their Thai label. */
+export function csvValue(value: unknown, format: Format = 'text', labels?: Record<string, string>): string {
+  if (value === null || value === undefined || value === '') return '';
+  switch (format) {
+    case 'money':
+    case 'qty':
+    case 'percent': {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return String(value);
+      return format === 'money' ? n.toFixed(2) : String(n);
+    }
+    case 'date': return csvDate(String(value));
+    case 'datetime': return csvDate(String(value), true);
+    case 'month': {
+      const m = /^(\d{4})-(\d{2})/.exec(String(value));
+      return m ? `${m[2]}/${Number(m[1]) + 543}` : String(value);
+    }
+    case 'status':
+    case 'label':
+    case 'boolean':
+    case 'list': return formatValue(value, format, labels);
+    default: return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  }
+}
+
+/**
+ * Quote a cell for CSV. Text that a spreadsheet would run as a formula (=, +, -, @) gets a leading
+ * apostrophe so an exported list can never execute anything when opened.
+ */
+export function csvCell(text: string, numeric = false): string {
+  let t = text;
+  if (!numeric && /^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+  return /[",\r\n;]/.test(t) || /^\s|\s$/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+/** A whole CSV file for Thai Excel: UTF-8 BOM, the screen's column labels as headers, CRLF line ends. */
+export function toCsv(columns: Column[], rows: unknown[], labels?: Record<string, string>): string {
+  const lines = [columns.map((c) => csvCell(c.label)).join(',')];
+  for (const r of rows) {
+    lines.push(columns.map((c) => csvCell(csvValue(get(r, c.key), c.format, labels), NUMERIC_FORMATS.includes(c.format ?? 'text'))).join(','));
+  }
+  return `﻿${lines.join('\r\n')}\r\n`;
+}
+
+/** The empty template for an import: just the header row (labels), BOM included. */
+export function csvTemplate(spec: ImportSpec): string {
+  return `﻿${spec.columns.map((c) => csvCell(c.label)).join(',')}\r\n`;
+}
+
+function detectDelimiter(text: string): string {
+  const first = text.slice(0, text.search(/\r|\n/) === -1 ? undefined : text.search(/\r|\n/));
+  const unquoted = first.replace(/"[^"]*"/g, '');
+  const counts = [',', ';', '\t'].map((d) => [d, unquoted.split(d).length - 1] as const);
+  const best = counts.reduce((a, b) => (b[1] > a[1] ? b : a));
+  return best[1] > 0 ? best[0] : ',';
+}
+
+/**
+ * Parse CSV text (RFC 4180: quoted cells, "" escapes, line breaks inside quotes, CRLF/LF, BOM).
+ * The delimiter (comma, semicolon or tab) is detected from the header line. Every record is returned —
+ * blank ones included — so record i is spreadsheet row i + 1.
+ */
+export function parseCsv(input: string, delimiter?: string): string[][] {
+  const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
+  if (!text) return [];
+  const d = delimiter ?? detectDelimiter(text);
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') cell += ch;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = false;
+    } else if (ch === '"' && cell === '') quoted = true;
+    else if (ch === d) { row.push(cell); cell = ''; }
+    else if (ch === '\r' || ch === '\n') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else cell += ch;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+/** Normalised header text: case, spaces and a trailing "*" (required marker) don't matter. */
+export function headerKey(text: string): string {
+  return text.replace(/^﻿/, '').replace(/\*\s*$/, '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Map parsed CSV records to request rows using the import columns (header matched by label or key).
+ * Blank records are skipped; `lines[i]` is the spreadsheet row of `rows[i]` (header = row 1).
+ * Empty cells are left out so the server applies its defaults.
+ */
+export function mapImportRows(columns: ImportColumn[], table: string[][]): {
+  rows: Record<string, string>[]; lines: number[]; missing: ImportColumn[]; ignored: string[];
+} {
+  const [header = [], ...body] = table;
+  const byName = new Map<string, string>();
+  for (const c of columns) { byName.set(headerKey(c.label), c.key); byName.set(headerKey(c.key), c.key); }
+  const keys = header.map((h) => byName.get(headerKey(h)));
+  const found = new Set(keys.filter(Boolean));
+  const rows: Record<string, string>[] = [];
+  const lines: number[] = [];
+  body.forEach((rec, i) => {
+    if (!rec.some((v) => v.trim() !== '')) return;
+    const out: Record<string, string> = {};
+    rec.forEach((v, ci) => {
+      const key = keys[ci];
+      const val = v.trim();
+      if (key && val !== '' && out[key] === undefined) out[key] = val;
+    });
+    rows.push(out);
+    lines.push(i + 2);
+  });
+  return {
+    rows,
+    lines,
+    missing: columns.filter((c) => c.required && !found.has(c.key)),
+    ignored: header.filter((h, i) => h.trim() !== '' && !keys[i]),
+  };
+}
+
+/** Client-side text search over loaded rows (mobile lists): every word must appear in some column, raw or formatted. */
+export function filterRows<T>(rows: T[], columns: Column[], text: string, labels?: Record<string, string>): T[] {
+  const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return rows;
+  return rows.filter((r) => {
+    const hay = columns.map((c) => {
+      const v = get(r, c.key);
+      return v === null || v === undefined ? '' : `${String(v)} ${formatValue(v, c.format, labels)}`;
+    }).join(' ').toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+/** List filters -> query string for the URL (empty values dropped, keys sorted so equal filters give equal URLs). */
+export function filtersToQuery(values: Record<string, unknown>): string {
+  const qs = new URLSearchParams();
+  for (const k of Object.keys(values).sort()) {
+    const v = values[k];
+    if (v !== undefined && v !== null && v !== '' && v !== false) qs.set(k, String(v));
+  }
+  return qs.toString();
 }

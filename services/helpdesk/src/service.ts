@@ -157,6 +157,9 @@ export const definition: ServiceDefinition = {
           [no, b.title, b.description ?? null, b.requesterName ?? null, b.requesterContact ?? null, b.channel, cat?.id ?? null, cat?.name ?? null, b.priority,
             assignId, assignName, responseSecs, resolveSecs, a.userId],
         )).rows[0];
+        await k.emit(c, 'helpdesk.ticket_created', {
+          ticketId: row.id, no, title: b.title, priority: b.priority, categoryName: cat?.name ?? null, requesterName: b.requesterName ?? null, assigneeName: assignName,
+        });
         return loadTicket(c, a, row.id);
       });
     });
@@ -303,6 +306,7 @@ export const definition: ServiceDefinition = {
         await c.query(
           `update tickets set status = 'resolved', resolution = $2, resolved_at = now(), first_response_at = coalesce(first_response_at, now()),
              assignee_id = coalesce(assignee_id, $3), updated_at = now() where id = $1`, [id, b.resolution, a.userId]);
+        await k.emit(c, 'helpdesk.ticket_resolved', { ticketId: t.id, no: t.no, title: t.title, requesterName: t.requester_name ?? null, resolution: b.resolution });
         return loadTicket(c, a, id);
       });
     });

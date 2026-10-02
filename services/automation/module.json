@@ -6,7 +6,7 @@
   "tier": "feature",
   "description": "No-code rules: when something happens in any installed module (stock low, machine down, big PO, invoice issued…), check conditions and notify in the app, on LINE or by webhook. Ships with ready-made rule templates.",
   "requires": ["identity"],
-  "enhancedBy": ["inventory", "purchasing", "sales", "production", "maintenance"],
+  "enhancedBy": ["inventory", "purchasing", "sales", "production", "maintenance", "approvals", "expense", "hr", "helpdesk", "crm", "quality", "booking", "assets"],
   "publishes": [],
   "subscribes": [
     "inventory.low_stock",
@@ -18,7 +18,21 @@
     "sales.invoiced",
     "production.completed",
     "maintenance.breakdown_reported",
-    "maintenance.work_completed"
+    "maintenance.work_completed",
+    "approvals.request_submitted",
+    "approvals.request_decided",
+    "expense.claim_submitted",
+    "expense.claim_paid",
+    "hr.leave_requested",
+    "hr.leave_decided",
+    "helpdesk.ticket_created",
+    "helpdesk.ticket_resolved",
+    "crm.lead_created",
+    "crm.quotation_accepted",
+    "quality.inspection_completed",
+    "quality.ncr_raised",
+    "booking.requested",
+    "assets.repair_reported"
   ],
   "permissions": [
     { "key": "automation.rule.read", "label": "ดูกฎอัตโนมัติ" },

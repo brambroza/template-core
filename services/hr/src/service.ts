@@ -566,7 +566,11 @@ export const definition: ServiceDefinition = {
           `insert into leave_requests (no, employee_id, leave_type_id, from_date, to_date, half_day, days, reason, requested_by)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
           [no, emp.id, type.id, b.fromDate, to, b.halfDay, days, b.reason ?? null, a.userId])).rows[0];
-        return loadLeave(c, row.id);
+        const lv = await loadLeave(c, row.id);
+        await k.emit(c, 'hr.leave_requested', {
+          leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, from: String(lv.from_date), to: String(lv.to_date), days: Number(lv.days),
+        });
+        return lv;
       });
     });
 
@@ -622,6 +626,7 @@ export const definition: ServiceDefinition = {
         assertLeaveStatus(lv, ['pending'], 'อนุมัติ');
         if (isOwn(a, lv)) throw conflict('อนุมัติใบลาของตนเองไม่ได้ — ให้หัวหน้าหรือฝ่ายบุคคลอนุมัติ');
         await c.query(`update leave_requests set status = 'approved', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note ?? null]);
+        await k.emit(c, 'hr.leave_decided', { leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision: 'approved' });
         return loadLeave(c, id);
       });
     });
@@ -635,6 +640,7 @@ export const definition: ServiceDefinition = {
         const lv = await loadLeave(c, id, true);
         assertLeaveStatus(lv, ['pending'], 'ไม่อนุมัติ');
         await c.query(`update leave_requests set status = 'rejected', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1`, [id, a.userId, b.note]);
+        await k.emit(c, 'hr.leave_decided', { leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision: 'rejected' });
         return loadLeave(c, id);
       });
     });

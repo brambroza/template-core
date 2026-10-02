@@ -230,3 +230,18 @@ describe('crm summary, permissions and tenants', () => {
     expect((await t.api('POST', '/leads', { company: 'อีกบริษัท' }, { token: other })).body.no).toBe(`LD-${year}-0001`);
   });
 });
+
+describe('crm events (for Automation alerts)', () => {
+  it('publishes lead_created and quotation_accepted through the outbox', async () => {
+    const leads = (await t.published('crm.lead_created')).map((e) => e.data);
+    expect(leads[0]).toMatchObject({ no: `LD-${year}-0001`, company: 'บริษัท สยามพาร์ท จำกัด', contactName: 'คุณเอ', source: 'expo' });
+    const accepted = (await t.published('crm.quotation_accepted')).map((e) => e.data);
+    expect(accepted).toHaveLength(1);
+    const q = (await t.api('GET', `/quotations/${accepted[0].quotationId}`)).body;
+    expect(q.status).toBe('accepted');
+    expect(accepted[0]).toEqual({ quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross });
+    const before = leads.length;
+    expect((await t.api('POST', '/leads', { company: '' })).status).toBe(400);
+    expect((await t.published('crm.lead_created')).length).toBe(before);
+  });
+});

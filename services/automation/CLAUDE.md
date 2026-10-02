@@ -11,7 +11,7 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 
 ## Behaviour
 - `src/catalog.ts` is the single list of events a rule can react to (Thai label, usable fields, default
-  message, link, level) and of the 8 one-click templates. **New event → add it to `@erp/contracts`, to
+  message, link, level) and of the 19 one-click templates (8 factory + 11 office/service). **New event → add it to `@erp/contracts`, to
   `module.json` `subscribes`, and to `EVENTS` here.**
 - Handlers never throw: every outcome is a `runs` row. LINE/webhook failures are recorded as `failed`.
 - Messages use `{{field}}` placeholders (numbers formatted th-TH). Links are path-encoded (`renderLink`).
@@ -28,7 +28,15 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 - perms: `automation.rule.read`, `automation.rule.write`, `automation.notify.read`
 
 ## Events
-- publishes: none · subscribes: see `module.json` (stock low, PO created/approved/received, SO confirmed/delivered/invoiced, production completed, breakdown, work completed)
+- publishes: none · subscribes: see `module.json` — factory: stock low, PO created/approved/received, SO confirmed/delivered/invoiced, production completed, breakdown, work completed;
+  office/service: `approvals.request_submitted|request_decided`, `expense.claim_submitted|claim_paid`, `hr.leave_requested|leave_decided`,
+  `helpdesk.ticket_created|ticket_resolved`, `crm.lead_created|quotation_accepted`, `quality.inspection_completed|ncr_raised`, `booking.requested`, `assets.repair_reported`.
+  Every publisher is optional (`enhancedBy`). Links go to each module's detail screen (`/m/<module>/<detailScreen>/{{id}}`).
+- Enum fields (decision, priority, result, severity, source, stage) carry English codes — conditions compare them (`priority eq urgent`);
+  templates write the Thai wording into their own message. Boolean fields (`overLimit`, `needsApproval`) compare as `eq true`.
+- Office templates: approval-to-approver, approval-approved, approval-not-approved, expense-over-limit, leave-to-manager, urgent-ticket,
+  new-lead, quote-accepted, qc-fail, ncr-critical, booking-needs-approval. `test/service.test.ts` checks that catalogue = `subscribes`,
+  every template condition field exists, and each sample payload parses against `@erp/contracts`.
 
 ## Screens (src/ui.ts)
 templates (card gallery, one-click "เปิดใช้") · rules · ruleNew (เมื่อ/ถ้า/ให้ form) · rule (detail + runs, test, enable/disable, delete)

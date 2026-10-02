@@ -259,3 +259,19 @@ describe('hr: resignation, dashboard, permissions, tenants', () => {
     expect((await t.api('POST', '/employees', { code: 'EMP-001', firstName: 'อื่น', startDate: '2026-01-01' }, other)).status).toBe(201);
   });
 });
+
+describe('hr: events (for Automation alerts)', () => {
+  it('publishes leave_requested on filing and leave_decided on approve / reject', async () => {
+    const req = (await t.published('hr.leave_requested')).map((e) => e.data);
+    const annual = req.find((d: any) => d.leaveId === ids.lvAnnual);
+    expect(annual).toMatchObject({ employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', from: '2027-03-01', to: '2027-03-07', days: 4 });
+    expect(annual.no).toMatch(/^LV-\d{4}-0001$/);
+    const decided = (await t.published('hr.leave_decided')).map((e) => e.data);
+    expect(decided.find((d: any) => d.leaveId === ids.lvAnnual)).toMatchObject({ employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', decision: 'approved' });
+    expect(decided.map((d: any) => d.decision)).toEqual(['approved', 'rejected']);
+    // refused requests publish nothing
+    const before = req.length;
+    expect((await t.api('POST', '/leave-requests', { leaveTypeId: ids.ANNUAL, fromDate: '2027-03-06', toDate: '2027-03-07' }, { token: userToken(somchaiUser, STAFF) })).status).toBe(400);
+    expect((await t.published('hr.leave_requested')).length).toBe(before);
+  });
+});

@@ -31,8 +31,8 @@ drivers close a vehicle trip with odometer and fuel. Requires only `identity` (t
 Permissions: `booking.resource.read|write`, `booking.book.create|approve`.
 
 ## Events
-- publishes: none · subscribes: none
-- Candidates (not added): `booking.requested` (alert approvers), `booking.decided` (tell the requester), `booking.trip_completed` (fuel cost to expense/costing).
+- publishes `booking.requested` (bookingId, no, resourceName, startAt, endAt (ISO), requesterName, needsApproval, period (Thai text), purpose) on every new booking.
+- subscribes: none. Candidates (not added): `booking.decided` (tell the requester), `booking.trip_completed` (fuel cost to expense/costing).
 
 ## Screens
 `src/ui.ts`: `board` (daily availability, mobile), `bookingNew` (mobile, resource lookup with QR scan), `myBookings`, `approvals` (approve/reject per row, mobile),

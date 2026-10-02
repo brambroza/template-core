@@ -196,3 +196,18 @@ describe('expense', () => {
     expect((await t.api('GET', '/summary', undefined, { token: other })).body).toMatchObject({ toApprove: 0, toPay: 0, rows: [] });
   });
 });
+
+describe('expense events (for Automation alerts)', () => {
+  it('publishes claim_submitted (with the over-limit flag) and claim_paid through the outbox', async () => {
+    const sub = (await t.published('expense.claim_submitted')).map((e) => e.data);
+    expect(sub.find((d: any) => d.no === 'EXP-2569-0001')).toEqual(expect.objectContaining({ claimantName: 'สมชาย', total: 2270, overLimit: false }));
+    expect(sub.find((d: any) => d.no === 'EXP-2569-0002')).toMatchObject({ total: 2000, overLimit: true });
+    const paid = (await t.published('expense.claim_paid')).map((e) => e.data);
+    expect(paid.find((d: any) => d.no === 'EXP-2569-0001')).toMatchObject({ claimantName: 'สมชาย', total: 2270 });
+    // a draft publishes nothing; a refused submit publishes nothing
+    const before = (await t.published('expense.claim_submitted')).length;
+    const draft = (await t.api('POST', '/claims', { purpose: 'ร่าง', lines: [{ expenseDate: today, categoryId: hotel.id, amount: 500 }] }, { token: somchai.token })).body;
+    expect((await t.api('POST', `/claims/${draft.id}/submit`, undefined, { token: somchai.token })).status).toBe(400); // receipt missing
+    expect((await t.published('expense.claim_submitted')).length).toBe(before);
+  });
+});

@@ -169,6 +169,7 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
           [no, b.company, b.contactName ?? null, b.phone ?? null, b.email || null, b.lineId ?? null, b.source, b.interest ?? null, b.note ?? null, b.ownerId ?? a.userId, b.ownerName ?? null, a.userId],
         )).rows[0];
+        await k.emit(c, 'crm.lead_created', { leadId: row.id, no, company: b.company, contactName: b.contactName ?? null, source: b.source });
         return loadLead(c, row.id);
       });
     });
@@ -528,6 +529,7 @@ export const definition: ServiceDefinition = {
             `update opportunities set stage = 'won', probability = 100, value = $2, won_at = now(), closed_at = now(), lost_reason = null, updated_at = now()
              where id = $1 and stage <> 'won'`, [q.opportunity_id, q.net]);
         }
+        await k.emit(c, 'crm.quotation_accepted', { quotationId: q.id, no: q.no, customerName: q.customer_name, total: q.gross });
         return loadQuote(c, id);
       });
     });

@@ -10,7 +10,7 @@
     "master-data"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["crm.lead_created", "crm.quotation_accepted"],
   "subscribes": [],
   "permissions": [
     { "key": "crm.lead.read", "label": "ดูลีดและโอกาสขาย" },

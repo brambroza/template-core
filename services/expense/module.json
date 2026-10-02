@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["expense.claim_submitted", "expense.claim_paid"],
   "subscribes": [],
   "permissions": [
     {

@@ -32,7 +32,10 @@ Requires only `identity` (approvers are picked from `/users` and stored as snaps
 Permissions: `approvals.request.read | write | approve | admin`, `approvals.type.write`.
 
 ## Events
-- publishes: none · subscribes: none. Candidates (not added): `approvals.request_submitted`, `approvals.request_decided` → Automation (LINE the next approver / the requester).
+- publishes `approvals.request_submitted` (requestId, no, title, typeName, requesterName, amount, nextApproverId/Name, step, stepCount) — on submit (step 1)
+  **and** each time an approval moves the request to the next step, so the next approver can be alerted.
+- publishes `approvals.request_decided` (requestId, no, title, decision approved|rejected|returned, requesterId, requesterName, byName, note) — final approve, reject or return.
+- subscribes: none. Automation turns both into LINE / in-app alerts (link `/m/approvals/requestDetail/:id`).
 
 ## Screens
 `src/ui.ts`: inbox (mobile, row action อนุมัติ), myRequests (mobile), requests (all, filters), requestNew (mobile, approver lines from identity /users),

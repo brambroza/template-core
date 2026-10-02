@@ -44,8 +44,9 @@ Employee register, leave with quotas and approval, mobile check-in/out with late
 Permissions: `hr.employee.read|write`, `hr.setup.write`, `hr.leave.request|approve`, `hr.attendance.self|read|manage`.
 
 ## Events
-- publishes: none · subscribes: none
-- Candidates (not added): `hr.leave_requested` / `hr.leave_decided` (automation alerts to the approver/employee), `hr.employee_resigned` (identity deactivation).
+- publishes `hr.leave_requested` (leaveId, no, employeeName, typeName, from, to, days) when a leave request is filed.
+- publishes `hr.leave_decided` (leaveId, no, employeeName, typeName, decision approved|rejected) on approve / reject.
+- subscribes: none. Candidates (not added): `hr.employee_resigned` (identity deactivation).
 
 ## Screens
 `src/ui.ts`: self-service `me` (check-in/out buttons, balance, recent leave), `checkIn`/`checkOut`/`leaveNew`/`myLeaves` (mobile),

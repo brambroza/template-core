@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { bookValueAt, closedMonthIndex, depreciationIn, monthIndex, monthlyAmount, periodOf, round2, schedule } from './depreciation.ts';
 
@@ -123,8 +123,8 @@ function assertWorkable(a: { code: string; status: string }, what: string, allow
   if (a.status === 'lost' && !allowLost) throw conflict(`Cannot ${what} ${a.code}: asset is lost`);
 }
 
-async function reportRepair(c: Client, assetId: string, b: z.infer<typeof RepairInput>, userId: string) {
-  const a = await one(c, 'select id, code, status from assets where id = $1 for update', [assetId], 'Asset');
+async function reportRepair(k: Kernel, c: Client, assetId: string, b: z.infer<typeof RepairInput>, userId: string) {
+  const a = await one(c, 'select id, code, name, status from assets where id = $1 for update', [assetId], 'Asset');
   assertWorkable(a, 'repair');
   const date = b.repairDate ?? (await today(c));
   if (b.completed) {
@@ -139,6 +139,7 @@ async function reportRepair(c: Client, assetId: string, b: z.infer<typeof Repair
       `insert into asset_repairs (asset_id, repair_date, description, vendor, cost, prev_status, reported_by) values ($1,$2,$3,$4,$5,$6,$7)`,
       [assetId, date, b.description, b.vendor ?? null, b.cost, prev, userId]);
     await c.query(`update assets set status = 'in_repair' where id = $1`, [assetId]);
+    await k.emit(c, 'assets.repair_reported', { assetId: a.id, code: a.code, name: a.name, description: b.description });
   }
   return loadAsset(c, assetId);
 }
@@ -384,7 +385,7 @@ export const definition: ServiceDefinition = {
       const { id } = parse(IdParam, req.params);
       const b = parse(RepairInput, req.body);
       reply.code(201);
-      return k.db.tx(a.tenantId, (c) => reportRepair(c, id, b, a.userId));
+      return k.db.tx(a.tenantId, (c) => reportRepair(k, c, id, b, a.userId));
     });
 
     /** Same as /assets/:id/repairs, with the asset in the body (form with a QR-scannable asset lookup). */
@@ -393,7 +394,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'assets.repair.report');
       const b = parse(RepairInput.extend({ assetId: s.uuid }), req.body);
       reply.code(201);
-      return k.db.tx(a.tenantId, (c) => reportRepair(c, b.assetId, b, a.userId));
+      return k.db.tx(a.tenantId, (c) => reportRepair(k, c, b.assetId, b, a.userId));
     });
 
     app.get('/repairs', async (req) => {

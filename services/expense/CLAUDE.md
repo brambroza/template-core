@@ -36,7 +36,9 @@ Cash advances (เงินทดรองจ่าย) are paid out before the 
 Permissions: `expense.claim.read | write | approve | pay`, `expense.category.write`.
 
 ## Events
-- publishes: none · subscribes: none. Candidates (not added): `expense.claim_submitted`, `expense.claim_approved`, `expense.claim_paid` → Automation / an accounting module (post the expense journal).
+- publishes `expense.claim_submitted` (claimId, no, claimantName, total, overLimit — after limit warnings are refreshed) on submit (also `POST /claims { submit: true }`).
+- publishes `expense.claim_paid` (claimId, no, claimantName, total) on pay.
+- subscribes: none. Candidates (not added): `expense.claim_approved`, advances events → an accounting module (post the expense journal).
 
 ## Screens
 `src/ui.ts`: myClaims (mobile), claims (all, row approve), claimNew (mobile, lines), claimEdit, claimDetail (flow, lines + warnings, actions, printable),

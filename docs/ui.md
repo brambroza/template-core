@@ -17,9 +17,22 @@ services/inventory/src/ui.ts ─┼─> apps/*/src/modules.generated.ts (pnpm er
 
 | kind | ใช้ทำ | คีย์สำคัญ |
 | --- | --- | --- |
-| `list` | ตารางรายการ + ตัวกรอง | `endpoint`, `columns`, `filters`, `create`, `rowLink`, `actions` (ปุ่มบนหน้า), `rowActions` (ปุ่มต่อแถว), `rows` (path ของ array ถ้า response เป็น object เช่น `items`), `display: 'cards'` (แสดงเป็นการ์ด เช่น แกลเลอรีสูตรบอท) |
+| `list` | ตารางรายการ + ตัวกรอง | `endpoint`, `columns`, `filters`, `import` (นำเข้า CSV), `create`, `rowLink`, `actions` (ปุ่มบนหน้า), `rowActions` (ปุ่มต่อแถว), `rows` (path ของ array ถ้า response เป็น object เช่น `items`), `display: 'cards'` (แสดงเป็นการ์ด เช่น แกลเลอรีสูตรบอท) |
 | `form` | สร้าง/แก้ไข | `method`, `endpoint`, `fields`, `lines` (ตารางรายการ), `load` (ดึงค่าเดิมมาแก้), `after` |
 | `detail` | ดูเอกสาร + ปุ่มตามสถานะ | `endpoint`, `heading`, `fields`, `lines`, `actions` (`when` = แสดงเฉพาะบางสถานะ), `printable`, `flow` (แถบขั้นตอนเอกสาร 2D) |
+
+ทุกหน้า `list` (web) มีให้อัตโนมัติ ไม่ต้องประกาศ:
+- **ส่งออก CSV** — แถวที่กรองอยู่ หัวคอลัมน์ = `label` ของ `columns`, UTF-8 BOM (Excel ภาษาไทยเปิดได้ตรง), วันที่เป็นข้อความ `dd/mm/พ.ศ.`,
+  เงิน/จำนวนเป็นตัวเลขล้วน (ไม่มีจุลภาค), รหัสสถานะเป็นชื่อไทย (`toCsv()` ใน ui-schema)
+- **พิมพ์รายการ** — ใช้ print styles เดิม (ซ่อนเมนู/ตัวกรอง/ปุ่ม พิมพ์ตัวกรองที่ใช้อยู่ไว้หัวรายการ)
+- **ตัวกรองอยู่ใน URL** — เปลี่ยนตัวกรองแล้ว URL เปลี่ยนตาม (`router.replace`, ไม่เพิ่ม history) จึงบุ๊กมาร์ก/ส่งลิงก์รายการที่กรองแล้วได้ · ใต้ตารางแสดง "แสดง N รายการ"
+- mobile: ช่องค้นหาในรายการ กรองแถวที่โหลดแล้วด้วยข้อความในทุกคอลัมน์ (`filterRows()`)
+
+`import` (นำเข้า CSV, web) — `{ endpoint, perm?, columns: [{ key, label, required? }], template? }`
+ผู้ใช้เลือกไฟล์ → อ่าน CSV ในเบราว์เซอร์ (UTF-8/BOM หรือ windows-874 จาก Excel ไทย, คั่นด้วย `,` `;` หรือ tab, หัวคอลัมน์จับคู่ด้วย `label` หรือ `key`)
+→ ส่ง `POST endpoint { rows, dryRun: true }` → ตารางตัวอย่างพร้อมข้อผิดพลาดรายแถว → ยืนยัน → `POST endpoint { rows }` → toast + โหลดใหม่
+endpoint ต้องรับค่าเป็นข้อความ (แปลงเอง) และตอบ `{ dryRun, total, created, updated, errors: [{ row, field?, message }] }` (`row` นับจาก 1 ตามลำดับใน `rows`)
+ดูตัวอย่างจริงที่ `POST /items/import` ใน services/master-data (upsert ตาม `code`, ทั้งไฟล์ในธุรกรรมเดียว, ไม่เกิน 2000 แถว) · `template` = ชื่อไฟล์แบบฟอร์มเปล่า (หัวคอลัมน์)
 
 Action: `then` = เปิดหน้าอื่นด้วยผลลัพธ์ (`idFrom` ไม่ใส่ก็ได้), `toast` = แสดงค่าจาก response เป็นข้อความมุมจอ (เช่น ผลลองรันกฎ), `confirm`, `fields`/`lines` = ถามข้อมูลก่อน
 
@@ -64,8 +77,9 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 1. `endpoint` ต้องเป็น path template เดียวกับ route ใน `service.ts` (method ต้องตรง)
 2. lookup ไปได้แค่โมดูลตัวเอง หรือโมดูล core (`identity`, `master-data`) — เพื่อให้ขายแยกได้
 3. `perm` ทุกตัวต้องประกาศใน `module.json`
-4. ลิงก์ไปหน้าจอ (`rowLink`, `create`, `after`, `then`, widget `href`/`link`, command/search `screen`) ต้องมีอยู่จริง
-5. หน้าจอที่เปิดด้วย id (`/m/<module>/<screen>/<id>`) จะเอา id ไปเติม `:param` ตัวแรกของ endpoint
+4. `import.endpoint` ต้องเป็น POST route ของโมดูลเอง, `import.perm` ต้องประกาศใน module.json, คอลัมน์ import ห้ามซ้ำ/กำกวม (key หรือ label ชนกัน)
+5. ลิงก์ไปหน้าจอ (`rowLink`, `create`, `after`, `then`, widget `href`/`link`, command/search `screen`) ต้องมีอยู่จริง
+6. หน้าจอที่เปิดด้วย id (`/m/<module>/<screen>/<id>`) จะเอา id ไปเติม `:param` ตัวแรกของ endpoint
 
 ## เพิ่มความสามารถใหม่ให้ renderer
 

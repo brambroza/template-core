@@ -46,8 +46,18 @@ describe.each(ids)('%s screens', (id) => {
     const ui = uis.get(id);
     if (!ui) return;
     const declared = new Set(services.get(id)!.manifest.permissions.map((p) => p.key));
-    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? (s.rowActions ?? []).map((a) => a.perm) : [])]);
+    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? [...(s.rowActions ?? []).map((a) => a.perm), s.import?.perm] : [])]);
     expect(used.filter((p) => p && !declared.has(p))).toEqual([]);
+  });
+
+  it('imports into a real POST route of the module itself', () => {
+    const ui = uis.get(id);
+    if (!ui) return;
+    const svc = services.get(id)!;
+    const bad = Object.entries(ui.screens).flatMap(([sid, s]) => (s.kind === 'list' && s.import ? [[sid, s.import] as const] : []))
+      .filter(([, imp]) => !imp.endpoint.startsWith('/') || !svc.app.hasRoute({ method: 'POST', url: imp.endpoint }))
+      .map(([sid, imp]) => `${id}.${sid}.import: POST /${id}${imp.endpoint}`);
+    expect(bad).toEqual([]);
   });
 
   it('has no broken screen links', () => {

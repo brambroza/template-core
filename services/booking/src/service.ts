@@ -303,6 +303,10 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
           [no, r.id, b.purpose, start, end, b.attendees ?? null, b.destination ?? null, a.userId, b.requesterName, b.requesterDepartment ?? null,
             b.requesterPhone ?? null, r.requires_approval ? 'pending' : 'confirmed'])).rows[0];
+        await k.emit(c, 'booking.requested', {
+          bookingId: row.id, no, resourceName: r.name, startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), requesterName: b.requesterName,
+          needsApproval: r.requires_approval, period: thaiRange(new Date(start), new Date(end)), purpose: b.purpose,
+        });
         return loadBooking(c, row.id);
       });
     });

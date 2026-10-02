@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -123,16 +123,27 @@ function requireOwner(r: any, a: AuthContext) {
   if (r.requester_id !== a.userId && !isAdmin(a)) throw forbidden('Only the requester (or an approvals admin) can do this');
 }
 
-async function submit(c: Client, r: any, a: AuthContext) {
+/** Tell whoever is next on the chain (automation turns this into a LINE / in-app alert). */
+async function emitReachedApprover(k: Kernel, c: Client, r: any, stepNo: number) {
+  const st = (await c.query('select approver_id, approver_name, (select count(*)::int from request_steps where request_id = $1) as n from request_steps where request_id = $1 and step_no = $2', [r.id, stepNo])).rows[0];
+  if (!st) return;
+  await k.emit(c, 'approvals.request_submitted', {
+    requestId: r.id, no: r.no, title: r.title, typeName: r.type_name, requesterName: r.requester_name ?? null, amount: r.amount ?? null,
+    nextApproverId: st.approver_id, nextApproverName: st.approver_name ?? null, step: stepNo, stepCount: st.n,
+  });
+}
+
+async function submit(k: Kernel, c: Client, r: any, a: AuthContext) {
   if (!['draft', 'returned'].includes(r.status)) throw conflict(`Cannot submit a ${r.status} request`);
   if (r.step_count < 1) throw badRequest('Add at least one approver before submitting');
   await c.query(`update request_steps set status = 'waiting', acted_by = null, acted_at = null, note = null where request_id = $1`, [r.id]);
   await c.query(`update requests set status = 'pending', current_step = 1, submitted_at = now(), decided_at = null, decided_by = null, last_note = null, updated_at = now() where id = $1`, [r.id]);
   await history(c, r, a, 'submitted');
+  await emitReachedApprover(k, c, r, 1);
 }
 
 /** Approve / reject / return the current step. Only that step's approver, or an approvals admin, may act. */
-async function decide(c: Client, id: string, a: AuthContext, action: 'approved' | 'rejected' | 'returned', note: string | undefined) {
+async function decide(k: Kernel, c: Client, id: string, a: AuthContext, action: 'approved' | 'rejected' | 'returned', note: string | undefined) {
   const r = await loadRequest(c, id, a, true);
   if (r.status !== 'pending') throw conflict(`Cannot ${action === 'approved' ? 'approve' : action === 'rejected' ? 'reject' : 'return'} a ${r.status} request`);
   if (r.current_approver_id !== a.userId && !isAdmin(a)) throw forbidden(`Step ${r.current_step} is waiting for ${r.current_approver_name ?? 'another approver'}`);
@@ -146,6 +157,13 @@ async function decide(c: Client, id: string, a: AuthContext, action: 'approved' 
     await c.query(`update requests set status = $2, current_step = 0, decided_at = now(), decided_by = $3, last_note = coalesce($4, last_note), updated_at = now() where id = $1`, [id, action, a.userId, note ?? null]);
   }
   await history(c, r, a, action, note, step);
+  if (action === 'approved' && step < r.step_count) await emitReachedApprover(k, c, r, step + 1);
+  else {
+    await k.emit(c, 'approvals.request_decided', {
+      requestId: r.id, no: r.no, title: r.title, decision: action, requesterId: r.requester_id, requesterName: r.requester_name ?? null,
+      byName: actorName(r, a), note: note ?? null,
+    });
+  }
   return loadRequest(c, id, a);
 }
 
@@ -255,7 +273,7 @@ export const definition: ServiceDefinition = {
         )).rows[0];
         await replaceSteps(c, row.id, approvers);
         await history(c, row, a, 'created');
-        if (b.submit) await submit(c, { ...row, step_count: approvers.length }, a);
+        if (b.submit) await submit(k, c, { ...row, step_count: approvers.length }, a);
         return loadRequest(c, row.id, a);
       });
     });
@@ -384,7 +402,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const r = await loadRequest(c, id, a, true);
         requireOwner(r, a);
-        await submit(c, r, a);
+        await submit(k, c, r, a);
         return loadRequest(c, id, a);
       });
     });
@@ -394,7 +412,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'approvals.request.approve');
       const { id } = parse(IdParam, req.params);
       const b = parse(OptionalNote, req.body ?? {});
-      return k.db.tx(a.tenantId, (c) => decide(c, id, a, 'approved', b.note));
+      return k.db.tx(a.tenantId, (c) => decide(k, c, id, a, 'approved', b.note));
     });
 
     app.post('/requests/:id/reject', async (req) => {
@@ -402,7 +420,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'approvals.request.approve');
       const { id } = parse(IdParam, req.params);
       const b = parse(Note, req.body ?? {});
-      return k.db.tx(a.tenantId, (c) => decide(c, id, a, 'rejected', b.note));
+      return k.db.tx(a.tenantId, (c) => decide(k, c, id, a, 'rejected', b.note));
     });
 
     app.post('/requests/:id/return', async (req) => {
@@ -410,7 +428,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'approvals.request.approve');
       const { id } = parse(IdParam, req.params);
       const b = parse(Note, req.body ?? {});
-      return k.db.tx(a.tenantId, (c) => decide(c, id, a, 'returned', b.note));
+      return k.db.tx(a.tenantId, (c) => decide(k, c, id, a, 'returned', b.note));
     });
 
     app.post('/requests/:id/cancel', async (req) => {

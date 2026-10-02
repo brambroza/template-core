@@ -164,6 +164,25 @@ table.data tr.is-link:hover td { background: var(--surface-2); }
 table.data td a { text-decoration: none; font-weight: 600; }
 table.data th.num, table.data td.num { text-align: right; }
 td.empty { color: var(--ink-2); padding: 40px 16px; text-align: center; }
+.list-count { margin: 10px 2px 0; font-size: .82rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.print-only { display: none; }
+
+/* ---------- CSV import dialog ---------- */
+.dialog.dialog-wide { width: min(1040px, calc(100vw - 32px)); }
+.import-cols { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 14px; padding: 0; }
+.import-cols li { font-size: .8rem; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 2px 10px; }
+.import-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.import-pick input[type='file'] { flex: 1 1 280px; width: auto; padding: 7px 10px; cursor: pointer; }
+.import-pick input[type='file']::file-selector-button { font: inherit; font-size: .88rem; margin-right: 10px; padding: 4px 12px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; }
+.import-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 10px; font-size: .9rem; color: var(--ink-2); }
+.import-summary b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.import-summary .has-errors, .import-summary .has-errors b { color: var(--stop); }
+.import-preview { max-height: 46vh; overflow: auto; }
+.import-preview table.data th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.import-preview table.data td { padding: 8px 12px; white-space: nowrap; }
+.import-preview tr.row-error td { background: color-mix(in srgb, var(--stop-soft) 55%, transparent); }
+.import-preview td.cell-error { box-shadow: inset 0 -2px 0 var(--stop); color: var(--stop); }
+.import-preview .inline-error { white-space: normal; margin: 0; }
 .row-actions { white-space: nowrap; text-align: right; }
 .row-actions > * + * { margin-left: 6px; }
 
@@ -370,6 +389,13 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
   .rail, .panel-nav, .topbar, .no-print, .skip, .flow { display: none !important; }
   .shell { display: block; }
   .content { padding: 0; max-width: none; }
+  .print-only { display: block !important; }
+  .table-wrap { border: none; border-radius: 0; overflow: visible; }
+  table.data { font-size: 10pt; }
+  table.data th, table.data td { padding: 5px 8px; }
+  table.data thead { display: table-header-group; }
+  table.data tr { break-inside: avoid; }
+  table.data td a { color: inherit; }
 }
 
 /* ---------- command palette (⌘K) ---------- */

@@ -116,7 +116,15 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tenant, email, password }),
   })).json();
   const call = client(stack.gatewayUrl, login.token);
+  const loginAs = async (who: string) => {
+    const res = await fetch(`${stack.gatewayUrl}/api/identity/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tenant, email: who, password }),
+    });
+    if (!res.ok) throw new Error(`login ${who} failed: ${await res.text()}`);
+    return client(stack.gatewayUrl, (await res.json()).token);
+  };
   const settle = () => new Promise((r) => setTimeout(r, 1500));
+  const business = await import('./demo-business.ts');
 
   // rules first, so they fire on everything below (the bell then shows real notifications)
   if (has('automation')) {
@@ -162,6 +170,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     ['C-002', 'บริษัท อีสเทิร์น อิเล็คทริค จำกัด', 'customer', null, 'ปลวกแดง ระยอง'],
     ['C-003', 'บริษัท โฮมสโตร์ เรนเจอร์ จำกัด', 'customer', null, 'ลาดกระบัง กรุงเทพฯ'],
   ] as const) partners[code] = await call('POST', '/api/master-data/partners', { code, name, kind, taxId: taxId ?? undefined, address });
+
+  // QC plans before any goods receipt / production completion, so those events raise real inspections
+  if (has('quality')) await business.seedQualityPlans(call, items).catch((e) => console.error('demo seed: quality plans failed —', e.message));
 
   // ---------------- inventory set-up ----------------
   if (has('inventory')) {
@@ -273,6 +284,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
       materials: [{ ...items['RM-SPCC-12'], qty: 870 }, { ...items['SP-BOLT-M8'], qty: 4000 }, { ...items['RM-PAINT-GR'], qty: 30 }],
     }).catch(() => undefined);
   }
+
+  // office & service modules: HR, approvals, expense, booking, CRM, helpdesk, projects, assets, QC results
+  await business.seedBusiness({ call, loginAs, has, items, partners });
 
   await settle();
   return { tenant, email, password, created: true };

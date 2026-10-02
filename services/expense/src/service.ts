@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { bahtText, round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
@@ -158,7 +158,7 @@ async function refreshWarnings(c: Client, claimId: string) {
   await c.query('update claims set warnings = $2, over_limit = $3 where id = $1', [claimId, JSON.stringify(warnings), over.length > 0]);
 }
 
-async function submitClaim(c: Client, id: string, a: AuthContext) {
+async function submitClaim(k: Kernel, c: Client, id: string, a: AuthContext) {
   const cl = await loadClaim(c, id, a, true);
   requireOwner(cl, a);
   if (!['draft', 'returned'].includes(cl.status)) throw conflict(`Cannot submit a ${cl.status} claim`);
@@ -166,6 +166,8 @@ async function submitClaim(c: Client, id: string, a: AuthContext) {
   if (missing.length) throw badRequest(`Receipt number required on line(s) ${missing.map((l: any) => l.line_no).join(', ')}`);
   await c.query(`update claims set status = 'submitted', submitted_at = now(), updated_at = now() where id = $1`, [id]);
   await refreshWarnings(c, id);
+  const row = (await c.query('select id, no, claimant_name, total, over_limit from claims where id = $1', [id])).rows[0];
+  await k.emit(c, 'expense.claim_submitted', { claimId: row.id, no: row.no, claimantName: row.claimant_name ?? null, total: row.total, overLimit: row.over_limit });
 }
 
 async function loadAdvance(c: Client, id: string, a: AuthContext, lock = false) {
@@ -249,7 +251,7 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,coalesce($6::date, current_date),$2) returning id`,
           [no, a.userId, b.claimantName ?? null, b.department ?? null, b.purpose, b.claimDate ?? null])).rows[0];
         await writeLines(c, row.id, b.lines);
-        if (b.submit) await submitClaim(c, row.id, a);
+        if (b.submit) await submitClaim(k, c, row.id, a);
         else await refreshWarnings(c, row.id);
         return loadClaim(c, row.id, a);
       });
@@ -319,7 +321,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'expense.claim.write');
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, async (c) => {
-        await submitClaim(c, id, a);
+        await submitClaim(k, c, id, a);
         return loadClaim(c, id, a);
       });
     });
@@ -364,6 +366,7 @@ export const definition: ServiceDefinition = {
         await c.query(
           `update claims set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, paid_by = $5, updated_at = now() where id = $1`,
           [id, b.paidDate ?? null, b.method, b.reference ?? null, a.userId]);
+        await k.emit(c, 'expense.claim_paid', { claimId: cl.id, no: cl.no, claimantName: cl.claimant_name ?? null, total: cl.total });
         return loadClaim(c, id, a);
       });
     });

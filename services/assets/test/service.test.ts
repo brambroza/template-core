@@ -196,3 +196,12 @@ describe('assets', () => {
     expect((await t.api('GET', '/summary', undefined, { token: other })).body).toMatchObject({ count: 0, bookValue: 0 });
   });
 });
+
+describe('assets events (for Automation alerts)', () => {
+  it('publishes repair_reported for open repairs only (not for logging a finished repair)', async () => {
+    const evs = (await t.published('assets.repair_reported')).map((e) => e.data);
+    expect(evs).toHaveLength(1);
+    const asset = (await t.api('GET', `/assets/${evs[0].assetId}`)).body;
+    expect(evs[0]).toEqual({ assetId: asset.id, code: asset.code, name: asset.name, description: 'จอไม่ติด' });
+  });
+});

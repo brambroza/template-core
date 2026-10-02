@@ -181,3 +181,18 @@ describe('booking: permissions and tenants', () => {
     expect((await t.api('POST', '/resources', { code: 'MR-1', name: 'ห้องของบริษัทอื่น', kind: 'room' }, other)).status).toBe(201);
   });
 });
+
+describe('booking: events (for Automation alerts)', () => {
+  it('publishes booking.requested for every new booking, flagging the ones that need approval', async () => {
+    const evs = (await t.published('booking.requested')).map((e) => e.data);
+    const first = evs.find((d: any) => d.bookingId === ids.first);
+    expect(first).toMatchObject({ resourceName: 'ห้องประชุมเล็ก', startAt: '2027-03-01T02:00:00.000Z', endAt: '2027-03-01T03:00:00.000Z', requesterName: 'อลิส', needsApproval: false, purpose: 'ประชุมลูกค้า' });
+    expect(first.no).toMatch(/^BK-\d{4}-0001$/);
+    expect(first.period).toContain('09:00');
+    expect(evs.find((d: any) => d.purpose === 'อบรมความปลอดภัย')).toMatchObject({ resourceName: 'ห้องประชุมใหญ่', needsApproval: true });
+    // a clash publishes nothing
+    const before = evs.length;
+    expect((await book(ids.mr, '2027-03-01', '09:30', '10:30', {})).status).toBe(409);
+    expect((await t.published('booking.requested')).length).toBe(before);
+  });
+});

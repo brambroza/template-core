@@ -36,8 +36,9 @@ disposes assets with gain/loss, and a yearly physical audit is done by scanning 
 Permissions: `assets.asset.read` · `assets.asset.write` (register, edit, categories, assign) · `assets.repair.report` · `assets.asset.dispose` · `assets.audit.run`.
 
 ## Events
-- publishes: none · subscribes: none.
-- Candidates (not added): `assets.repair_reported`, `assets.warranty_expiring`, `assets.audit_closed` (automation alerts);
+- publishes `assets.repair_reported` (assetId, code, name, description) when an open repair is reported (not when logging an already-finished repair).
+- subscribes: none.
+- Candidates (not added): `assets.warranty_expiring`, `assets.audit_closed` (automation alerts);
   `assets.depreciation_posted` / `assets.disposed` for a future accounting/costing module; consuming `purchasing.goods_received` to pre-fill assets.
 
 ## Screens

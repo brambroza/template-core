@@ -4,6 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootTestService, type TestService } from '@erp/kernel/testing';
 import { definition } from '../src/service.ts';
 import { describe as sentence, matches, render, webhookProblem } from '../src/engine.ts';
+import { EVENTS, TEMPLATES } from '../src/catalog.ts';
+import { isKnownEvent, parseEvent, type EventType } from '@erp/contracts';
+import manifestJson from '../module.json' with { type: 'json' };
 
 let t: TestService;
 let server: Server;
@@ -120,5 +123,95 @@ describe('notification links', () => {
     expect(renderLink('/m/inventory/stockCard/{{itemId}}', { itemId: '../../x?y=//evil.com' })).toBe('/m/inventory/stockCard/..%2F..%2Fx%3Fy%3D%2F%2Fevil.com');
     expect(renderLink('{{u}}', { u: '//evil.com' })).toBeNull();
     expect(renderLink('/m/x/{{missing}}', {})).toBeNull();
+  });
+});
+
+/** One valid payload per office/service event (checked against @erp/contracts). */
+const uuid = () => randomUUID();
+const SAMPLES: Partial<Record<EventType, Record<string, unknown>>> = {
+  'approvals.request_submitted': { requestId: uuid(), no: 'APV-2569-0007', title: 'ซื้อโน้ตบุ๊ก', typeName: 'ขอซื้อ', requesterName: 'สมชาย', amount: 32000, nextApproverId: uuid(), nextApproverName: 'คุณวิภา', step: 1, stepCount: 2 },
+  'approvals.request_decided': { requestId: uuid(), no: 'APV-2569-0007', title: 'ซื้อโน้ตบุ๊ก', decision: 'rejected', requesterId: uuid(), requesterName: 'สมชาย', byName: 'คุณวิภา', note: 'งบหมด' },
+  'expense.claim_submitted': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200, overLimit: true },
+  'expense.claim_paid': { claimId: uuid(), no: 'EXP-2569-0003', claimantName: 'มาลี', total: 4200 },
+  'hr.leave_requested': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', from: '2026-10-12', to: '2026-10-14', days: 3 },
+  'hr.leave_decided': { leaveId: uuid(), no: 'LV-2569-0004', employeeName: 'นายสมชาย ใจดี', typeName: 'ลาพักร้อน', decision: 'approved' },
+  'helpdesk.ticket_created': { ticketId: uuid(), no: 'TK-2569-0010', title: 'อินเทอร์เน็ตล่มทั้งชั้น', priority: 'urgent', categoryName: 'ไอที', requesterName: 'คุณบี', assigneeName: 'ช่างเอก' },
+  'helpdesk.ticket_resolved': { ticketId: uuid(), no: 'TK-2569-0010', title: 'อินเทอร์เน็ตล่มทั้งชั้น', requesterName: 'คุณบี', resolution: 'รีสตาร์ทสวิตช์' },
+  'crm.lead_created': { leadId: uuid(), no: 'LD-2569-0021', company: 'บริษัท สยามพาร์ท จำกัด', contactName: 'คุณเอ', source: 'line' },
+  'crm.quotation_accepted': { quotationId: uuid(), no: 'QT-2569-0005', customerName: 'บริษัท สยามพาร์ท จำกัด', total: 107000 },
+  'quality.inspection_completed': { inspectionId: uuid(), no: 'QC-2569-0009', stage: 'incoming', itemCode: 'RM-STEEL', itemName: 'เหล็กแผ่น', lotNo: 'L-01', result: 'fail', rejectedQty: 55 },
+  'quality.ncr_raised': { ncrId: uuid(), no: 'NCR-2569-0002', severity: 'critical', itemCode: 'FG-BRACKET', description: 'ลูกค้าร้องเรียนขายึดบิดงอ' },
+  'booking.requested': { bookingId: uuid(), no: 'BK-2569-0011', resourceName: 'รถตู้', startAt: '2026-10-05T01:00:00.000Z', endAt: '2026-10-05T09:00:00.000Z', requesterName: 'อลิส', needsApproval: true, period: 'จ. 5 ต.ค. 08:00–16:00', purpose: 'ไปพบลูกค้าระยอง' },
+  'assets.repair_reported': { assetId: uuid(), code: 'AS-2569-0003', name: 'โน้ตบุ๊ก Dell', description: 'จอไม่ติด' },
+};
+
+describe('event catalogue and templates', () => {
+  it('lists exactly the subscribed events, all known to @erp/contracts, with fields that exist in the payload', () => {
+    expect(EVENTS.map((e) => e.type).sort()).toEqual([...manifestJson.subscribes].sort());
+    for (const e of EVENTS) {
+      expect(isKnownEvent(e.type), e.type).toBe(true);
+      expect(manifestJson.enhancedBy, e.type).toContain(e.module);
+      expect(e.link, e.type).toMatch(new RegExp(`^/m/${e.module}/\\w+/\\{\\{\\w+\\}\\}$`));
+    }
+    for (const [type, data] of Object.entries(SAMPLES)) {
+      const ev = EVENTS.find((e) => e.type === type)!;
+      expect(ev, type).toBeTruthy();
+      expect(() => parseEvent(type as EventType, data), type).not.toThrow();
+      for (const f of ev.fields) expect(Object.keys(data), `${type}.${f.key}`).toContain(f.key);
+      for (const f of ev.fields.filter((x) => x.numeric)) expect(typeof data[f.key], `${type}.${f.key}`).toBe('number');
+      expect(render(ev.message, data), type).not.toMatch(/\{\{|(^| )-( |$)/);
+    }
+  });
+
+  it('ships 19 templates, every one valid and appliable with a click', async () => {
+    expect(TEMPLATES).toHaveLength(19);
+    expect(new Set(TEMPLATES.map((x) => x.id)).size).toBe(TEMPLATES.length);
+    const other = t.token(['*'], t.otherTenantId);
+    for (const tpl of TEMPLATES) {
+      const ev = EVENTS.find((e) => e.type === tpl.eventType)!;
+      for (const c of tpl.conditions) expect(ev.fields.map((f) => f.key), `${tpl.id}: ${c.field}`).toContain(c.field);
+      const r = await t.api('POST', `/templates/${tpl.id}/apply`, {}, { token: other });
+      expect(r.status, tpl.id).toBe(201);
+    }
+    const list = (await t.api('GET', '/templates', undefined, { token: other })).body;
+    expect(list.find((x: any) => x.id === 'urgent-ticket')).toMatchObject({ module: 'helpdesk', applied: true, summary: 'เมื่อมีเรื่องแจ้งปัญหาใหม่ ถ้า ความเร่งด่วน (low / normal / high / urgent) = urgent ให้แจ้งเตือนในแอป + ส่ง LINE' });
+  });
+
+  it('turns office events into Thai alerts with links, and respects template conditions', async () => {
+    const tenantId = t.otherTenantId;
+    const other = t.token(['*'], tenantId);
+    for (const [type, data] of Object.entries(SAMPLES)) expect((await t.deliver(type, data, { tenantId })).body.status, type).toBe('handled');
+    // an ordinary ticket, a passed inspection and a booking without approval do not trip the conditional templates
+    await t.deliver('helpdesk.ticket_created', { ...SAMPLES['helpdesk.ticket_created'], ticketId: uuid(), no: 'TK-2569-0011', title: 'เมาส์เสีย', priority: 'normal' }, { tenantId });
+    await t.deliver('quality.inspection_completed', { ...SAMPLES['quality.inspection_completed'], inspectionId: uuid(), result: 'pass', rejectedQty: 0 }, { tenantId });
+    await t.deliver('booking.requested', { ...SAMPLES['booking.requested'], bookingId: uuid(), needsApproval: false }, { tenantId });
+    const items = (await t.api('GET', '/notifications', undefined, { token: other })).body.items as any[];
+    const by = (title: string) => items.filter((x) => x.title === title);
+
+    const s = SAMPLES as any;
+    expect(by('มีคำขออนุมัติใหม่ แจ้งผู้อนุมัติ')).toEqual([expect.objectContaining({
+      level: 'warn', body: 'คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" (ขอซื้อ) จาก สมชาย รอ คุณวิภา อนุมัติ (ขั้นที่ 1/2)', link: `/m/approvals/requestDetail/${s['approvals.request_submitted'].requestId}` })]);
+    expect(by('คำขอได้รับการอนุมัติ แจ้งผู้ขอ')).toHaveLength(0);
+    expect(by('คำขอไม่อนุมัติ/ส่งกลับแก้ไข แจ้งผู้ขอ')[0].body).toBe('คำขอ APV-2569-0007 "ซื้อโน้ตบุ๊ก" ของ สมชาย ไม่ผ่านหรือถูกส่งกลับแก้ไข โดย คุณวิภา เหตุผล: งบหมด');
+    expect(by('เบิกเกินวงเงิน แจ้งบัญชี')[0]).toMatchObject({ body: '⚠️ ใบเบิก EXP-2569-0003 ของ มาลี ยอด 4,200 บาท เกินวงเงินรายเดือน ตรวจสอบก่อนอนุมัติ', link: `/m/expense/claimDetail/${s['expense.claim_submitted'].claimId}` });
+    expect(by('มีคนขอลา แจ้งหัวหน้า')[0]).toMatchObject({ body: 'นายสมชาย ใจดี ขอลาพักร้อน 2026-10-12 ถึง 2026-10-14 (3 วัน) ใบลา LV-2569-0004 รออนุมัติ', link: `/m/hr/leaveDetail/${s['hr.leave_requested'].leaveId}` });
+    expect(by('ตั๋วด่วนมาก แจ้งทีม IT').map((x) => x.body)).toEqual(['🚨 ด่วนมาก TK-2569-0010: อินเทอร์เน็ตล่มทั้งชั้น ผู้แจ้ง คุณบี (หมวด ไอที)']);
+    expect(by('ลีดใหม่ แจ้งเซลส์')[0]).toMatchObject({ body: 'ลีดใหม่ LD-2569-0021: บริษัท สยามพาร์ท จำกัด ผู้ติดต่อ คุณเอ (ช่องทาง line)', link: `/m/crm/lead/${s['crm.lead_created'].leadId}` });
+    expect(by('ลูกค้าตอบรับใบเสนอราคา')[0]).toMatchObject({ level: 'ok', body: '🎉 บริษัท สยามพาร์ท จำกัด ตอบรับใบเสนอราคา QT-2569-0005 ยอด 107,000 บาท', link: `/m/crm/quote/${s['crm.quotation_accepted'].quotationId}` });
+    expect(by('QC ไม่ผ่าน แจ้งผู้จัดการคุณภาพ')).toHaveLength(1);
+    expect(by('QC ไม่ผ่าน แจ้งผู้จัดการคุณภาพ')[0].link).toBe(`/m/quality/inspDetail/${s['quality.inspection_completed'].inspectionId}`);
+    expect(by('NCR ร้ายแรง')[0]).toMatchObject({ level: 'stop', body: '🛑 NCR วิกฤต NCR-2569-0002 FG-BRACKET: ลูกค้าร้องเรียนขายึดบิดงอ', link: `/m/quality/ncrDetail/${s['quality.ncr_raised'].ncrId}` });
+    expect(by('มีการจองห้อง/รถที่ต้องอนุมัติ').map((x) => x.body)).toEqual(['อลิส ขอจอง รถตู้ จ. 5 ต.ค. 08:00–16:00 (ไปพบลูกค้าระยอง) รออนุมัติ เลขที่ BK-2569-0011']);
+    // the main tenant saw none of it
+    expect((await t.api('GET', '/notifications')).body.items.filter((x: any) => x.title === 'ลีดใหม่ แจ้งเซลส์')).toHaveLength(0);
+  });
+
+  it('builds custom rules on the new events from the simple form', async () => {
+    const rule = await t.api('POST', '/rules/simple', { name: 'เบิกเกิน 5,000', eventType: 'expense.claim_submitted', conditionField: 'total', conditionOp: 'gt', conditionValue: '5000', actionType: 'notify' });
+    expect(rule.status).toBe(201);
+    expect(rule.body.summary).toBe('เมื่อมีใบเบิกค่าใช้จ่ายรออนุมัติ ถ้า ยอดเบิก > 5,000 ให้แจ้งเตือนในแอป');
+    expect((await t.api('POST', '/rules/simple', { name: 'x', eventType: 'helpdesk.ticket_created', conditionField: 'priority', conditionOp: 'gt', conditionValue: 1 })).status).toBe(400);
+    const test = await t.api('POST', `/rules/${rule.body.id}/test`, { data: SAMPLES['expense.claim_submitted'] });
+    expect(test.body).toMatchObject({ matched: false, messages: [{ type: 'notify', text: 'ใบเบิก EXP-2569-0003 ของ มาลี ยอด 4,200 บาท รออนุมัติ' }] });
   });
 });

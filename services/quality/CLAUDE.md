@@ -43,10 +43,11 @@ Requires `identity` + `master-data` only; `purchasing` and `production` enhance 
   `GET /reports/pass-rate?months&stage` · `GET /reports/defects?by=checkpoint|item&stage&from&to` · `GET /reports/suppliers?from&to` · `GET /reports/ncr-severity`
 
 ## Events
+- publishes `quality.inspection_completed` (inspectionId, no, stage, itemCode, itemName, lotNo, result pass|fail|conditional, rejectedQty) on complete.
+- publishes `quality.ncr_raised` (ncrId, no, severity, itemCode, description) on `POST /ncrs` and `POST /inspections/:id/ncr`.
 - subscribes `purchasing.goods_received` → one PENDING incoming inspection per received line whose item has an active incoming plan (supplier + PO no snapshot).
 - subscribes `production.completed` → a PENDING final inspection when the item has an active final plan (MO no snapshot).
 - Handlers skip items without plans, never throw for business reasons, and are idempotent (kernel inbox + unique `source_event_id, source_line`).
-- publishes nothing yet.
 
 ## Screens
 `src/ui.ts` — queue (mobile home: งานรอตรวจ → บันทึกผล), inspList / inspNew / inspDetail (printable inspection report, flow, actions record / assign /

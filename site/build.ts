@@ -1,7 +1,8 @@
 /**
  * Builds the public landing page: site/dist (static — host on any web server, Vercel, Netlify, GitHub Pages).
- * Prices come from catalog/catalog.json and module facts from services/<id>/module.json, so the page
- * never drifts from what `pnpm erp quote` says. Copy & contact details: site/site.config.json.
+ * Prices come from catalog/catalog.json (pack copy from sales/industry-packs.json), module facts from
+ * services/<id>/module.json and function counts from docs/roadmap/functions.json, so the page never drifts
+ * from what `pnpm erp quote` says. Copy, industries & contact details: site/site.config.json.
  *
  *   pnpm site            # build
  *   pnpm site --serve    # build and serve on http://localhost:4321
@@ -16,16 +17,60 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 const out = join(here, 'dist');
 
+/** Function counts from the 1,000-function roadmap — only numbers go into the page, never the rows. */
+function roadmapStats(industries: { id: string; tags: string[] }[]) {
+  const file = join(root, 'docs', 'roadmap', 'functions.json');
+  const readme = join(root, 'docs', 'roadmap', 'README.md');
+  if (!existsSync(file)) return null;
+  type Fn = { module: string; status: 'done' | 'building' | 'planned'; industries: string[] };
+  const fns: Fn[] = JSON.parse(readFileSync(file, 'utf8'));
+  const blank = () => ({ done: 0, building: 0, planned: 0 });
+  const totals = blank();
+  const byModule: Record<string, ReturnType<typeof blank>> = {};
+  const byIndustry: Record<string, ReturnType<typeof blank>> = {};
+  for (const f of fns) {
+    totals[f.status]++;
+    (byModule[f.module] ??= blank())[f.status]++;
+    for (const ind of industries) if (f.industries.includes('all') || f.industries.some((t) => ind.tags.includes(t))) (byIndustry[ind.id] ??= blank())[f.status]++;
+  }
+  // Thai names of modules that do not exist yet (accounting*, payroll* …) and function count per release, from the README tables
+  const md = existsSync(readme) ? readFileSync(readme, 'utf8') : '';
+  const names: Record<string, string> = {};
+  for (const m of md.matchAll(/^\| `([a-z-]+)` \| ([^|]+?) \|/gm)) if (byModule[m[1]] && !names[m[1]] && !/^[\d*]/.test(m[2])) names[m[1]] = m[2].replace(/\s*\*$/, '').trim();
+  const releases: Record<string, number> = {};
+  for (const m of md.matchAll(/^### (\d+\.\d+) [^\n]*\n+[^\n]*\n+(\d+) ฟังก์ชัน/gm)) releases[m[1]] = Number(m[2]);
+  return { total: fns.length, totals, byModule, byIndustry, names, releases };
+}
+
 export function buildSite(): string {
   const site = JSON.parse(readFileSync(join(here, 'site.config.json'), 'utf8'));
   const catalog = loadCatalog(root);
-  const modules = loadManifests(root).map((m) => ({
+  const manifests = loadManifests(root);
+  const modules = manifests.map((m) => ({
     id: m.id, name: m.name, nameTh: m.nameTh, tier: m.tier, requires: m.requires,
     pitch: site.modules?.[m.id]?.pitch ?? m.description, for: site.modules?.[m.id]?.for ?? '',
   }));
-  const missing = modules.filter((m) => m.tier === 'feature' && !catalog.modules[m.id]).map((m) => m.id);
+  const featureIds = new Set(manifests.filter((m) => m.tier === 'feature').map((m) => m.id));
+  const missing = [...featureIds].filter((id) => !catalog.modules[id]);
   if (missing.length) throw new Error(`No price in catalog.json for: ${missing.join(', ')}`);
-  const data = { site: { ...site, modules: undefined }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles: catalog.bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services }, modules };
+  for (const b of catalog.bundles) {
+    const bad = b.modules.filter((id) => !featureIds.has(id));
+    if (bad.length) throw new Error(`catalog.json bundle ${b.id}: not a feature module: ${bad.join(', ')}`);
+  }
+  // industry packs (sales/industry-packs.json) must match the catalog bundles they describe
+  const packsFile = join(root, 'sales', 'industry-packs.json');
+  const packs: { id: string; nameTh: string; segment: string; pitchTh: string; modules: string[]; price: number }[] = existsSync(packsFile) ? JSON.parse(readFileSync(packsFile, 'utf8')) : [];
+  for (const p of packs) {
+    const b = catalog.bundles.find((x) => x.id === p.id);
+    if (!b || b.price !== p.price || [...b.modules].sort().join() !== [...p.modules].sort().join()) throw new Error(`sales/industry-packs.json pack ${p.id} does not match catalog/catalog.json bundles (id, price, modules)`);
+  }
+  const bundles = catalog.bundles.map((b) => {
+    const p = packs.find((x) => x.id === b.id);
+    return { id: b.id, nameTh: p?.nameTh ?? b.nameTh, segment: p?.segment ?? (b as { segment?: string }).segment ?? '', pitch: p?.pitchTh ?? '', modules: b.modules, price: b.price };
+  });
+  for (const ind of site.industries ?? []) if (!bundles.some((b) => b.id === ind.pack)) throw new Error(`site.config.json industry ${ind.id}: pack ${ind.pack} is not a catalog bundle`);
+  const roadmap = roadmapStats(site.industries ?? []);
+  const data = { site: { ...site, modules: undefined }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services }, modules, roadmap };
   // JSON inside <script>: escape "<" so no value can close the tag
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
   const html = readFileSync(join(here, 'src', 'index.html'), 'utf8').replace('__DATA__', () => json);

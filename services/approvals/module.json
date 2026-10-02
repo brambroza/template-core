@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["approvals.request_submitted", "approvals.request_decided"],
   "subscribes": [],
   "permissions": [
     {

@@ -13,7 +13,7 @@
     "purchasing",
     "production"
   ],
-  "publishes": [],
+  "publishes": ["quality.inspection_completed", "quality.ncr_raised"],
   "subscribes": [
     "purchasing.goods_received",
     "production.completed"

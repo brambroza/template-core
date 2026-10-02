@@ -1,15 +1,15 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useContext, useState } from 'react';
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
-  fillPath, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
+  fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
 import { c } from '../lib/theme';
 import { FieldRow, LinesEditor, type Values } from './Fields';
-import { Button, Card, ErrorText, s, ValueText } from './ui';
+import { Button, Card, ErrorText, LabelsContext, s, ValueText } from './ui';
 
 export const screenPath = (module: string, screen: string, id?: unknown) =>
   `/m/${module}/${screen}${id !== undefined && id !== null && id !== '' ? `/${encodeURIComponent(String(id))}` : ''}`;
@@ -21,6 +21,8 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
+  const labels = useContext(LabelsContext);
   const params = routeParams(screen.endpoint, id);
 
   const load = useCallback(async () => {
@@ -34,6 +36,7 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   }, [ui.module, screen.endpoint, id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const shown = filterRows(rows ?? [], screen.columns, query, labels);
   const titleCol = screen.columns[0];
   const detailCols = screen.columns.slice(1);
   const link = screen.rowLink && isMobile(ui, screen.rowLink.screen) ? screen.rowLink : undefined;
@@ -56,13 +59,29 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   return (
     <View style={{ flex: 1 }}>
       {canCreate && <View style={st.bar}><Button label={screen.createLabel ?? 'สร้างใหม่'} tone="primary" onPress={() => router.push(screenPath(ui.module, screen.create!))} /></View>}
+      {(!!rows?.length || !!query) && (
+        <View style={st.search}>
+          <TextInput
+            style={s.input}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="ค้นหาในรายการ"
+            accessibilityLabel={`ค้นหาใน${screen.title}`}
+            clearButtonMode="while-editing"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {!!query && <Text style={s.muted}>พบ {shown.length} จาก {rows?.length ?? 0} รายการ</Text>}
+        </View>
+      )}
       <ErrorText text={error} />
       <FlatList
-        data={rows ?? []}
+        data={shown}
+        keyboardShouldPersistTaps="handled"
         keyExtractor={(r, i) => String(r.id ?? i)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
         contentContainerStyle={{ padding: 16, gap: 10 }}
-        ListEmptyComponent={rows ? <Text style={s.muted}>{screen.empty ?? 'ไม่มีรายการ'}</Text> : <Text style={s.muted}>กำลังโหลด…</Text>}
+        ListEmptyComponent={<Text style={s.muted}>{!rows ? 'กำลังโหลด…' : query.trim() && rows.length ? `ไม่พบรายการที่ตรงกับ “${query.trim()}”` : screen.empty ?? 'ไม่มีรายการ'}</Text>}
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole={link ? 'button' : undefined}
@@ -244,6 +263,7 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
 
 const st = StyleSheet.create({
   bar: { paddingHorizontal: 16, paddingTop: 12 },
+  search: { paddingHorizontal: 16, paddingTop: 12, gap: 6 },
   row: { padding: 14, gap: 4 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: c.ink },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },

@@ -340,3 +340,20 @@ describe('quality — permissions and tenant isolation', () => {
     expect((await t.api('POST', '/plans', { ...steel, stage: 'incoming', samplingValue: 1, checkpoints: [{ name: 'x' }] }, { token: other })).status).toBe(201);
   });
 });
+
+describe('quality — events (for Automation alerts)', () => {
+  it('publishes inspection_completed with the verdict and ncr_raised with the severity', async () => {
+    const done = (await t.published('quality.inspection_completed')).map((e) => e.data);
+    expect(done.find((d: any) => d.itemCode === 'RM-STEEL' && d.result === 'conditional')).toMatchObject({ stage: 'incoming', itemName: 'เหล็กแผ่น 2mm', rejectedQty: 2 });
+    expect(done.find((d: any) => d.itemCode === 'FG-BRACKET')).toMatchObject({ stage: 'final', result: 'fail', rejectedQty: 40, lotNo: null });
+    expect(done.every((d: any) => /^QC-\d{4}-\d{4}$/.test(d.no))).toBe(true);
+    const ncrs = (await t.published('quality.ncr_raised')).map((e) => e.data);
+    expect(ncrs[0]).toMatchObject({ severity: 'minor', itemCode: 'RM-STEEL' });
+    expect(ncrs[0].no).toMatch(/^NCR-\d{4}-0001$/);
+    expect(ncrs[0].description).toContain('สนิม');
+    expect(ncrs.find((d: any) => d.severity === 'critical')).toMatchObject({ itemCode: 'FG-BRACKET', description: 'ลูกค้าร้องเรียน ขายึดบิดงอ' });
+    const before = ncrs.length;
+    expect((await t.api('POST', '/ncrs', { description: '' })).status).toBe(400);
+    expect((await t.published('quality.ncr_raised')).length).toBe(before);
+  });
+});

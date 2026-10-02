@@ -33,7 +33,8 @@ Sales pipeline for B2B SMEs: leads → opportunities → quotations, with follow
 Permissions: `crm.lead.read|write`, `crm.activity.write`, `crm.quote.read|write|decide`.
 
 ## Events
-- publishes: none · subscribes: none. Candidates (not added): `crm.quotation_accepted` (→ Sales could draft a sales order), `crm.lead_created` (→ Automation LINE alert).
+- publishes `crm.lead_created` (leadId, no, company, contactName, source) and `crm.quotation_accepted` (quotationId, no, customerName, total = gross).
+- subscribes: none. Automation alerts sales; Sales could later draft a sales order from `crm.quotation_accepted`.
 
 ## Screens
 `src/ui.ts`: leads/lead/leadNew/leadEdit, opportunities/opportunity/opportunityNew/opportunityEdit, myActivities/activities/activityNew,

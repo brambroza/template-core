@@ -36,8 +36,9 @@ Permissions: `helpdesk.ticket.create | read | work`, `helpdesk.setup.write`, `he
 Technician roles should also get `helpdesk.ticket.create` (the ticket detail screen is gated on it so requesters can open it).
 
 ## Events
-- publishes: none · subscribes: none. Candidates (not added): `helpdesk.ticket_created` / `helpdesk.ticket_overdue` (→ Automation LINE alert to the technician),
-  `helpdesk.ticket_resolved` (→ notify requester).
+- publishes `helpdesk.ticket_created` (ticketId, no, title, priority, categoryName, requesterName, assigneeName) and
+  `helpdesk.ticket_resolved` (ticketId, no, title, requesterName, resolution) — Automation alerts the technician / requester.
+- subscribes: none. Candidate (not added): `helpdesk.ticket_overdue` (needs a timer).
 
 ## Screens
 `src/ui.ts`: ticketNew, myRequests, myTickets, tickets, overdueTickets, ticket (+ticketEdit, printable), articles (cards)/article/articleNew/articleEdit,

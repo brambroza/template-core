@@ -163,3 +163,21 @@ describe('approvals', () => {
     expect((await t.api('GET', '/summary', undefined, { token: other })).body.pendingTotal).toBe(0);
   });
 });
+
+describe('approvals events (for Automation alerts)', () => {
+  it('tells each next approver, and the requester about the final outcome, through the outbox', async () => {
+    const sub = (await t.published('approvals.request_submitted')).map((e) => e.data).filter((d: any) => d.no === 'APV-2569-0001');
+    expect(sub).toEqual([
+      expect.objectContaining({ title: 'ซื้อเครื่องพิมพ์', typeName: 'ขอซื้อ', requesterName: 'สมชาย', amount: 12500, nextApproverId: head.id, nextApproverName: 'หัวหน้าแผนก', step: 1, stepCount: 2 }),
+      expect.objectContaining({ nextApproverId: md.id, nextApproverName: 'MD', step: 2, stepCount: 2 }),
+    ]);
+    const decided = (await t.published('approvals.request_decided')).map((e) => e.data);
+    expect(decided.find((d: any) => d.no === 'APV-2569-0001')).toMatchObject({ decision: 'approved', requesterId: somchai.id, requesterName: 'สมชาย', byName: 'MD', note: null });
+    expect(decided.filter((d: any) => d.no === 'APV-2569-0002').map((d: any) => [d.decision, d.note])).toEqual([['returned', 'แนบใบเสนอราคา'], ['rejected', 'งบหมด']]);
+    // a refused action publishes nothing
+    const before = (await t.published()).length;
+    const r = (await t.api('POST', '/requests', { typeId, title: 'ไม่มีสิทธิ์', submit: true }, { token: somchai.token })).body;
+    expect((await t.api('POST', `/requests/${r.id}/approve`, {}, { token: md.token })).status).toBe(403);
+    expect((await t.published()).length).toBe(before + 1); // only the submit
+  });
+});

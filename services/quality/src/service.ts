@@ -567,6 +567,9 @@ export const definition: ServiceDefinition = {
           `update inspections set status = 'completed', result = $2, accepted_qty = $3, rejected_qty = $4, completed_at = now(),
              started_at = coalesce(started_at, now()), inspector_id = coalesce(inspector_id, $5), note = coalesce($6, note) where id = $1`,
           [id, result, accepted, rejected, a.userId, b.note ?? null]);
+        await k.emit(c, 'quality.inspection_completed', {
+          inspectionId: i.id, no: i.no, stage: i.stage, itemCode: i.item_code, itemName: i.item_name ?? null, lotNo: i.lot_no ?? null, result, rejectedQty: Number(rejected),
+        });
         return loadInspection(c, id);
       });
     });
@@ -607,6 +610,7 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`,
           [no, i.id, i.no, i.stage, i.item_id, i.item_code, i.item_name, i.lot_no, i.source_ref, i.supplier_id, i.supplier_name,
             description, qtyAffected, severity, b.disposition ?? null, a.userId])).rows[0];
+        await k.emit(c, 'quality.ncr_raised', { ncrId: n.id, no, severity, itemCode: i.item_code ?? null, description });
         return loadNcr(c, n.id);
       });
     });
@@ -626,6 +630,7 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
           [no, b.stage ?? null, b.itemId ?? null, b.itemCode ?? null, b.itemName ?? null, b.lotNo ?? null, b.sourceRef ?? null, b.supplierId ?? null,
             b.supplierName ?? null, b.description, b.qtyAffected ?? null, b.severity, b.disposition ?? null, a.userId])).rows[0];
+        await k.emit(c, 'quality.ncr_raised', { ncrId: n.id, no, severity: b.severity, itemCode: b.itemCode ?? null, description: b.description });
         return loadNcr(c, n.id);
       });
     });

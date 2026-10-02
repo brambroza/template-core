@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["helpdesk.ticket_created", "helpdesk.ticket_resolved"],
   "subscribes": [],
   "permissions": [
     { "key": "helpdesk.ticket.create", "label": "แจ้งปัญหาและติดตามเรื่องของตัวเอง" },

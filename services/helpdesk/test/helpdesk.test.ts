@@ -200,3 +200,16 @@ describe('helpdesk permissions and tenants', () => {
     expect((await t.api('POST', '/tickets', { title: 'อีกบริษัท' }, { token: other })).body.no).toBe(`TK-${year}-0001`);
   });
 });
+
+describe('helpdesk events (for Automation alerts)', () => {
+  it('publishes ticket_created (priority, category, assignee) and ticket_resolved on each resolve', async () => {
+    const created = (await t.published('helpdesk.ticket_created')).map((e) => e.data);
+    expect(created.find((d: any) => d.title === 'เซิร์ฟเวอร์ล่ม')).toMatchObject({ no: `TK-${year}-0002`, priority: 'urgent', categoryName: 'ไอที', requesterName: null, assigneeName: tech.name });
+    expect(created.find((d: any) => d.title === 'ปริ้นเตอร์ชั้น 2 กระดาษติด')).toMatchObject({ priority: 'normal', categoryName: null, requesterName: 'คุณบี', assigneeName: null });
+    const resolved = (await t.published('helpdesk.ticket_resolved')).map((e) => e.data).filter((d: any) => d.title === 'ปริ้นเตอร์ชั้น 2 กระดาษติด');
+    expect(resolved.map((d: any) => [d.requesterName, d.resolution])).toEqual([['คุณบี', 'เปลี่ยนลูกยางดึงกระดาษ'], ['คุณบี', 'ทำความสะอาดชุดดึงกระดาษ']]);
+    const before = (await t.published()).length;
+    expect((await t.api('POST', '/tickets', { title: 'x', priority: 'asap' })).status).toBe(400);
+    expect((await t.published()).length).toBe(before);
+  });
+});

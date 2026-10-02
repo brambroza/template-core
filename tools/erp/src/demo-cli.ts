@@ -18,8 +18,9 @@ for (const id of ids) defs.push((await import(join(dir, id, 'src', 'service.ts')
 
 console.log(`Starting ${ids.join(', ')}…`);
 const stack = await startStack(defs, { reset: process.env.DEMO_RESET === '1' });
+const t0 = Date.now();
 const seed = await seedDemo(stack);
-console.log(seed.created ? 'Demo data created.' : 'Demo data already present (DEMO_RESET=1 to start over).');
+console.log(seed.created ? `Demo data created in ${((Date.now() - t0) / 1000).toFixed(1)}s.` : 'Demo data already present (DEMO_RESET=1 to start over).');
 
 let web: ReturnType<typeof spawn> | undefined;
 if (process.env.WEB !== '0') {
@@ -34,7 +35,7 @@ console.log(`
   web      http://localhost:${process.env.WEB_PORT ?? '3000'}
   api      ${stack.gatewayUrl}
   login    company "${seed.tenant}", ${seed.email} / ${seed.password}
-           (also store@ / buyer@ / sales@ / tech@ / plan@demo.co.th, password demo1234)
+           (also store@ / buyer@ / sales@ / tech@ / plan@ / hr@ / acc@ / it@ / qc@demo.co.th, password demo1234)
 `);
 const stop = async () => { web?.kill(); await stack.stop(); process.exit(0); };
 process.on('SIGINT', stop);

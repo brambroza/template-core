@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["assets.repair_reported"],
   "subscribes": [],
   "permissions": [
     {

@@ -66,6 +66,56 @@ export const events = {
     workOrderId: id, workOrderNo: z.string(), machineCode: z.string(), warehouseCode: z.string(),
     parts: z.array(ItemQty).min(1),
   }),
+
+  /* ---- office / service modules (mainly consumed by automation for LINE / in-app alerts) ---- */
+
+  /** A request reached an approver: on submit (step 1) and each time an approval moves it to the next step. */
+  'approvals.request_submitted': z.object({
+    requestId: id, no: z.string(), title: z.string(), typeName: z.string(), requesterName: z.string().nullable(), amount: money.nullable(),
+    nextApproverId: id, nextApproverName: z.string().nullable(), step: z.number().int().optional(), stepCount: z.number().int().optional(),
+  }),
+  /** Final outcome for the requester: approved (last step), rejected, or returned for edit. */
+  'approvals.request_decided': z.object({
+    requestId: id, no: z.string(), title: z.string(), decision: z.enum(['approved', 'rejected', 'returned']),
+    requesterId: id, requesterName: z.string().nullable(), byName: z.string().nullable(), note: z.string().nullable(),
+  }),
+
+  'expense.claim_submitted': z.object({ claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money, overLimit: z.boolean() }),
+  'expense.claim_paid': z.object({ claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money }),
+
+  'hr.leave_requested': z.object({
+    leaveId: id, no: z.string(), employeeName: z.string(), typeName: z.string(), from: z.string(), to: z.string(), days: qty,
+  }),
+  'hr.leave_decided': z.object({
+    leaveId: id, no: z.string(), employeeName: z.string(), typeName: z.string(), decision: z.enum(['approved', 'rejected']),
+  }),
+
+  'helpdesk.ticket_created': z.object({
+    ticketId: id, no: z.string(), title: z.string(), priority: z.enum(['low', 'normal', 'high', 'urgent']), categoryName: z.string().nullable(),
+    requesterName: z.string().nullable(), assigneeName: z.string().nullable(),
+  }),
+  'helpdesk.ticket_resolved': z.object({
+    ticketId: id, no: z.string(), title: z.string(), requesterName: z.string().nullable(), resolution: z.string().nullable(),
+  }),
+
+  'crm.lead_created': z.object({ leadId: id, no: z.string(), company: z.string(), contactName: z.string().nullable(), source: z.string() }),
+  'crm.quotation_accepted': z.object({ quotationId: id, no: z.string(), customerName: z.string(), total: money }),
+
+  'quality.inspection_completed': z.object({
+    inspectionId: id, no: z.string(), stage: z.enum(['incoming', 'in_process', 'final']), itemCode: z.string(), itemName: z.string().nullable(),
+    lotNo: z.string().nullable(), result: z.enum(['pass', 'fail', 'conditional']), rejectedQty: qty,
+  }),
+  'quality.ncr_raised': z.object({
+    ncrId: id, no: z.string(), severity: z.enum(['minor', 'major', 'critical']), itemCode: z.string().nullable(), description: z.string(),
+  }),
+
+  'booking.requested': z.object({
+    bookingId: id, no: z.string(), resourceName: z.string(), startAt: z.string(), endAt: z.string(), requesterName: z.string(), needsApproval: z.boolean(),
+    /** Thai display text of the time slot, e.g. "พฤ. 2 ต.ค. 09:00–10:30" */
+    period: z.string().optional(), purpose: z.string().optional(),
+  }),
+
+  'assets.repair_reported': z.object({ assetId: id, code: z.string(), name: z.string(), description: z.string() }),
 } as const;
 
 export type EventType = keyof typeof events;

@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["booking.requested"],
   "subscribes": [],
   "permissions": [
     { "key": "booking.resource.read", "label": "ดูห้อง รถ อุปกรณ์ และตารางการจอง" },
