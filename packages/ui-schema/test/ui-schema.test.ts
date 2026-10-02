@@ -77,7 +77,7 @@ describe('areas', () => {
     expect(moduleArea({ module: 'sales', area: 'office' })).toBe('office');
     expect(moduleArea({ module: 'customer-x' })).toBe('operations');
     expect(areaLabel('service')).toBe('บริการ & โครงการ');
-    expect(AREAS.map((a) => a.id)).toEqual(['operations', 'commercial', 'office', 'service', 'settings']);
+    expect(AREAS.map((a) => a.id)).toEqual(['operations', 'commercial', 'finance', 'office', 'service', 'settings']);
   });
 
   it('groups items by area in area order, keeping item order and dropping empty areas', () => {
