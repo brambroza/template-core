@@ -14,7 +14,10 @@
   "publishes": [
     "payroll.run_paid"
   ],
-  "subscribes": [],
+  "subscribes": [
+    "hr.employee_upserted",
+    "hr.leave_decided"
+  ],
   "permissions": [
     { "key": "payroll.payslip.self", "label": "ดูสลิปเงินเดือนและ 50 ทวิ ของตนเอง" },
     { "key": "payroll.profile.read", "label": "ดูข้อมูลเงินเดือนพนักงาน" },

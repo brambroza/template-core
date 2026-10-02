@@ -111,6 +111,25 @@ export const EVENTS: EventInfo[] = [
   { type: 'assets.repair_reported', module: 'assets', label: 'มีการแจ้งซ่อมทรัพย์สิน', level: 'warn',
     fields: [{ key: 'code', label: 'รหัสทรัพย์สิน' }, { key: 'name', label: 'ชื่อทรัพย์สิน' }, { key: 'description', label: 'อาการ' }],
     message: 'แจ้งซ่อม {{code}} {{name}}: {{description}}', link: '/m/assets/assetDetail/{{assetId}}' },
+
+  /* ---- wave 5: service contracts, payroll, HR master data ---- */
+  { type: 'contracts.visit_due', module: 'contracts', label: 'มีนัดเข้า PM ตามสัญญา MA', level: 'info',
+    fields: [{ key: 'no', label: 'เลขที่นัด PM' }, { key: 'contractNo', label: 'เลขที่สัญญา' }, { key: 'customerName', label: 'ลูกค้า' }, { key: 'scheduledDate', label: 'วันนัด' },
+      { key: 'technicianName', label: 'ช่างผู้รับผิดชอบ' }, { key: 'itemsText', label: 'อุปกรณ์' }, { key: 'coverage', label: 'ความคุ้มครอง (8x5 / 24x7)' }],
+    userFields: [{ key: 'technicianId', label: 'ช่างผู้รับผิดชอบ' }],
+    message: 'นัด PM {{no}} {{customerName}} (สัญญา {{contractNo}}) วันที่ {{scheduledDate}} ช่าง {{technicianName}} อุปกรณ์: {{itemsText}}', link: '/m/contracts/visit/{{visitId}}' },
+  { type: 'contracts.contract_expiring', module: 'contracts', label: 'สัญญา MA ใกล้หมดอายุ', level: 'warn',
+    fields: [{ key: 'no', label: 'เลขที่สัญญา' }, { key: 'customerName', label: 'ลูกค้า' }, { key: 'title', label: 'เรื่อง' }, { key: 'endDate', label: 'วันสิ้นสุด' },
+      { key: 'daysLeft', label: 'เหลือ (วัน)', numeric: true }, { key: 'value', label: 'มูลค่าสัญญา', numeric: true }],
+    message: 'สัญญา {{no}} {{customerName}} ({{title}}) จะหมดวันที่ {{endDate}} อีก {{daysLeft}} วัน มูลค่า {{value}} บาท', link: '/m/contracts/contract/{{contractId}}' },
+  { type: 'payroll.run_paid', module: 'payroll', label: 'จ่ายเงินเดือนแล้ว', level: 'ok',
+    fields: [{ key: 'no', label: 'เลขที่รอบเงินเดือน' }, { key: 'period', label: 'งวด (YYYY-MM)' }, { key: 'paidDate', label: 'วันที่จ่าย' }, { key: 'headcount', label: 'จำนวนพนักงาน', numeric: true }],
+    message: 'จ่ายเงินเดือน {{no}} งวด {{period}} แล้ว {{headcount}} คน ยอดสุทธิ {{totals.net}} บาท (จ่ายวันที่ {{paidDate}})', link: '/m/payroll/runDetail/{{runId}}' },
+  { type: 'hr.employee_upserted', module: 'hr', label: 'เพิ่ม/แก้ไขข้อมูลพนักงาน', level: 'info',
+    fields: [{ key: 'code', label: 'รหัสพนักงาน' }, { key: 'name', label: 'ชื่อ' }, { key: 'departmentName', label: 'แผนก' }, { key: 'positionName', label: 'ตำแหน่ง' },
+      { key: 'status', label: 'สถานะ (active / probation / resigned)' }, { key: 'startDate', label: 'วันเริ่มงาน' }, { key: 'resignedDate', label: 'วันทำงานวันสุดท้าย' }],
+    userFields: [{ key: 'userId', label: 'พนักงาน (ผู้ใช้ในระบบ)' }],
+    message: 'ข้อมูลพนักงาน {{code}} {{name}} ({{departmentName}} / {{positionName}}) สถานะ {{status}}', link: '/m/hr/employeeDetail/{{employeeId}}' },
 ];
 
 export const eventInfo = (type: string) => EVENTS.find((e) => e.type === type);
@@ -119,6 +138,7 @@ export const eventInfo = (type: string) => EVENTS.find((e) => e.type === type);
 export const MODULE_TH: Record<string, string> = {
   inventory: 'คลังสินค้า', purchasing: 'จัดซื้อ', sales: 'ขาย', production: 'ผลิต', maintenance: 'ซ่อมบำรุง', approvals: 'อนุมัติออนไลน์',
   expense: 'เบิกค่าใช้จ่าย', hr: 'บุคคลและลงเวลา', helpdesk: 'แจ้งปัญหา', crm: 'ลูกค้าสัมพันธ์', quality: 'ควบคุมคุณภาพ', booking: 'จองห้อง/รถ', assets: 'ทรัพย์สิน',
+  contracts: 'สัญญาบริการ MA', payroll: 'เงินเดือน',
 };
 
 export interface Template {
@@ -189,4 +209,15 @@ export const TEMPLATES: Template[] = [
     actions: [{ type: 'notify', message: '🛑 NCR วิกฤต {{no}} {{itemCode}}: {{description}}' }, { type: 'line', target: '' }] },
   { id: 'booking-needs-approval', name: 'มีการจองห้อง/รถที่ต้องอนุมัติ', description: 'แจ้งผู้อนุมัติเมื่อมีการจองห้องหรือรถที่ตั้งค่าให้ต้องอนุมัติ', eventType: 'booking.requested', conditions: [{ field: 'needsApproval', op: 'eq', value: 'true' }],
     actions: [{ type: 'notify', message: '{{requesterName}} ขอจอง {{resourceName}} {{period}} ({{purpose}}) รออนุมัติ เลขที่ {{no}}' }] },
+
+  /* ---- wave 5 ---- */
+  { id: 'pm-visit-to-technician', name: 'มีนัด PM แจ้งช่าง', description: 'แจ้งช่างที่ได้รับมอบหมายเมื่อระบบสร้างนัดเข้า PM ตามสัญญา MA — ในแอป และ LINE ส่วนตัวของคนที่ผูก LINE ไว้', eventType: 'contracts.visit_due', conditions: [],
+    actions: [{ type: 'notify', to: 'field:technicianId', message: '🛠️ นัด PM {{no}} {{customerName}} วันที่ {{scheduledDate}} (สัญญา {{contractNo}}) อุปกรณ์: {{itemsText}}' },
+      { type: 'line', to: 'field:technicianId', message: '🛠️ นัด PM {{no}} {{customerName}} วันที่ {{scheduledDate}} (สัญญา {{contractNo}}) อุปกรณ์: {{itemsText}}' }] },
+  { id: 'contract-expiring-to-sales', name: 'สัญญา MA ใกล้หมด แจ้งเซลส์', description: 'แจ้งทีมขายในแอปและ LINE กลุ่มเมื่อสัญญา MA จะหมดอายุ จะได้เสนอต่อสัญญาทัน', eventType: 'contracts.contract_expiring', conditions: [],
+    actions: [{ type: 'notify', message: '⏳ สัญญา {{no}} ของ {{customerName}} ({{title}}) หมดวันที่ {{endDate}} อีก {{daysLeft}} วัน มูลค่า {{value}} บาท — เสนอต่อสัญญา' }, { type: 'line', target: '' }] },
+  { id: 'payment-received', name: 'ลูกค้าชำระเงินแล้ว แจ้งเซลส์/บัญชี', description: 'แจ้งเซลส์และฝ่ายบัญชีทุกครั้งที่ออกใบเสร็จรับเงินหรือรับมัดจำ', eventType: 'sales.payment_received', conditions: [],
+    actions: [{ type: 'notify', message: '💰 {{customerName}} ชำระเงินแล้ว {{received}} บาท (ใบเสร็จ {{receiptNo}}) ภาษีหัก ณ ที่จ่าย {{whtAmount}} บาท' }] },
+  { id: 'payroll-paid', name: 'จ่ายเงินเดือนแล้ว', description: 'แจ้งฝ่ายการเงิน/บัญชีเมื่อบันทึกจ่ายเงินเดือนแล้ว (ยอดรวมทั้งบริษัท — ไม่มีข้อมูลรายคน)', eventType: 'payroll.run_paid', conditions: [],
+    actions: [{ type: 'notify', message: '✅ จ่ายเงินเดือน {{no}} งวด {{period}} แล้ว {{headcount}} คน ยอดสุทธิ {{totals.net}} บาท — นำส่ง ภ.ง.ด.1 ภายในวันที่ 7 และเงินสมทบประกันสังคมภายในวันที่ 15 ของเดือนถัดไป' }] },
 ];

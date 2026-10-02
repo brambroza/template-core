@@ -11,6 +11,8 @@ import { loadSession } from '@/lib/session';
 import { toast } from '@/lib/toast';
 
 const ICONS: Record<FileKind, typeof FileIcon> = { image: FileImage, pdf: FileText, sheet: FileSpreadsheet, doc: FileText, text: FileText, file: FileIcon };
+/** "ใบกำกับ.PDF" -> "PDF" (shown under the file icon). */
+const extOf = (name: string) => (name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toUpperCase().slice(0, 4) : '');
 const ALLOWED_EXT = new Set(ATTACHMENT_ACCEPT.split(',').map((x) => x.slice(1)));
 
 /** The file's bytes through the same-origin proxy with the user's token (links cannot carry the Authorization header). */
@@ -153,7 +155,9 @@ export function AttachmentsPanel({ module, spec, recordId }: { module: string; s
               return (
                 <li key={f.id} className="att-item">
                   <button type="button" className="att-open" onClick={() => open(f, kind !== 'image' && kind !== 'pdf')} title="เปิดไฟล์">
-                    {kind === 'image' ? <Thumb module={module} file={f} /> : <span className="att-icon" aria-hidden><Icon size={22} strokeWidth={1.6} /></span>}
+                    {kind === 'image' ? <Thumb module={module} file={f} /> : (
+                      <span className={`att-icon is-${kind}`} aria-hidden><Icon size={20} strokeWidth={1.6} /><span className="att-ext">{extOf(f.file_name)}</span></span>
+                    )}
                     <span className="att-meta">
                       <span className="att-name">{f.file_name}</span>
                       <span className="muted">{formatBytes(f.size)} · {f.uploaded_by_name ?? 'ไม่ระบุชื่อ'} · {formatDate(f.created_at, true)}</span>

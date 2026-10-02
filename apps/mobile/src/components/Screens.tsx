@@ -1,27 +1,75 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useContext, useState } from 'react';
-import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useContext, useState, type ReactNode } from 'react';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
-import { c } from '../lib/theme';
+import { themed, useIsDark, usePalette } from '../lib/theme';
 import { AttachmentsList } from './Attachments';
 import { FieldRow, LinesEditor, type Values } from './Fields';
-import { Button, Card, ErrorText, LabelsContext, s, ValueText } from './ui';
+import { Button, Card, EmptyState, ErrorText, LabelsContext, useS, ValueText } from './ui';
 
 export const screenPath = (module: string, screen: string, id?: unknown) =>
   `/m/${module}/${screen}${id !== undefined && id !== null && id !== '' ? `/${encodeURIComponent(String(id))}` : ''}`;
 
 const perms = () => getSession()?.permissions ?? [];
 const isMobile = (ui: ModuleUi, id?: string) => !!id && !!ui.screens[id]?.mobile;
+/** native-stack header height under the status bar (iOS); keeps the keyboard from covering the bottom button */
+const HEADER = 44;
+
+/** Themed pull-to-refresh spinner. */
+function Refresh({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
+  const c = usePalette();
+  return <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.inkSoft} colors={[c.signalDeep]} progressBackgroundColor={c.paper} />;
+}
+
+/** A refresh wrapper that shows the spinner while `load` runs. */
+function useRefresh(load: () => Promise<unknown> | void) {
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await load(); } finally { setRefreshing(false); }
+  }, [load]);
+  return { refreshing, onRefresh };
+}
+
+/**
+ * Form layout for phones: scrolling fields, then the main button pinned at the bottom (large, above the keyboard and the
+ * home indicator) so it is always one thumb away.
+ */
+function FormFrame({ children, footer, modal }: { children: ReactNode; footer: ReactNode; modal?: boolean }) {
+  const insets = useSafeAreaInsets();
+  const s = useS();
+  const c = usePalette();
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: c.concrete }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' && !modal ? insets.top + HEADER : 0}
+    >
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingTop: modal ? insets.top + 16 : 16, paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      >
+        {children}
+      </ScrollView>
+      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>{footer}</View>
+    </KeyboardAvoidingView>
+  );
+}
 
 export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen; id?: string }) {
+  const c = usePalette();
+  const s = useS();
+  const st = useSt();
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
   const [error, setError] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const labels = useContext(LabelsContext);
   const params = routeParams(screen.endpoint, id);
@@ -32,10 +80,11 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
       setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params))));
     } catch (e) {
       setError((e as Error).message);
-      setRows([]);
+      setRows((r) => r ?? []);
     }
   }, [ui.module, screen.endpoint, id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { refreshing, onRefresh } = useRefresh(load);
 
   const shown = filterRows(rows ?? [], screen.columns, query, labels);
   const titleCol = screen.columns[0];
@@ -57,9 +106,16 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
     try { done(a, await api(ui.module, fillPath(a.endpoint, row), { method: a.method })); } catch (e) { setError((e as Error).message); setBusy(null); }
   };
 
+  const empty = !rows
+    ? <EmptyState loading title="กำลังโหลด…" />
+    : query.trim() && rows.length
+      ? <EmptyState title={`ไม่พบรายการที่ตรงกับ “${query.trim()}”`} hint="ลองคำอื่น หรือล้างช่องค้นหา" />
+      : error
+        ? <EmptyState title="โหลดรายการไม่ได้" hint="ดึงลงเพื่อลองใหม่" />
+        : <EmptyState title={screen.empty ?? 'ไม่มีรายการ'} hint={canCreate ? `กด “${screen.createLabel ?? 'สร้างใหม่'}” เพื่อเพิ่ม หรือดึงลงเพื่ออัปเดต` : 'ดึงลงเพื่ออัปเดต'} />;
+
   return (
     <View style={{ flex: 1 }}>
-      {canCreate && <View style={st.bar}><Button label={screen.createLabel ?? 'สร้างใหม่'} tone="primary" onPress={() => router.push(screenPath(ui.module, screen.create!))} /></View>}
       {(!!rows?.length || !!query) && (
         <View style={st.search}>
           <TextInput
@@ -67,6 +123,7 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
             value={query}
             onChangeText={setQuery}
             placeholder="ค้นหาในรายการ"
+            placeholderTextColor={c.inkFaint}
             accessibilityLabel={`ค้นหาใน${screen.title}`}
             clearButtonMode="while-editing"
             autoCorrect={false}
@@ -75,20 +132,21 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
           {!!query && <Text style={s.muted}>พบ {shown.length} จาก {rows?.length ?? 0} รายการ</Text>}
         </View>
       )}
-      <ErrorText text={error} />
+      {!!error && <View style={{ paddingHorizontal: 16 }}><ErrorText text={error} /></View>}
       <FlatList
         data={shown}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         keyExtractor={(r, i) => String(r.id ?? i)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
-        contentContainerStyle={{ padding: 16, gap: 10 }}
-        ListEmptyComponent={<Text style={s.muted}>{!rows ? 'กำลังโหลด…' : query.trim() && rows.length ? `ไม่พบรายการที่ตรงกับ “${query.trim()}”` : screen.empty ?? 'ไม่มีรายการ'}</Text>}
+        refreshControl={<Refresh refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1 }}
+        ListEmptyComponent={empty}
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole={link ? 'button' : undefined}
             disabled={!link}
             onPress={() => link && router.push(screenPath(ui.module, link.screen, get(item, link.idFrom ?? 'id')))}
-            style={({ pressed }) => [s.card, st.row, pressed && { backgroundColor: '#F7F8F5' }]}
+            style={({ pressed }) => [s.card, st.row, pressed && { backgroundColor: c.pressed }]}
           >
             <Text style={st.rowTitle}>{String(get(item, titleCol.key) ?? '')}</Text>
             {detailCols.map((col) => {
@@ -111,7 +169,21 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
           </Pressable>
         )}
       />
+      {canCreate && (
+        <CreateBar label={screen.createLabel ?? 'สร้างใหม่'} onPress={() => router.push(screenPath(ui.module, screen.create!))} />
+      )}
       {active && <ActionModal action={active.a} module={ui.module} params={active.row} onClose={() => setActive(null)} onDone={(res) => done(active.a, res)} />}
+    </View>
+  );
+}
+
+/** "สร้างใหม่" pinned at the bottom of a list (thumb reach), above the home indicator. */
+function CreateBar({ label, onPress }: { label: string; onPress: () => void }) {
+  const insets = useSafeAreaInsets();
+  const s = useS();
+  return (
+    <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <Button label={label} tone="primary" size="large" onPress={onPress} />
     </View>
   );
 }
@@ -146,18 +218,21 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+    <FormFrame
+      footer={<>
+        <ErrorText text={error} />
+        <Button label={screen.submitLabel} tone="primary" size="large" busy={busy} onPress={submit} />
+      </>}
+    >
       {screen.fields.map((f) => <FieldRow key={f.name} field={f} module={ui.module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
       {screen.lines && <LinesEditor spec={screen.lines} module={ui.module} lines={lines} onChange={setLines} />}
-      <ErrorText text={error} />
-      <View style={{ marginTop: 16, gap: 10 }}>
-        <Button label={screen.submitLabel} tone="primary" busy={busy} onPress={submit} />
-      </View>
-    </ScrollView>
+    </FormFrame>
   );
 }
 
 function ActionModal({ action, module, params, onClose, onDone }: { action: Action; module: string; params: Record<string, unknown>; onClose: () => void; onDone: (res: any) => void }) {
+  const s = useS();
+  const dark = useIsDark();
   const [values, setValues] = useState<Values>(() => initialValues(action.fields ?? []));
   const [lines, setLines] = useState<Values[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -166,48 +241,69 @@ function ActionModal({ action, module, params, onClose, onDone }: { action: Acti
   const run = async () => {
     const fe = missingRequired(action.fields ?? [], values);
     setErrors(fe);
-    if (Object.keys(fe).length) return;
+    if (Object.keys(fe).length) return setError('กรอกข้อมูลที่จำเป็นให้ครบ');
     setBusy(true);
+    setError('');
     try {
       const used = lines.filter((l) => Object.values(l).some((v) => v !== '' && v !== undefined));
       const body = action.fields?.length || action.lines ? toBody(action.fields ?? [], values, action.lines, used) : undefined;
       onDone(await api(module, fillPath(action.endpoint, values, params), { method: action.method, body }));
     } catch (e) {
       setError((e as Error).message);
+      if (e instanceof ApiError) setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k, v[0]])));
       setBusy(false);
     }
   };
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 56, backgroundColor: c.concrete, minHeight: '100%' }} keyboardShouldPersistTaps="handled">
-        <Text style={[s.h1, { marginBottom: 12 }]}>{action.label}</Text>
+      <StatusBar style={dark ? 'light' : 'dark'} />
+      <FormFrame
+        modal
+        footer={<>
+          <ErrorText text={error} />
+          <Button label={action.label} tone={action.tone === 'danger' ? 'danger' : 'primary'} size="large" busy={busy} onPress={run} />
+          <Button label="ยกเลิก" onPress={onClose} disabled={busy} />
+        </>}
+      >
+        <Text accessibilityRole="header" style={[s.h1, { marginBottom: 12 }]}>{action.label}</Text>
         {action.confirm && <Text style={[s.value, { marginBottom: 16 }]}>{action.confirm}</Text>}
         {(action.fields ?? []).map((f) => <FieldRow key={f.name} field={f} module={module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
         {action.lines && <LinesEditor spec={action.lines} module={module} lines={lines} onChange={setLines} />}
-        <ErrorText text={error} />
-        <View style={{ gap: 10, marginTop: 16 }}>
-          <Button label={action.label} tone={action.tone === 'danger' ? 'danger' : 'primary'} busy={busy} onPress={run} />
-          <Button label="ยกเลิก" onPress={onClose} />
-        </View>
-      </ScrollView>
+      </FormFrame>
     </Modal>
   );
 }
 
 export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScreen; id?: string }) {
+  const s = useS();
+  const st = useSt();
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const [active, setActive] = useState<Action | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const params = routeParams(screen.endpoint, id);
 
-  const load = useCallback(() => {
-    api<Record<string, unknown>>(ui.module, fillPath(screen.endpoint, params)).then(setRecord).catch((e) => setError(e.message));
+  const load = useCallback(async () => {
+    try {
+      const r = await api<Record<string, unknown>>(ui.module, fillPath(screen.endpoint, params));
+      setRecord(r);
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }, [ui.module, screen.endpoint, id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { refreshing, onRefresh } = useRefresh(useCallback(async () => { setReloadKey((k) => k + 1); await load(); }, [load]));
+  const refresh = <Refresh refreshing={refreshing} onRefresh={onRefresh} />;
 
-  if (error) return <View style={{ padding: 16 }}><ErrorText text={error} /></View>;
-  if (!record) return <Text style={[s.muted, { padding: 16 }]}>กำลังโหลด…</Text>;
+  if (!record) {
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16, flexGrow: 1 }} refreshControl={refresh}>
+        {error ? <><ErrorText text={error} /><EmptyState title="โหลดข้อมูลไม่ได้" hint="ดึงลงเพื่อลองใหม่" /></> : <EmptyState loading title="กำลังโหลด…" />}
+      </ScrollView>
+    );
+  }
 
   const actions = (screen.actions ?? []).filter((a) => a.mobile && hasPerm(perms(), a.perm) && matches(record, a.when));
   const done = (a: Action, res: any) => {
@@ -219,34 +315,38 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
   const press = async (a: Action) => {
     if (a.fields?.length || a.lines || a.confirm) return setActive(a);
     setBusy(a.id);
+    setError('');
     try { done(a, await api(ui.module, fillPath(a.endpoint, params, record), { method: a.method })); } catch (e) { setError((e as Error).message); setBusy(null); }
   };
+  const facts = screen.fields.filter((f) => {
+    const v = get(record, f.key);
+    return !(v === null || v === undefined || v === '' || f.format === 'qr');
+  });
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }} refreshControl={refresh}>
       <View>
         <Text style={s.muted}>{screen.title}</Text>
-        <Text style={s.h1}>{String(get(record, screen.heading) ?? '')}</Text>
+        <Text accessibilityRole="header" style={s.h1}>{String(get(record, screen.heading) ?? '')}</Text>
       </View>
-      {actions.length > 0 && <View style={{ gap: 8 }}>{actions.map((a) => <Button key={a.id} label={a.label} tone={a.tone} busy={busy === a.id} onPress={() => press(a)} />)}</View>}
-      <Card>
-        {screen.fields.map((f) => {
-          const v = get(record, f.key);
-          if (v === null || v === undefined || v === '' || f.format === 'qr') return null;
-          return (
-            <View key={f.key} style={st.fact}>
+      <ErrorText text={error} />
+      {actions.length > 0 && <View style={{ gap: 8 }}>{actions.map((a, i) => <Button key={a.id} label={a.label} tone={a.tone ?? (i === 0 ? 'primary' : 'default')} size="large" busy={busy === a.id} onPress={() => press(a)} />)}</View>}
+      {facts.length > 0 && (
+        <Card>
+          {facts.map((f, i) => (
+            <View key={f.key} style={[st.fact, i === facts.length - 1 && { borderBottomWidth: 0 }]}>
               <Text style={s.muted}>{f.label}</Text>
-              <ValueText value={v} format={f.format} />
+              <ValueText value={get(record, f.key)} format={f.format} />
             </View>
-          );
-        })}
-      </Card>
+          ))}
+        </Card>
+      )}
       {screen.lines?.map((ls) => {
         const rows = (get(record, ls.path) as Record<string, unknown>[] | undefined) ?? [];
         return (
           <View key={ls.path} style={{ gap: 8 }}>
-            <Text style={[s.label, { fontSize: 16 }]}>{ls.label}</Text>
-            {rows.length === 0 && <Text style={s.muted}>ไม่มีรายการ</Text>}
+            <Text accessibilityRole="header" style={[s.label, { fontSize: 16 }]}>{ls.label}{rows.length ? ` (${rows.length})` : ''}</Text>
+            {rows.length === 0 && <Card><EmptyState title={`ไม่มี${ls.label}`} /></Card>}
             {rows.map((r, i) => (
               <Card key={String(r.id ?? i)} style={{ padding: 12, gap: 4 }}>
                 {ls.columns.map((col) => (
@@ -257,18 +357,17 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
           </View>
         );
       })}
-      {screen.attachments && id && <AttachmentsList module={ui.module} spec={screen.attachments} recordId={id} />}
+      {screen.attachments && id && <AttachmentsList module={ui.module} spec={screen.attachments} recordId={id} reloadKey={reloadKey} />}
       {active && <ActionModal action={active} module={ui.module} params={{ ...params, ...record }} onClose={() => setActive(null)} onDone={(res) => done(active, res)} />}
     </ScrollView>
   );
 }
 
-const st = StyleSheet.create({
-  bar: { paddingHorizontal: 16, paddingTop: 12 },
+const useSt = themed((c) => StyleSheet.create({
   search: { paddingHorizontal: 16, paddingTop: 12, gap: 6 },
   row: { padding: 14, gap: 4 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: c.ink },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   rowLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   fact: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.ruleSoft, gap: 2 },
-});
+}));

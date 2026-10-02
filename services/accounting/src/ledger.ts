@@ -1,8 +1,8 @@
 /** Ledger core: chart setup, journal creation/validation, period guard and event auto-posting. */
 import { badRequest, conflict, HttpError, nextDocNo, type Client } from '@erp/kernel';
 import type { EventData } from '@erp/contracts';
-import { round } from '@erp/thai';
-import { DEFAULT_RULES, EVENT_TH, STANDARD_CHART, type PostedEvent } from './chart.ts';
+import { calcVat, round } from '@erp/thai';
+import { DEFAULT_CATEGORY_MAP, DEFAULT_RULES, EVENT_TH, PAYROLL_CATEGORY_TH, STANDARD_CHART, type PostedEvent } from './chart.ts';
 
 /** journals that count in balances (a reversed entry still counts — its reversing entry offsets it) */
 export const EFFECTIVE = `('posted', 'reversed')`;
@@ -23,8 +23,8 @@ export function periodTh(period: string): string {
 
 /* ---------------- chart setup ---------------- */
 
-/** Insert the standard chart + default posting rules that are missing (idempotent). */
-export async function seedChart(c: Client): Promise<{ accounts: number; rules: number }> {
+/** Insert the standard chart + default posting rules that are missing (idempotent); default category mappings when the tenant has none. */
+export async function seedChart(c: Client): Promise<{ accounts: number; rules: number; mappings: number }> {
   await c.query(`select pg_advisory_xact_lock(hashtext('accounting.setup:' || current_setting('app.tenant_id', true)))`);
   let accounts = 0;
   for (const s of STANDARD_CHART) {
@@ -44,13 +44,26 @@ export async function seedChart(c: Client): Promise<{ accounts: number; rules: n
       [r.eventType, r.leg, r.label, r.side, r.code, i]);
     rules += x.rowCount ?? 0;
   }
-  return { accounts, rules };
+  let mappings = 0;
+  if (!(await c.query('select 1 from category_mappings limit 1')).rowCount) {
+    for (const m of DEFAULT_CATEGORY_MAP) {
+      const x = await c.query(
+        `insert into category_mappings (category_code, category_name, account_id, is_default)
+         select $1, $2, id, true from accounts where code = $3 and active and not is_group
+         on conflict (tenant_id, lower(category_code)) do nothing`, [m.code, m.name, m.account]);
+      mappings += x.rowCount ?? 0;
+    }
+  }
+  return { accounts, rules, mappings };
 }
 
-/** Lazily seed the standard chart the first time a tenant uses accounting. */
+/**
+ * Lazily seed the standard chart the first time a tenant uses accounting — and again when a release added
+ * default posting rules (e.g. payroll) that an existing tenant does not have yet (rules are never deleted, only re-mapped).
+ */
 export async function ensureChart(c: Client): Promise<void> {
-  const r = await c.query(`select exists (select 1 from accounts) as a, exists (select 1 from posting_rules) as r`);
-  if (!r.rows[0].a || !r.rows[0].r) await seedChart(c);
+  const r = await c.query(`select exists (select 1 from accounts) as a, (select count(*)::int from posting_rules) as r`);
+  if (!r.rows[0].a || r.rows[0].r < DEFAULT_RULES.length) await seedChart(c);
 }
 
 /* ---------------- periods ---------------- */
@@ -177,7 +190,37 @@ export function sourceOf(type: PostedEvent, data: any, eventId: string | null): 
     case 'purchasing.goods_received': return { sourceId: eventId ?? `${data.poId}:${data.lines.map((l: any) => `${l.itemId}x${l.qty}`).join(',')}`, sourceNo: data.poNo };
     case 'purchasing.goods_returned': return { sourceId: data.returnId, sourceNo: data.returnNo };
     case 'expense.claim_paid': return { sourceId: data.claimId, sourceNo: data.no };
+    case 'payroll.run_paid': return { sourceId: data.runId, sourceNo: data.no };
   }
+}
+
+/** a YYYY-MM-DD date carried by the event (issue / paid / received date), else null */
+const isoDate = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
+
+/** Expense-claim category → account id via `category_mappings` (code, then name); null = not mapped. Throws when the mapped account is unusable. */
+async function categoryAccount(c: Client, code: string, name: string): Promise<string | null> {
+  const r = (await c.query(
+    `select m.account_id, a.code, a.name, a.active, a.is_group from category_mappings m join accounts a on a.id = m.account_id
+     where lower(m.category_code) = lower($1) or (m.category_name is not null and lower(m.category_name) = lower($2))
+     order by (lower(m.category_code) = lower($1)) desc limit 1`, [code, name])).rows[0];
+  if (!r) return null;
+  if (!r.active || r.is_group) throw new PostingProblem(`หมวดค่าใช้จ่าย ${code} ${name} จับคู่กับบัญชี ${r.code} ${r.name} ที่${r.is_group ? 'เป็นบัญชีคุม' : 'ปิดการใช้งาน'} — แก้ที่ "จับคู่หมวดค่าใช้จ่าย"`);
+  return r.account_id;
+}
+
+/** VAT split of goods received/returned: the event's totals when present, else computed from `vatMode` + per-line `vatRate` (default 7%). */
+function purchaseVat(e: { lines: { qty: number; unitPrice: number; vatRate?: number }[]; vatMode?: 'exclusive' | 'inclusive'; net?: number; vat?: number }):
+  { net: number; vat: number; gross: number } | null {
+  if (typeof e.net === 'number' && typeof e.vat === 'number') return { net: round(e.net, 2), vat: round(e.vat, 2), gross: round(e.net + e.vat, 2) };
+  if (!e.vatMode) return null;
+  const byRate = new Map<number, number>();
+  for (const l of e.lines) byRate.set(l.vatRate ?? 0.07, (byRate.get(l.vatRate ?? 0.07) ?? 0) + round(l.qty * l.unitPrice, 2));
+  let net = 0; let vat = 0;
+  for (const [rate, amount] of byRate) {
+    const v = calcVat(amount, e.vatMode, rate);
+    net += v.net; vat += v.vat;
+  }
+  return { net: round(net, 2), vat: round(vat, 2), gross: round(net + vat, 2) };
 }
 
 const GR_NOTE = 'เหตุการณ์รับสินค้าไม่มีข้อมูลภาษีมูลค่าเพิ่ม: บันทึกมูลค่าตามราคาต่อหน่วยในใบสั่งซื้อ (ไม่แยกภาษีซื้อ) — บันทึกภาษีซื้อเมื่อได้รับใบกำกับภาษีจากผู้ขาย';
@@ -185,7 +228,9 @@ const GR_NOTE = 'เหตุการณ์รับสินค้าไม่
 /** Build the journal for an event. Throws PostingProblem when a mapping is missing. Returns null when there is nothing to post (zero amounts). */
 export async function buildFromEvent(c: Client, type: PostedEvent, data: any, meta: EventMeta): Promise<{ header: JournalHeader; lines: LineInput[] } | null> {
   const rules = await loadRules(c, type);
-  const date = todayTh(new Date(meta.occurredAt));
+  const eventDay = todayTh(new Date(meta.occurredAt));
+  /** the document's own date when the event carries one (wave 5), else the day the event happened (Bangkok) */
+  const date = isoDate(data.issueDate ?? data.paidDate ?? data.receivedDate ?? data.returnDate) ?? eventDay;
   const { sourceId, sourceNo } = sourceOf(type, data, meta.eventId);
   const header: JournalHeader = { entryDate: date, description: '', ref: sourceNo, sourceType: type, sourceId, sourceEventId: meta.eventId };
   const lines: LineInput[] = [];
@@ -230,29 +275,82 @@ export async function buildFromEvent(c: Client, type: PostedEvent, data: any, me
       const e = data as EventData<'purchasing.goods_received'>;
       const amount = round(e.lines.reduce((s, l) => s + round(l.qty * l.unitPrice, 2), 0), 2);
       const partner = { partnerId: e.supplierId, partnerName: e.supplierName };
+      const items = e.lines.map((l) => `${l.itemCode} × ${l.qty}`).join(', ').slice(0, 500);
       header.description = `รับสินค้าตามใบสั่งซื้อ ${e.poNo} — ${e.supplierName} (คลัง ${e.warehouseCode})`;
-      header.note = GR_NOTE;
-      add('inventory', 'debit', amount, { ...partner, description: e.lines.map((l) => `${l.itemCode} × ${l.qty}`).join(', ').slice(0, 500) });
-      add('ap', 'credit', amount, { ...partner });
+      const v = purchaseVat(e);
+      if (v) {
+        // stock at the price before VAT, ภาษีซื้อ separately, AP for the amount incl. VAT
+        add('inventory', 'debit', v.net, { ...partner, description: items });
+        add('vat', 'debit', v.vat, { ...partner, taxBase: v.net, description: `ภาษีซื้อ ${e.poNo}` });
+        add('ap', 'credit', v.gross, { ...partner });
+      } else {
+        header.note = GR_NOTE;
+        add('inventory', 'debit', amount, { ...partner, description: items });
+        add('ap', 'credit', amount, { ...partner });
+      }
       break;
     }
     case 'purchasing.goods_returned': {
       const e = data as EventData<'purchasing.goods_returned'>;
       const amount = round(e.lines.reduce((s, l) => s + round(l.qty * l.unitPrice, 2), 0), 2);
       const partner = { partnerId: e.supplierId, partnerName: e.supplierName };
+      const items = e.lines.map((l) => `${l.itemCode} × ${l.qty}`).join(', ').slice(0, 500);
       header.description = `ส่งคืนสินค้า ${e.returnNo} (ใบสั่งซื้อ ${e.poNo}) — ${e.supplierName}`;
-      header.note = 'มูลค่าตามราคาต่อหน่วยในใบสั่งซื้อ (ไม่แยกภาษีซื้อ) — ลดภาษีซื้อเมื่อได้รับใบลดหนี้จากผู้ขาย';
-      add('ap', 'debit', amount, { ...partner });
-      add('inventory', 'credit', amount, { ...partner, description: e.lines.map((l) => `${l.itemCode} × ${l.qty}`).join(', ').slice(0, 500) });
+      const v = purchaseVat(e);
+      if (v) {
+        add('ap', 'debit', v.gross, { ...partner });
+        add('inventory', 'credit', v.net, { ...partner, description: items });
+        add('vat', 'credit', v.vat, { ...partner, taxBase: v.net, description: `ลดภาษีซื้อ ${e.returnNo}` });
+      } else {
+        header.note = 'มูลค่าตามราคาต่อหน่วยในใบสั่งซื้อ (ไม่แยกภาษีซื้อ) — ลดภาษีซื้อเมื่อได้รับใบลดหนี้จากผู้ขาย';
+        add('ap', 'debit', amount, { ...partner });
+        add('inventory', 'credit', amount, { ...partner, description: items });
+      }
       break;
     }
     case 'expense.claim_paid': {
       const e = data as EventData<'expense.claim_paid'>;
       const partner = { partnerId: e.claimantId ?? null, partnerName: e.claimantName };
+      const payLeg = e.payMethod === 'cash' ? 'cash' : 'bank';
       header.description = `จ่ายเงินตามใบเบิกค่าใช้จ่าย ${e.no}${e.claimantName ? ` — ${e.claimantName}` : ''}`;
-      header.note = 'เหตุการณ์ไม่มีหมวดค่าใช้จ่ายและ VAT แยก: บันทึกยอดรวมเข้าบัญชีค่าใช้จ่ายตามกฎ — โอนเข้าบัญชีค่าใช้จ่ายที่ถูกต้อง/ภาษีซื้อด้วยสมุดรายวันถ้าจำเป็น';
-      add('expense', 'debit', e.total, { ...partner });
-      add('bank', 'credit', e.total, { ...partner });
+      const notes: string[] = [];
+      if (e.lines?.length) {
+        // one debit per expense account (category → account map; unmapped → the `expense` rule), input VAT on its own line
+        const byAccount = new Map<string, { amount: number; names: Set<string> }>();
+        const unmapped = new Set<string>();
+        for (const l of e.lines) {
+          const mapped = await categoryAccount(c, l.categoryCode, l.categoryName);
+          if (!mapped) unmapped.add(`${l.categoryCode} ${l.categoryName}`);
+          const acc = mapped ?? account(rules, type, 'expense');
+          const cur = byAccount.get(acc) ?? { amount: 0, names: new Set<string>() };
+          cur.amount = round(cur.amount + l.amount, 2);
+          cur.names.add(l.categoryName);
+          byAccount.set(acc, cur);
+        }
+        for (const [accountId, x] of byAccount) {
+          if (x.amount > 0) lines.push({ accountId, debit: x.amount, description: [...x.names].join(', ').slice(0, 500), ...partner });
+        }
+        const vat = round(e.lines.reduce((s, l) => s + l.vat, 0), 2);
+        const base = round(e.lines.filter((l) => l.vat > 0).reduce((s, l) => s + l.amount, 0), 2);
+        add('vat', 'debit', vat, { ...partner, taxBase: base, description: `ภาษีซื้อตามใบเบิก ${e.no}` });
+        const paid = round(e.lines.reduce((s, l) => s + l.amount + l.vat, 0), 2);
+        add(payLeg, 'credit', paid, { ...partner });
+        if (unmapped.size) notes.push(`หมวดที่ยังไม่จับคู่บัญชี (ลงบัญชีค่าใช้จ่ายตามกฎ): ${[...unmapped].join(', ')}`);
+        if (Math.abs(paid - e.total) > 0.01) notes.push(`ยอดรวมรายการ (${money(paid)}) ไม่เท่ากับยอดใบเบิก (${money(e.total)})`);
+      } else {
+        notes.push('เหตุการณ์ไม่มีหมวดค่าใช้จ่ายและ VAT แยก: บันทึกยอดรวมเข้าบัญชีค่าใช้จ่ายตามกฎ — โอนเข้าบัญชีค่าใช้จ่ายที่ถูกต้อง/ภาษีซื้อด้วยสมุดรายวันถ้าจำเป็น');
+        add('expense', 'debit', e.total, { ...partner });
+        add(payLeg, 'credit', e.total, { ...partner });
+      }
+      if (e.advanceAmount) notes.push(`หักล้างเงินทดรองจ่าย ${e.advanceNo ?? ''} ${money(e.advanceAmount)} บาท — จ่ายเพิ่มครั้งนี้ ${money(e.total - e.advanceAmount)} บาท (การจ่ายเงินทดรองไม่ได้ลงบัญชีอัตโนมัติ จึงบันทึกยอดเต็มจาก${payLeg === 'cash' ? 'เงินสด' : 'เงินฝาก'})`);
+      header.note = notes.join(' · ') || null;
+      break;
+    }
+    case 'payroll.run_paid': {
+      const e = data as EventData<'payroll.run_paid'>;
+      header.description = `จ่ายเงินเดือน ${e.no} งวด ${periodTh(e.period)} — ${e.headcount} คน`;
+      header.note = `ยอดรวมทั้งบริษัทจากระบบเงินเดือน: เงินได้รวม ${money(e.totals.gross)} · หักรวม ${money(e.totals.totalDeductions)} · จ่ายสุทธิ ${money(e.totals.net)}`;
+      for (const p of e.postings) add(p.category, p.side, p.amount, { description: PAYROLL_CATEGORY_TH[p.category] ?? p.category });
       break;
     }
   }

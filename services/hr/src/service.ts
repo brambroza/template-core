@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { TZ, eachDate, hhmm, loadCalendar, loadSchedule, localDate, localMinutes, monthRange, toMinutes } from './calendar.ts';
 
@@ -51,6 +51,8 @@ const ScheduleInput = z.object({
 const LeaveTypeInput = z.object({
   code: s.code, name: s.name, daysPerYear: z.number().min(0).max(366).nullable().optional(), allowHalfDay: z.boolean().default(true),
   active: z.boolean().optional(), sortOrder: z.number().int().optional(),
+  /** ลาไม่รับค่าจ้าง: approved days are deducted by Payroll (hr.leave_decided.unpaid) */
+  unpaid: z.boolean().optional(),
 });
 
 const LeaveInput = z.object({
@@ -84,7 +86,7 @@ const DEFAULT_LEAVE_TYPES = [
   { code: 'MATERNITY', name: 'ลาคลอด', days: 98, half: false, sort: 40 },
   { code: 'ORDAIN', name: 'ลาบวช', days: 15, half: false, sort: 50 },
   { code: 'MILITARY', name: 'ลารับราชการทหาร', days: 60, half: false, sort: 60 },
-  { code: 'UNPAID', name: 'ลาไม่รับค่าจ้าง', days: null, half: true, sort: 90 },
+  { code: 'UNPAID', name: 'ลาไม่รับค่าจ้าง', days: null, half: true, sort: 90, unpaid: true },
 ];
 
 const LEAVE_TH: Record<string, string> = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิกแล้ว' };
@@ -106,7 +108,7 @@ const EMP_SELECT = `select e.*, ${FULL_NAME} as full_name, d.code as department_
   left join employees mg on mg.id = e.manager_id
   ${APPROVER_JOIN}`;
 const LEAVE_SELECT = `select r.*, e.code as employee_code, ${FULL_NAME} as employee_name, e.nickname, e.user_id as employee_user_id,
-    d.name as department_name, t.code as leave_type_code, t.name as leave_type_name,
+    d.name as department_name, t.code as leave_type_code, t.name as leave_type_name, t.unpaid as leave_type_unpaid,
     ap.id as approver_employee_id, ap.user_id as approver_user_id, ${fullName('ap')} as approver_name,
     coalesce(${fullName('ap')}, 'ฝ่ายบุคคล') as approver_label
   from leave_requests r join employees e on e.id = r.employee_id join leave_types t on t.id = r.leave_type_id left join departments d on d.id = e.department_id
@@ -145,6 +147,27 @@ async function patchRow(c: Client, table: string, id: string, cols: Record<strin
   }
   if (!sets.length) return one(c, `select * from ${table} where id = $1`, [id], what);
   return one(c, `update ${table} set ${sets.join(', ')} where id = $1 returning *`, vals, what);
+}
+
+/** `hr.employee_upserted`: snapshot of the employee for other modules (Payroll keeps its pay profile in sync). No salary, no national ID. */
+async function emitEmployee(k: Kernel, c: Client, id: string) {
+  const e = await loadEmployee(c, id);
+  await k.emit(c, 'hr.employee_upserted', {
+    employeeId: e.id, code: e.code, name: e.full_name, departmentName: e.department_name ?? null, positionName: e.position_name ?? null,
+    status: e.status, startDate: String(e.start_date).slice(0, 10), resignedDate: e.resigned_on ? String(e.resigned_on).slice(0, 10) : null, userId: e.user_id ?? null,
+  });
+  return e;
+}
+
+/** Working days of an approved leave per calendar month (`YYYY-MM`) — what Payroll deducts in each month's run. */
+async function leaveDaysByMonth(c: Client, lv: any): Promise<{ period: string; days: number }[]> {
+  const from = String(lv.from_date).slice(0, 10);
+  const to = String(lv.to_date).slice(0, 10);
+  if (from.slice(0, 7) === to.slice(0, 7)) return [{ period: from.slice(0, 7), days: Number(lv.days) }];
+  const cal = await loadCalendar(c, from, to);
+  const by = new Map<string, number>();
+  for (const d of eachDate(from, to)) if (cal.isWorkday(d)) by.set(d.slice(0, 7), (by.get(d.slice(0, 7)) ?? 0) + 1);
+  return [...by].map(([period, days]) => ({ period, days }));
 }
 
 /** Leave quota / used / pending / remaining for one employee and one calendar year (by the leave's start date). */
@@ -388,7 +411,7 @@ export const definition: ServiceDefinition = {
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
           [b.code, b.prefix ?? null, b.firstName, b.lastName ?? null, b.nickname ?? null, b.departmentId ?? null, b.positionId ?? null,
             b.startDate, b.birthDate ?? null, b.phone ?? null, b.email ?? null, b.status, b.userId ?? null, b.managerId ?? null])).rows[0];
-        return loadEmployee(c, row.id);
+        return emitEmployee(k, c, row.id);
       });
     });
 
@@ -428,7 +451,7 @@ export const definition: ServiceDefinition = {
         }
         await patchRow(c, 'employees', id, EMPLOYEE_COLS, b, 'Employee');
         await c.query('update employees set updated_at = now() where id = $1', [id]);
-        return loadEmployee(c, id);
+        return emitEmployee(k, c, id);
       });
     });
 
@@ -441,7 +464,7 @@ export const definition: ServiceDefinition = {
         const e = await loadEmployee(c, id, true);
         if (e.status !== 'probation') throw conflict(`${e.full_name} ไม่ได้อยู่ระหว่างทดลองงาน`);
         await c.query(`update employees set status = 'active', updated_at = now() where id = $1`, [id]);
-        return loadEmployee(c, id);
+        return emitEmployee(k, c, id);
       });
     });
 
@@ -459,7 +482,7 @@ export const definition: ServiceDefinition = {
         // pending leave after the last day can no longer be taken
         await c.query(`update leave_requests set status = 'cancelled', decided_by = $3, decided_at = now(), decision_note = 'ยกเลิกอัตโนมัติ: พนักงานลาออก'
                        where employee_id = $1 and status = 'pending' and from_date > $2`, [id, on, a.userId]);
-        return loadEmployee(c, id);
+        return emitEmployee(k, c, id);
       });
     });
 
@@ -565,8 +588,8 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         await uniqueCode(c, 'leave_types', b.code, 'ประเภทการลา');
         return (await c.query(
-          'insert into leave_types (code, name, days_per_year, allow_half_day, active, sort_order) values ($1,$2,$3,$4,$5,$6) returning *',
-          [b.code, b.name, b.daysPerYear ?? null, b.allowHalfDay, b.active ?? true, b.sortOrder ?? 100])).rows[0];
+          'insert into leave_types (code, name, days_per_year, allow_half_day, active, sort_order, unpaid) values ($1,$2,$3,$4,$5,$6,$7) returning *',
+          [b.code, b.name, b.daysPerYear ?? null, b.allowHalfDay, b.active ?? true, b.sortOrder ?? 100, b.unpaid ?? false])).rows[0];
       });
     });
 
@@ -585,7 +608,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         if (b.code) await uniqueCode(c, 'leave_types', b.code, 'ประเภทการลา', id);
         return patchRow(c, 'leave_types', id,
-          { code: 'code', name: 'name', daysPerYear: 'days_per_year', allowHalfDay: 'allow_half_day', active: 'active', sortOrder: 'sort_order' }, b, 'Leave type');
+          { code: 'code', name: 'name', daysPerYear: 'days_per_year', allowHalfDay: 'allow_half_day', active: 'active', sortOrder: 'sort_order', unpaid: 'unpaid' }, b, 'Leave type');
       });
     });
 
@@ -597,8 +620,8 @@ export const definition: ServiceDefinition = {
         let created = 0;
         for (const t of DEFAULT_LEAVE_TYPES) {
           const r = await c.query(
-            `insert into leave_types (code, name, days_per_year, allow_half_day, sort_order) values ($1,$2,$3,$4,$5) on conflict (tenant_id, code) do nothing`,
-            [t.code, t.name, t.days, t.half, t.sort]);
+            `insert into leave_types (code, name, days_per_year, allow_half_day, sort_order, unpaid) values ($1,$2,$3,$4,$5,$6) on conflict (tenant_id, code) do nothing`,
+            [t.code, t.name, t.days, t.half, t.sort, t.unpaid ?? false]);
           created += r.rowCount ?? 0;
         }
         const types = (await c.query('select * from leave_types order by sort_order, code')).rows;
@@ -747,6 +770,9 @@ export const definition: ServiceDefinition = {
         await k.emit(c, 'hr.leave_decided', {
           leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision,
           employeeUserId: lv.employee_user_id ?? null, byName: a.userName ?? null, note: b.note ?? null,
+          // wave 5: for Payroll (unpaid leave → deduction in the month's run)
+          employeeId: lv.employee_id, employeeCode: lv.employee_code, from: String(lv.from_date).slice(0, 10), to: String(lv.to_date).slice(0, 10),
+          days: Number(lv.days), unpaid: !!lv.leave_type_unpaid, byMonth: await leaveDaysByMonth(c, lv),
         });
         return withLeaveFlags(a)(await loadLeave(c, id));
       });

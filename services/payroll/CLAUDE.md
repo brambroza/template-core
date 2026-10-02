@@ -11,7 +11,9 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
   `user_id` (identity user — unique per tenant — sees own payslips), `pay_type monthly | daily`, `base_salary` / `daily_wage`, `start_date` / `end_date`,
   `bank_name` + `bank_account_last4`, `sso_enrolled`, `pvd_employee_pct` / `pvd_employer_pct` (0–15), tax allowances (`tax_spouse`, `tax_children`,
   `tax_children2018`, `tax_parents`, life/health/parent-health insurance, home-loan interest, other — annual baht), opening YTD balances
-  (`opening_year`, income, tax, sso, pvd) for going live mid-year, `active`
+  (`opening_year`, income, tax, sso, pvd) for going live mid-year, `active`, `hr_synced_at` (last update from `hr.employee_upserted`)
+- `leave_inputs` (migration 002): unpaid leave approved in HR per pay month — leave snapshot (`leave_id` + `period` unique, `leave_no`, `type_name`, employee id/code/name,
+  `from_date`/`to_date`), `profile_id` (when known), `days`, `status pending | applied | late`, `run_id`, `applied_at`
 - `pay_items`: recurring `earning` (taxable?, counts as SSO wage?) or `deduction` (loan with optional `balance`) per profile
 - `pay_runs`: `PR-2569-10` (BE year + month; `-2`… if a cancelled run used the number), `period` YYYY-MM (one non-cancelled run per month),
   `pay_date`, `draft → calculated → approved → paid` (+ `cancelled`), totals, created/approved/paid by + names, `pay_reference`
@@ -39,6 +41,15 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
   keeps inputs), refreshes snapshots and totals. Editing inputs of a calculated run recalculates it. Approve needs `payroll.run.approve` and every line
   calculated with net ≥ 0 (409). Reopen (approved → calculated) is refused when a later month is already approved/paid. Cancel only draft/calculated.
 - Employees see payslips only of **paid** runs, matched by `pay_profiles.user_id` = the token's user.
+- **HR sync** (`syncEmployee`): `hr.employee_upserted` updates the profile linked by `employee_id` (else an unlinked profile with the same code, which gets linked),
+  or creates one (monthly, salary 0, note "กรอกเงินเดือน…"): code, name, department, position, `user_id`, `start_date`, `end_date` (= `resignedDate` when resigned).
+  Salary, bank, SSO, PVD and tax data are never touched. A code / login already used by another profile keeps the old value (a new employee with a taken code is skipped).
+  A line whose profile has no salary/wage gets the warning "ยังไม่ได้กรอกเงินเดือน/ค่าจ้าง…" (shows in the run's `problems`).
+- **Unpaid leave from HR** (`recordUnpaidLeave`): `hr.leave_decided` with `decision approved` and `unpaid: true` → one `leave_inputs` row per `byMonth` entry
+  (else the `from` month with `days`), idempotent per leave + month. Open run (draft/calculated) with a line for the employee → `unpaid_leave_days += days`
+  (a calculated run is recalculated at once; if that fails the line stays not-calculated and approve refuses). No run / no line yet → `pending`: lines created
+  later (new run, or calculate's re-sync) start with the month's Σ days and mark them `applied`. Run already approved/paid → `late` (key in by hand).
+  Cancelling an approved leave in HR publishes nothing — reduce `unpaid_leave_days` by hand.
 - Settings: legal numbers live in `payroll_settings.rules` merged over `DEFAULT_RULES`; brackets must ascend and end with `upTo: null`.
 
 ## API
@@ -53,6 +64,7 @@ payslips and 50 ทวิ on the phone. Requires only `identity`; `hr` enhances 
 - `GET /my-payslips` (`year`, `q`) · `GET /my-payslips/:id` — `payroll.payslip.self`, own + paid only
 - `GET /runs/:id/bank-transfer` (rows + per-bank totals) · `GET /runs/:id/sso` (สปส.1-10 data) · `GET /runs/:id/pnd1` (`withheldOnly`)
 - `GET /certificates?year=` · `GET /certificates/:profileId_year` (50 ทวิ; the employee may open their own with `payroll.payslip.self`)
+- `GET /leave-inputs` (`period`, `status`, `q`) — unpaid leave received from HR and where it went (`payroll.run.read`)
 - `GET /summary` (kpis, `months` = last 6 months net/gross/cost, `rows` = runs)
 
 Permissions: `payroll.payslip.self`, `payroll.profile.read|write`, `payroll.run.read|write|approve|pay`, `payroll.setup.write`.
@@ -60,17 +72,17 @@ Salaries are visible only with `payroll.profile.read` / `payroll.run.read`.
 
 ## Events
 - publishes `payroll.run_paid` (runId, no, period, payDate, paidDate, headcount, `totals`, balanced `postings[]` by account category) on pay. Company totals only.
-- subscribes: none. Suggested: `hr.employee_upserted` (code, name, department, position, start/resign dates, userId) to keep profiles in sync
-  instead of `POST /profiles/import`; `hr.leave_decided` with employeeCode + days + unpaid flag to fill `unpaid_leave_days`.
+  Accounting posts it as the salary journal (category → account via its posting rules); automation template `payroll-paid` alerts finance.
+- subscribes `hr.employee_upserted` (profile sync) and `hr.leave_decided` (unpaid leave days) — see Behaviour.
 
 ## Screens
 `myPayslips` / `myPayslip` (mobile, printable), `runs` → `runNew` → `runDetail` (flow, actions calculate/approve/pay/reopen/cancel, printable summary),
 `payslips` (row action กรอก OT/วันลา, CSV import of inputs) → `payslipDetail` (printable payslip), `profiles` (CSV import) → `profileNew`/`profileEdit`/`profileDetail`
 (add recurring item), `items` (edit/delete), `bankRuns` → `bankTransfer` (CSV via list export), `ssoRuns` → `ssoReport`, `pnd1Runs` → `pnd1Report` (printable),
-`certificates` → `certificate` (50 ทวิ printable, ต้นฉบับ/สำเนา), `settings` / `settingsEdit`.
+`certificates` → `certificate` (50 ทวิ printable, ต้นฉบับ/สำเนา), `settings` / `settingsEdit`, `leaveInputs` (unpaid leave from HR).
 Widgets: kpi, run pipeline, 6-month net trend. ⌘K: `สลิป`, `ทำเงินเดือน`, `เงินเดือนพนักงาน EMP-001`, `50 ทวิ`.
 
 ## Extension ideas
 Bank bulk-payment files (KBank/SCB/BBL formats — need full account numbers kept outside this DB), SSO e-filing text file and ภ.ง.ด.1/1ก RD e-filing files
 (need the 13-digit IDs — keep them in a separate encrypted store), ภ.ง.ด.1ก annual form, severance pay calculator (LPA s.118), multiple pay periods per month
-(semi-monthly), shift allowance from hr attendance, salary history / raises with effective dates, payroll journal posting in accounting.
+(semi-monthly), shift allowance from hr attendance, salary history / raises with effective dates, an `hr.leave_cancelled` event to undo unpaid leave automatically.

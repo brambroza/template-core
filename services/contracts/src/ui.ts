@@ -42,7 +42,7 @@ const itemFields: Field[] = [
 const contractColumns: Column[] = [
   { key: 'no', label: 'เลขที่' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'title', label: 'สัญญา' },
   { key: 'end_date', label: 'สิ้นสุด', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
-  { key: 'value', label: 'มูลค่า', format: 'money' }, { key: 'billing_plan_label', label: 'วางบิล' }, { key: 'status', label: 'สถานะ', format: 'status' },
+  { key: 'value', label: 'มูลค่า', format: 'money', total: true }, { key: 'billing_plan_label', label: 'วางบิล' }, { key: 'status', label: 'สถานะ', format: 'status' },
 ];
 
 const visitColumns: Column[] = [
@@ -115,19 +115,19 @@ export default defineUi({
       fields: [
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'title', label: 'สัญญา' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'contact_name', label: 'ผู้ติดต่อ' }, { key: 'contact_phone', label: 'เบอร์ / LINE' },
-        { key: 'start_date', label: 'เริ่มสัญญา', format: 'date' }, { key: 'end_date', label: 'สิ้นสุดสัญญา', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
-        { key: 'value', label: 'มูลค่าสัญญา', format: 'money' }, { key: 'billing_plan_label', label: 'การวางบิล' },
+        { key: 'start_date', label: 'เริ่มสัญญา', format: 'date', section: 'ระยะเวลาและมูลค่า' }, { key: 'end_date', label: 'สิ้นสุดสัญญา', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
+        { key: 'value', label: 'มูลค่าสัญญา (ก่อน VAT)', format: 'money', emphasis: true }, { key: 'billing_plan_label', label: 'การวางบิล' },
         { key: 'billed_amount', label: 'วางบิลแล้ว', format: 'money' }, { key: 'unbilled_amount', label: 'ยังไม่วางบิล', format: 'money' },
-        { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ' }, { key: 'sla_response_hours', label: 'SLA ตอบรับ (ชม.)', format: 'qty' }, { key: 'sla_resolve_hours', label: 'SLA แก้ไขเสร็จ (ชม.)', format: 'qty' },
+        { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ', section: 'ระดับบริการและ PM' }, { key: 'sla_response_hours', label: 'SLA ตอบรับ (ชม.)', format: 'qty' }, { key: 'sla_resolve_hours', label: 'SLA แก้ไขเสร็จ (ชม.)', format: 'qty' },
         { key: 'pm_label', label: 'รอบ PM' }, { key: 'next_visit_date', label: 'นัด PM ถัดไป', format: 'date' }, { key: 'visits_done', label: 'เข้า PM แล้ว (ครั้ง)', format: 'qty' },
         { key: 'technician_name', label: 'ช่างประจำสัญญา' }, { key: 'checklist', label: 'รายการตรวจเช็ค PM', format: 'list' }, { key: 'note', label: 'เงื่อนไข / หมายเหตุ' },
-        { key: 'renewal_of_no', label: 'ต่ออายุจากสัญญา' }, { key: 'renewed_to_no', label: 'ต่ออายุเป็นสัญญา' }, { key: 'uplift_pct', label: 'ปรับราคาต่ออายุ (%)', format: 'percent' },
+        { key: 'renewal_of_no', label: 'ต่ออายุจากสัญญา', section: 'การต่ออายุ / ยกเลิก' }, { key: 'renewed_to_no', label: 'ต่ออายุเป็นสัญญา' }, { key: 'uplift_pct', label: 'ปรับราคาต่ออายุ (%)', format: 'percent' },
         { key: 'cancel_reason', label: 'เหตุผลที่ยกเลิก' },
       ],
       lines: [
         { path: 'items', label: 'อุปกรณ์ / สถานที่ในสัญญา', columns: [{ key: 'asset', label: 'อุปกรณ์ / ระบบ' }, { key: 'serial_no', label: 'Serial No.' }, { key: 'location', label: 'สถานที่' }] },
         { path: 'installments', label: 'งวดวางบิล', columns: [
-          { key: 'seq', label: 'งวด', format: 'qty' }, { key: 'due_date', label: 'ถึงกำหนด', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
+          { key: 'seq', label: 'งวด', format: 'qty' }, { key: 'due_date', label: 'ถึงกำหนด', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money', total: true },
           { key: 'invoiced', label: 'วางบิลแล้ว', format: 'boolean' }, { key: 'invoice_no', label: 'เลขที่ใบแจ้งหนี้' }] },
         { path: 'visits', label: 'นัดเข้า PM', columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'technician_name', label: 'ช่าง' },
@@ -191,7 +191,7 @@ export default defineUi({
         { name: 'q', label: 'ค้นหาเลขที่ ลูกค้า สัญญา ช่าง', type: 'text' },
         { name: 'status', label: 'สถานะ', type: 'select', options: visitStatuses },
         { name: 'overdue', label: 'เลยนัด', type: 'boolean' },
-        { name: 'from', label: 'นัดตั้งแต่', type: 'date' }, { name: 'to', label: 'ถึง', type: 'date' },
+        { name: 'from', label: 'นัดตั้งแต่', type: 'date' }, { name: 'to', label: 'ถึงวันที่', type: 'date' },
         { name: 'technicianId', label: 'ช่าง', type: 'lookup', lookup: userLookup('technicianId', 'technicianName') },
       ],
       columns: visitColumns, rowLink: { screen: 'visit' }, empty: 'ยังไม่มีนัด PM — เปิดใช้สัญญาแล้วกด "สร้างนัด PM"',
@@ -217,10 +217,10 @@ export default defineUi({
       fields: [
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'contract_no', label: 'สัญญา' }, { key: 'contract_title', label: 'ขอบเขตสัญญา' },
         { key: 'items_text', label: 'อุปกรณ์ / สถานที่' }, { key: 'contact_name', label: 'ผู้ติดต่อ' }, { key: 'contact_phone', label: 'เบอร์ / LINE' },
-        { key: 'due_date', label: 'ครบกำหนด PM', format: 'date' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'overdue', label: 'เลยนัด', format: 'boolean' },
+        { key: 'due_date', label: 'ครบกำหนด PM', format: 'date', section: 'นัดหมาย' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'overdue', label: 'เลยนัด', format: 'boolean' },
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'technician_name', label: 'ช่างผู้ปฏิบัติงาน' },
         { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ' }, { key: 'sla_text', label: 'SLA' },
-        { key: 'checks_done', label: 'ตรวจแล้ว (รายการ)', format: 'qty' }, { key: 'checks_failed', label: 'ไม่ผ่าน (รายการ)', format: 'qty' },
+        { key: 'checks_done', label: 'ตรวจแล้ว (รายการ)', format: 'qty', section: 'ผลการปฏิบัติงาน' }, { key: 'checks_failed', label: 'ไม่ผ่าน (รายการ)', format: 'qty' },
         { key: 'done_on', label: 'เข้าปฏิบัติงานเมื่อ', format: 'date' }, { key: 'findings', label: 'สิ่งที่พบ / ข้อเสนอแนะ' },
         { key: 'signoff_name', label: 'ลูกค้าผู้รับรอง' }, { key: 'missed_reason', label: 'เหตุที่ไม่ได้เข้า' },
       ],
@@ -261,10 +261,12 @@ export default defineUi({
       ],
       columns: [
         { key: 'due_date', label: 'ถึงกำหนด', format: 'date' }, { key: 'contract_no', label: 'สัญญา' }, { key: 'customer_name', label: 'ลูกค้า' },
-        { key: 'period_label', label: 'งวด' }, { key: 'billing_plan_label', label: 'แผน' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
+        { key: 'period_label', label: 'งวด' }, { key: 'billing_plan_label', label: 'แผน' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money', total: true },
         { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' }, { key: 'invoice_no', label: 'ใบแจ้งหนี้' },
       ],
       rowLink: { screen: 'contract', idFrom: 'contract_id' }, empty: 'ไม่มีงวดที่ต้องวางบิล',
+      actions: [{ id: 'notify', label: 'ส่งให้ฝ่ายขายร่างใบสั่งขาย', method: 'POST', endpoint: '/billing/due/notify', perm: 'contracts.billing.write', toast: 'message',
+        fields: [{ name: 'days', label: 'รวมงวดที่ถึงกำหนดหลังสิ้นเดือนอีก (วัน)', type: 'number', default: 0 }] }],
       rowActions: [
         { id: 'bill', label: 'บันทึกวางบิลแล้ว', method: 'POST', endpoint: '/installments/:id/bill', perm: 'contracts.billing.write', when: { field: 'invoiced', in: [false] }, tone: 'primary', toast: 'message',
           fields: [{ name: 'invoiceNo', label: 'เลขที่ใบแจ้งหนี้/ใบกำกับ (ฝ่ายขาย)', type: 'text', required: true }, { name: 'invoicedOn', label: 'วันที่วางบิล', type: 'date' }] },

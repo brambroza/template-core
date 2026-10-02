@@ -62,6 +62,13 @@ const JournalInput = z.object({
 const JournalUpdate = z.object({ entryDate: s.isoDate.optional(), description: text(500).min(1).optional(), ref: text(100).nullish(), note: text(2000).nullish() });
 const ReverseInput = z.object({ entryDate: s.isoDate.optional(), reason: text(500).optional() }).default({});
 const RuleUpdate = z.object({ accountId: s.uuid.nullable() });
+const MappingInput = z.object({
+  categoryCode: z.string().trim().min(1, 'ระบุรหัสหมวดค่าใช้จ่าย').max(50),
+  categoryName: text(200).nullish(),
+  accountId: s.uuid,
+  note: text(500).nullish(),
+});
+const MappingUpdate = MappingInput.partial();
 const NoteInput = z.object({ note: text(500).optional() }).default({});
 
 const IdParam = z.object({ id: s.uuid });
@@ -108,7 +115,7 @@ async function accountUsage(c: Client, id: string) {
   const r = await c.query(
     `select (select count(*) from journal_lines where account_id = $1)::int as lines,
             (select count(*) from accounts where parent_id = $1)::int as children,
-            (select count(*) from posting_rules where account_id = $1)::int as rules`, [id]);
+            ((select count(*) from posting_rules where account_id = $1) + (select count(*) from category_mappings where account_id = $1))::int as rules`, [id]);
   return r.rows[0] as { lines: number; children: number; rules: number };
 }
 
@@ -135,6 +142,19 @@ function categoryFor(type: AccountType, category: string | undefined, parentCate
   return cat;
 }
 
+/** a mapping's account must exist, be active and postable (not a group) */
+async function checkMappingAccount(c: Client, accountId: string) {
+  const acc = (await c.query('select code, name, active, is_group from accounts where id = $1', [accountId])).rows[0];
+  if (!acc) throw badRequest('ไม่พบบัญชี', { fieldErrors: { accountId: ['ไม่พบบัญชี'] } });
+  if (acc.is_group) throw badRequest(`บัญชี ${acc.code} เป็นบัญชีคุม เลือกบัญชีย่อย`, { fieldErrors: { accountId: ['เลือกบัญชีย่อย'] } });
+  if (!acc.active) throw badRequest(`บัญชี ${acc.code} ปิดการใช้งานอยู่`, { fieldErrors: { accountId: ['บัญชีปิดการใช้งาน'] } });
+}
+
+const MAPPING_SELECT = `select m.*, a.code as account_code, a.name as account_name, a.code || ' ' || a.name as account_label,
+    m.category_code || coalesce(' ' || m.category_name, '') as label
+  from category_mappings m join accounts a on a.id = m.account_id`;
+const decorateMapping = (m: any) => m && ({ ...m, categoryCode: m.category_code, categoryName: m.category_name, accountId: m.account_id });
+
 /** event handler: post, never throw for business reasons (recorded in posting_errors instead) */
 const autoPost = <T extends PostedEvent>(type: T) => async (data: unknown, ctx: HandlerContext) => {
   await postEvent(ctx.client, type, data, { eventId: ctx.event.id, occurredAt: ctx.event.occurredAt });
@@ -154,7 +174,7 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const r = await seedChart(c);
         const total = (await c.query('select count(*)::int as n from accounts')).rows[0].n;
-        return { ...r, total, message: r.accounts || r.rules ? `เพิ่มผังบัญชีมาตรฐาน ${r.accounts} บัญชี และกฎลงบัญชี ${r.rules} รายการ` : 'ผังบัญชีมาตรฐานครบแล้ว' };
+        return { ...r, total, message: r.accounts || r.rules || r.mappings ? `เพิ่มผังบัญชีมาตรฐาน ${r.accounts} บัญชี กฎลงบัญชี ${r.rules} รายการ และจับคู่หมวดค่าใช้จ่าย ${r.mappings} หมวด` : 'ผังบัญชีมาตรฐานครบแล้ว' };
       });
     });
 
@@ -424,6 +444,76 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    /* ---------- expense category → account (paid expense claims) ---------- */
+
+    app.get('/category-mappings', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.journal.read');
+      const q = parse(z.object({ q: z.string().optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => {
+        await ensureChart(c);
+        const rows = (await c.query(
+          `${MAPPING_SELECT} where ($1::text is null or m.category_code ilike $1 or m.category_name ilike $1 or a.code ilike $1 or a.name ilike $1)
+           order by m.category_code`, [q.q?.trim() ? `%${q.q.trim()}%` : null])).rows;
+        return rows.map(decorateMapping);
+      });
+    });
+
+    app.get('/category-mappings/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.journal.read');
+      const { id } = parse(IdParam, req.params);
+      return k.db.tx(a.tenantId, async (c) => decorateMapping(await one(c, `${MAPPING_SELECT} where m.id = $1`, [id], 'Category mapping')));
+    });
+
+    app.post('/category-mappings', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.account.write');
+      const b = parse(MappingInput, req.body);
+      reply.code(201);
+      return k.db.tx(a.tenantId, async (c) => {
+        await ensureChart(c);
+        await checkMappingAccount(c, b.accountId);
+        if ((await c.query('select 1 from category_mappings where lower(category_code) = lower($1)', [b.categoryCode])).rowCount) {
+          throw conflict(`หมวด ${b.categoryCode} จับคู่บัญชีไว้แล้ว — แก้ไขรายการเดิมแทน`);
+        }
+        const row = (await c.query(
+          `insert into category_mappings (category_code, category_name, account_id, note) values ($1, $2, $3, $4) returning id`,
+          [b.categoryCode, b.categoryName || null, b.accountId, b.note || null])).rows[0];
+        return decorateMapping((await c.query(`${MAPPING_SELECT} where m.id = $1`, [row.id])).rows[0]);
+      });
+    });
+
+    app.put('/category-mappings/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.account.write');
+      const { id } = parse(IdParam, req.params);
+      const b = parse(MappingUpdate, req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        const cur = await one(c, 'select * from category_mappings where id = $1 for update', [id], 'Category mapping');
+        if (b.accountId) await checkMappingAccount(c, b.accountId);
+        if (b.categoryCode && (await c.query('select 1 from category_mappings where lower(category_code) = lower($1) and id <> $2', [b.categoryCode, id])).rowCount) {
+          throw conflict(`หมวด ${b.categoryCode} จับคู่บัญชีไว้แล้ว`);
+        }
+        await c.query(
+          `update category_mappings set category_code = $2, category_name = $3, account_id = $4, note = $5, updated_at = now() where id = $1`,
+          [id, b.categoryCode ?? cur.category_code, b.categoryName === undefined ? cur.category_name : b.categoryName || null,
+            b.accountId ?? cur.account_id, b.note === undefined ? cur.note : b.note || null]);
+        return decorateMapping((await c.query(`${MAPPING_SELECT} where m.id = $1`, [id])).rows[0]);
+      });
+    });
+
+    app.delete('/category-mappings/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.account.write');
+      const { id } = parse(IdParam, req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const m = await one(c, 'select category_code from category_mappings where id = $1', [id], 'Category mapping');
+        await c.query('delete from category_mappings where id = $1', [id]);
+        return { deleted: true, id, message: `ลบการจับคู่หมวด ${m.category_code} แล้ว — ใบเบิกหมวดนี้จะลงบัญชีค่าใช้จ่ายตามกฎ (ค่าเริ่มต้น)` };
+      });
+    });
+
     app.get('/posting-errors', async (req) => {
       const a = auth(req);
       requirePerm(a, 'accounting.journal.read');
@@ -632,6 +722,7 @@ export const definition: ServiceDefinition = {
     'purchasing.goods_received': autoPost('purchasing.goods_received'),
     'purchasing.goods_returned': autoPost('purchasing.goods_returned'),
     'expense.claim_paid': autoPost('expense.claim_paid'),
+    'payroll.run_paid': autoPost('payroll.run_paid'),
   },
 };
 

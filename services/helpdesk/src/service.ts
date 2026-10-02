@@ -1,6 +1,7 @@
 import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import type { EventData } from '@erp/contracts';
 import { addBusinessSeconds, DEFAULT_CALENDAR, type BusinessCalendar } from './business-hours.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -69,6 +70,37 @@ const ArticleInput = z.object({ title: s.name, body: z.string().trim().min(1).ma
 /* ---------------- helpers ---------------- */
 
 const ACTIVE = `t.status not in ('resolved', 'closed')`;
+/** Category of PM tickets created from MA contracts (auto-created on the first PM visit). */
+export const PM_CATEGORY = { code: 'PM-MA', name: 'PM ตามสัญญา' };
+
+/**
+ * `contracts.visit_due` → one PM ticket per visit (idempotent by visit id): category "PM ตามสัญญา", customer snapshot,
+ * assignee = the visit's technician, due = scheduled date 17:00 (Bangkok), ref = visit no (+ contract no). Never throws for business reasons.
+ */
+export async function pmTicketFromVisit(c: Client, e: EventData<'contracts.visit_due'>, emit: (data: EventData<'helpdesk.ticket_created'>) => Promise<unknown>) {
+  if ((await c.query('select 1 from tickets where source_visit_id = $1', [e.visitId])).rowCount) return;
+  await c.query(
+    `insert into categories (code, name, sla_response_hours, sla_resolve_hours) values ($1, $2, 24, 72) on conflict (tenant_id, code) do nothing`,
+    [PM_CATEGORY.code, PM_CATEGORY.name]);
+  const cat = (await c.query('select id, name from categories where code = $1', [PM_CATEGORY.code])).rows[0];
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(e.scheduledDate) ? e.scheduledDate : e.dueDate;
+  const responseDue = new Date(`${day}T08:00:00+07:00`);
+  const due = new Date(`${day}T17:00:00+07:00`);
+  const title = `PM ${e.contractNo} — ${e.customerName}`.slice(0, 200);
+  const description = [`เข้าบำรุงรักษาตามสัญญา ${e.contractNo} (นัด ${e.no}) ครบกำหนด ${e.dueDate}`, e.itemsText ? `อุปกรณ์: ${e.itemsText}` : null, `ความคุ้มครอง ${e.coverage}`]
+    .filter(Boolean).join('\n');
+  const no = await nextDocNo(c, 'TK');
+  const row = (await c.query(
+    `insert into tickets (no, title, description, requester_name, channel, category_id, category_name, priority, assignee_id, assignee_name,
+       response_due_at, due_at, created_by, customer_id, customer_name, asset_ref, reported_at, sla_mode, ref, source_visit_id)
+     values ($1, $2, $3, $4, 'web', $5, $6, 'normal', $7, $8, $9, $10, null, $11, $4, $12, now(), 'clock', $13, $14)
+     on conflict (tenant_id, source_visit_id) where source_visit_id is not null do nothing returning id`,
+    [no, title, description, e.customerName, cat.id, cat.name, e.technicianId, e.technicianName, responseDue, due, e.customerId,
+      e.itemsText ? e.itemsText.slice(0, 200) : null, `${e.no} (${e.contractNo})`, e.visitId])).rows[0];
+  if (!row) return;
+  await emit({ ticketId: row.id, no, title, priority: 'normal', categoryName: cat.name, requesterName: e.customerName, assigneeName: e.technicianName });
+}
+
 const TICKET_SELECT = `select t.*,
   (${ACTIVE} and now() > t.due_at) as overdue,
   (${ACTIVE} and t.first_response_at is null and now() > t.response_due_at) as response_overdue,
@@ -289,7 +321,7 @@ export const definition: ServiceDefinition = {
            and ($4::uuid is null or t.category_id = $4) and ($5::uuid is null or t.assignee_id = $5)
            and (not $6 or (t.assignee_id is null and ${ACTIVE})) and (not $7 or (${ACTIVE} and now() > t.due_at)) and (not $8 or ${ACTIVE})
            and ($9::text is null or t.no ilike $9 or t.title ilike $9 or t.requester_name ilike $9 or t.description ilike $9
-                or t.customer_name ilike $9 or t.customer_code ilike $9 or t.asset_ref ilike $9)
+                or t.customer_name ilike $9 or t.customer_code ilike $9 or t.asset_ref ilike $9 or t.ref ilike $9)
            and ($12::uuid is null or t.customer_id = $12)
          order by (t.status in ('resolved', 'closed')), t.due_at limit $10 offset $11`,
         [q.status ?? null, q.priority ?? null, q.channel ?? null, q.categoryId ?? null, q.assigneeId ?? null, q.unassigned, q.overdue, q.active,
@@ -615,5 +647,8 @@ export const definition: ServiceDefinition = {
         };
       });
     });
+  },
+  handlers: {
+    'contracts.visit_due': async (e, ctx) => pmTicketFromVisit(ctx.client, e, (d) => ctx.emit('helpdesk.ticket_created', d)),
   },
 };

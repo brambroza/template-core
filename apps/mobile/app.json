@@ -5,14 +5,36 @@
     "scheme": "erpfactory",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-camera", { "cameraPermission": "ใช้กล้องเพื่อสแกน QR เครื่องจักรและบาร์โค้ดสินค้า" }]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ใช้กล้องเพื่อสแกน QR เครื่องจักรและบาร์โค้ดสินค้า และถ่ายรูปแนบเอกสาร เช่น เครื่องจักรที่เสีย ใบเสร็จ หรือของที่รับเข้า",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "ใช้กล้องเพื่อสแกน QR เครื่องจักรและบาร์โค้ดสินค้า และถ่ายรูปแนบเอกสาร เช่น เครื่องจักรที่เสีย ใบเสร็จ หรือของที่รับเข้า",
+          "photosPermission": "เข้าถึงคลังรูปภาพเพื่อเลือกรูปมาแนบกับเอกสาร",
+          "microphonePermission": false
+        }
+      ],
+      "expo-document-picker"
     ],
-    "android": { "package": "th.co.goalong.erp" },
-    "ios": { "bundleIdentifier": "th.co.goalong.erp" },
-    "extra": { "gatewayUrl": "http://10.0.2.2:8080" }
+    "android": {
+      "package": "th.co.goalong.erp"
+    },
+    "ios": {
+      "bundleIdentifier": "th.co.goalong.erp"
+    },
+    "extra": {
+      "gatewayUrl": "http://10.0.2.2:8080"
+    }
   }
 }

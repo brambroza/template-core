@@ -392,7 +392,16 @@ export const definition: ServiceDefinition = {
         await c.query(
           `update claims set status = 'paid', paid_date = coalesce($2::date, current_date), pay_method = $3, pay_reference = $4, paid_by = $5, paid_by_name = $6, updated_at = now() where id = $1`,
           [id, b.paidDate ?? null, b.method, b.reference ?? null, a.userId, a.userName ?? null]);
-        await k.emit(c, 'expense.claim_paid', { claimId: cl.id, no: cl.no, claimantName: cl.claimant_name ?? null, total: cl.total, claimantId: cl.claimant_id });
+        const paid = (await c.query(`select to_char(paid_date, 'YYYY-MM-DD') as paid_date from claims where id = $1`, [id])).rows[0];
+        await k.emit(c, 'expense.claim_paid', {
+          claimId: cl.id, no: cl.no, claimantName: cl.claimant_name ?? null, total: cl.total, claimantId: cl.claimant_id,
+          // wave 5: what accounting needs to post the expense by category with input VAT
+          paidDate: paid.paid_date, payMethod: b.method, department: cl.department ?? null,
+          lines: cl.lines.map((l: any) => ({
+            categoryCode: l.category_code, categoryName: l.category_name, amount: Number(l.amount), vat: Number(l.vat), description: l.description ?? null,
+          })),
+          ...(Number(cl.advance_amount) > 0 ? { advanceNo: cl.advance_no ?? null, advanceAmount: Number(cl.advance_amount) } : {}),
+        });
         return loadClaim(c, id, a);
       });
     });

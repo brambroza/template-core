@@ -19,9 +19,11 @@ Purchase orders with Thai VAT and goods receipt.
 - `GET /purchase-returns?q=&poId=` · `GET /purchase-returns/:id` · `GET /purchase-orders/:id` also returns `returns[]`, `returned_gross`, line `returnable_qty`
 
 ## Events
-- publishes `purchasing.goods_received` per receipt (only the quantities received this time, with unit price) → Inventory stock-in, Costing moving average
+- publishes `purchasing.goods_received` per receipt (only the quantities received this time, with unit price) → Inventory stock-in, Costing moving average;
+  wave 5 adds the PO's `vatMode`, this receipt's `net`/`vat`/`gross` (`documentTotals` of the received lines) and line `vatRate` (0.07) → Accounting books ภาษีซื้อ apart
 - publishes `purchasing.po_created` and `purchasing.po_approved` → Automation (e.g. big-PO approval alert)
-- publishes `purchasing.goods_returned` per return (lines with unit price + reason) → Inventory issues the qty (QC-HOLD for rejected material).
+- publishes `purchasing.goods_returned` per return (lines with unit price + reason) → Inventory issues the qty (QC-HOLD for rejected material);
+  wave 5 adds `vatMode`, the return's `net`/`vat`/`gross` and `returnDate` (when given) → Accounting reverses ภาษีซื้อ.
   Costing does not reverse the moving average yet (extension idea).
 
 ## Extension ideas

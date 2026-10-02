@@ -326,6 +326,8 @@ export function calculateLine(i: LineInput, rules: PayrollRules = DEFAULT_RULES)
   }
   const hourlyRate = round(dailyRate / rules.hoursPerDay, 4);
   if (!days) warnings.push('ไม่ได้อยู่ในช่วงจ้างงานของเดือนนี้');
+  // e.g. a profile created from HR (hr.employee_upserted) whose pay has not been keyed in yet
+  if (days && !(monthly ? nn(i.baseSalary) : nn(i.dailyWage))) warnings.push('ยังไม่ได้กรอกเงินเดือน/ค่าจ้างในข้อมูลเงินเดือนพนักงาน');
 
   // unpaid leave (monthly only — a daily employee is simply not paid for days not worked)
   const unpaidLeave = monthly ? round(Math.min(salary, nn(i.unpaidLeaveDays) * dailyRate), 2) : 0;

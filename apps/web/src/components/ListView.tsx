@@ -3,15 +3,20 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Download, Printer, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
-import { fillPath, filtersToQuery, get, hasPerm, listRows, matches, routeParams, toCsv, type Field, type ListScreen } from '@erp/ui-schema';
+import {
+  columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
+  type CompanyProfile, type Field, type ListScreen,
+} from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
-import { FieldInput, type Values } from './Fields';
+import { DateRangeInput, FieldInput, type Values } from './Fields';
+import { loadCompany } from './print/company';
+import { Letterhead } from './print/PrintParts';
 import { ImportButton } from './ImportButton';
 import { isNumeric, isWideColumn, LabelsContext, Value } from './Value';
 
@@ -37,6 +42,11 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   /** the query string this list last wrote to the URL, so our own replace() is not read back as a new filter */
   const written = useRef(filtersToQuery(filters));
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
+  /** the whole response, for a report's period title and balance check */
+  const [res, setRes] = useState<unknown>(null);
+  const report = screen.report;
+  const [company, setCompany] = useState<CompanyProfile | null>(null);
+  useEffect(() => { if (report) loadCompany().then(setCompany); }, [!!report]);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const [moreFilters, setMoreFilters] = useState(false);
@@ -47,7 +57,9 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const load = useCallback(async () => {
     try {
       setError('');
-      setRows(listRows(screen, await api(module, fillPath(screen.endpoint, params), { query: filters })));
+      const r = await api(module, fillPath(screen.endpoint, params), { query: filters });
+      setRes(r);
+      setRows(listRows(screen, r));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
       setRows([]);
@@ -81,16 +93,47 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const exportCsv = () => rows?.length && downloadText(datedFileName(screen.title), toCsv(screen.columns, rows, labels));
   const activeFilters = filterSummary(screen.filters ?? [], filters);
 
-  const rowHref = (row: Record<string, unknown>) => (screen.rowLink ? screenHref(module, screen.rowLink.screen, get(row, screen.rowLink.idFrom ?? 'id')) : undefined);
+  // a row links only when it carries the id (a report's opening / total lines have none)
+  const rowHref = (row: Record<string, unknown>) => {
+    if (!screen.rowLink) return undefined;
+    const target = get(row, screen.rowLink.idFrom ?? 'id');
+    return target === undefined || target === null || target === '' ? undefined : screenHref(module, screen.rowLink.screen, target);
+  };
+  // one yellow button per page: the create button when there is one, else the first primary action
+  const listActions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm));
+  const firstPrimary = screen.create ? undefined : listActions.find((a) => a.tone === 'primary');
+  const headActions = listActions.map((a) => (a.tone === 'primary' && a !== firstPrimary ? { ...a, tone: 'default' as const } : a));
+  const totals = rows ? columnTotals(screen.columns, rows, report) : null;
+  const subtitle = report?.subtitle && res ? fillTemplate(report.subtitle, res) : '';
+  const check = report?.check && res && get(res, report.check.path) !== undefined ? { passed: get(res, report.check.path) === true, ...report.check } : null;
+  const checkText = check ? fillTemplate(check.passed ? check.ok : check.fail, res) || (check.passed ? check.ok : check.fail) : '';
   const rowActions = (screen.rowActions ?? []).filter((a) => hasPerm(perms, a.perm));
-  const colClass = (c: ListScreen['columns'][number]) => [isNumeric(c.format) ? 'num' : '', rows && isWideColumn(rows, (r) => get(r, c.key), c.format) ? 'col-wide' : ''].filter(Boolean).join(' ') || undefined;
+  const colClass = (c: ListScreen['columns'][number]) => [isNumeric(c.format) ? 'num' : '', rows && isWideColumn(rows, (r) => get(r, c.key), c.format) ? 'col-wide' : '', c.phone === false ? 'phone-hide' : ''].filter(Boolean).join(' ') || undefined;
   // phone: the first filter (usually search) stays, the rest fold behind "ตัวกรอง"
   const extraActive = (screen.filters ?? []).slice(1).filter((f) => { const v = filters[f.name]; return v !== undefined && v !== '' && v !== false; }).length;
 
+  const footLabelAt = Math.max(0, screen.columns.findIndex((c) => !c.total && (c.indent || !c.format || c.format === 'text')));
+  const footer = totals && rows && rows.length > 0 && (
+    <tfoot role="rowgroup">
+      <tr role="row" className="r-foot">
+        {screen.columns.map((c, ci) => (
+          <td role="cell" key={c.key} className={colClass(c)} data-label={c.total ? c.label : undefined}>
+            {c.total ? <Value value={totals[c.key]} format={c.format} /> : ci === footLabelAt ? report?.totalLabel ?? 'รวม' : null}
+          </td>
+        ))}
+        {rowActions.length > 0 && <td role="cell" className="row-actions no-print" />}
+      </tr>
+    </tfoot>
+  );
+
   return (
-    <div className="screen">
+    <div className={`screen${report ? ' report print-doc' : ''}`}>
+      {report && <Letterhead company={company} title={screen.title} docNo="" subtitle={subtitle} />}
       <header className="screen-head">
-        <h1>{screen.title}</h1>
+        <div>
+          <h1>{screen.title}</h1>
+          {subtitle && <p className="report-period">{subtitle}</p>}
+        </div>
         <div className="screen-actions no-print">
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">
             <Download size={16} aria-hidden /> ส่งออก CSV
@@ -101,7 +144,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {screen.import && hasPerm(perms, screen.import.perm) && (
             <ImportButton module={module} spec={screen.import} title={screen.title} onDone={() => setTick((t) => t + 1)} />
           )}
-          {(screen.actions ?? []).filter((a) => hasPerm(perms, a.perm)).map((a) => (
+          {headActions.map((a) => (
             <ActionButton key={a.id} action={a} module={module} params={params} onDone={() => setTick((t) => t + 1)} />
           ))}
           {screen.create && <Link className="btn-primary" href={screenHref(module, screen.create)}>{screen.createLabel ?? 'สร้างใหม่'}</Link>}
@@ -110,11 +153,15 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
 
       {!!screen.filters?.length && (
         <div className={`filters no-print${moreFilters ? ' is-open' : ''}`} role="search">
-          {screen.filters.map((f, fi) => (
-            <div key={f.name} className={fi ? 'filter filter-more' : 'filter'}>
-              <FieldInput field={{ ...f, required: false }} module={module} values={filters} compact onChange={(p) => setFilters((v) => ({ ...v, ...p }))} />
+          {filterGroups(screen.filters).map((g, gi) => (g.kind === 'range' ? (
+            <div key={g.from.name} className={`filter filter-range${gi ? ' filter-more' : ''}`}>
+              <DateRangeInput from={g.from} to={g.to} values={filters} onChange={(p) => setFilters((v) => ({ ...v, ...p }))} />
             </div>
-          ))}
+          ) : (
+            <div key={g.field.name} className={gi ? 'filter filter-more' : 'filter'}>
+              <FieldInput field={{ ...g.field, required: false }} module={module} values={filters} compact onChange={(p) => setFilters((v) => ({ ...v, ...p }))} />
+            </div>
+          )))}
           {screen.filters.length > 1 && (
             <button type="button" className="btn filters-toggle" aria-expanded={moreFilters} onClick={() => setMoreFilters((o) => !o)}>
               <SlidersHorizontal size={16} aria-hidden />ตัวกรอง{extraActive ? ` (${extraActive})` : ''}
@@ -124,8 +171,13 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </div>
       )}
 
-      {activeFilters && <p className="print-only muted">ตัวกรอง — {activeFilters}</p>}
+      {activeFilters && !report && <p className="print-only muted">ตัวกรอง — {activeFilters}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
+      {check && rows && rows.length > 0 && (
+        <p className={`report-check ${check.passed ? 'is-ok' : 'is-bad'}`} role="status">
+          {check.passed ? <CheckCircle2 size={16} aria-hidden /> : <AlertTriangle size={16} aria-hidden />} {checkText}
+        </p>
+      )}
 
       {screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
@@ -153,8 +205,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           })}
         </div>
       ) : (
-      <div className="table-wrap stack" ref={tableRef}>
-        <table className="data stack" role="table">
+      <div className={report ? 'table-wrap report-wrap' : 'table-wrap stack'} ref={tableRef}>
+        <table className={report ? 'data report-table' : 'data stack'} role="table">
           <thead role="rowgroup">
             <tr role="row">
               {screen.columns.map((c) => <th role="columnheader" key={c.key} className={colClass(c)}>{c.label}</th>)}
@@ -166,13 +218,24 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
             {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
             {rows?.map((row, i) => {
               const href = rowHref(row);
+              const style = reportRowStyle(report, row);
+              const level = report ? reportIndent(report, row) : 0;
+              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(rows, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
+              const cls = [href ? 'is-link' : '', style ? `r-${style}` : ''].filter(Boolean).join(' ') || undefined;
               return (
-                <tr role="row" key={String(row.id ?? i)} className={href ? 'is-link' : undefined} onClick={href ? () => router.push(href) : undefined}>
-                  {screen.columns.map((c, ci) => (
-                    <td role="cell" key={c.key} className={colClass(c)} data-label={c.label}>
-                      {ci === 0 && href ? <Link href={href} onClick={(e) => e.stopPropagation()}><Value value={get(row, c.key)} format={c.format} /></Link> : <Value value={get(row, c.key)} format={c.format} />}
-                    </td>
-                  ))}
+                <tr role="row" key={report ? i : String(row.id ?? i)} className={cls} onClick={href ? () => router.push(href) : undefined}>
+                  {screen.columns.map((c, ci) => {
+                    const raw = get(row, c.key);
+                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(rows, i, c.key))
+                      || (!!report && (raw === null || raw === undefined || raw === ''));
+                    const v = <Value value={get(row, c.key)} format={c.format} max={6} cell />;
+                    return (
+                      <td role="cell" key={c.key} className={colClass(c)} data-label={c.label}
+                        style={c.indent && level ? { paddingLeft: `calc(14px + ${level * 1.4}em)` } : undefined}>
+                        {blank ? null : ci === linkAt && href ? <Link href={href} onClick={(e) => e.stopPropagation()}>{v}</Link> : v}
+                      </td>
+                    );
+                  })}
                   {rowActions.length > 0 && (
                     <td role="cell" className="row-actions no-print" onClick={(e) => e.stopPropagation()}>
                       {rowActions.filter((a) => matches(row, a.when)).map((a) => (
@@ -184,10 +247,11 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
               );
             })}
           </tbody>
+          {footer}
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
+      {rows !== null && rows.length > 0 && !report && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
     </div>
   );
 }

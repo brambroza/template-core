@@ -644,6 +644,40 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    /**
+     * Send installments due for invoicing to Sales: `contracts.installment_due` once per installment (→ a draft service sales order there).
+     * Due = not invoiced, not sent yet, contract active/expired, due by the end of this month (+ `days` ahead). Safe to call daily.
+     */
+    app.post('/billing/due/notify', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'contracts.billing.write');
+      const b = parse(z.object({ days: z.coerce.number().int().min(0).max(366).default(0), contractId: opt(s.uuid) }), req.body ?? {});
+      return k.db.tx(a.tenantId, async (c) => {
+        await expireLapsed(c);
+        const due = (await c.query(
+          `select x.*, to_char(x.due_date, 'YYYY-MM-DD') as due, to_char(x.next_due - 1, 'YYYY-MM-DD') as period_to_next, to_char(x.end_date, 'YYYY-MM-DD') as end_iso
+           from (select i.*, c.no as contract_no, c.title, c.customer_id, c.customer_code, c.customer_name, c.billing_plan, c.end_date,
+                        lead(i.due_date) over (partition by i.contract_id order by i.seq) as next_due,
+                        count(*) over (partition by i.contract_id)::int as installment_count
+                 from installments i join contracts c on c.id = i.contract_id where c.status in ('active', 'expired')) x
+           where not x.invoiced and x.notified_at is null and ($2::uuid is null or x.contract_id = $2)
+             and x.due_date < (date_trunc('month', ${TODAY}) + interval '1 month')::date + $1::int
+           order by x.due_date, x.contract_no`, [b.days, b.contractId ?? null])).rows;
+        const sent: string[] = [];
+        for (const i of due) {
+          const fresh = await c.query(`update installments set notified_at = now(), notified_by_name = $2 where id = $1 and notified_at is null returning id`, [i.id, a.userName ?? null]);
+          if (!fresh.rowCount) continue;
+          await k.emit(c, 'contracts.installment_due', {
+            installmentId: i.id, contractId: i.contract_id, contractNo: i.contract_no, title: i.title, customerId: i.customer_id, customerCode: i.customer_code ?? null,
+            customerName: i.customer_name, seq: i.seq, count: i.installment_count, dueDate: i.due, amount: Number(i.amount), billingPlan: i.billing_plan,
+            periodFrom: i.billing_plan === 'one_time' ? null : i.due, periodTo: i.billing_plan === 'one_time' ? null : i.period_to_next ?? i.end_iso,
+          });
+          sent.push(`${i.contract_no} งวด ${i.seq}/${i.installment_count}`);
+        }
+        return { notified: sent.length, installments: sent, message: sent.length ? `ส่งงวดถึงกำหนดให้ฝ่ายขายร่างใบสั่งขาย ${sent.length} งวด: ${sent.join(', ')}` : 'ไม่มีงวดที่ต้องส่งเพิ่ม (ส่งแล้ว หรือวางบิลแล้ว)' };
+      });
+    });
+
     /** Record that this installment was invoiced in Sales (the invoice number is text — no call into Sales). */
     app.post('/installments/:id/bill', async (req) => {
       const a = auth(req);

@@ -77,6 +77,7 @@ export const STANDARD_CHART: SeedAccount[] = [
   A('11510', 'ภาษีซื้อยังไม่ถึงกำหนด', 'Input VAT - not yet due', 'current_asset', '11000', { role: 'vat_input_pending' }),
   A('11600', 'ภาษีเงินได้ถูกหัก ณ ที่จ่าย', 'Withholding tax receivable', 'current_asset', '11000', { role: 'wht_receivable' }),
   A('11700', 'เงินทดรองจ่าย', 'Cash advances to employees', 'current_asset', '11000', { role: 'advance' }),
+  A('11720', 'ลูกหนี้และเงินให้กู้ยืมแก่พนักงาน', 'Loans and receivables from employees', 'current_asset', '11000'),
   A('11800', 'ค่าใช้จ่ายจ่ายล่วงหน้า', 'Prepaid expenses', 'current_asset', '11000'),
   A('11900', 'เงินมัดจำจ่าย', 'Deposits paid', 'current_asset', '11000'),
   A('12000', 'สินทรัพย์ไม่หมุนเวียน', 'Non-current assets', 'non_current_asset', '10000', G),
@@ -97,6 +98,7 @@ export const STANDARD_CHART: SeedAccount[] = [
   A('21310', 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.3', 'WHT payable - PND3 (individuals)', 'current_liability', '21000', { role: 'wht_payable' }),
   A('21320', 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.53', 'WHT payable - PND53 (companies)', 'current_liability', '21000', { role: 'wht_payable' }),
   A('21400', 'เงินประกันสังคมค้างจ่าย', 'Social security payable', 'current_liability', '21000', { role: 'sso_payable' }),
+  A('21410', 'เงินกองทุนสำรองเลี้ยงชีพค้างจ่าย', 'Provident fund payable', 'current_liability', '21000'),
   A('21500', 'เงินเดือนค้างจ่าย', 'Salaries payable', 'current_liability', '21000', { role: 'salary_payable' }),
   A('21600', 'ค่าใช้จ่ายค้างจ่าย', 'Accrued expenses', 'current_liability', '21000'),
   A('21700', 'เงินมัดจำรับ / รับล่วงหน้าจากลูกค้า', 'Customer deposits', 'current_liability', '21000', { role: 'deposit_received' }),
@@ -128,10 +130,17 @@ export const STANDARD_CHART: SeedAccount[] = [
   A('52000', 'ค่าใช้จ่ายในการขายและบริหาร', 'Selling and administrative expenses', 'expense', '50000', G),
   A('52100', 'เงินเดือนและค่าจ้าง', 'Salaries and wages', 'expense', '52000'),
   A('52110', 'เงินสมทบกองทุนประกันสังคม', 'Social security contributions', 'expense', '52000'),
+  A('52120', 'เงินสมทบกองทุนสำรองเลี้ยงชีพ', 'Provident fund contributions', 'expense', '52000'),
+  A('52130', 'ค่าล่วงเวลา', 'Overtime', 'expense', '52000'),
+  A('52140', 'โบนัสและเงินรางวัล', 'Bonuses', 'expense', '52000'),
+  A('52150', 'ค่าสวัสดิการและเบี้ยเลี้ยงพนักงาน', 'Staff welfare and allowances', 'expense', '52000'),
   A('52200', 'ค่าเช่า', 'Rent', 'expense', '52000'),
   A('52300', 'ค่าน้ำประปาและค่าไฟฟ้า', 'Utilities', 'expense', '52000'),
   A('52400', 'ค่าโทรศัพท์และอินเทอร์เน็ต', 'Telephone and internet', 'expense', '52000'),
   A('52500', 'ค่าน้ำมันและค่าเดินทาง', 'Fuel and travel', 'expense', '52000'),
+  A('52510', 'ค่าเดินทาง', 'Travel', 'expense', '52000'),
+  A('52520', 'ค่าน้ำมันเชื้อเพลิง', 'Fuel', 'expense', '52000'),
+  A('52530', 'ค่าที่พัก', 'Accommodation', 'expense', '52000'),
   A('52600', 'ค่ารับรอง', 'Entertainment', 'expense', '52000'),
   A('52700', 'ค่าซ่อมแซมและบำรุงรักษา', 'Repairs and maintenance', 'expense', '52000'),
   A('52800', 'ค่าขนส่ง', 'Freight and delivery', 'expense', '52000'),
@@ -147,7 +156,7 @@ export const STANDARD_CHART: SeedAccount[] = [
 
 /* ---------------- auto-posting rules ---------------- */
 
-export const POSTED_EVENTS = ['sales.invoiced', 'sales.payment_received', 'purchasing.goods_received', 'purchasing.goods_returned', 'expense.claim_paid'] as const;
+export const POSTED_EVENTS = ['sales.invoiced', 'sales.payment_received', 'purchasing.goods_received', 'purchasing.goods_returned', 'expense.claim_paid', 'payroll.run_paid'] as const;
 export type PostedEvent = (typeof POSTED_EVENTS)[number];
 
 export const EVENT_TH: Record<string, string> = {
@@ -158,6 +167,7 @@ export const EVENT_TH: Record<string, string> = {
   'purchasing.goods_received': 'จัดซื้อ — รับสินค้า',
   'purchasing.goods_returned': 'จัดซื้อ — ส่งคืนสินค้า',
   'expense.claim_paid': 'เบิกค่าใช้จ่าย — จ่ายเงิน',
+  'payroll.run_paid': 'เงินเดือน — จ่ายเงินเดือน',
 };
 
 export interface RuleSeed {
@@ -186,6 +196,48 @@ export const DEFAULT_RULES: RuleSeed[] = [
   { eventType: 'purchasing.goods_returned', leg: 'ap', label: 'เจ้าหนี้การค้า (ลดหนี้)', side: 'debit', code: '21100' },
   { eventType: 'purchasing.goods_returned', leg: 'inventory', label: 'สินค้าคงเหลือ (ส่งคืน)', side: 'credit', code: '11400' },
 
-  { eventType: 'expense.claim_paid', leg: 'expense', label: 'ค่าใช้จ่าย (ยอดเบิกรวม)', side: 'debit', code: '53900' },
-  { eventType: 'expense.claim_paid', leg: 'bank', label: 'จ่ายจากเงินฝากธนาคาร', side: 'credit', code: '11200' },
+  { eventType: 'expense.claim_paid', leg: 'expense', label: 'ค่าใช้จ่าย (หมวดที่ไม่ได้จับคู่บัญชี / ใบเบิกไม่มีรายการหมวด)', side: 'debit', code: '53900' },
+  { eventType: 'expense.claim_paid', leg: 'bank', label: 'จ่ายจากเงินฝากธนาคาร (โอน / เช็ค)', side: 'credit', code: '11200' },
+
+  /* wave 5 — appended so existing tenants get them through the lazy re-seed (sort keeps the old order) */
+  { eventType: 'purchasing.goods_received', leg: 'vat', label: 'ภาษีซื้อ (เมื่อรับสินค้ามีข้อมูล VAT)', side: 'debit', code: '11500' },
+  { eventType: 'purchasing.goods_returned', leg: 'vat', label: 'ภาษีซื้อ (ลดลงตามใบลดหนี้)', side: 'credit', code: '11500' },
+  { eventType: 'expense.claim_paid', leg: 'vat', label: 'ภาษีซื้อ (VAT ในใบเบิก)', side: 'debit', code: '11500' },
+  { eventType: 'expense.claim_paid', leg: 'cash', label: 'จ่ายเป็นเงินสด', side: 'credit', code: '11100' },
+
+  { eventType: 'payroll.run_paid', leg: 'salary_expense', label: 'เงินเดือนและค่าจ้าง (หักลาไม่รับค่าจ้างแล้ว)', side: 'debit', code: '52100' },
+  { eventType: 'payroll.run_paid', leg: 'overtime_expense', label: 'ค่าล่วงเวลา', side: 'debit', code: '52130' },
+  { eventType: 'payroll.run_paid', leg: 'allowance_expense', label: 'เบี้ยเลี้ยง / ค่าตอบแทนประจำ', side: 'debit', code: '52150' },
+  { eventType: 'payroll.run_paid', leg: 'bonus_expense', label: 'โบนัส', side: 'debit', code: '52140' },
+  { eventType: 'payroll.run_paid', leg: 'other_income_expense', label: 'เงินได้อื่นของพนักงาน', side: 'debit', code: '52100' },
+  { eventType: 'payroll.run_paid', leg: 'sso_employer_expense', label: 'เงินสมทบประกันสังคม (ส่วนนายจ้าง)', side: 'debit', code: '52110' },
+  { eventType: 'payroll.run_paid', leg: 'pvd_employer_expense', label: 'เงินสมทบกองทุนสำรองเลี้ยงชีพ (ส่วนนายจ้าง)', side: 'debit', code: '52120' },
+  { eventType: 'payroll.run_paid', leg: 'sso_payable', label: 'ประกันสังคมค้างจ่าย (ลูกจ้าง + นายจ้าง)', side: 'credit', code: '21400' },
+  { eventType: 'payroll.run_paid', leg: 'wht_payable', label: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.1', side: 'credit', code: '21300' },
+  { eventType: 'payroll.run_paid', leg: 'pvd_payable', label: 'กองทุนสำรองเลี้ยงชีพค้างจ่าย (ลูกจ้าง + นายจ้าง)', side: 'credit', code: '21410' },
+  { eventType: 'payroll.run_paid', leg: 'employee_deductions', label: 'รายการหักพนักงาน (เงินกู้ / หักอื่น)', side: 'credit', code: '11720' },
+  { eventType: 'payroll.run_paid', leg: 'net_pay_payable', label: 'เงินเดือนสุทธิจ่ายจากเงินฝากธนาคาร', side: 'credit', code: '11200' },
+];
+
+/** Thai labels of the payroll posting categories (`payroll.run_paid` → `postings[].category`). */
+export const PAYROLL_CATEGORY_TH: Record<string, string> = Object.fromEntries(
+  DEFAULT_RULES.filter((r) => r.eventType === 'payroll.run_paid').map((r) => [r.leg, r.label]));
+
+/**
+ * Expense-claim category → expense account (accounting's own table `category_mappings`, editable at /category-mappings).
+ * Matched by category code (case-insensitive), then by category name; anything unmapped goes to the `expense` posting rule.
+ * Codes follow the examples on the expense category form (TRAVEL, FUEL, ENTERTAIN, HOTEL, MISC).
+ */
+export const DEFAULT_CATEGORY_MAP: { code: string; name: string; account: string }[] = [
+  { code: 'TRAVEL', name: 'ค่าเดินทาง', account: '52510' },
+  { code: 'FUEL', name: 'ค่าน้ำมัน', account: '52520' },
+  { code: 'ENTERTAIN', name: 'ค่ารับรอง', account: '52600' },
+  { code: 'HOTEL', name: 'ค่าที่พัก', account: '52530' },
+  { code: 'TOLL', name: 'ค่าทางด่วนและที่จอดรถ', account: '52510' },
+  { code: 'FREIGHT', name: 'ค่าขนส่ง', account: '52800' },
+  { code: 'PHONE', name: 'ค่าโทรศัพท์', account: '52400' },
+  { code: 'SUPPLIES', name: 'ค่าวัสดุสิ้นเปลือง', account: '53200' },
+  { code: 'REPAIR', name: 'ค่าซ่อมแซม', account: '52700' },
+  { code: 'WELFARE', name: 'ค่าสวัสดิการพนักงาน', account: '52150' },
+  { code: 'MISC', name: 'ค่าใช้จ่ายเบ็ดเตล็ด', account: '53900' },
 ];

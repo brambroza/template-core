@@ -12,7 +12,7 @@ helpdesk and sales — both only through events / typed-in numbers, never calls 
   `pm_every_months` (0 = no PM), `first_pm_date` (default `start_date`), `checklist text[]` (template), default technician snapshot,
   status `draft → active → expired | cancelled`, `renewal_of`/`renewal_of_no` ↔ `renewed_to_id`/`renewed_to_no`, `uplift_pct`)
 - `contract_items` (`asset`, `serial_no`, `location`, `note`) — free text (no inventory link)
-- `installments` (`seq`, `due_date`, `amount`, `invoiced`, `invoice_no` text, `invoiced_on`, `invoiced_by_name`)
+- `installments` (`seq`, `due_date`, `amount`, `invoiced`, `invoice_no` text, `invoiced_on`, `invoiced_by_name`, `notified_at` / `notified_by_name` = sent to Sales (migration 002))
 - `visits` (`PMV-2569-0001`, contract + customer snapshot, `due_date` (from the PM cycle, the idempotency key with `contract_id`), `scheduled_date`,
   technician snapshot, status `planned → done | missed` (+ `cancelled` when the contract is cancelled; `missed → planned` by reschedule),
   `started_at`, `done_on`, `signoff_name`, `findings`, `missed_reason`, `completed_by_name`)
@@ -41,6 +41,9 @@ helpdesk and sales — both only through events / typed-in numbers, never calls 
 - `cancel` (draft | active): planned visits → `cancelled`; installments of cancelled (and draft) contracts are excluded from billing lists.
 - Billing: `bill {invoiceNo}` records the Sales invoice number as text (no cross-module call); 409 if already billed or the contract is not active/expired; `unbill` undoes.
 - Expiring alerts: `POST /contracts/expiring/notify {days=60}` — active, not renewed, ending within `days`; one event per contract per month (daily-callable).
+- Billing to Sales: `POST /billing/due/notify {days=0, contractId?}` — installments not invoiced and not yet sent, of active/expired contracts, due before the end of
+  this month + `days`; emits `contracts.installment_due` **once per installment** (`notified_at`), daily-callable. Period = this due date → the day before the next
+  installment (last one: the contract end); null for one-time. Sales drafts a service order; staff still record the invoice no. here with `bill`.
 
 ## API
 - `GET /contracts` (`?q,status,customerId,billingPlan,expiringDays`; q also matches serial/asset/location) · `POST /contracts` (+ `items[]`) · `GET/PUT /contracts/:id`
@@ -54,6 +57,7 @@ helpdesk and sales — both only through events / typed-in numbers, never calls 
 - `POST /visits/:id/start | complete {signoffName, findings?, doneOn?, markRemainingPass?, results?[{checkId, result, note?}]} | miss {reason} | reschedule {scheduledDate}`
 - `POST /checks/:id/pass | fail {note?}`
 - `GET /billing?scope=due|open|all&contractId=&overdue=&q=` (due = not invoiced and due by the end of this month) · `POST /installments/:id/bill {invoiceNo, invoicedOn?} | unbill`
+- `POST /billing/due/notify {days?, contractId?}` (`contracts.billing.write`) → `{ notified, installments[], message }`
 - `GET /summary` → `activeContracts, activeValue, expiring60, drafts, visitsToday, visitsDueWeek, overdueVisits, visitsDoneMonth, billingDueMonth, billingDueCount,
   months[{month, done, missed}], rows` (contracts not cancelled, by end date) — `contracts.contract.read` or `contracts.visit.read`
 
@@ -63,19 +67,23 @@ Technician role: `contracts.visit.read` + `contracts.visit.work`. Sales: `contra
 ## Events
 - publishes `contracts.visit_due` (visitId, no, contractId, contractNo, customerId, customerName, dueDate, scheduledDate, technicianId, technicianName, itemsText, coverage)
   and `contracts.contract_expiring` (contractId, no, customerId, customerName, title, endDate, daysLeft, value).
-- subscribes: none. Candidates (not added): `contracts.visit_completed` (helpdesk closes the PM ticket / customer gets the report), `contracts.installment_due`
-  (Sales drafts the recurring invoice).
+- publishes `contracts.installment_due` (installmentId, contractId, contractNo, title, customerId, customerCode, customerName, seq, count, dueDate, amount (before VAT),
+  billingPlan, periodFrom, periodTo) from `POST /billing/due/notify`.
+- Consumers: helpdesk opens a PM ticket per `visit_due` (category "PM ตามสัญญา", ref = visit no); sales drafts a service order per `installment_due`
+  (ref = `MA-… งวด n/N`); automation templates pm-visit-to-technician (personal, in-app + LINE) and contract-expiring-to-sales.
+- subscribes: none. Candidate (not added): `contracts.visit_completed` (helpdesk closes the PM ticket / customer gets the report); `sales.invoiced` carrying
+  the order `ref` would let contracts mark the installment billed automatically.
 
 ## Screens
 `src/ui.ts`: contracts (list + filters) / contractNew (form + equipment lines) / contractEdit / contract (detail: flow, items, installments, visits;
 actions activate, generate PM, add equipment, renew, cancel; printable "สัญญาบริการบำรุงรักษา (MA)"), expiring (notify action, renew row action),
 coverage, visitsToday (generate action, start), myVisits (technician, mobile), visits, visitEdit, visit (detail, printable service report
 "รายงานการบำรุงรักษา" with signatures ช่างผู้ปฏิบัติงาน / ลูกค้า; actions start → checklist, complete with sign-off, miss, reschedule),
-visitChecks (list opened with the visit id: row actions ผ่าน / ไม่ผ่าน), billingDue (bill / unbill row actions).
+visitChecks (list opened with the visit id: row actions ผ่าน / ไม่ผ่าน), billingDue (bill / unbill row actions; action "ส่งให้ฝ่ายขายร่างใบสั่งขาย" → `/billing/due/notify`).
 Widgets: contracts KPI, PM KPI, contract status pipeline, 6-month PM trend. ⌘K: `สัญญา MA <ลูกค้า> <เรื่อง>`, `PM วันนี้`, `MA ใกล้หมด`, `วางบิล MA`.
 Search: contracts (no, customer, title, serial via q) and visits.
 
 ## Extension ideas
 Photos / signature image on the visit (needs an attachment field in the renderer — out of scope now), per-contract business calendar for helpdesk SLA,
-parts used on a visit (event to inventory), auto-renew, VAT on installments, recurring invoice drafts in Sales from an `installment_due` event,
+parts used on a visit (event to inventory), auto-renew, VAT on installments,
 customer portal link to the service report.

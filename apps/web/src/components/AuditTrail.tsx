@@ -2,7 +2,7 @@
 
 import { History } from 'lucide-react';
 import { useState } from 'react';
-import { auditActionLabel, auditPerm, formatDate, hasPerm, type AuditRow } from '@erp/ui-schema';
+import { auditActionLabel, auditDetailText, auditPerm, formatDate, hasPerm, type AuditRow } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { loadSession } from '@/lib/session';
 
@@ -30,14 +30,14 @@ export function AuditTrail({ module, recordId }: { module: string; recordId: str
       {rows && rows.length > 0 && (
         <div className="table-wrap stack">
           <table className="data stack" role="table">
-            <thead role="rowgroup"><tr role="row"><th role="columnheader">เวลา</th><th role="columnheader">ผู้ทำรายการ</th><th role="columnheader">รายการ</th><th role="columnheader">ข้อมูลที่ส่ง</th></tr></thead>
+            <thead role="rowgroup"><tr role="row"><th role="columnheader">เวลา</th><th role="columnheader">ผู้ทำรายการ</th><th role="columnheader">รายการ</th><th role="columnheader">รายละเอียด</th></tr></thead>
             <tbody role="rowgroup">
               {rows.map((r) => (
                 <tr role="row" key={r.id}>
                   <td role="cell" data-label="เวลา" className="nowrap">{formatDate(r.at, true)}</td>
                   <td role="cell" data-label="ผู้ทำรายการ">{r.user_name ?? r.user_id ?? '—'}</td>
                   <td role="cell" data-label="รายการ" title={r.action}>{auditActionLabel(r)}</td>
-                  <td role="cell" data-label="ข้อมูลที่ส่ง" className="audit-summary">{r.summary_text}</td>
+                  <td role="cell" data-label="รายละเอียด" className="audit-summary" title={r.summary_text}>{auditDetailText(r)}</td>
                 </tr>
               ))}
             </tbody>

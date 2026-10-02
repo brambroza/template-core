@@ -144,6 +144,19 @@ const SAMPLES: Partial<Record<EventType, Record<string, unknown>>> = {
   'quality.ncr_raised': { ncrId: uuid(), no: 'NCR-2569-0002', severity: 'critical', itemCode: 'FG-BRACKET', description: 'ลูกค้าร้องเรียนขายึดบิดงอ' },
   'booking.requested': { bookingId: uuid(), no: 'BK-2569-0011', resourceName: 'รถตู้', startAt: '2026-10-05T01:00:00.000Z', endAt: '2026-10-05T09:00:00.000Z', requesterName: 'อลิส', needsApproval: true, period: 'จ. 5 ต.ค. 08:00–16:00', purpose: 'ไปพบลูกค้าระยอง', requesterId: uuid() },
   'assets.repair_reported': { assetId: uuid(), code: 'AS-2569-0003', name: 'โน้ตบุ๊ก Dell', description: 'จอไม่ติด' },
+  'contracts.visit_due': { visitId: uuid(), no: 'PMV-2569-0004', contractId: uuid(), contractNo: 'MA-2569-0002', customerId: uuid(), customerName: 'บริษัท สยามพาร์ท จำกัด',
+    dueDate: '2026-10-20', scheduledDate: '2026-10-21', technicianId: uuid(), technicianName: 'ช่างเอก', itemsText: 'CCTV 32 จุด (อาคาร A)', coverage: '8x5' },
+  'contracts.contract_expiring': { contractId: uuid(), no: 'MA-2569-0001', customerId: null, customerName: 'บริษัท ไทยแพ็ค จำกัด', title: 'MA ระบบเครือข่าย', endDate: '2026-11-30', daysLeft: 45, value: 120000 },
+  'sales.payment_received': { receiptId: uuid(), receiptNo: 'RC-2569-0007', kind: 'payment', customerId: null, customerName: 'บริษัท สยามพาร์ท จำกัด', method: 'transfer',
+    total: 10700, whtAmount: 300, depositApplied: 0, received: 10400, invoices: [{ invoiceId: uuid(), invoiceNo: 'INV-2569-0003', amount: 10700, outstanding: 0 }] },
+  'payroll.run_paid': { runId: uuid(), no: 'PR-2569-10', period: '2026-10', payDate: '2026-10-31', paidDate: '2026-10-30', headcount: 12,
+    totals: { gross: 300000, salary: 290000, overtime: 10000, allowances: 0, bonus: 0, otherIncome: 0, unpaidLeave: 0, ssoEmployee: 9000, ssoEmployer: 9000, pvdEmployee: 0, pvdEmployer: 0,
+      wht: 6000, otherDeductions: 0, totalDeductions: 15000, net: 285000 },
+    postings: [{ category: 'salary_expense', side: 'debit', amount: 290000 }, { category: 'overtime_expense', side: 'debit', amount: 10000 },
+      { category: 'sso_employer_expense', side: 'debit', amount: 9000 }, { category: 'sso_payable', side: 'credit', amount: 18000 },
+      { category: 'wht_payable', side: 'credit', amount: 6000 }, { category: 'net_pay_payable', side: 'credit', amount: 285000 }] },
+  'hr.employee_upserted': { employeeId: uuid(), code: 'EMP-014', name: 'นางสาวมาลี ใจงาม', departmentName: 'บัญชี', positionName: 'เจ้าหน้าที่บัญชี', status: 'active',
+    startDate: '2026-10-01', resignedDate: null, userId: uuid() },
 };
 
 describe('event catalogue and templates', () => {
@@ -164,8 +177,8 @@ describe('event catalogue and templates', () => {
     }
   });
 
-  it('ships 22 templates, every one valid and appliable with a click', async () => {
-    expect(TEMPLATES).toHaveLength(22);
+  it('ships 26 templates, every one valid and appliable with a click', async () => {
+    expect(TEMPLATES).toHaveLength(26);
     expect(new Set(TEMPLATES.map((x) => x.id)).size).toBe(TEMPLATES.length);
     const other = t.token(['*'], t.otherTenantId);
     for (const tpl of TEMPLATES) {
@@ -223,6 +236,17 @@ describe('event catalogue and templates', () => {
     expect(by('QC ไม่ผ่าน แจ้งผู้จัดการคุณภาพ')[0].link).toBe(`/m/quality/inspDetail/${s['quality.inspection_completed'].inspectionId}`);
     expect(by('NCR ร้ายแรง')[0]).toMatchObject({ level: 'stop', body: '🛑 NCR วิกฤต NCR-2569-0002 FG-BRACKET: ลูกค้าร้องเรียนขายึดบิดงอ', link: `/m/quality/ncrDetail/${s['quality.ncr_raised'].ncrId}` });
     expect(by('มีการจองห้อง/รถที่ต้องอนุมัติ').map((x) => x.body)).toEqual(['อลิส ขอจอง รถตู้ จ. 5 ต.ค. 08:00–16:00 (ไปพบลูกค้าระยอง) รออนุมัติ เลขที่ BK-2569-0011']);
+    // wave 5: PM visit → the technician personally; expiring contract, payment and payroll → broadcast
+    expect(by('มีนัด PM แจ้งช่าง')).toHaveLength(0);
+    expect((await bell(s['contracts.visit_due'].technicianId)).find((x) => x.title === 'มีนัด PM แจ้งช่าง')).toMatchObject({
+      personal: true, body: '🛠️ นัด PM PMV-2569-0004 บริษัท สยามพาร์ท จำกัด วันที่ 2026-10-21 (สัญญา MA-2569-0002) อุปกรณ์: CCTV 32 จุด (อาคาร A)',
+      link: `/m/contracts/visit/${s['contracts.visit_due'].visitId}` });
+    expect(by('สัญญา MA ใกล้หมด แจ้งเซลส์')[0]).toMatchObject({ level: 'warn',
+      body: '⏳ สัญญา MA-2569-0001 ของ บริษัท ไทยแพ็ค จำกัด (MA ระบบเครือข่าย) หมดวันที่ 2026-11-30 อีก 45 วัน มูลค่า 120,000 บาท — เสนอต่อสัญญา' });
+    expect(by('ลูกค้าชำระเงินแล้ว แจ้งเซลส์/บัญชี')[0]).toMatchObject({ level: 'ok',
+      body: '💰 บริษัท สยามพาร์ท จำกัด ชำระเงินแล้ว 10,400 บาท (ใบเสร็จ RC-2569-0007) ภาษีหัก ณ ที่จ่าย 300 บาท', link: `/m/sales/receipt/${s['sales.payment_received'].receiptId}` });
+    expect(by('จ่ายเงินเดือนแล้ว')[0]).toMatchObject({ level: 'ok', link: `/m/payroll/runDetail/${s['payroll.run_paid'].runId}`,
+      body: '✅ จ่ายเงินเดือน PR-2569-10 งวด 2026-10 แล้ว 12 คน ยอดสุทธิ 285,000 บาท — นำส่ง ภ.ง.ด.1 ภายในวันที่ 7 และเงินสมทบประกันสังคมภายในวันที่ 15 ของเดือนถัดไป' });
     // the main tenant saw none of it
     expect((await t.api('GET', '/notifications')).body.items.filter((x: any) => x.title === 'ลีดใหม่ แจ้งเซลส์')).toHaveLength(0);
   });

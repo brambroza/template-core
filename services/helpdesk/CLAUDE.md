@@ -9,7 +9,7 @@ canned replies and a knowledge base. Requires only core: `identity` (assignee lo
 - `tickets` (`TK-2569-0001`, channel `web | phone | line | email | walk_in`, priority `low | normal | high | urgent`,
   status `open → in_progress → waiting → resolved → closed`, `response_due_at`, `due_at`, `first_response_at`, `resolution`,
   `satisfaction` 1–5, `feedback`, `reopen_count`, `created_by` = requester user, `reported_at` (SLA start), `sla_mode` `business | clock`,
-  customer snapshot `customer_id/code/name`, `asset_ref` (asset code / serial, free text))
+  customer snapshot `customer_id/code/name`, `asset_ref` (asset code / serial, free text), `ref` (source document, searchable), `source_visit_id` (PM visit, unique — migration 003))
 - `sla_settings` (one row per tenant; none = defaults: business hours on, Mon–Fri 08:00–17:00 `Asia/Bangkok`, urgent 24×7) · `holidays` (`date`, `name`, unique per tenant)
 - `ticket_comments` (`internal` note or public reply, author snapshot) · `canned_replies` · `kb_articles` (`published`, `views`)
 
@@ -30,6 +30,10 @@ canned replies and a knowledge base. Requires only core: `identity` (assignee lo
   `waiting` ticket moves it back to `in_progress`.
 - `resolve` needs a resolution; `close` (requester or technician) only from `resolved` — satisfaction/feedback only from the ticket's creator (403 for a technician closing someone else's ticket); `reopen` only from `resolved`.
   Disallowed transitions return 409; comments on closed tickets 409.
+- **PM tickets from MA contracts** (`pmTicketFromVisit`, handler `contracts.visit_due`): one ticket per visit (`source_visit_id`), category `PM-MA` "PM ตามสัญญา"
+  (auto-created, 24/72 h), title `PM <contract no> — <customer>`, description = due date + covered items + coverage, customer snapshot (requester name = customer),
+  assignee = the visit's technician snapshot, `response_due_at` / `due_at` = scheduled date 08:00 / 17:00 Bangkok (`sla_mode` clock), `asset_ref` = items text,
+  `ref` = `PMV-… (MA-…)`, `created_by` null; publishes `helpdesk.ticket_created`.
 - KB: readers see published articles only (`GET /articles/:id` of a draft = 404 for them); reading counts a view.
 
 ## API
@@ -49,7 +53,8 @@ Technician roles should also get `helpdesk.ticket.create` (the ticket detail scr
 ## Events
 - publishes `helpdesk.ticket_created` (ticketId, no, title, priority, categoryName, requesterName, assigneeName) and
   `helpdesk.ticket_resolved` (ticketId, no, title, requesterName, resolution) — Automation alerts the technician / requester.
-- subscribes: none. Candidate (not added): `helpdesk.ticket_overdue` (needs a timer).
+- subscribes `contracts.visit_due` (contracts is `enhancedBy`) → PM ticket (see Behaviour). Candidates (not added): `helpdesk.ticket_overdue` (needs a timer);
+  a `contracts.visit_completed` event to resolve the PM ticket when the technician closes the visit in contracts.
 
 ## Screens
 `src/ui.ts`: ticketNew, ticketLog (technician logs a customer's call: customer lookup + asset/serial), myRequests, myTickets, tickets, overdueTickets, ticket (+ticketEdit, printable),

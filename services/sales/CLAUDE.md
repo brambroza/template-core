@@ -25,6 +25,9 @@ Invoice payment status (computed): `outstanding` → `partially_paid` → `paid`
 - Deposit (`depositAmount`, optional `orderId` → customer from the order): no invoice, no WHT (record WHT when it is applied), `deposit_remaining` until used.
 - Receivables group by `coalesce(customer_id, customer_name)`; aging buckets by days past due as of `asOf` (default today, Asia/Bangkok): `current` (not yet due), `d1_30`, `d31_60`, `d61_90`, `over_90`.
 - Handler `crm.quotation_accepted` (CRM is `enhancedBy`): if the payload has `lines`, drafts an order (warehouse MAIN, credit 0, `ref` = quotation no., `created_by` null) — once per quotation id; old payloads without lines are ignored.
+- Handler `contracts.installment_due` (contracts is `enhancedBy`; `draftInstallmentOrder`): one draft order per installment (`sales_orders.contract_installment_id`, unique — migration 003):
+  customer snapshot, VAT exclusive (contract amounts are before VAT), one service line "ค่าบริการบำรุงรักษา (MA) <title> ตามสัญญา <no> งวดที่ n/N ช่วง …" × 1 at `amount`,
+  `ref` = `MA-… งวด n/N`, note asks billing staff to confirm, invoice and record the invoice no. in Contracts. Zero amounts are ignored.
 
 ## API
 - `POST /orders` (`lines[]`: `itemId+itemCode` or `description`, `qty`, `unitPrice`, `discountPct?`; `creditDays?`, `ref?`) · `GET /orders?status=&q=` (q: no, customer, ref) · `GET /orders/:id` (+ `invoice_no`, `payment_status`, `outstanding`, `deposits`)
@@ -40,11 +43,11 @@ Invoice payment status (computed): `outstanding` → `partially_paid` → `paid`
 Permissions: `sales.order.read|write`, `sales.order.deliver`, `sales.invoice.write`, `sales.receipt.write` (issue receipts / take deposits), `sales.receivable.read` (receipts, receivables, aging).
 
 ## Events
-- publishes `sales.order_confirmed`, `sales.delivered` (→ Inventory issues stock), `sales.invoiced` (+ optional customer, `dueDate`), `sales.payment_received` (receipt issued: kind, totals, invoices settled with remaining outstanding)
-- subscribes `crm.quotation_accepted` (draft order from the accepted quotation)
+- publishes `sales.order_confirmed`, `sales.delivered` (→ Inventory issues stock), `sales.invoiced` (+ optional customer, `dueDate`, wave 5 `issueDate` + `vatMode` → Accounting posts on the invoice date), `sales.payment_received` (receipt issued: kind, totals, invoices settled with remaining outstanding)
+- subscribes `crm.quotation_accepted` (draft order from the accepted quotation), `contracts.installment_due` (draft MA service order)
 
 ## Extension ideas
-Progress billing (ใบแจ้งหนี้ตามงวด) / deposit tax invoices, credit limits, partial deliveries, receipt cancellation (void) with reversal, recurring MA billing,
+Progress billing (ใบแจ้งหนี้ตามงวด) / deposit tax invoices, credit limits, partial deliveries, receipt cancellation (void) with reversal, customer credit terms on MA drafts,
 an overdue-invoice timer event for Automation, e-Tax invoice XML, PDF rendering (use the printable JSON).
 
 ## Screens

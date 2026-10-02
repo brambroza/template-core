@@ -9,9 +9,9 @@
     "identity",
     "master-data"
   ],
-  "enhancedBy": [],
+  "enhancedBy": ["contracts"],
   "publishes": ["helpdesk.ticket_created", "helpdesk.ticket_resolved"],
-  "subscribes": [],
+  "subscribes": ["contracts.visit_due"],
   "permissions": [
     { "key": "helpdesk.ticket.create", "label": "แจ้งปัญหาและติดตามเรื่องของตัวเอง" },
     { "key": "helpdesk.ticket.read", "label": "ดูเรื่องแจ้งปัญหาทั้งหมด" },

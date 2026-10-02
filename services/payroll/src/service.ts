@@ -1,4 +1,5 @@
 import { auth, badRequest, conflict, forbidden, hasPerm, loadManifest, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import type { EventData } from '@erp/contracts';
 import { bahtText, round, toBuddhistYear } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { calculateLine, mergeRules, postings, type PayrollRules, type RecurringItem, type RunTotals, type YearToDate } from './calc.ts';
@@ -248,11 +249,91 @@ async function syncLines(c: Client, run: any) {
   const { first, last } = monthBounds(run.period);
   const eligible = `active and (start_date is null or start_date <= $2::date) and (end_date is null or end_date >= $1::date)`;
   await c.query(`delete from pay_lines where run_id = $3 and profile_id not in (select id from pay_profiles where ${eligible})`, [first, last, run.id]);
+  // new lines start with the unpaid leave HR already approved for the month (hr.leave_decided → leave_inputs)
   await c.query(
-    `insert into pay_lines (run_id, profile_id, employee_code, employee_name, department, position, user_id, bank_name, bank_account_last4, pay_type, base_salary, daily_wage, sso_enrolled)
-     select $3, id, employee_code, employee_name, department, position, user_id, bank_name, bank_account_last4, pay_type, base_salary, daily_wage, sso_enrolled
-     from pay_profiles where ${eligible}
-     on conflict (run_id, profile_id) do nothing`, [first, last, run.id]);
+    `insert into pay_lines (run_id, profile_id, employee_code, employee_name, department, position, user_id, bank_name, bank_account_last4, pay_type, base_salary, daily_wage, sso_enrolled,
+       unpaid_leave_days)
+     select $3, p.id, p.employee_code, p.employee_name, p.department, p.position, p.user_id, p.bank_name, p.bank_account_last4, p.pay_type, p.base_salary, p.daily_wage, p.sso_enrolled,
+       coalesce((select sum(i.days) from leave_inputs i where i.period = $4 and i.status <> 'late'
+                   and (i.profile_id = p.id or (i.profile_id is null and lower(i.employee_code) = lower(p.employee_code)))), 0)
+     from pay_profiles p where ${eligible.replace(/(start_date|end_date|active)/g, 'p.$1')}
+     on conflict (run_id, profile_id) do nothing`, [first, last, run.id, run.period]);
+  await c.query(
+    `update leave_inputs i set status = 'applied', run_id = $1, applied_at = now(), profile_id = l.profile_id
+     from pay_lines l where l.run_id = $1 and i.period = $2 and i.status = 'pending'
+       and (i.profile_id = l.profile_id or (i.profile_id is null and lower(i.employee_code) = lower(l.employee_code)))`, [run.id, run.period]);
+}
+
+/* ---------------- HR → payroll (events) ---------------- */
+
+/** The pay profile of an HR employee: linked by HR id, else an unlinked profile with the same employee code. */
+async function profileOfEmployee(c: Client, employeeId: string | undefined, code: string | undefined) {
+  return (await c.query(
+    `select * from pay_profiles where ($1::uuid is not null and employee_id = $1)
+        or ($2::text is not null and lower(employee_code) = lower($2) and (employee_id is null or $1::uuid is null))
+     order by ($1::uuid is not null and employee_id = $1) desc limit 1`, [employeeId ?? null, code ?? null])).rows[0] ?? null;
+}
+
+/**
+ * `hr.employee_upserted` → create / update the pay profile snapshot (code, name, department, position, login, start / last day).
+ * Salary, bank, tax and SSO settings are payroll's own and never touched. Conflicts (code or login used by another profile) keep the old value.
+ */
+export async function syncEmployee(c: Client, e: EventData<'hr.employee_upserted'>) {
+  const cur = await profileOfEmployee(c, e.employeeId, e.code);
+  const codeFree = !(await c.query('select 1 from pay_profiles where employee_code = $1 and ($2::uuid is null or id <> $2)', [e.code, cur?.id ?? null])).rowCount;
+  const userFree = e.userId ? !(await c.query('select 1 from pay_profiles where user_id = $1 and ($2::uuid is null or id <> $2)', [e.userId, cur?.id ?? null])).rowCount : true;
+  const endDate = e.status === 'resigned' ? e.resignedDate : null;
+  if (!cur) {
+    if (!codeFree) return; // another employee's profile already uses the code — HR must fix the duplicate code
+    await c.query(
+      `insert into pay_profiles (employee_code, employee_name, employee_id, department, position, user_id, start_date, end_date, hr_synced_at, note)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, now(), 'สร้างจากข้อมูลพนักงาน (ฝ่ายบุคคล) — กรอกเงินเดือน บัญชีธนาคาร และค่าลดหย่อน')`,
+      [e.code, e.name, e.employeeId, e.departmentName, e.positionName, userFree ? e.userId : null, e.startDate, endDate]);
+    return;
+  }
+  await c.query(
+    `update pay_profiles set employee_code = $2, employee_name = $3, employee_id = $4, department = $5, position = $6,
+       user_id = $7, start_date = $8, end_date = $9, hr_synced_at = now(), updated_at = now() where id = $1`,
+    [cur.id, codeFree ? e.code : cur.employee_code, e.name, e.employeeId, e.departmentName, e.positionName,
+      e.userId === null ? null : userFree ? e.userId : cur.user_id, e.startDate, endDate]);
+}
+
+/**
+ * `hr.leave_decided` (approved, unpaid type) → unpaid leave days per pay month. Added to the open (draft / calculated) run's line at once
+ * (a calculated run is recalculated); otherwise kept `pending` for the run created later, or `late` when that month is already approved / paid.
+ * Idempotent per leave + month. Never throws for business reasons.
+ */
+export async function recordUnpaidLeave(c: Client, e: EventData<'hr.leave_decided'>) {
+  if (e.decision !== 'approved' || !e.unpaid || !e.employeeCode) return;
+  const months = e.byMonth?.length ? e.byMonth : e.from && e.days !== undefined ? [{ period: e.from.slice(0, 7), days: e.days }] : [];
+  const profile = await profileOfEmployee(c, e.employeeId, e.employeeCode);
+  for (const m of months) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(m.period) || !(m.days > 0)) continue;
+    const ins = (await c.query(
+      `insert into leave_inputs (leave_id, leave_no, type_name, employee_id, employee_code, employee_name, profile_id, period, days, from_date, to_date)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) on conflict (tenant_id, leave_id, period) do nothing returning id`,
+      [e.leaveId, e.no, e.typeName, e.employeeId ?? null, e.employeeCode, e.employeeName, profile?.id ?? null, m.period, m.days, e.from ?? null, e.to ?? null])).rows[0];
+    if (!ins) continue;
+    const run = (await c.query(`select * from pay_runs where period = $1 and status <> 'cancelled' for update`, [m.period])).rows[0];
+    if (!run) continue;
+    if (!['draft', 'calculated'].includes(run.status)) {
+      await c.query(`update leave_inputs set status = 'late', run_id = $2 where id = $1`, [ins.id, run.id]);
+      continue;
+    }
+    const line = profile ? (await c.query('select id from pay_lines where run_id = $1 and profile_id = $2', [run.id, profile.id])).rows[0] : null;
+    if (!line) continue; // picked up when the run's lines are synced
+    await c.query('update pay_lines set unpaid_leave_days = unpaid_leave_days + $2, calculated = false, updated_at = now() where id = $1', [line.id, m.days]);
+    await c.query(`update leave_inputs set status = 'applied', run_id = $2, applied_at = now() where id = $1`, [ins.id, run.id]);
+    if (run.status === 'calculated') {
+      await c.query('savepoint payroll_recalc');
+      try {
+        await calculateRun(c, run.id);
+        await c.query('release savepoint payroll_recalc');
+      } catch {
+        await c.query('rollback to savepoint payroll_recalc'); // the line stays "not calculated": approve refuses until someone recalculates
+      }
+    }
+  }
 }
 
 const TOTAL_COLS = ['salary', 'overtime', 'allowances', 'bonus', 'other_income', 'gross', 'unpaid_leave', 'sso_employee', 'sso_employer',
@@ -946,6 +1027,21 @@ export const definition: ServiceDefinition = {
 
     /* ----- dashboard ----- */
 
+    /** Unpaid leave HR approved (hr.leave_decided) per pay month, and whether it reached the run. */
+    app.get('/leave-inputs', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'payroll.run.read');
+      const q = parse(ListQuery.extend({ period: z.string().optional(), status: z.enum(['pending', 'applied', 'late']).optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select i.*, r.no as run_no,
+           case i.status when 'pending' then 'รอสร้างรอบเงินเดือน' when 'applied' then 'ใส่ในรอบเงินเดือนแล้ว' else 'รอบอนุมัติแล้ว — กรอกเอง' end as status_label
+         from leave_inputs i left join pay_runs r on r.id = i.run_id
+         where ($1::text is null or i.period = $1) and ($2::text is null or i.status = $2)
+           and ($3::text is null or i.employee_code ilike $3 or i.employee_name ilike $3 or i.leave_no ilike $3)
+         order by i.period desc, i.employee_code limit $4 offset $5`,
+        [q.period?.trim() || null, q.status ?? null, like(q.q), q.limit, q.offset])).rows);
+    });
+
     app.get('/summary', async (req) => {
       const a = auth(req);
       requirePerm(a, 'payroll.run.read');
@@ -977,6 +1073,10 @@ export const definition: ServiceDefinition = {
       });
     });
 
+  },
+  handlers: {
+    'hr.employee_upserted': async (e, { client }) => syncEmployee(client, e),
+    'hr.leave_decided': async (e, { client }) => recordUnpaidLeave(client, e),
   },
 };
 

@@ -9,7 +9,7 @@
  * This file must stay dependency-free and browser-safe (no node imports): web and mobile both import it.
  */
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'boolean' | 'lookup' | 'multilookup' | 'permissions' | 'password' | 'email';
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'month' | 'select' | 'boolean' | 'lookup' | 'multilookup' | 'permissions' | 'password' | 'email';
 
 export interface Lookup {
   /** module that owns the list; omit = this module */
@@ -38,14 +38,59 @@ export interface Field {
   help?: string;
 }
 
-/** status = coloured state badge; label = Thai name of a code (item type, partner kind…) without a badge */
-export type Format = 'text' | 'money' | 'qty' | 'date' | 'datetime' | 'month' | 'status' | 'label' | 'boolean' | 'list' | 'qr' | 'percent';
+/**
+ * status = coloured state badge; label = Thai name of a code (item type, partner kind…) without a badge;
+ * accounting = money as accountants print it: negatives in parentheses "(1,250.00)", zero as "–".
+ */
+export type Format = 'text' | 'money' | 'accounting' | 'qty' | 'date' | 'datetime' | 'month' | 'status' | 'label' | 'boolean' | 'list' | 'qr' | 'percent';
 
 export interface Column {
   /** dotted path into the record: "customer.name" */
   key: string;
   label: string;
   format?: Format;
+  /** list / detail lines: add a footer row with the sum of this column (report heading/subtotal/total rows are not counted) */
+  total?: boolean;
+  /** report lists: indent this column by the row's level (`ReportSpec.levels` / `indentFrom`) — the account name of a statement */
+  indent?: boolean;
+  /** lists / detail lines: leave the cell blank when it repeats the row above (the account code on ledger lines) */
+  hideRepeats?: boolean;
+  /** detail facts: start a titled group here ("รายได้", "รายการหัก", "ผู้รับผิดชอบ"); the group runs until the next `section` */
+  section?: string;
+  /** detail facts: the figure the document is about (net pay, total) — shown larger, on screen and paper */
+  emphasis?: boolean;
+  /** detail facts: hide the fact when its value is 0 (optional amounts such as OT hours or a bonus) */
+  hideZero?: boolean;
+  /** `false`: leave this column out on phone-width screens (web) — secondary columns of a report that stays a table */
+  phone?: boolean;
+}
+
+/**
+ * A list screen that is a financial report (trial balance, P&L, ledger, tax register). Rows keep their order;
+ * a row field (default `kind`) says what the row is and how it is drawn. Printing gives the company letterhead,
+ * the title and the `subtitle` (period). Web only — mobile shows the plain list.
+ */
+export interface ReportSpec {
+  /** period line under the title, e.g. "ณ วันที่ {asOf|date}" — `{path}` reads the response object; `|date`, `|month`, `|year` (พ.ศ.), `|money` format it */
+  subtitle?: string;
+  /** row field naming the row's role, default "kind" */
+  rowKind?: string;
+  /** row kinds drawn as section titles: bold, amount cells left empty */
+  heading?: string[];
+  /** row kinds drawn as subtotals: bold with a rule above */
+  subtotal?: string[];
+  /** row kinds drawn as totals / results: bold, rule above and a double rule below */
+  total?: string[];
+  /** row kinds drawn quietly (opening / closing balance lines) */
+  muted?: string[];
+  /** indentation level per row kind, e.g. { account: 1 } */
+  levels?: Record<string, number>;
+  /** or: a numeric row field holding the level (account hierarchy) */
+  indentFrom?: string;
+  /** a check shown with the report, e.g. the trial balance balances: boolean at a response path */
+  check?: { path: string; ok: string; fail: string };
+  /** label of the footer row of `total` columns, default "รวม" */
+  totalLabel?: string;
 }
 
 export interface LinesSpec {
@@ -106,6 +151,8 @@ export interface ListScreen extends ScreenBase {
   rowActions?: Action[];
   /** bulk import from a CSV file (web): dry-run preview, then the real import — see ImportSpec */
   import?: ImportSpec;
+  /** draw the list as a financial report (row styles, indentation, totals, period title, letterhead on paper) */
+  report?: ReportSpec;
   empty?: string;
 }
 
@@ -174,7 +221,8 @@ export interface DetailScreen extends ScreenBase {
   heading: string;
   flow?: StatusFlow;
   fields: Column[];
-  lines?: { path: string; label: string; columns: Column[] }[];
+  /** `half: true` sections sit side by side in pairs on wide screens and paper (earnings | deductions on a payslip) */
+  lines?: { path: string; label: string; columns: Column[]; half?: boolean }[];
   actions?: Action[];
   edit?: string;
   /** shorthand for `print: {}` — printable with the default layout */
@@ -565,6 +613,7 @@ export function formatValue(value: unknown, format: Format = 'text', labels?: Re
   if (value === null || value === undefined || value === '') return '—';
   switch (format) {
     case 'money': return money.format(Number(value));
+    case 'accounting': return accounting(Number(value));
     case 'qty': return qty.format(Number(value));
     case 'percent': return `${qty.format(Number(value))}%`;
     case 'date': return formatDate(String(value));
@@ -726,18 +775,19 @@ export function csvDate(value: string, withTime = false): string {
   return withTime ? `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : date;
 }
 
-const NUMERIC_FORMATS: Format[] = ['money', 'qty', 'percent'];
+const NUMERIC_FORMATS: Format[] = ['money', 'accounting', 'qty', 'percent'];
 
 /** One cell's text for a CSV export: numbers stay plain (no grouping) so Excel can sum them; codes get their Thai label. */
 export function csvValue(value: unknown, format: Format = 'text', labels?: Record<string, string>): string {
   if (value === null || value === undefined || value === '') return '';
   switch (format) {
     case 'money':
+    case 'accounting':
     case 'qty':
     case 'percent': {
       const n = Number(value);
       if (!Number.isFinite(n)) return String(value);
-      return format === 'money' ? n.toFixed(2) : String(n);
+      return format === 'money' || format === 'accounting' ? n.toFixed(2) : String(n);
     }
     case 'date': return csvDate(String(value));
     case 'datetime': return csvDate(String(value), true);
@@ -1101,4 +1151,159 @@ export function auditActionLabel(row: { method: string; route: string }): string
   const last = row.route.split('/').filter(Boolean).pop() ?? '';
   if (!last.startsWith(':') && AUDIT_VERBS[last]) return AUDIT_VERBS[last];
   return row.method === 'POST' ? (last.startsWith(':') ? 'บันทึก' : 'สร้าง') : row.method === 'DELETE' ? 'ลบ' : 'แก้ไข';
+}
+
+
+/* ---------------- reports: accounting numbers, row styles, totals, date ranges ---------------- */
+
+/** Money as accountants print it: "1,250.00", "(1,250.00)" for a negative, "–" for zero (rounded to satang). */
+export function accounting(n: number): string {
+  if (!Number.isFinite(n)) return String(n);
+  const r = Math.round(n * 100) / 100;
+  if (r === 0) return '–';
+  return r < 0 ? `(${money.format(-r)})` : money.format(r);
+}
+
+/** A number is negative in a report cell (drawn in red on screen, never on paper). */
+export function isNegative(value: unknown, format?: Format): boolean {
+  return (format === 'accounting' || format === 'money') && value !== null && value !== '' && Math.round(Number(value) * 100) < 0;
+}
+
+export type ReportRowStyle = 'heading' | 'subtotal' | 'total' | 'muted';
+
+/** How a report row is drawn, from its kind field; null = an ordinary line. */
+export function reportRowStyle(spec: ReportSpec | undefined, row: unknown): ReportRowStyle | null {
+  if (!spec) return null;
+  const kind = get(row, spec.rowKind ?? 'kind');
+  if (kind === undefined || kind === null) return null;
+  const k = String(kind);
+  if (spec.heading?.includes(k)) return 'heading';
+  if (spec.total?.includes(k)) return 'total';
+  if (spec.subtotal?.includes(k)) return 'subtotal';
+  if (spec.muted?.includes(k)) return 'muted';
+  return null;
+}
+
+/** Indentation level of a report row (0 = flush): the numeric `indentFrom` field, else `levels[kind]`. */
+export function reportIndent(spec: ReportSpec | undefined, row: unknown): number {
+  if (!spec) return 0;
+  if (spec.indentFrom) {
+    const n = Number(get(row, spec.indentFrom));
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 6) : 0;
+  }
+  const kind = get(row, spec.rowKind ?? 'kind');
+  return kind === undefined || kind === null ? 0 : spec.levels?.[String(kind)] ?? 0;
+}
+
+/**
+ * Footer sums of the `total: true` columns. Only ordinary rows count — a statement's own subtotal and result rows
+ * (and opening/closing lines) would count twice. Null when no column asks for a total. Rounded to satang.
+ */
+export function columnTotals(columns: Column[], rows: unknown[], spec?: ReportSpec): Record<string, number> | null {
+  const keys = columns.filter((c) => c.total).map((c) => c.key);
+  if (!keys.length) return null;
+  const out: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
+  for (const r of rows) {
+    if (reportRowStyle(spec, r)) continue;
+    for (const k of keys) {
+      const v = Number(get(r, k));
+      if (Number.isFinite(v)) out[k] += v;
+    }
+  }
+  for (const k of keys) out[k] = Math.round(out[k] * 100) / 100;
+  return out;
+}
+
+/** True when the cell repeats the same column of the row above (for `hideRepeats`). */
+export function repeatsAbove(rows: unknown[], index: number, key: string): boolean {
+  if (index === 0) return false;
+  const v = get(rows[index], key);
+  return v !== null && v !== undefined && v !== '' && v === get(rows[index - 1], key);
+}
+
+/**
+ * Fill "ณ วันที่ {asOf|date}" from a response. Pipes: date (Thai, พ.ศ.), month ("ตุลาคม 2569"), year (ค.ศ. → พ.ศ.), money.
+ * An empty or missing value leaves the whole template empty, so no half-filled title is shown.
+ */
+export function fillTemplate(template: string, data: unknown): string {
+  let missing = false;
+  const text = template.replace(/\{([\w.]+)(?:\|(\w+))?\}/g, (_, path: string, pipe?: string) => {
+    const v = get(data, path);
+    if (v === null || v === undefined || v === '') { missing = true; return ''; }
+    if (pipe === 'date') return formatDate(String(v));
+    if (pipe === 'month') {
+      const d = new Date(`${String(v).slice(0, 7)}-01T00:00:00`);
+      return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' });
+    }
+    if (pipe === 'money') return money.format(Number(v));
+    if (pipe === 'year') { const y = Number(v); return Number.isFinite(y) ? String(y < 2400 ? y + 543 : y) : String(v); }
+    return String(v);
+  });
+  return missing ? '' : text;
+}
+
+/** A list filter row: single fields, and "from … to" date pairs shown as one range control with presets. */
+export type FilterGroup = { kind: 'field'; field: Field } | { kind: 'range'; from: Field; to: Field };
+
+/** Adjacent date filters named like from/to (from, dateFrom, startFrom … to, dateTo) become one range. */
+export function filterGroups(fields: Field[]): FilterGroup[] {
+  const out: FilterGroup[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const n = fields[i + 1];
+    if (f.type === 'date' && n?.type === 'date' && /from$/i.test(f.name) && /to$/i.test(n.name)
+      && f.name.replace(/from$/i, '') === n.name.replace(/to$/i, '')) {
+      out.push({ kind: 'range', from: f, to: n });
+      i++;
+    } else out.push({ kind: 'field', field: f });
+  }
+  return out;
+}
+
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Quick ranges for a date pair, computed from `today` (local date): this month, last month, this quarter, this year. */
+export function datePresets(today: Date = new Date()): { id: string; label: string; from: string; to: string }[] {
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const q = Math.floor(m / 3) * 3;
+  return [
+    { id: 'month', label: 'เดือนนี้', from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) },
+    { id: 'last-month', label: 'เดือนก่อน', from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) },
+    { id: 'quarter', label: 'ไตรมาสนี้', from: iso(new Date(y, q, 1)), to: iso(new Date(y, q + 3, 0)) },
+    { id: 'year', label: 'ปีนี้', from: iso(new Date(y, 0, 1)), to: iso(new Date(y, 11, 31)) },
+  ];
+}
+
+/** Detail facts split into titled groups at each `section` column (the first group may be untitled). */
+export function factSections(fields: Column[]): { title?: string; fields: Column[] }[] {
+  const out: { title?: string; fields: Column[] }[] = [];
+  for (const f of fields) {
+    if (f.section || !out.length) out.push({ title: f.section, fields: [] });
+    out[out.length - 1].fields.push(f);
+  }
+  return out;
+}
+
+const AUDIT_HIDDEN = new Set(['ref', 'contentType', 'dataBase64', 'password', 'token']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What an audit row changed, for people: internal parts of the stored summary text ("ref: claim:…", content
+ * types, bare record ids) are left out, file uploads read "ไฟล์ <name>".
+ */
+export function auditDetailText(row: { route: string; summary_text: string }): string {
+  const parts = (row.summary_text ?? '').split(' · ').map((p) => p.trim()).filter(Boolean);
+  const kept = parts.filter((p) => {
+    const i = p.indexOf(': ');
+    if (i < 0) return true;
+    const key = p.slice(0, i);
+    const value = p.slice(i + 2).replace(/^[\w-]+:/, '');
+    return !AUDIT_HIDDEN.has(key) && !UUID.test(value) && !/Id$/.test(key);
+  });
+  if (row.route === '/_attachments') {
+    const file = kept.find((p) => p.startsWith('fileName: '));
+    if (file) return `ไฟล์ ${file.slice('fileName: '.length)}`;
+  }
+  return kept.join(' · ');
 }

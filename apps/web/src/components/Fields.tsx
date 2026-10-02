@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
+import { datePresets, get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
 
@@ -165,6 +165,40 @@ function PermissionsInput({ field, values, onChange }: FieldProps) {
   );
 }
 
+/** Largest picture kept as a data URL in a text field (company logo). */
+const IMAGE_MAX_BYTES = 300 * 1024;
+
+/**
+ * A text field that holds a picture as a data URL (the company logo): preview + choose / remove a file, instead of
+ * a box of base64 text. Recognised by its value ("data:image/…") or by a help text that mentions data:image.
+ */
+function ImageDataInput({ field, values, onChange }: FieldProps) {
+  const v = String(values[field.name] ?? '');
+  const input = useRef<HTMLInputElement>(null);
+  const [problem, setProblem] = useState('');
+  const pick = (file: File) => {
+    if (!/^image\/(png|jpeg|svg\+xml|webp)$/.test(file.type)) { setProblem('เลือกไฟล์รูป PNG, JPEG, SVG หรือ WebP'); return; }
+    if (file.size > IMAGE_MAX_BYTES) { setProblem(`ไฟล์ใหญ่ ${Math.round(file.size / 1024)} KB — ไม่เกิน ${IMAGE_MAX_BYTES / 1024} KB`); return; }
+    const r = new FileReader();
+    r.onload = () => { setProblem(''); onChange({ [field.name]: String(r.result) }); };
+    r.readAsDataURL(file);
+  };
+  return (
+    <div className="image-input">
+      <div className="image-preview">{v ? <img src={v} alt={field.label} /> : <span className="muted">ยังไม่มีรูป</span>}</div>
+      <div className="image-actions">
+        <button type="button" className="btn" onClick={() => input.current?.click()}>{v ? 'เปลี่ยนรูป' : 'เลือกไฟล์รูป'}</button>
+        {v && <button type="button" className="btn-ghost" onClick={() => onChange({ [field.name]: '' })}>ลบรูป</button>}
+        <input ref={input} type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label={field.label}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = ''; }} />
+        {problem && <p className="field-error" role="alert">{problem}</p>}
+      </div>
+    </div>
+  );
+}
+
+const isImageData = (field: Field, v: unknown) => field.type === 'textarea' && (String(v ?? '').startsWith('data:image/') || /data:image/.test(field.help ?? ''));
+
 export function FieldInput(props: FieldProps) {
   const { field, values, onChange, error, compact } = props;
   const v = values[field.name];
@@ -173,7 +207,8 @@ export function FieldInput(props: FieldProps) {
     case 'lookup': return <LookupInput {...props} />;
     case 'multilookup': return <MultiLookup {...props} />;
     case 'permissions': return <PermissionsInput {...props} />;
-    case 'textarea': return <textarea {...common} rows={3} value={String(v ?? '')} onChange={(e) => onChange({ [field.name]: e.target.value })} />;
+    case 'textarea': if (isImageData(field, v)) return <ImageDataInput {...props} />;
+      return <textarea {...common} rows={3} value={String(v ?? '')} onChange={(e) => onChange({ [field.name]: e.target.value })} />;
     case 'boolean':
       return (
         <label className="check">
@@ -183,16 +218,26 @@ export function FieldInput(props: FieldProps) {
       );
     case 'select':
       return (
-        <select {...common} value={String(v ?? '')} onChange={(e) => onChange({ [field.name]: e.target.value })}>
+        <select {...common} value={String(v ?? (compact && field.default !== undefined ? field.default : ''))} onChange={(e) => onChange({ [field.name]: e.target.value })}>
           <option value="">{compact ? field.label : 'ทั้งหมด / ไม่ระบุ'}</option>
           {field.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+      );
+    case 'date':
+    case 'month':
+      // a date box shows its own mm/dd/yyyy text, so a compact (filter) one carries its label above the value
+      return (
+        <label className={compact ? 'float-field' : 'date-field'}>
+          {compact && <span className="float-label">{field.label}</span>}
+          <input {...common} type={field.type} placeholder={field.type === 'month' ? 'YYYY-MM' : undefined} value={String(v ?? '')}
+            onChange={(e) => onChange({ [field.name]: e.target.value })} />
+        </label>
       );
     default:
       return (
         <input
           {...common}
-          type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'password' ? 'password' : field.type === 'email' ? 'email' : 'text'}
+          type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : field.type === 'email' ? 'email' : 'text'}
           inputMode={field.type === 'number' ? 'decimal' : undefined}
           step={field.type === 'number' ? field.step ?? 'any' : undefined}
           placeholder={compact ? field.label : undefined}
@@ -207,7 +252,7 @@ export function FieldRow({ field, error, ...rest }: FieldProps) {
   const id = useId();
   if (field.type === 'boolean') return <div className="field"><FieldInput field={field} error={error} {...rest} />{error && <p className="field-error">{error}</p>}</div>;
   return (
-    <div className={`field${field.type === 'textarea' || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
+    <div className={`field${(field.type === 'textarea' && !isImageData(field, rest.values[field.name])) || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
       <label htmlFor={id}>{field.label}{field.required && <span className="req" aria-hidden> *</span>}</label>
       <div id={id}><FieldInput field={field} error={error} {...rest} /></div>
       {field.help && !error && <p className="field-help">{field.help}</p>}
@@ -249,5 +294,34 @@ export function LinesEditor({ spec, module, lines, onChange, errors }: { spec: L
       </table>
       <button type="button" className="btn" onClick={() => onChange([...lines, { ...blank }])}>เพิ่มรายการ</button>
     </section>
+  );
+}
+
+/**
+ * A "from – to" pair of date filters as one control: both dates in one box under the pair's label,
+ * plus quick ranges (this month, last month, this quarter, this year). Each date keeps its own query param.
+ */
+export function DateRangeInput({ from, to, values, onChange }: { from: Field; to: Field; values: Values; onChange: (patch: Values) => void }) {
+  const a = String(values[from.name] ?? '');
+  const b = String(values[to.name] ?? '');
+  const presets = datePresets();
+  const active = presets.find((p) => p.from === a && p.to === b)?.id;
+  return (
+    <div className="date-range" role="group" aria-label={`${from.label} – ${to.label}`}>
+      <div className="float-field range-box">
+        <span className="float-label">{from.label} – {to.label}</span>
+        <span className="range-inputs">
+          <input type="date" aria-label={from.label} value={a} max={b || undefined} onChange={(e) => onChange({ [from.name]: e.target.value })} />
+          <span aria-hidden className="range-dash">–</span>
+          <input type="date" aria-label={to.label} value={b} min={a || undefined} onChange={(e) => onChange({ [to.name]: e.target.value })} />
+        </span>
+      </div>
+      <div className="range-presets">
+        {presets.map((p) => (
+          <button key={p.id} type="button" className={`chip-btn${active === p.id ? ' is-on' : ''}`} aria-pressed={active === p.id}
+            onClick={() => onChange(active === p.id ? { [from.name]: '', [to.name]: '' } : { [from.name]: p.from, [to.name]: p.to })}>{p.label}</button>
+        ))}
+      </div>
+    </div>
   );
 }

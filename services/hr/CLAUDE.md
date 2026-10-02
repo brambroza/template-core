@@ -8,7 +8,7 @@ Employee register, leave with quotas and approval, mobile check-in/out with late
 - `employees` (code, prefix นาย/นาง/นางสาว, first/last name, nickname, department, position, start/birth date, phone, email,
   `active | probation | resigned` + `resigned_on`, `user_id` = identity user, unique per tenant, `manager_id` = direct manager (an employee))
 - `holidays` (holiday_date, name) · `work_settings` (one row per tenant: start_time, end_time, grace_minutes, saturday_workday)
-- `leave_types` (code, name, `days_per_year` null = unlimited, allow_half_day, active, sort_order)
+- `leave_types` (code, name, `days_per_year` null = unlimited, allow_half_day, active, sort_order, `unpaid` = ลาไม่รับค่าจ้าง (migration 003; seeded `UNPAID` is true))
 - `leave_requests` (`LV-2569-0001`, employee, type, from/to, half_day, `days` = working days, reason, `pending → approved | rejected | cancelled`,
   requested_by + `requested_by_name`, decided_by + `decided_by_name`, decided_at, decision_note)
 - `attendance` (one row per employee per `work_date`: check_in_at/out_at, late_minutes, early_minutes, work_minutes, GPS in/out, note, `source self | admin`, recorded_by + `recorded_by_name`)
@@ -33,7 +33,8 @@ Employee register, leave with quotas and approval, mobile check-in/out with late
   Only `hr.attendance.manage` may pass `at` or `date`+`time` (forgotten scans; recorded as `source = admin`); impossible dates (30 Feb) → 400.
   Check-out closes the latest open check-in within 20 h (night shifts), stores work and early-leave minutes.
 - Resigning cancels the employee's pending leave after the last day; resigned staff cannot check in or file leave.
-- `POST /leave-types/defaults` seeds Thai Labour Protection Act types (ลาป่วย 30, ลากิจ 3, ลาพักร้อน 6, ลาคลอด 98, ลาบวช, ลารับราชการทหาร, ลาไม่รับค่าจ้าง); idempotent.
+- `POST /leave-types/defaults` seeds Thai Labour Protection Act types (ลาป่วย 30, ลากิจ 3, ลาพักร้อน 6, ลาคลอด 98, ลาบวช, ลารับราชการทหาร, ลาไม่รับค่าจ้าง `unpaid`); idempotent.
+- Leave types take `unpaid: boolean` on create / PATCH (Payroll deducts approved days of unpaid types).
 
 ## API
 - `GET/POST /departments` (`managerEmployeeId` sets the head; `manager_name` follows it) · `GET/PATCH /departments/:id` · `GET/POST /positions`
@@ -55,9 +56,14 @@ Managers need no special permission — being the approver in the org chart (wit
 
 ## Events
 - publishes `hr.leave_requested` (leaveId, no, employeeName, typeName, from, to, days, employeeUserId, approverUserId, approverName — approver null = HR) when a leave request is filed.
-- publishes `hr.leave_decided` (leaveId, no, employeeName, typeName, decision approved|rejected, employeeUserId, byName, note) on approve / reject.
+- publishes `hr.leave_decided` (leaveId, no, employeeName, typeName, decision approved|rejected, employeeUserId, byName, note) on approve / reject;
+  wave 5 adds `employeeId`, `employeeCode`, `from`, `to`, `days`, `unpaid` (the type's flag) and `byMonth[{ period: YYYY-MM, days }]` (working days per month
+  by the HR calendar; one month = the stored days) → Payroll puts unpaid days into that month's run.
+- publishes `hr.employee_upserted` (employeeId, code, name (prefix + first + last), departmentName, positionName, status, startDate, resignedDate, userId) after
+  `POST /employees`, `PATCH /employees/:id`, `confirm` and `resign` → Payroll creates / updates the pay profile. No salary or ID numbers.
   Automation alerts the manager (`field:approverUserId`) and the employee (`field:employeeUserId`) personally.
-- subscribes: none. Candidates (not added): `hr.employee_resigned` (identity deactivation).
+- subscribes: none. Candidates (not added): identity deactivation on resign (could subscribe to `hr.employee_upserted` status resigned);
+  an event for cancelling approved leave (Payroll would undo unpaid days).
 
 ## Screens
 `src/ui.ts`: self-service `me` (check-in/out buttons, balance, recent leave), `checkIn`/`checkOut`/`leaveNew`/`myLeaves` (mobile),

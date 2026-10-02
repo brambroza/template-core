@@ -1,5 +1,5 @@
 import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
-import { documentTotals } from '@erp/thai';
+import { documentTotals, VAT_RATE } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -192,6 +192,8 @@ export const definition: ServiceDefinition = {
         await k.emit(c, 'purchasing.goods_returned', {
           returnId: rt.id, returnNo: no, poId: po.id, poNo: po.no, supplierId: po.supplier_id, supplierName: po.supplier_name, warehouseCode,
           lines: out.map((o) => ({ itemId: o.line.item_id, itemCode: o.line.item_code, itemName: o.line.item_name ?? undefined, qty: o.qty, unitPrice: Number(o.line.unit_price), reason: o.reason })),
+          // wave 5: the credit note's VAT split → accounting reverses ภาษีซื้อ
+          vatMode: po.vat_mode, net: t.net, vat: t.vat, gross: t.gross, ...(b.returnDate ? { returnDate: b.returnDate } : {}),
         });
         return loadReturn(c, rt.id);
       });
@@ -230,12 +232,15 @@ export const definition: ServiceDefinition = {
           if (!line) throw badRequest(`Line ${w.lineId} is not on ${po.no}`);
           if (line.received_qty + w.qty > line.qty) throw conflict(`Line ${line.line_no} (${line.item_code}): receiving ${w.qty} exceeds outstanding ${line.qty - line.received_qty}`);
           await c.query('update po_lines set received_qty = received_qty + $2 where id = $1', [line.id, w.qty]);
-          received.push({ itemId: line.item_id, itemCode: line.item_code, itemName: line.item_name ?? undefined, qty: w.qty, unitPrice: line.unit_price });
+          received.push({ itemId: line.item_id, itemCode: line.item_code, itemName: line.item_name ?? undefined, qty: w.qty, unitPrice: line.unit_price, vatRate: VAT_RATE });
         }
+        // wave 5: this receipt's VAT split at the PO's VAT mode → accounting books stock (net) and ภาษีซื้อ (vat) separately
+        const vt = documentTotals(received.map((r) => ({ qty: r.qty, unitPrice: Number(r.unitPrice) })), po.vat_mode);
         const done = (await c.query('select bool_and(received_qty >= qty) as all from po_lines where po_id = $1', [id])).rows[0].all;
         await c.query('update purchase_orders set status = $2 where id = $1', [id, done ? 'received' : 'partially_received']);
         await k.emit(c, 'purchasing.goods_received', {
           poId: po.id, poNo: po.no, supplierId: po.supplier_id, supplierName: po.supplier_name, warehouseCode: po.warehouse_code, lines: received,
+          vatMode: po.vat_mode, net: vt.net, vat: vt.vat, gross: vt.gross,
         });
         return loadPo(c, id);
       });

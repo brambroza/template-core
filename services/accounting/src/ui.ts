@@ -64,6 +64,10 @@ const jvHeader: Field[] = [
 ];
 
 const money = (key: string, label: string) => ({ key, label, format: 'money' as const });
+/** amounts on statements: (1,250.00) for negatives, – for zero; `total` adds the column to the footer row */
+const acc = (key: string, label: string, total = false) => ({ key, label, format: 'accounting' as const, ...(total ? { total } : {}) });
+/** P&L / balance sheet rows: kind section | account | total | result | heading (reports.ts) */
+const statement = { heading: ['heading', 'section'], subtotal: ['total'], total: ['result'], levels: { account: 1 } };
 
 export default defineUi({
   module: 'accounting',
@@ -84,6 +88,7 @@ export default defineUi({
     { label: 'ภาษีถูกหัก ณ ที่จ่าย', screen: 'whtReceived' },
     { label: 'ลงบัญชีอัตโนมัติไม่สำเร็จ', screen: 'postingErrors' },
     { label: 'กฎการลงบัญชีอัตโนมัติ', screen: 'postingRules' },
+    { label: 'จับคู่หมวดค่าใช้จ่าย', screen: 'categoryMappings' },
     { label: 'ปิดงวดบัญชี', screen: 'periods' },
   ],
   commands: [
@@ -147,7 +152,7 @@ export default defineUi({
       lines: [{ path: 'lines', label: 'รายการบัญชี', columns: [
         { key: 'line_no', label: '#' }, { key: 'account_code', label: 'รหัสบัญชี' }, { key: 'account_name', label: 'ชื่อบัญชี' },
         { key: 'description', label: 'คำอธิบาย' }, { key: 'partner_name', label: 'คู่ค้า' },
-        money('debit', 'เดบิต'), money('credit', 'เครดิต'), money('tax_base', 'ฐานภาษี'),
+        acc('debit', 'เดบิต', true), acc('credit', 'เครดิต', true), acc('tax_base', 'ฐานภาษี'),
       ] }],
       actions: [
         { id: 'post', label: 'ผ่านรายการ', method: 'POST', endpoint: '/journals/:id/post', perm: POST, when: { field: 'status', in: ['draft'] }, tone: 'primary', confirm: 'ผ่านรายการแล้วจะแก้ไขไม่ได้ (ต้องกลับรายการ) ยืนยัน?' },
@@ -234,6 +239,30 @@ export default defineUi({
       rowActions: [{ id: 'account', label: 'เปลี่ยนบัญชี', method: 'PUT', endpoint: '/posting-rules/:id', perm: ACCOUNT, fields: [accountLookup('accountId', 'บัญชีที่ใช้')] }],
       empty: 'ยังไม่มีกฎ — เปิดหน้าผังบัญชีเพื่อสร้างผังบัญชีและกฎมาตรฐาน',
     },
+    categoryMappings: {
+      kind: 'list', title: 'จับคู่หมวดค่าใช้จ่าย (ใบเบิก) กับบัญชี', endpoint: '/category-mappings', perm: READ,
+      filters: [{ name: 'q', label: 'ค้นหาหมวดหรือบัญชี', type: 'text' }],
+      columns: [
+        { key: 'category_code', label: 'รหัสหมวด' }, { key: 'category_name', label: 'ชื่อหมวด' }, { key: 'account_label', label: 'ลงบัญชี' }, { key: 'note', label: 'หมายเหตุ' },
+      ],
+      create: 'categoryMappingNew', createLabel: 'เพิ่มการจับคู่',
+      rowActions: [
+        { id: 'edit', label: 'แก้ไข', method: 'PUT', endpoint: '/category-mappings/:id', perm: ACCOUNT,
+          fields: [{ name: 'categoryName', label: 'ชื่อหมวด (ใช้จับคู่เมื่อรหัสไม่ตรง)', type: 'text' }, accountLookup('accountId', 'ลงบัญชี')] },
+        { id: 'delete', label: 'ลบ', method: 'DELETE', endpoint: '/category-mappings/:id', perm: ACCOUNT, tone: 'danger', confirm: 'ลบการจับคู่นี้? ใบเบิกหมวดนี้จะลงบัญชีค่าใช้จ่ายตามกฎ', toast: 'message' },
+      ],
+      empty: 'ยังไม่มีการจับคู่ — หมวดที่ไม่จับคู่จะลงบัญชี "ค่าใช้จ่าย" ตามกฎการลงบัญชีอัตโนมัติ',
+    },
+    categoryMappingNew: {
+      kind: 'form', title: 'จับคู่หมวดค่าใช้จ่ายกับบัญชี', method: 'POST', endpoint: '/category-mappings', perm: ACCOUNT,
+      fields: [
+        { name: 'categoryCode', label: 'รหัสหมวดค่าใช้จ่าย (ตามระบบเบิกค่าใช้จ่าย)', type: 'text', required: true, help: 'เช่น FUEL, TRAVEL, ENTERTAIN' },
+        { name: 'categoryName', label: 'ชื่อหมวด', type: 'text', help: 'ใช้จับคู่เมื่อรหัสไม่ตรง เช่น ค่าน้ำมัน' },
+        accountLookup('accountId', 'ลงบัญชี'),
+        { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
+      ],
+      submitLabel: 'บันทึก', after: { screen: 'categoryMappings' },
+    },
     postingErrors: {
       kind: 'list', title: 'ลงบัญชีอัตโนมัติไม่สำเร็จ', endpoint: '/posting-errors', perm: READ,
       filters: [
@@ -267,12 +296,13 @@ export default defineUi({
 
     /* ---------- reports ---------- */
     trialBalance: {
-      kind: 'list', title: 'งบทดลอง', endpoint: '/reports/trial-balance', rows: 'table', perm: REPORT,
-      filters: [{ name: 'asOf', label: 'ณ วันที่ (เว้นว่าง = วันนี้)', type: 'date' }, { name: 'all', label: 'แสดง', type: 'select', options: [{ value: 'true', label: 'ทุกบัญชี (รวมยอดศูนย์)' }] }],
+      kind: 'list', title: 'งบทดลอง', endpoint: '/reports/trial-balance', rows: 'rows', perm: REPORT,
+      filters: [{ name: 'asOf', label: 'ณ วันที่ (เว้นว่าง = วันนี้)', type: 'date' }, { name: 'all', label: 'แสดงบัญชีที่ยอดเป็นศูนย์', type: 'boolean' }],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อบัญชี' }, { key: 'type_label', label: 'หมวด' },
-        money('debit_total', 'เดบิตสะสม'), money('credit_total', 'เครดิตสะสม'), money('debit', 'ยอดคงเหลือเดบิต'), money('credit', 'ยอดคงเหลือเครดิต'),
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อบัญชี' }, { key: 'type_label', label: 'หมวด', phone: false },
+        { ...acc('debit_total', 'เดบิตสะสม', true), phone: false }, { ...acc('credit_total', 'เครดิตสะสม', true), phone: false }, acc('debit', 'คงเหลือเดบิต', true), acc('credit', 'คงเหลือเครดิต', true),
       ],
+      report: { subtitle: 'ณ วันที่ {asOf|date}', totalLabel: 'รวม', check: { path: 'totals.balanced', ok: 'งบทดลองสมดุล — เดบิตเท่ากับเครดิต', fail: 'งบทดลองไม่สมดุล ต่างกัน {totals.difference|money} บาท' } },
       empty: 'ยังไม่มีรายการที่ผ่านแล้ว',
     },
     ledger: {
@@ -283,59 +313,67 @@ export default defineUi({
         { name: 'to', label: 'ถึงวันที่ (เว้นว่าง = วันนี้)', type: 'date' },
       ],
       columns: [
-        { key: 'account_code', label: 'บัญชี' }, { key: 'entry_date', label: 'วันที่', format: 'date' }, { key: 'no', label: 'เลขที่' },
-        { key: 'description', label: 'คำอธิบาย' }, { key: 'partner_name', label: 'คู่ค้า' },
-        money('debit', 'เดบิต'), money('credit', 'เครดิต'), money('balance', 'คงเหลือ'),
+        { key: 'account_code', label: 'บัญชี', hideRepeats: true }, { key: 'entry_date', label: 'วันที่', format: 'date' }, { key: 'no', label: 'เลขที่' },
+        { key: 'description', label: 'คำอธิบาย' }, { key: 'partner_name', label: 'คู่ค้า', phone: false },
+        acc('debit', 'เดบิต'), acc('credit', 'เครดิต'), acc('balance', 'คงเหลือ'),
       ],
+      // ledger rows: kind opening (ยอดยกมา) | line | closing (ยอดยกไป, with the period's debit/credit)
+      report: { subtitle: '{from|date} – {to|date}', muted: ['opening'], subtotal: ['closing'] },
       rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
       empty: 'ไม่มีรายการในช่วงวันที่นี้',
     },
     profitLoss: {
       kind: 'list', title: 'งบกำไรขาดทุน', endpoint: '/reports/profit-loss', rows: 'rows', perm: REPORT, mobile: true,
-      filters: [{ name: 'month', label: 'เดือน (YYYY-MM, เว้นว่าง = เดือนนี้)', type: 'text' }],
-      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'รายการ' }, money('month', 'เดือนนี้'), money('ytd', 'สะสมตั้งแต่ต้นปี')],
+      filters: [{ name: 'month', label: 'เดือน (เว้นว่าง = เดือนนี้)', type: 'month' }],
+      columns: [{ key: 'code', label: 'รหัส', phone: false }, { key: 'name', label: 'รายการ', indent: true }, acc('month', 'เดือนนี้'), acc('ytd', 'สะสมตั้งแต่ต้นปี')],
+      report: { ...statement, subtitle: 'สำหรับเดือน {month|month} และสะสมตั้งแต่ {ytdFrom|date}' },
       empty: 'ยังไม่มีรายการ',
     },
     balanceSheet: {
       kind: 'list', title: 'งบแสดงฐานะการเงิน', endpoint: '/reports/balance-sheet', rows: 'rows', perm: REPORT, mobile: true,
       filters: [{ name: 'asOf', label: 'ณ วันที่ (เว้นว่าง = วันนี้)', type: 'date' }],
-      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'รายการ' }, money('amount', 'จำนวนเงิน')],
+      columns: [{ key: 'code', label: 'รหัส', phone: false }, { key: 'name', label: 'รายการ', indent: true }, acc('amount', 'จำนวนเงิน')],
+      report: { ...statement, subtitle: 'ณ วันที่ {asOf|date}', check: { path: 'totals.balanced', ok: 'สินทรัพย์ = หนี้สิน + ส่วนของผู้ถือหุ้น', fail: 'งบไม่สมดุล ต่างกัน {totals.difference|money} บาท' } },
       empty: 'ยังไม่มีรายการ',
     },
     vatReport: {
-      kind: 'list', title: 'สรุปภาษีมูลค่าเพิ่มรายเดือน (ภ.พ.30)', endpoint: '/reports/vat', rows: 'table', perm: REPORT,
-      filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'text' }],
+      kind: 'list', title: 'สรุปภาษีมูลค่าเพิ่มรายเดือน (ภ.พ.30)', endpoint: '/reports/vat', rows: 'rows', perm: REPORT,
+      filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }],
       columns: [
-        { key: 'month_th', label: 'เดือนภาษี' }, money('output_base', 'ยอดขาย (ฐานภาษี)'), money('output_vat', 'ภาษีขาย'),
-        money('input_base', 'ยอดซื้อ (ฐานภาษี)'), money('input_vat', 'ภาษีซื้อ'), money('net', 'ภาษีที่ต้องชำระ (ขอคืน)'), { key: 'result', label: 'ผล' },
+        { key: 'month_th', label: 'เดือนภาษี' }, acc('output_base', 'ยอดขาย (ฐานภาษี)', true), acc('output_vat', 'ภาษีขาย', true),
+        acc('input_base', 'ยอดซื้อ (ฐานภาษี)', true), acc('input_vat', 'ภาษีซื้อ', true), acc('net', 'ชำระเพิ่ม (ขอคืน)', true), { key: 'result', label: 'ผล' },
       ],
+      report: { subtitle: 'ปีภาษี {year|year}', totalLabel: 'รวมทั้งปี' },
     },
     vatLines: {
       kind: 'list', title: 'รายงานภาษีขาย / ภาษีซื้อ', endpoint: '/reports/vat/lines', rows: 'rows', perm: REPORT,
       filters: [
         { name: 'kind', label: 'รายงาน', type: 'select', options: [{ value: 'output', label: 'ภาษีขาย' }, { value: 'input', label: 'ภาษีซื้อ' }], default: 'output' },
-        { name: 'month', label: 'เดือนภาษี (YYYY-MM, เว้นว่าง = เดือนนี้)', type: 'text' },
+        { name: 'month', label: 'เดือนภาษี (เว้นว่าง = เดือนนี้)', type: 'month' },
       ],
       columns: [
         { key: 'seq', label: 'ลำดับ' }, { key: 'entry_date', label: 'วันที่', format: 'date' }, { key: 'ref', label: 'เลขที่ใบกำกับ/เอกสาร' },
-        { key: 'partner_name', label: 'ชื่อผู้ซื้อ/ผู้ขาย' }, { key: 'no', label: 'สมุดรายวัน' }, money('tax_base', 'มูลค่าสินค้า/บริการ'), money('vat', 'ภาษีมูลค่าเพิ่ม'),
+        { key: 'partner_name', label: 'ชื่อผู้ซื้อ/ผู้ขาย' }, { key: 'no', label: 'สมุดรายวัน' }, acc('tax_base', 'มูลค่าสินค้า/บริการ', true), acc('vat', 'ภาษีมูลค่าเพิ่ม', true),
       ],
+      report: { subtitle: '{title} เดือนภาษี {monthTh}' },
       rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
       empty: 'ไม่มีรายการภาษีในเดือนนี้',
     },
     whtReceived: {
       kind: 'list', title: 'ภาษีเงินได้ถูกหัก ณ ที่จ่าย (ติดตามหนังสือรับรอง 50 ทวิ)', endpoint: '/reports/wht-received', rows: 'lines', perm: REPORT,
-      filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'text' }],
+      filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }],
       columns: [
         { key: 'entry_date', label: 'วันที่', format: 'date' }, { key: 'ref', label: 'ใบเสร็จ' }, { key: 'partner_name', label: 'ลูกค้า (ผู้หักภาษี)' },
-        { key: 'no', label: 'สมุดรายวัน' }, money('amount', 'ภาษีถูกหัก'),
+        { key: 'no', label: 'สมุดรายวัน' }, acc('amount', 'ภาษีถูกหัก', true),
       ],
+      report: { subtitle: 'ปี {year|year}' },
       rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
       empty: 'ไม่มีภาษีถูกหัก ณ ที่จ่ายในปีนี้',
     },
     revenueTrend: {
       kind: 'list', title: 'รายได้ ค่าใช้จ่าย กำไร 6 เดือน', endpoint: '/summary', rows: 'months', perm: REPORT, mobile: true,
-      columns: [{ key: 'month', label: 'เดือน', format: 'month' }, money('revenue', 'รายได้'), money('expense', 'ค่าใช้จ่าย'), money('net', 'กำไร (ขาดทุน)')],
+      columns: [{ key: 'month', label: 'เดือน', format: 'month' }, acc('revenue', 'รายได้', true), acc('expense', 'ค่าใช้จ่าย', true), acc('net', 'กำไร (ขาดทุน)', true)],
+      report: {},
     },
   },
   widgets: [

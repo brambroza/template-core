@@ -3,11 +3,11 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { formatValue, get, groupByArea, hasPerm, type FeedWidget, type KpiWidget, type ModuleUi } from '@erp/ui-schema';
 import { screenPath } from '../src/components/Screens';
-import { Button, ErrorText, s } from '../src/components/ui';
+import { Button, EmptyState, ErrorText, useS } from '../src/components/ui';
 import { api } from '../src/lib/api';
 import { useRegistry } from '../src/lib/registry';
 import { clearSession, getSession } from '../src/lib/session';
-import { c, radius, toneColor } from '../src/lib/theme';
+import { radius, themed, toneColor, usePalette } from '../src/lib/theme';
 
 type Data = Record<string, unknown>;
 
@@ -20,12 +20,16 @@ export default function Home() {
   const session = getSession();
   const perms = session?.permissions ?? [];
   const [data, setData] = useState<Record<string, Data>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const c = usePalette();
+  const s = useS();
+  const st = useSt();
 
   const widgets = modules.flatMap((m) => (m.widgets ?? []).filter((w) => (w.kind === 'kpi' || w.kind === 'feed') && hasPerm(perms, w.perm)).map((w) => ({ m, w })));
   const key = widgets.map(({ m, w }) => `${m.module}${w.endpoint}`).join(',');
   const load = useCallback(() => {
     const srcs = [...new Set(widgets.map(({ m, w }) => `${m.module}|${w.endpoint}`))];
-    Promise.all(srcs.map(async (src) => {
+    return Promise.all(srcs.map(async (src) => {
       const [mod, path] = src.split('|');
       try { return [src, await api<Data>(mod, path)] as const; } catch { return [src, null] as const; }
     })).then((entries) => setData(Object.fromEntries(entries.filter(([, d]) => d)) as Record<string, Data>));
@@ -36,7 +40,15 @@ export default function Home() {
   const feeds = widgets.filter((x): x is { m: ModuleUi; w: FeedWidget } => x.w.kind === 'feed');
 
   return (
-    <ScrollView contentContainerStyle={{ paddingVertical: 16, gap: 18 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { reload(); load(); }} />}>
+    <ScrollView contentContainerStyle={{ paddingVertical: 16, gap: 18 }} refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={async () => { setRefreshing(true); reload(); try { await load(); } finally { setRefreshing(false); } }}
+          tintColor={c.inkSoft}
+          colors={[c.signalDeep]}
+          progressBackgroundColor={c.paper}
+        />
+      }>
       <Stack.Screen options={{ title: session?.tenant.name ?? 'ERP' }} />
       <View style={{ paddingHorizontal: 16 }}>
         <Text style={st.hello}>สวัสดี {session?.user.name?.split(' ')[0] ?? ''}</Text>
@@ -49,7 +61,7 @@ export default function Home() {
           {kpis.flatMap(({ m, w }) => w.items.map((it) => {
             const d = data[`${m.module}|${w.endpoint}`];
             const v = Number(get(d, it.key) ?? 0);
-            const color = v > 0 && it.tone && it.tone !== 'neutral' ? toneColor[it.tone] : c.ink;
+            const color = v > 0 && it.tone && it.tone !== 'neutral' ? toneColor(c, it.tone) : c.ink;
             return (
               <Pressable key={`${m.module}.${w.id}.${it.key}`} accessibilityRole="button" onPress={() => w.href && router.push(screenPath(m.module, w.href))} style={st.kpi}>
                 <Text style={st.kpiModule}>{m.label}</Text>
@@ -98,7 +110,7 @@ export default function Home() {
               </View>
               <View style={st.tiles}>
                 {items.map((i) => (
-                  <Pressable key={i.screen} accessibilityRole="button" onPress={() => router.push(screenPath(m.module, i.screen))} style={({ pressed }) => [st.tile, pressed && { backgroundColor: 'rgba(245,197,24,0.22)' }]}>
+                  <Pressable key={i.screen} accessibilityRole="button" onPress={() => router.push(screenPath(m.module, i.screen))} style={({ pressed }) => [st.tile, pressed && { backgroundColor: c.pressedSignal }]}>
                     <Text style={st.tileText}>{i.label}</Text>
                   </Pressable>
                 ))}
@@ -107,8 +119,9 @@ export default function Home() {
           ))}
         </View>
       ))}
-      {!loading && !error && modules.every((m) => !m.menu.some((i) => m.screens[i.screen]?.mobile)) && (
-        <Text style={[s.muted, { paddingHorizontal: 16 }]}>โมดูลที่ติดตั้งยังไม่มีหน้าจอสำหรับมือถือ ใช้งานผ่านหน้าเว็บได้</Text>
+      {loading && !modules.length && <EmptyState loading title="กำลังโหลด…" />}
+      {!loading && !error && modules.every((m) => !m.menu.some((i) => m.screens[i.screen]?.mobile && hasPerm(perms, m.screens[i.screen].perm))) && (
+        <EmptyState title="ยังไม่มีหน้าจอสำหรับมือถือ" hint="โมดูลที่ติดตั้งหรือสิทธิ์ของบัญชีนี้ยังไม่มีงานบนมือถือ ใช้งานผ่านหน้าเว็บได้" />
       )}
       <View style={{ marginTop: 8, paddingHorizontal: 16 }}>
         <Text style={s.muted}>{session?.user.name} · {session?.user.email}</Text>
@@ -118,7 +131,7 @@ export default function Home() {
   );
 }
 
-const st = StyleSheet.create({
+const useSt = themed((c) => StyleSheet.create({
   hello: { fontSize: 24, fontWeight: '700', color: c.ink },
   area: { paddingHorizontal: 16, marginTop: 6, fontSize: 13, fontWeight: '700', color: c.inkSoft, letterSpacing: 0.2 },
   kpi: { width: 132, padding: 14, borderRadius: radius + 4, backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule, gap: 2 },
@@ -129,11 +142,11 @@ const st = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700', color: c.ink, flex: 1 },
   link: { color: c.signalDeep, fontWeight: '600' },
   glyph: { width: 28, height: 28, borderRadius: 8, backgroundColor: c.signal, alignItems: 'center', justifyContent: 'center' },
-  glyphText: { color: c.ink, fontWeight: '700' },
+  glyphText: { color: c.onSignal, fontWeight: '700' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 12, paddingTop: 4 },
   tile: { flexGrow: 1, flexBasis: '45%', minHeight: 52, justifyContent: 'center', paddingHorizontal: 14, borderRadius: radius, backgroundColor: c.ruleSoft },
   tileText: { fontSize: 15, fontWeight: '500', color: c.ink },
   feedRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.ruleSoft },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 6 },
   feedTitle: { fontSize: 15, fontWeight: '600', color: c.ink },
-});
+}));

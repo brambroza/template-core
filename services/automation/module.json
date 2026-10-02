@@ -21,7 +21,9 @@
     "crm",
     "quality",
     "booking",
-    "assets"
+    "assets",
+    "contracts",
+    "payroll"
   ],
   "publishes": [],
   "subscribes": [
@@ -49,7 +51,11 @@
     "quality.ncr_raised",
     "booking.requested",
     "assets.repair_reported",
-    "sales.payment_received"
+    "sales.payment_received",
+    "contracts.visit_due",
+    "contracts.contract_expiring",
+    "payroll.run_paid",
+    "hr.employee_upserted"
   ],
   "permissions": [
     {

@@ -1,4 +1,5 @@
 import { auth, badRequest, conflict, hasPerm, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import type { EventData } from '@erp/contracts';
 import { bahtText, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
@@ -254,13 +255,14 @@ export const definition: ServiceDefinition = {
         const no = await nextDocNo(c, 'INV', b.issueDate ? new Date(b.issueDate) : new Date());
         const inv = (await c.query(
           `insert into invoices (no, order_id, issue_date, due_date, net, vat, gross)
-           values ($1, $2, coalesce($3::date, current_date), coalesce($4::date, coalesce($3::date, current_date) + $5::int), $6, $7, $8) returning id, due_date`,
+           values ($1, $2, coalesce($3::date, current_date), coalesce($4::date, coalesce($3::date, current_date) + $5::int), $6, $7, $8) returning id, issue_date, due_date`,
           [no, o.id, b.issueDate ?? null, b.dueDate ?? null, o.credit_days, o.net, o.vat, o.gross],
         )).rows[0];
         await c.query(`update sales_orders set status = 'invoiced' where id = $1`, [id]);
         await k.emit(c, 'sales.invoiced', {
           invoiceId: inv.id, invoiceNo: no, orderId: o.id, net: o.net, vat: o.vat, gross: o.gross,
           customerId: o.customer_id, customerName: o.customer_name, dueDate: isoDay(inv.due_date),
+          issueDate: isoDay(inv.issue_date), vatMode: o.vat_mode,
         });
         return printableInvoice(c, inv.id, k.env);
       });
@@ -489,8 +491,25 @@ export const definition: ServiceDefinition = {
         ref: e.no, quotationId: e.quotationId, note: `สร้างจากใบเสนอราคา ${e.no}`, lines,
       }, null);
     },
+    /** Contracts sent an installment due for invoicing → draft service order for billing staff to confirm and invoice. */
+    'contracts.installment_due': async (e, { client }) => draftInstallmentOrder(client, e),
   },
 };
+
+/** `contracts.installment_due` → one draft service order (amount before VAT, VAT exclusive), ref = contract no + installment. Once per installment. */
+export async function draftInstallmentOrder(c: Client, e: EventData<'contracts.installment_due'>) {
+  if (!(e.amount > 0)) return;
+  if ((await c.query('select 1 from sales_orders where contract_installment_id = $1', [e.installmentId])).rowCount) return;
+  const th = (d: string | null) => (d ? formatThaiDate(d) : null);
+  const period = e.periodFrom && e.periodTo ? ` ช่วง ${th(e.periodFrom)} – ${th(e.periodTo)}` : '';
+  const id = await insertOrder(c, {
+    customerId: e.customerId, customerName: e.customerName, warehouseCode: 'MAIN', vatMode: 'exclusive', creditDays: 0,
+    ref: `${e.contractNo} งวด ${e.seq}/${e.count}`.slice(0, 100),
+    note: `สร้างจากงวดสัญญาบริการ ${e.contractNo} (ถึงกำหนด ${th(e.dueDate)}) — ตรวจสอบแล้วยืนยันและออกใบกำกับภาษี จากนั้นบันทึกเลขที่ใบกำกับในงวดสัญญา`,
+    lines: [{ description: `ค่าบริการบำรุงรักษา (MA) ${e.title} ตามสัญญา ${e.contractNo} งวดที่ ${e.seq}/${e.count}${period}`.slice(0, 1000), qty: 1, unitPrice: e.amount, discountPct: 0 }],
+  }, null);
+  await c.query('update sales_orders set contract_installment_id = $2 where id = $1', [id, e.installmentId]);
+}
 
 const isoDay = (d: unknown) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : String(d).slice(0, 10));
 

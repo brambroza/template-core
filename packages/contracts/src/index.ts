@@ -20,6 +20,8 @@ export type ItemRef = z.infer<typeof ItemRef>;
 
 const ItemQty = ItemRef.extend({ qty });
 const ItemQtyPrice = ItemQty.extend({ unitPrice: money });
+/** `exclusive` = prices before VAT, `inclusive` = prices include VAT */
+const VatMode = z.enum(['exclusive', 'inclusive']);
 
 export const events = {
   'master.item_upserted': z.object({ itemId: id, code: z.string(), name: z.string(), type: z.string(), uom: z.string() }),
@@ -39,7 +41,13 @@ export const events = {
 
   'purchasing.goods_received': z.object({
     poId: id, poNo: z.string(), supplierId: id.nullable(), supplierName: z.string(), warehouseCode: z.string(),
-    lines: z.array(ItemQtyPrice).min(1),
+    /** `vatRate` optional (wave 5): VAT rate of the line as a fraction (0.07; 0 = exempt) */
+    lines: z.array(ItemQtyPrice.extend({ vatRate: z.number().min(0).max(1).optional() })).min(1),
+    /**
+     * optional (wave 5): how `unitPrice` relates to VAT (PO's mode) and this receipt's totals — lets accounting split stock (net) from ภาษีซื้อ (vat).
+     * Without them the receipt is booked at Σ qty × unitPrice with no VAT split.
+     */
+    vatMode: VatMode.optional(), net: money.optional(), vat: money.optional(), gross: money.optional(), receivedDate: z.string().optional(),
   }),
 
   'sales.order_confirmed': z.object({
@@ -52,6 +60,8 @@ export const events = {
     invoiceId: id, invoiceNo: z.string(), orderId: id, net: money, vat: money, gross: money,
     /** optional (wave 4) */
     customerId: id.nullable().optional(), customerName: z.string().optional(), dueDate: z.string().optional(),
+    /** optional (wave 5): the tax-invoice date (accounting posts on it) and the order's VAT mode */
+    issueDate: z.string().optional(), vatMode: VatMode.optional(),
   }),
 
   'production.completed': z.object({
@@ -88,7 +98,14 @@ export const events = {
   }),
 
   'expense.claim_submitted': z.object({ claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money, overLimit: z.boolean(), /** optional (wave 4): claimant's user id */ claimantId: id.optional() }),
-  'expense.claim_paid': z.object({ claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money, /** optional (wave 4): claimant's user id */ claimantId: id.optional() }),
+  'expense.claim_paid': z.object({
+    claimId: id, no: z.string(), claimantName: z.string().nullable(), total: money, /** optional (wave 4): claimant's user id */ claimantId: id.optional(),
+    /** optional (wave 5): when / how it was paid and what was claimed — accounting maps each category to an expense account and posts input VAT */
+    paidDate: z.string().optional(), payMethod: z.enum(['transfer', 'cash', 'cheque']).optional(), department: z.string().nullable().optional(),
+    lines: z.array(z.object({ categoryCode: z.string(), categoryName: z.string(), amount: money, vat: money, description: z.string().nullable().optional() })).optional(),
+    /** optional (wave 5): cash advance cleared by this claim (ADV-…) — `total − advanceAmount` was paid now */
+    advanceNo: z.string().nullable().optional(), advanceAmount: money.optional(),
+  }),
 
   'hr.leave_requested': z.object({
     leaveId: id, no: z.string(), employeeName: z.string(), typeName: z.string(), from: z.string(), to: z.string(), days: qty,
@@ -99,6 +116,12 @@ export const events = {
     leaveId: id, no: z.string(), employeeName: z.string(), typeName: z.string(), decision: z.enum(['approved', 'rejected']),
     /** optional (wave 4): the employee's login (to alert them personally) and who decided */
     employeeUserId: id.nullable().optional(), byName: z.string().nullable().optional(), note: z.string().nullable().optional(),
+    /**
+     * optional (wave 5): for payroll — the employee (HR id + code), the leave period and working days, whether the leave type is unpaid
+     * (ลาไม่รับค่าจ้าง) and the working days per calendar month (`YYYY-MM`) so a leave crossing a month end lands in the right pay run.
+     */
+    employeeId: id.optional(), employeeCode: z.string().optional(), from: z.string().optional(), to: z.string().optional(), days: qty.optional(),
+    unpaid: z.boolean().optional(), byMonth: z.array(z.object({ period: z.string(), days: qty })).optional(),
   }),
 
   'helpdesk.ticket_created': z.object({
@@ -156,6 +179,8 @@ export const events = {
   'purchasing.goods_returned': z.object({
     returnId: id, returnNo: z.string(), poId: id, poNo: z.string(), supplierId: id.nullable(), supplierName: z.string(), warehouseCode: z.string(),
     lines: z.array(ItemQtyPrice.extend({ reason: z.string().nullable().optional() })).min(1),
+    /** optional (wave 5): VAT mode of the PO and the return's totals (the credit note to ask for) — accounting reverses ภาษีซื้อ when present */
+    vatMode: VatMode.optional(), net: money.optional(), vat: money.optional(), gross: money.optional(), returnDate: z.string().optional(),
   }),
 
   /* ---- wave 4: receipts & receivables (sales) ---- */
@@ -197,6 +222,26 @@ export const events = {
       ssoEmployee: money, ssoEmployer: money, pvdEmployee: money, pvdEmployer: money, wht: money, otherDeductions: money, totalDeductions: money, net: money,
     }),
     postings: z.array(z.object({ category: z.string(), side: z.enum(['debit', 'credit']), amount: money })),
+  }),
+
+  /* ---- wave 5: one system (HR → payroll, contracts → helpdesk / sales) ---- */
+
+  /**
+   * An employee was created or changed in HR (incl. confirm / resign). Snapshot only — no salary, no national ID.
+   * Payroll keeps its pay profile in sync (code, name, department, position, dates, login); `status` resigned + `resignedDate` = last working day.
+   */
+  'hr.employee_upserted': z.object({
+    employeeId: id, code: z.string(), name: z.string(), departmentName: z.string().nullable(), positionName: z.string().nullable(),
+    status: z.enum(['active', 'probation', 'resigned']), startDate: z.string(), resignedDate: z.string().nullable(), userId: id.nullable(),
+  }),
+  /**
+   * An MA contract installment is due to be invoiced (`POST /billing/due/notify`, once per installment). Amount is before VAT.
+   * Sales drafts a service sales order (ref = contract no + installment) for billing staff to confirm and invoice.
+   */
+  'contracts.installment_due': z.object({
+    installmentId: id, contractId: id, contractNo: z.string(), title: z.string(), customerId: id.nullable(), customerCode: z.string().nullable(), customerName: z.string(),
+    seq: z.number().int(), count: z.number().int(), dueDate: z.string(), amount: money,
+    billingPlan: z.enum(['one_time', 'monthly', 'quarterly', 'yearly']), periodFrom: z.string().nullable(), periodTo: z.string().nullable(),
   }),
 } as const;
 

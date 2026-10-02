@@ -10,7 +10,7 @@
     "master-data"
   ],
   "enhancedBy": ["helpdesk", "sales"],
-  "publishes": ["contracts.visit_due", "contracts.contract_expiring"],
+  "publishes": ["contracts.visit_due", "contracts.contract_expiring", "contracts.installment_due"],
   "subscribes": [],
   "permissions": [
     { "key": "contracts.contract.read", "label": "ดูสัญญาบริการ MA และความคุ้มครอง" },

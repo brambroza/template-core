@@ -3,7 +3,7 @@
 import { branchText, companyContactLine, formatTaxId, type CompanyProfile, type PartyInfo } from '@erp/ui-schema';
 
 /** Company letterhead + document title block, printed at the top of the first page. */
-export function Letterhead({ company, title, docNo, copyLabel }: { company: CompanyProfile | null; title: string; docNo: string; copyLabel?: string }) {
+export function Letterhead({ company, title, docNo, copyLabel, subtitle }: { company: CompanyProfile | null; title: string; docNo: string; copyLabel?: string; subtitle?: string }) {
   const branch = company?.branch_text || company?.branch_label || branchText(company?.branch_code ?? '00000');
   const contact = companyContactLine(company);
   return (
@@ -25,6 +25,7 @@ export function Letterhead({ company, title, docNo, copyLabel }: { company: Comp
         {copyLabel && <p className="lh-copy">{copyLabel}</p>}
         <h1 className="lh-title">{title}</h1>
         {docNo && <p className="lh-no">เลขที่ <b>{docNo}</b></p>}
+        {subtitle && <p className="lh-period">{subtitle}</p>}
       </div>
     </header>
   );

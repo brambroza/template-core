@@ -75,6 +75,48 @@ endpoint ต้องรับค่าเป็นข้อความ (แป
 จาก `GET /_audit?ref=<id>` ของโมดูล — เห็นเฉพาะผู้มีสิทธิ์ `<module>.audit.read` (`auditPerm()` ใน ui-schema; `*` และ `<module>.*` รวมอยู่แล้ว)
 หน้า list ทั่วไปของ log ใช้ `endpoint: '/_audit'` ได้ทุกโมดูล (ตัวอย่าง: identity `audit` — ผู้ใช้และสิทธิ์ → ประวัติการแก้ไข, ฟิลด์ `action`, `summary_text`)
 
+### รายงานการเงิน (`report`) และยอดรวม
+
+หน้า `list` ที่เป็นรายงาน (งบทดลอง งบกำไรขาดทุน แยกประเภท รายงานภาษี) ใส่ `report` แล้ว web วาดเป็น "งบ" แทนตารางงานทั่วไป:
+
+```ts
+profitLoss: {
+  kind: 'list', endpoint: '/reports/profit-loss', rows: 'rows',
+  columns: [
+    { key: 'code', label: 'รหัส', phone: false },                 // จอมือถือไม่แสดงคอลัมน์นี้
+    { key: 'name', label: 'รายการ', indent: true },              // ย่อหน้าตามระดับของแถว
+    { key: 'month', label: 'เดือนนี้', format: 'accounting' },     // (1,250.00) ติดลบ, – = ศูนย์
+  ],
+  report: {
+    subtitle: 'สำหรับเดือน {month|month}',                         // อ่านจาก response: |date |month |year (พ.ศ.) |money
+    heading: ['section'], subtotal: ['total'], total: ['result'], // ชนิดแถวจากฟิลด์ kind (เปลี่ยนด้วย rowKind)
+    muted: ['opening'], levels: { account: 1 },                   // หรือ indentFrom: 'level' (ฟิลด์ตัวเลขระดับบัญชี)
+    check: { path: 'totals.balanced', ok: 'งบสมดุล', fail: 'ต่างกัน {totals.difference|money} บาท' },
+  },
+}
+```
+
+- แถว `heading` ตัวหนาไม่มีตัวเลข · `subtotal` ตัวหนามีเส้นบนตัวเลข · `total` ตัวหนา เส้นบน + เส้นคู่ใต้ตัวเลข · `muted` ตัวเอียงสีจาง (ยอดยกมา)
+- พิมพ์ (ปุ่มพิมพ์รายการ) = หัวกระดาษบริษัท + ชื่อรายงาน + `subtitle` ด้านขวา ตารางแบบงบ ไม่พิมพ์ตัวกรอง/ปุ่ม
+- จอมือถือ: รายงานยังเป็นตาราง (ไม่แปลงเป็นการ์ด) เลื่อนข้างได้ — ใส่ `phone: false` กับคอลัมน์รอง · mobile app แสดงเป็นรายการธรรมดา (ไม่อ่าน `report`)
+- แถวที่ไม่มีค่าของ `rowLink.idFrom` (ยอดยกมา แถวรวม) ไม่เป็นลิงก์ · ช่องว่างในรายงานเว้นว่าง ไม่ขึ้น "—"
+
+คีย์ของ Column ที่ใช้ได้ทั้ง list และ `lines` ของ detail:
+- `total: true` — แถว "รวม" ท้ายตาราง (บวกเฉพาะแถวธรรมดา ไม่บวกแถว heading/subtotal/total ของรายงานซ้ำ), พิมพ์ด้วย
+- `hideRepeats: true` — เว้นว่างเมื่อค่าเท่าแถวบน (รหัสบัญชีในบัญชีแยกประเภท)
+- `format: 'accounting'` — ตัวเลขแบบนักบัญชี ติดลบแสดงสีแดงบนจอ (กระดาษเป็นสีดำ) · CSV ส่งออกเป็นตัวเลขล้วน
+
+คีย์ของ `fields` ในหน้า detail:
+- `section: 'รายได้'` — เริ่มกลุ่มข้อมูลมีหัวข้อ (ถึง section ถัดไป) ทั้งบนจอและกระดาษ
+- `emphasis: true` — ตัวเลขหลักของเอกสาร (จ่ายสุทธิ มูลค่าสัญญา) ตัวใหญ่ พื้นเหลืองอ่อน
+- `hideZero: true` — ไม่แสดงเมื่อเป็น 0 (OT, โบนัส)
+- `lines[].half: true` — สองส่วนติดกันวางคู่ซ้าย-ขวา (รายได้ | รายการหัก ของสลิป) · ส่วนที่ไม่มีรายการแสดงบรรทัดเดียว "ไม่มีรายการ" และไม่พิมพ์
+
+อื่น ๆ ที่ renderer ทำให้เอง: ตัวกรองวันที่คู่ `from`/`to` (หรือ `xxxFrom`/`xxxTo`) รวมเป็นช่องเดียว "ตั้งแต่ – ถึง" พร้อมปุ่ม เดือนนี้/เดือนก่อน/ไตรมาสนี้/ปีนี้ (`filterGroups()`, `datePresets()`) ·
+ช่องวันที่ในตัวกรองมีป้ายชื่อเล็กเหนือค่า · select ในตัวกรองแสดงค่า `default` · คอลัมน์ ใช่/ไม่ใช่ ในตารางแสดง "✓ ใช่" / "–" (ช่องข้อมูล detail ยังเป็นข้อความเต็ม) ·
+`format: 'list'` เป็นชิป (ตารางแสดง 6 ตัว + "+n") · ค่าที่เป็น URL ในหน้า detail มีปุ่มคัดลอก · ช่อง textarea ที่เก็บรูปเป็น data URL (ค่า `data:image/…` หรือ help ที่พูดถึง data:image) เป็นตัวเลือกไฟล์รูปพร้อมตัวอย่าง ·
+หน้า list มีปุ่มเหลืองได้ปุ่มเดียว (ปุ่มสร้าง ถ้ามี) · หัวเรื่อง detail ที่ยาวเกิน 40 ตัวอักษรใช้ขนาดเล็กลง
+
 Action: `then` = เปิดหน้าอื่นด้วยผลลัพธ์ (`idFrom` ไม่ใส่ก็ได้), `toast` = แสดงค่าจาก response เป็นข้อความมุมจอ (เช่น ผลลองรันกฎ), `confirm`, `fields`/`lines` = ถามข้อมูลก่อน
 
 ## ภาพรวมวันนี้ (widgets)
@@ -120,13 +162,13 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 
 ## Field types
 
-`text` `textarea` `number` `date` `select` `boolean` `email` `password`
+`text` `textarea` `number` `date` `month` (เดือน YYYY-MM; มือถือเป็นช่องพิมพ์) `select` `boolean` `email` `password`
 `lookup` — ค้นหาจากโมดูลอื่นแล้วเติมหลายช่อง: `assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }`, `scanField: 'code'` = มือถือสแกน QR/บาร์โค้ดได้
 `multilookup` — เลือกหลายรายการ (เช่น บทบาท) · `permissions` — เลือกสิทธิ์จาก manifest ของโมดูลที่ติดตั้ง
 
 ## Formats (columns / fields)
 
-`text` `money` `qty` `percent` `date` `datetime` (ปี พ.ศ.) `status` (ป้ายสีตามสถานะ) `label` (ชื่อไทยของรหัส) `boolean` `list` `qr`
+`text` `money` `accounting` (งบ: (1,250.00) / –) `qty` `percent` `date` `datetime` (ปี พ.ศ.) `month` `status` (ป้ายสีตามสถานะ) `label` (ชื่อไทยของรหัส) `boolean` `list` `qr`
 
 ## กฎ (ตรวจโดย `tests/ui/descriptors.test.ts`)
 

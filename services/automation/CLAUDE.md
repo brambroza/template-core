@@ -14,7 +14,7 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 
 ## Behaviour
 - `src/catalog.ts` is the single list of events a rule can react to (Thai label, usable fields, default
-  message, link, level) and of the 19 one-click templates (8 factory + 11 office/service). **New event → add it to `@erp/contracts`, to
+  message, link, level) and of the 26 one-click templates (8 factory + 14 office/service + 4 wave 5). **New event → add it to `@erp/contracts`, to
   `module.json` `subscribes`, and to `EVENTS` here.**
 - Handlers never throw: every outcome is a `runs` row. LINE/webhook failures are recorded as `failed`.
 - **Recipients** (notify only): `to` = `'all'` (default — everyone with `automation.notify.read`), `'field:<a>[,<b>]'` (user ids carried by the event; only keys listed in
@@ -60,13 +60,16 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 ## Events
 - publishes: none · subscribes: see `module.json` — factory: stock low, PO created/approved/received, SO confirmed/delivered/invoiced, production completed, breakdown, work completed;
   office/service: `approvals.request_submitted|request_decided`, `expense.claim_submitted|claim_paid`, `hr.leave_requested|leave_decided`,
-  `helpdesk.ticket_created|ticket_resolved`, `crm.lead_created|quotation_accepted`, `quality.inspection_completed|ncr_raised`, `booking.requested`, `assets.repair_reported`.
+  `helpdesk.ticket_created|ticket_resolved`, `crm.lead_created|quotation_accepted`, `quality.inspection_completed|ncr_raised`, `booking.requested`, `assets.repair_reported`,
+  `sales.payment_received`; wave 5: `contracts.visit_due` (userField `technicianId`), `contracts.contract_expiring`, `payroll.run_paid`, `hr.employee_upserted` (userField `userId`, no template).
   Every publisher is optional (`enhancedBy`). Links go to each module's detail screen (`/m/<module>/<detailScreen>/{{id}}`).
 - Enum fields (decision, priority, result, severity, source, stage) carry English codes — conditions compare them (`priority eq urgent`);
   templates write the Thai wording into their own message. Boolean fields (`overLimit`, `needsApproval`) compare as `eq true`.
-- Office templates (22 in total): approval-to-approver (→ `field:nextApproverId,delegateId`), approval-approved / approval-not-approved (→ `field:requesterId`),
+- Office templates (22 templates before wave 5): approval-to-approver (→ `field:nextApproverId,delegateId`), approval-approved / approval-not-approved (→ `field:requesterId`),
   expense-over-limit, expense-paid-to-claimant (→ `field:claimantId`), leave-to-manager (→ `field:approverUserId`), leave-decided-to-employee (→ `field:employeeUserId`),
   urgent-ticket, ticket-resolved-to-requester (→ `field:requesterUserId`), new-lead, quote-accepted, qc-fail, ncr-critical, booking-needs-approval.
+  Wave 5 (26 in total): pm-visit-to-technician (→ `field:technicianId`, in-app + personal LINE), contract-expiring-to-sales (broadcast + LINE group),
+  payment-received ("ลูกค้าชำระเงินแล้ว แจ้งเซลส์/บัญชี", broadcast), payroll-paid ("จ่ายเงินเดือนแล้ว", broadcast — company totals only; no per-role recipients yet).
   `test/service.test.ts` checks that catalogue = `subscribes`, every template condition / recipient field exists (recipients also in the contract), and each sample payload parses against `@erp/contracts`.
 
 ## Screens (src/ui.ts)

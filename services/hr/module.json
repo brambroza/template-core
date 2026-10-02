@@ -9,7 +9,7 @@
     "identity"
   ],
   "enhancedBy": [],
-  "publishes": ["hr.leave_requested", "hr.leave_decided"],
+  "publishes": ["hr.leave_requested", "hr.leave_decided", "hr.employee_upserted"],
   "subscribes": [],
   "permissions": [
     { "key": "hr.employee.read", "label": "ดูข้อมูลพนักงาน ใบลา และภาพรวมฝ่ายบุคคล" },
