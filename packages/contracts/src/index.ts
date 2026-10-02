@@ -76,6 +76,12 @@ export const events = {
       net: money, vat: money, gross: money,
       deposits: z.array(z.object({ depositId: id, depositNo: z.string(), taxInvoiceNo: z.string().nullable(), net: money, vat: money, gross: money })),
     }).optional(),
+    /** optional (wave 9, e-Tax): the invoice's printed lines and the buyer's address — lets an e-Tax module build the XML without reading sales' tables */
+    lines: z.array(z.object({
+      itemId: id.nullable(), itemCode: z.string().nullable(), description: z.string(), qty, uom: z.string().nullable().optional(),
+      unitPrice: money, discount: money.optional(), amount: money, vatRate: z.number().min(0).max(1),
+    })).optional(),
+    customerAddress: z.string().nullable().optional(), customerEmail: z.string().nullable().optional(),
   }),
 
   'production.completed': z.object({
@@ -283,6 +289,54 @@ export const events = {
   'accounting.period_closed': z.object({ period: z.string(), lastDate: z.string(), closedByName: z.string().nullable().optional() }),
   /** A closed period was reopened: a lock date that came from Accounting steps back to the day before `firstDate`. */
   'accounting.period_reopened': z.object({ period: z.string(), firstDate: z.string(), reopenedByName: z.string().nullable().optional() }),
+
+  /* ---- wave 9: credit/debit notes, supplier bills & WHT paid, e-Tax, token revocation ---- */
+
+  /**
+   * A credit note (ใบลดหนี้ CN-2569-0001, §86/10) or debit note (ใบเพิ่มหนี้ DN-2569-0001, §86/9) was issued against a tax invoice.
+   * `net`/`vat`/`gross` are the DIFFERENCE (always positive; `kind` gives the direction). `originalNet` / `correctNet` are the values
+   * printed on the note. Lines with `returnToStock` > 0 put goods back into `warehouseCode` (credit notes only).
+   * Accounting: credit → Dr sales returns/revenue net + Dr ภาษีขาย vat / Cr AR gross; debit → the reverse. The VAT register records it in the note's month.
+   */
+  'sales.note_issued': z.object({
+    noteId: id, noteNo: z.string(), kind: z.enum(['credit', 'debit']), issueDate: z.string(),
+    invoiceId: id, invoiceNo: z.string(), invoiceDate: z.string(),
+    customerId: id.nullable(), customerName: z.string(), customerTaxId: z.string().nullable().optional(), customerBranch: z.string().nullable().optional(),
+    reason: z.string(), originalNet: money, correctNet: money, net: money, vat: money, gross: money,
+    warehouseCode: z.string().nullable().optional(),
+    lines: z.array(z.object({
+      itemId: id.nullable(), itemCode: z.string().nullable(), description: z.string(), qty, unitPrice: money, amount: money,
+      returnToStock: qty.optional(),
+    })),
+  }),
+
+  /** A supplier's tax invoice / bill was recorded (ตั้งหนี้). Accounting: Dr expense-or-GRNI net + Dr ภาษีซื้อ vat (when claimable) / Cr AP gross. */
+  'purchasing.bill_recorded': z.object({
+    billId: id, billNo: z.string(), billDate: z.string(), dueDate: z.string().nullable().optional(),
+    supplierId: id.nullable(), supplierCode: z.string().nullable(), supplierName: z.string(), supplierTaxId: z.string().nullable(), supplierBranch: z.string().nullable().optional(),
+    supplierInvoiceNo: z.string().nullable(), supplierInvoiceDate: z.string().nullable(),
+    /** `goods` = against a PO whose receipt was already booked (clears GRNI, VAT only); `service`/`expense` = book the cost now */
+    kind: z.enum(['goods', 'service', 'expense']), poId: id.nullable().optional(), poNo: z.string().nullable().optional(),
+    net: money, vat: money, gross: money, vatClaimable: z.boolean(),
+  }),
+
+  /**
+   * A supplier payment (PV-2569-0001) was made. `wht` lists the tax withheld per income type (one 50 ทวิ certificate per payment),
+   * `form` = PND3 (individual) or PND53 (juristic person). Accounting: Dr AP gross / Cr bank netPaid / Cr ภาษีหัก ณ ที่จ่ายค้างจ่าย Σwht.amount.
+   */
+  'purchasing.supplier_paid': z.object({
+    paymentId: id, paymentNo: z.string(), paymentDate: z.string(), method: z.enum(['cash', 'transfer', 'cheque']),
+    supplierId: id.nullable(), supplierName: z.string(), supplierTaxId: z.string().nullable(),
+    bills: z.array(z.object({ billId: id, billNo: z.string(), amount: money })),
+    gross: money, netPaid: money,
+    wht: z.array(z.object({ form: z.enum(['PND3', 'PND53']), incomeType: z.string(), description: z.string(), rate: z.number().min(0).max(1), base: money, amount: money, certificateNo: z.string() })),
+  }),
+
+  /**
+   * Every token issued to `userId` before `before` (epoch seconds) must be refused (logout everywhere, password change,
+   * user disabled, roles changed). Every module's kernel subscribes automatically.
+   */
+  'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin']) }),
 } as const;
 
 export type EventType = keyof typeof events;
