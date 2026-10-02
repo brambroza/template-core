@@ -2,6 +2,7 @@ import { auth, badRequest, conflict, forbidden, guardLockDate, hasPerm, loadMani
 import { documentTotals, isValidThaiTaxId, VAT_RATE } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { statusTh } from '@erp/ui-schema';
+import { payablesRoutes } from './payables.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -126,6 +127,9 @@ export const definition: ServiceDefinition = {
     entities: {
       po: 'purchase_orders',
       return: { table: 'purchase_returns', write: ['purchasing.po.return', 'purchasing.po.write'] },
+      // wave 9: the supplier's tax invoice scan on the bill, the transfer slip on the payment
+      bill: { table: 'supplier_bills', read: ['purchasing.bill.read'], write: ['purchasing.bill.write'] },
+      payment: { table: 'supplier_payments', read: ['purchasing.payment.read'], write: ['purchasing.payment.write'] },
     },
   },
   routes(app, k) {
@@ -400,6 +404,9 @@ export const definition: ServiceDefinition = {
         return loadPo(c, id);
       });
     });
+
+    // wave 9: supplier bills, payables/aging, supplier payments with WHT, 50 ทวิ, ภ.ง.ด.3/53 (src/payables.ts)
+    payablesRoutes(app, k);
   },
 
   handlers: {

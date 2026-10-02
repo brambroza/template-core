@@ -1,0 +1,20 @@
+{
+  "id": "etax",
+  "name": "e-Tax Invoice",
+  "nameTh": "ใบกำกับภาษีอิเล็กทรอนิกส์",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Thai e-Tax Invoice preparation (ETDA ขมธอ. 3-2560, UN/CEFACT CII D16B): snapshots every tax invoice, credit note and debit note issued in Sales, builds the XML (ใบกำกับภาษี 388, ใบแจ้งหนี้/ใบกำกับภาษี T02, ใบเพิ่มหนี้ 80, ใบลดหนี้ 81) with satang-exact totals, signs it XAdES-BES with the company's own digital certificate (.p12, password never stored), tracks delivery status (draft → generated → signed → sent by e-Tax Invoice by Email or a service provider — recorded by the user; this module never submits to the Revenue Department or ETDA), cancels documents that were never sent, and prepares replacement tax invoices for delivered ones with wrong non-amount data (ETDA purpose codes TIVC01/TIVC02/TIVC99).",
+  "requires": [
+    "identity"
+  ],
+  "enhancedBy": ["sales"],
+  "publishes": [],
+  "subscribes": ["sales.invoiced", "sales.note_issued"],
+  "permissions": [
+    { "key": "etax.document.read", "label": "ดูใบกำกับภาษีอิเล็กทรอนิกส์และดาวน์โหลด XML" },
+    { "key": "etax.document.write", "label": "สร้าง XML ลงลายมือชื่อดิจิทัล และบันทึกการส่ง e-Tax" },
+    { "key": "etax.settings.write", "label": "ตั้งค่าข้อมูลผู้ขายและใบรับรองดิจิทัล (.p12) สำหรับ e-Tax" },
+    { "key": "etax.attachment.delete", "label": "ลบไฟล์แนบของเอกสาร e-Tax (รวมไฟล์ XML ที่ระบบสร้าง)" }
+  ]
+}

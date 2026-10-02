@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { gsap, reducedMotion } from '@/lib/motion';
-import { loadSession, saveSession, type Session } from '@/lib/session';
+import { loadSession, loginNotice, loginReasonFrom, saveSession, type LoginReason, type Session } from '@/lib/session';
 
 /** Isometric blocks that assemble on load — the factory being built, in 2D. */
 function FloorArt() {
@@ -43,11 +43,11 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [expired, setExpired] = useState(false);
+  const [reason, setReason] = useState<LoginReason>(null);
 
   useEffect(() => {
     if (loadSession()) router.replace('/');
-    setExpired(new URLSearchParams(window.location.search).has('expired'));
+    setReason(loginReasonFrom(window.location.search));
     try { setTenant(window.localStorage.getItem('erp.tenant') ?? ''); } catch { /* ignore */ }
   }, [router]);
 
@@ -79,7 +79,7 @@ export default function Login() {
         <form className="login-card" onSubmit={submit}>
           <div className="login-tape" aria-hidden />
           <h1>เข้าสู่ระบบ</h1>
-          {expired && <p className="login-note">หมดเวลาการใช้งาน เข้าสู่ระบบอีกครั้ง</p>}
+          {reason && <p className="login-note" role="status">{loginNotice(reason)}</p>}
           <label>รหัสบริษัท<input value={tenant} onChange={(e) => setTenant(e.target.value)} autoComplete="organization" required /></label>
           <label>อีเมล<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required /></label>
           <label>รหัสผ่าน<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>

@@ -143,3 +143,13 @@ export function documentTotals(lines: { qty: number; unitPrice: number }[], mode
   const sum = round(amounts.reduce((a, b) => a + b, 0));
   return { amounts, ...calcVat(sum, mode, rate) };
 }
+
+/** A month "2026-09" the Thai way: "กันยายน 2569". */
+export function formatThaiMonth(period: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!m) throw new Error(`expected YYYY-MM, got ${period}`);
+  return `${TH_MONTHS[Number(m[2]) - 1]} ${Number(m[1]) + 543}`;
+}
+
+/* withholding tax on supplier payments (ภ.ง.ด.3 / ภ.ง.ด.53, 50 ทวิ, RD Prep export) — wave 9 */
+export * from './wht.ts';

@@ -1,14 +1,100 @@
-import { defineUi, STATUS_TH } from '@erp/ui-schema';
+import { defineUi, STATUS_TH, type Action, type Column, type DetailScreen, type ListScreen } from '@erp/ui-schema';
+import { NOTE_SECTION, NOTE_TITLE, reasonOptions, type NoteKind } from './notes.ts';
 
 const statuses = ['draft', 'confirmed', 'delivered', 'invoiced', 'cancelled'].map((v) => ({ value: v, label: STATUS_TH[v] }));
-const PAY_LABELS = { outstanding: 'ค้างชำระ', partially_paid: 'ชำระบางส่วน', paid: 'ชำระครบ' };
+const PAY_LABELS = { outstanding: 'ค้างชำระ', partially_paid: 'ชำระบางส่วน', paid: 'ชำระครบ', credited: 'ลดหนี้เต็มจำนวน' };
 const payStatuses = [{ value: 'open', label: 'ยังไม่ครบ' }, ...Object.entries(PAY_LABELS).map(([value, label]) => ({ value, label }))];
 const methods = [{ value: 'transfer', label: 'โอนเงิน' }, { value: 'cash', label: 'เงินสด' }, { value: 'cheque', label: 'เช็ค' }, { value: 'card', label: 'บัตรเครดิต' }];
 const whtRates = [{ value: '0', label: 'ไม่มี' }, { value: '1', label: '1% (ค่าขนส่ง)' }, { value: '2', label: '2% (ค่าโฆษณา)' }, { value: '3', label: '3% (ค่าบริการ/จ้างทำของ)' }, { value: '5', label: '5% (ค่าเช่า)' }];
 const customerLookup = {
   module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'],
-  assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address' },
+  assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address', customerEmail: 'email' },
 };
+
+/* ---- wave 9: credit / debit notes (ใบลดหนี้ มาตรา 86/10, ใบเพิ่มหนี้ มาตรา 86/9) ---- */
+const notePath = (kind: NoteKind) => (kind === 'credit' ? '/credit-notes' : '/debit-notes');
+const noteScreen = (kind: NoteKind) => (kind === 'credit' ? 'creditNote' : 'debitNote');
+
+/** "ออกใบลดหนี้" / "ออกใบเพิ่มหนี้" on the tax invoice: the invoice is the route's :id, lines refer to its lines by # */
+function noteAction(kind: NoteKind): Action {
+  const credit = kind === 'credit';
+  return {
+    id: `${kind}Note`, label: `ออก${NOTE_TITLE[kind]}`, method: 'POST', endpoint: `/invoices/:id${notePath(kind)}`, perm: 'sales.note.write',
+    when: { field: 'payment_status', in: credit ? ['outstanding', 'partially_paid', 'paid'] : ['outstanding', 'partially_paid', 'paid', 'credited'] },
+    fields: [
+      { name: 'reasonCode', label: `เหตุผลการออก${NOTE_TITLE[kind]} (มาตรา ${credit ? '82/10' : '82/9'})`, type: 'select', required: true, options: reasonOptions(kind) },
+      { name: 'reasonText', label: 'คำอธิบายเพิ่มเติม (พิมพ์ต่อท้ายเหตุผล)', type: 'text', help: 'จำเป็นเมื่อเลือก "เหตุอื่นตามที่อธิบดีกำหนด"' },
+      { name: 'issueDate', label: `วันที่${NOTE_TITLE[kind]} (ว่าง = วันนี้)`, type: 'date', help: `ลด/เพิ่มภาษีขายในเดือนที่ออก${NOTE_TITLE[kind]} — ไม่ใช่เดือนของใบกำกับเดิม` },
+      { name: 'amount', label: `จำนวนเงินผลต่าง (ว่าง = คิดจากรายการด้านล่าง)`, type: 'number', step: 0.01,
+        help: 'ตามราคาของใบกำกับเดิม: ใบสั่งขายแบบยังไม่รวม VAT = ก่อน VAT, แบบรวม VAT = รวม VAT แล้ว — ระบบคิด VAT ของผลต่างให้' },
+      ...(credit ? [{ name: 'warehouseCode', label: 'รับคืนเข้าคลัง (ว่าง = คลังที่ส่งของ)', type: 'text' as const }] : []),
+      { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
+    ],
+    lines: {
+      name: 'lines', label: credit ? 'รายการที่ลดหนี้ / รับคืน' : 'รายการที่เพิ่มหนี้',
+      fields: [
+        { name: 'lineNo', label: 'ลำดับรายการในใบกำกับ (#)', type: 'number', help: 'ว่าง = รายการอื่น (พิมพ์คำอธิบายและราคา)' },
+        { name: 'description', label: 'คำอธิบาย (ว่าง = ตามใบกำกับ)', type: 'text' },
+        { name: 'qty', label: 'จำนวน (ว่าง = ทั้งรายการ)', type: 'number' },
+        { name: 'unitPrice', label: credit ? 'ราคาต่อหน่วยที่ลด (ว่าง = ตามใบกำกับ)' : 'ราคาต่อหน่วยที่เพิ่ม (ว่าง = ตามใบกำกับ)', type: 'number', step: 0.01 },
+        ...(credit ? [{ name: 'returnToStock', label: 'รับสินค้าคืนเข้าคลัง', type: 'boolean' as const }] : []),
+      ],
+    },
+    tone: 'default', then: { screen: noteScreen(kind), idFrom: 'id' },
+  };
+}
+
+function noteList(kind: NoteKind): ListScreen {
+  return {
+    kind: 'list', title: NOTE_TITLE[kind], endpoint: notePath(kind), perm: 'sales.note.read',
+    filters: [{ name: 'q', label: 'ค้นหาเลขที่ เลขที่ใบกำกับ หรือลูกค้า', type: 'text' }],
+    columns: [
+      { key: 'no', label: 'เลขที่' }, { key: 'issue_date', label: 'วันที่', format: 'date' }, { key: 'invoice_no', label: 'ใบกำกับภาษีเดิม' },
+      { key: 'customer_name', label: 'ลูกค้า' }, { key: 'reason', label: 'เหตุผล', phone: false },
+      { key: 'net', label: 'ผลต่าง (ก่อน VAT)', format: 'money', total: true }, { key: 'vat', label: 'VAT', format: 'money', total: true },
+      { key: 'gross', label: 'รวม', format: 'money', total: true },
+    ],
+    rowLink: { screen: noteScreen(kind) },
+    empty: `ยังไม่มี${NOTE_TITLE[kind]} — ออกจากหน้าใบกำกับภาษี (ปุ่ม "ออก${NOTE_TITLE[kind]}")`,
+  };
+}
+
+/** The printed ใบลดหนี้ / ใบเพิ่มหนี้: every item มาตรา 86/10 (86/9) requires, buyer block from `customer`, seller from the company profile. */
+function noteDetail(kind: NoteKind): DetailScreen {
+  const credit = kind === 'credit';
+  const lineCols: Column[] = [
+    { key: 'line_no', label: '#' }, { key: 'item_code', label: 'รหัส' }, { key: 'description', label: 'รายการ' },
+    { key: 'qty', label: 'จำนวน', format: 'qty' }, { key: 'unit_price', label: credit ? 'ราคาที่ลด/หน่วย' : 'ราคาที่เพิ่ม/หน่วย', format: 'money' },
+    { key: 'amount', label: 'จำนวนเงิน', format: 'money', total: true },
+  ];
+  if (credit) lineCols.push({ key: 'return_to_stock', label: 'รับคืนเข้าคลัง', format: 'qty' });
+  return {
+    kind: 'detail', title: NOTE_TITLE[kind], endpoint: `${notePath(kind)}/:id`, perm: 'sales.note.read', heading: 'no',
+    print: { title: NOTE_TITLE[kind], legal: 'tax-invoice', footer: false, copyLabel: true,
+      signatures: [credit ? 'ผู้รับใบลดหนี้ / ผู้คืนสินค้า' : 'ผู้รับใบเพิ่มหนี้', { label: 'ผู้มีอำนาจลงนาม' }] },
+    fields: [
+      { key: 'issueDateTh', label: 'วันที่' },
+      { key: 'customer.name', label: 'ลูกค้า' }, { key: 'customer.taxId', label: 'เลขประจำตัวผู้เสียภาษี' },
+      { key: 'customer.branch', label: 'สาขา' }, { key: 'customer.address', label: 'ที่อยู่' },
+      { key: 'invoice_no', label: 'อ้างอิงใบกำกับภาษีเลขที่', section: 'ใบกำกับภาษีเดิม' }, { key: 'invoiceDateTh', label: 'ลงวันที่' },
+      { key: 'original_net', label: 'มูลค่าสินค้า/บริการตามใบกำกับภาษีเดิม', format: 'money', section: 'มูลค่า (ก่อนภาษีมูลค่าเพิ่ม)' },
+      { key: 'correct_net', label: 'มูลค่าที่ถูกต้อง', format: 'money' },
+      { key: 'net', label: credit ? 'ผลต่าง (ลดลง)' : 'ผลต่าง (เพิ่มขึ้น)', format: 'money' },
+      { key: 'vat', label: 'ภาษีมูลค่าเพิ่มของผลต่าง', format: 'money' },
+      { key: 'gross', label: credit ? 'รวมเงินที่ลดหนี้' : 'รวมเงินที่เพิ่มหนี้', format: 'money', emphasis: true },
+      { key: 'amountText', label: 'ตัวอักษร' },
+      { key: 'reason', label: `เหตุผลการออก${NOTE_TITLE[kind]}`, section: 'เหตุผล' },
+      { key: 'priceBasis', label: 'ราคาในรายการ' },
+      ...(credit ? [{ key: 'returned', label: 'สินค้ารับคืน' }] : []),
+      { key: 'note', label: 'หมายเหตุ' },
+      { key: 'legalText', label: `ตามมาตรา ${NOTE_SECTION[kind]}` },
+      { key: 'created_by_name', label: 'ผู้ออกเอกสาร' },
+      { key: 'invoiceOutstanding', label: 'ยอดค้างชำระของใบกำกับ (หลังปรับ)', format: 'money', print: false },
+      { key: 'invoicePaymentStatus', label: 'สถานะการชำระของใบกำกับ', format: 'status' },
+    ],
+    lines: [{ path: 'lines', label: credit ? 'รายการที่ลดหนี้' : 'รายการที่เพิ่มหนี้', columns: lineCols }],
+  };
+}
 
 export default defineUi({
   module: 'sales',
@@ -20,12 +106,13 @@ export default defineUi({
     { label: 'ใบสั่งขาย', screen: 'soList' }, { label: 'สร้างใบสั่งขาย', screen: 'soNew' },
     { label: 'ใบกำกับ / ค้างชำระ', screen: 'invoices' }, { label: 'ใบเสร็จรับเงิน', screen: 'receipts' }, { label: 'รับมัดจำ', screen: 'depositNew' },
     { label: 'ลูกหนี้คงค้าง', screen: 'receivables' }, { label: 'อายุลูกหนี้', screen: 'aging' },
+    { label: 'ใบลดหนี้', screen: 'creditNotes' }, { label: 'ใบเพิ่มหนี้', screen: 'debitNotes' },
     { label: 'วันที่ปิดงวด', screen: 'lockSettings' },
   ],
   commands: [
     { id: 'so', label: 'สร้างใบสั่งขาย', example: 'ขาย CUS-001', keywords: ['ขาย', 'สั่งขาย', 'เปิดบิล', 'so'], screen: 'soNew', perm: 'sales.order.write',
       arg: { lookup: { module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'],
-        assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address' } } } },
+        assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address', customerEmail: 'email' } } } },
     { id: 'receipt', label: 'รับชำระเงิน (ออกใบเสร็จ)', example: 'รับชำระ CUS-001', keywords: ['รับชำระ', 'รับเงิน', 'ใบเสร็จ', 'receipt'], screen: 'receiptNew', perm: 'sales.receipt.write',
       arg: { lookup: customerLookup } },
     { id: 'deposit', label: 'รับเงินมัดจำ', example: 'รับมัดจำ CUS-001', keywords: ['มัดจำ', 'รับมัดจำ', 'deposit'], screen: 'depositNew', perm: 'sales.receipt.write',
@@ -36,8 +123,14 @@ export default defineUi({
     { id: 'orders', title: 'ใบสั่งขาย', endpoint: '/orders', label: ['no', 'customer_name', 'ref'], screen: 'soDetail', perm: 'sales.order.read' },
     { id: 'invoices', title: 'ใบกำกับภาษี', endpoint: '/invoices', label: ['no', 'customer_name'], screen: 'invoice', perm: 'sales.order.read' },
     { id: 'receipts', title: 'ใบเสร็จรับเงิน', endpoint: '/receipts', label: ['no', 'customer_name'], screen: 'receipt', perm: 'sales.receivable.read' },
+    { id: 'creditNotes', title: 'ใบลดหนี้', endpoint: '/credit-notes', label: ['no', 'customer_name', 'invoice_no'], screen: 'creditNote', perm: 'sales.note.read' },
+    { id: 'debitNotes', title: 'ใบเพิ่มหนี้', endpoint: '/debit-notes', label: ['no', 'customer_name', 'invoice_no'], screen: 'debitNote', perm: 'sales.note.read' },
   ],
   screens: {
+    creditNotes: noteList('credit'),
+    debitNotes: noteList('debit'),
+    creditNote: noteDetail('credit'),
+    debitNote: noteDetail('debit'),
     /** wave 8 (C5): lock date — moves forward automatically when Accounting closes a period */
     lockSettings: {
       kind: 'form', title: 'วันที่ปิดงวดเอกสารขาย', method: 'POST', endpoint: '/lock', perm: 'sales.lock.write', load: '/lock',
@@ -61,7 +154,7 @@ export default defineUi({
       fields: [
         { name: 'customerId', label: 'ลูกค้า', type: 'lookup', required: true,
           lookup: { module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'],
-            assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address' } } },
+            assign: { customerId: 'id', customerName: 'name', customerTaxId: 'tax_id', customerBranch: 'branch', customerAddress: 'address', customerEmail: 'email' } } },
         { name: 'warehouseCode', label: 'ส่งจากคลัง', type: 'text', default: 'MAIN', required: true },
         { name: 'orderDate', label: 'วันที่', type: 'date' },
         { name: 'vatMode', label: 'ราคา', type: 'select', default: 'exclusive', options: [{ value: 'exclusive', label: 'ยังไม่รวม VAT' }, { value: 'inclusive', label: 'รวม VAT แล้ว' }] },
@@ -124,9 +217,14 @@ export default defineUi({
         { key: 'subtotal', label: 'รวมก่อนส่วนลด', format: 'money' }, { key: 'discount', label: 'ส่วนลด', format: 'money' },
         { key: 'net', label: 'มูลค่าสินค้า', format: 'money' }, { key: 'vat', label: 'ภาษีมูลค่าเพิ่ม 7%', format: 'money' },
         { key: 'gross', label: 'รวมทั้งสิ้น', format: 'money' }, { key: 'amountText', label: 'ตัวอักษร' },
-        { key: 'payment_status', label: 'การชำระ', format: 'status' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money', print: false },
+        { key: 'payment_status', label: 'การชำระ', format: 'status' },
+        // wave 9: notes change what is owed, never the printed invoice
+        { key: 'credit_total', label: 'ใบลดหนี้ (รวม)', format: 'money', print: false, hideZero: true },
+        { key: 'debit_total', label: 'ใบเพิ่มหนี้ (รวม)', format: 'money', print: false, hideZero: true },
+        { key: 'outstanding', label: 'ค้างชำระ', format: 'money', print: false },
         { key: 'promptPay', label: 'ชำระด้วยพร้อมเพย์', format: 'qr' },
       ],
+      actions: [noteAction('credit'), noteAction('debit')],
       lines: [{
         path: 'lines', label: 'รายการ',
         columns: [
@@ -137,6 +235,10 @@ export default defineUi({
       }, {
         path: 'receipts', label: 'รับชำระแล้ว', print: false,
         columns: [{ key: 'no', label: 'ใบเสร็จ' }, { key: 'receipt_date', label: 'วันที่', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' }],
+      }, {
+        path: 'notes', label: 'ใบลดหนี้ / ใบเพิ่มหนี้', print: false,
+        columns: [{ key: 'no', label: 'เลขที่' }, { key: 'kind_label', label: 'ประเภท' }, { key: 'issue_date', label: 'วันที่', format: 'date' }, { key: 'reason', label: 'เหตุผล' },
+          { key: 'net', label: 'ผลต่าง', format: 'money' }, { key: 'vat', label: 'VAT', format: 'money' }, { key: 'gross', label: 'รวม', format: 'money' }],
       }],
     },
     invoices: {
@@ -235,6 +337,7 @@ export default defineUi({
       columns: [
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'invoices', label: 'ใบกำกับค้าง', format: 'qty' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' },
         { key: 'overdue', label: 'เกินกำหนด', format: 'money' }, { key: 'max_days_overdue', label: 'ค้างนานสุด (วัน)', format: 'qty' },
+        { key: 'credit_balance', label: 'เครดิตจากใบลดหนี้', format: 'money' },
         { key: 'deposits', label: 'มัดจำคงเหลือ', format: 'money' }, { key: 'net_outstanding', label: 'สุทธิ', format: 'money' },
       ],
       empty: 'ไม่มีลูกหนี้คงค้าง',
@@ -245,7 +348,7 @@ export default defineUi({
       columns: [
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'current', label: 'ยังไม่ครบกำหนด', format: 'money' }, { key: 'd1_30', label: '1–30 วัน', format: 'money' },
         { key: 'd31_60', label: '31–60 วัน', format: 'money' }, { key: 'd61_90', label: '61–90 วัน', format: 'money' }, { key: 'over_90', label: 'เกิน 90 วัน', format: 'money' },
-        { key: 'total', label: 'รวม', format: 'money' },
+        { key: 'total', label: 'รวม', format: 'money' }, { key: 'credit_balance', label: 'เครดิตจากใบลดหนี้ (ไม่นับอายุ)', format: 'money' },
       ],
       empty: 'ไม่มีลูกหนี้คงค้าง',
     },

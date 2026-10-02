@@ -41,6 +41,9 @@ importers:
       '@erp/svc-crm':
         specifier: workspace:*
         version: link:services/crm
+      '@erp/svc-etax':
+        specifier: workspace:*
+        version: link:services/etax
       '@erp/svc-expense':
         specifier: workspace:*
         version: link:services/expense
@@ -143,6 +146,9 @@ importers:
       '@erp/svc-crm':
         specifier: workspace:*
         version: link:../../services/crm
+      '@erp/svc-etax':
+        specifier: workspace:*
+        version: link:../../services/etax
       '@erp/svc-expense':
         specifier: workspace:*
         version: link:../../services/expense
@@ -264,6 +270,9 @@ importers:
       '@erp/svc-crm':
         specifier: workspace:*
         version: link:../../services/crm
+      '@erp/svc-etax':
+        specifier: workspace:*
+        version: link:../../services/etax
       '@erp/svc-expense':
         specifier: workspace:*
         version: link:../../services/expense
@@ -502,6 +511,24 @@ importers:
         version: 4.23.15
 
   services/crm:
+    dependencies:
+      '@erp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@erp/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@erp/thai':
+        specifier: workspace:*
+        version: link:../../packages/thai
+      '@erp/ui-schema':
+        specifier: workspace:*
+        version: link:../../packages/ui-schema
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
+  services/etax:
     dependencies:
       '@erp/contracts':
         specifier: workspace:*

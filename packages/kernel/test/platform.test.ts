@@ -84,6 +84,15 @@ describe('attachments', () => {
     expect(file.body.equals(PNG)).toBe(true);
   });
 
+  it('refuses a revoked token on the bearer download too (SEC-07)', async () => {
+    const userId = randomUUID();
+    const reader = t.token(READER, t.tenantId, { userId });
+    const up = await t.api('POST', '/_attachments', { ref: `note:${noteId}`, fileName: 'a.png', contentType: 'image/png', dataBase64: b64(PNG) }, { token: t.token(WRITER) });
+    expect((await t.raw('GET', `/_attachments/${up.body.id}/content`, undefined, { token: reader })).status).toBe(200);
+    await t.deliver('identity.tokens_revoked', { userId, before: Math.floor(Date.now() / 1000) + 1, reason: 'admin' });
+    expect((await t.raw('GET', `/_attachments/${up.body.id}/content`, undefined, { token: reader })).status).toBe(401);
+  });
+
   it('serves a signed short-lived link without a token, and rejects a tampered one', async () => {
     const up = await t.api('POST', '/_attachments', { ref: `note:${noteId}`, fileName: 'spec.pdf', dataBase64: b64(PDF) });
     const link = await t.api('GET', `/_attachments/${up.body.id}/link`, undefined, { token: t.token(READER) });

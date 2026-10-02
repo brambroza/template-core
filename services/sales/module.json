@@ -4,10 +4,10 @@
   "nameTh": "ขาย",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Sales orders with line discounts and service lines, confirmation, delivery and Thai tax invoices (VAT 7%, amount in Thai words, Buddhist-era date, PromptPay QR) with due dates; receipts (ใบเสร็จรับเงิน) with partial payment, withholding tax and deposits (มัดจำ) with a deposit tax invoice deducted on the final invoice; a lock date that follows Accounting's period close; receivables and aging. Cuts stock automatically when Inventory is installed; drafts a sales order from an accepted CRM quotation when CRM is installed.",
+  "description": "Sales orders with line discounts and service lines, confirmation, delivery and Thai tax invoices (VAT 7%, amount in Thai words, Buddhist-era date, PromptPay QR) with due dates; receipts (ใบเสร็จรับเงิน) with partial payment, withholding tax and deposits (มัดจำ) with a deposit tax invoice deducted on the final invoice; credit notes (ใบลดหนี้) and debit notes (ใบเพิ่มหนี้) against its own tax invoices, returned goods back into stock; a lock date that follows Accounting's period close; receivables and aging. Cuts stock automatically when Inventory is installed; drafts a sales order from an accepted CRM quotation when CRM is installed.",
   "requires": ["identity", "master-data"],
   "enhancedBy": ["inventory", "crm", "contracts", "accounting"],
-  "publishes": ["sales.order_confirmed", "sales.delivered", "sales.invoiced", "sales.payment_received"],
+  "publishes": ["sales.order_confirmed", "sales.delivered", "sales.invoiced", "sales.payment_received", "sales.note_issued"],
   "subscribes": ["crm.quotation_accepted", "contracts.installment_due", "accounting.period_closed", "accounting.period_reopened"],
   "permissions": [
     { "key": "sales.order.read", "label": "ดูใบสั่งขาย" },
@@ -17,6 +17,8 @@
     { "key": "sales.receipt.write", "label": "ออกใบเสร็จรับเงิน / รับมัดจำ" },
     { "key": "sales.receivable.read", "label": "ดูลูกหนี้ ใบเสร็จ และอายุลูกหนี้" },
     { "key": "sales.lock.write", "label": "ตั้งวันที่ปิดงวดเอกสารขาย" },
-    { "key": "sales.lock.override", "label": "ออกใบกำกับ/ใบเสร็จย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)" }
+    { "key": "sales.lock.override", "label": "ออกใบกำกับ/ใบเสร็จย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)" },
+    { "key": "sales.note.read", "label": "ดูใบลดหนี้ / ใบเพิ่มหนี้" },
+    { "key": "sales.note.write", "label": "ออกใบลดหนี้ / ใบเพิ่มหนี้ (อ้างอิงใบกำกับภาษี)" }
   ]
 }

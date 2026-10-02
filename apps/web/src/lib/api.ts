@@ -1,6 +1,8 @@
 'use client';
 
-import { clearSession, loadSession } from './session';
+import { SESSION_TOKEN_HEADER } from './proxy-headers';
+import { clearSession, isRevokedError, loadSession, replaceSessionToken } from './session';
+import { toast } from './toast';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}) {
@@ -49,10 +51,16 @@ export async function api<T = any>(module: string, path: string, opts: { method?
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : undefined;
+  // the server rotated the login token (password change revokes the old one): keep working with the new one
+  const rotated = res.ok ? res.headers.get(SESSION_TOKEN_HEADER) : null;
+  if (rotated) {
+    replaceSessionToken(rotated);
+    if (typeof data?.message === 'string') toast({ title: data.message, tone: 'ok' });
+  }
   if (!res.ok) {
     if (res.status === 401 && session) {
       clearSession();
-      window.location.href = '/login?expired=1';
+      window.location.href = isRevokedError(data?.error) ? '/login?revoked=1' : '/login?expired=1';
     }
     const err = data?.error ?? {};
     const fieldErrors = err.details?.fieldErrors ?? {};

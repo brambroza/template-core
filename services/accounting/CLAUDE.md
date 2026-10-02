@@ -3,6 +3,8 @@
 General ledger for a Thai SME (TFRS for NPAEs): chart of accounts, journal vouchers, period close, automatic posting from
 Sales / Purchasing / Expense events, and the statements + tax reports an accountant prepares each month (ภ.พ.30, 50 ทวิ follow-up).
 Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (events consumed), inventory (no events yet — see Gaps).
+Wave 9: credit/debit notes, supplier bills and supplier payments with WHT are posted; the ภ.พ.30 return (boxes 1–16) is computed from the VAT registers
+and the user RECORDS the filing made on rd.go.th — **nothing is submitted to the Revenue Department from this module**.
 
 ## Data
 - `accounts` — `code` (unique), `name`, `name_en`, `type` asset|liability|equity|revenue|expense, `category` (statement line:
@@ -21,6 +23,13 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
 - `category_mappings` (migration 002) — expense-claim category → account: `category_code` (unique, case-insensitive), optional `category_name` (fallback match),
   `account_id` (postable), `note`, `is_default`. Seeded from `DEFAULT_CATEGORY_MAP` (TRAVEL→52510 ค่าเดินทาง, FUEL→52520 ค่าน้ำมันเชื้อเพลิง, ENTERTAIN→52600 ค่ารับรอง,
   HOTEL→52530 ค่าที่พัก, TOLL, FREIGHT, PHONE, SUPPLIES, REPAIR, WELFARE, MISC) when the tenant has none.
+- (migration 004, wave 9) `journal_lines.tax_ref_invoice_no/date` — the tax invoice a credit/debit note corrects (VAT line of the note);
+  `journal_lines.wht_form` (PND3|PND53), `wht_income_type`, `wht_rate`, `wht_certificate_no` — on WHT-payable lines of supplier payments. Reversals copy all tax columns.
+- `supplier_bills` (004) — every `purchasing.bill_recorded` received: bill/supplier/tax-invoice snapshot, kind, PO, net/vat/gross, `vat_claimable`,
+  `treatment` posted | matched | vat_reclassed, `journal_id` (null when matched), `note` (price-difference / §82/3 notes). Unique bill_id (idempotency).
+- `vat_returns` (004) — ภ.พ.30 filings the user recorded: `period`, `seq` (0 = ordinary, 1.. = ภ.พ.30 เพิ่มเติม), `amend`, `reason`, `filed_date`, `channel`
+  efiling|paper, `receipt_no`, `refund_or_carry` (only when there was an excess), `paid_amount`, user inputs `zero_rated`/`exempt`/`surcharge`/`penalty`,
+  `figures` (jsonb snapshot of box1…box16, + `previous_box11`/`additional_tax`/`due` on amendments), filed by.
 - `posting_errors` — one row per event that could not be posted: `reason`, `payload` (the event data), `attempts`, `open → resolved | dismissed`, `journal_id`.
 
 ## Behaviour
@@ -51,6 +60,9 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
 | `purchasing.goods_received` | with `net`+`vat` (or `vatMode` + line `vatRate`, default 7%): Dr 11400 สินค้าคงเหลือ (net) + Dr 11500 ภาษีซื้อ (vat, tax_base = net) / Cr 21100 เจ้าหนี้ (gross). Old payloads: Σ qty × unitPrice, no VAT split (note on the JV). One JV per event (partial receipts) |
 | `purchasing.goods_returned` | with totals: Dr 21100 เจ้าหนี้ (gross) / Cr 11400 (net) + Cr 11500 ภาษีซื้อ (vat). Old payloads: Σ qty × unitPrice both sides |
 | `expense.claim_paid` | with `lines`: one Dr per expense account (category → `category_mappings` by code, then name; unmapped → rule `expense` 53900, listed in the JV note; **C3: a line with `vatClaimable: false` adds its VAT to the expense**, noted on the JV) + Dr 11500 ภาษีซื้อ for claimable VAT only — one line per seller tax invoice (tax_base = amount, seller name/tax ID/branch, receipt no, expense date) when the lines carry the seller, else one line Σ vat (old payloads) / Cr 11100 เงินสด (`payMethod` cash, rule `cash`) or 11200 เงินฝาก (rule `bank`) = Σ (amount + vat); note when ≠ `total` or an advance was cleared. Old payloads: Dr 53900 / Cr bank `total` |
+| `sales.note_issued` (wave 9) | credit (ใบลดหนี้ §86/10): Dr 41900 รับคืนและส่วนลดจ่าย (rule `returns`) net + Dr 21200 ภาษีขาย vat / Cr 11300 ลูกหนี้ net+vat. debit (ใบเพิ่มหนี้ §86/9): Dr 11300 / Cr 41000 (rule `revenue`) + Cr 21200. Dated `issueDate`; the VAT line carries the note no + date, customer tax ID/branch and `tax_ref_invoice_no/date` = the original invoice → output register row in the note's month (negative for credit). Reason / original / correct value in the JV note |
+| `purchasing.bill_recorded` (wave 9) | `service` / `expense`: Dr 53400 ค่าบริการและค่าจ้างทำของ (rule `service`) or 53900 (rule `expense`) net (+ VAT when `vatClaimable` false, §82/5) + Dr 11500 ภาษีซื้อ (claimable; tax invoice = `supplierInvoiceNo`/date, supplier tax ID/branch) / Cr 21100 เจ้าหนี้. **`goods`: decision** — receipts already post Dr สินค้า + Dr ภาษีซื้อ / Cr เจ้าหนี้ (no GRNI account), so a goods bill is a *match*: claimable VAT already booked at receipt → **no journal** (`matched`; the receipt's ภาษีซื้อ lines without a tax invoice get the supplier invoice no/date/tax ID — metadata only); receipt without VAT split (old payload) → Dr 11500 / Cr 11400 (stock included VAT) or Cr 21100 (AP booked before VAT, decided by comparing billed vs booked AP); non-claimable VAT that the receipt booked → Dr 11400 / Cr 11500. No posted receipt for the PO yet → posting error (retry after the receipt). Price differences vs the receipt are only noted. §82/3: tax invoice > 6 months old → note. Every bill lands in `supplier_bills` |
+| `purchasing.supplier_paid` (wave 9) | Dr 21100 เจ้าหนี้ (net paid + Σ WHT; note when ≠ `gross`) / Cr 11200 เงินฝาก (transfer/cheque, rule `bank`) or 11100 (cash) `netPaid` / Cr 21310 ภ.ง.ด.3 (rule `wht_pnd3`) or 21320 ภ.ง.ด.53 (`wht_pnd53`) per `wht[]` row: tax_base = base, form, income type, rate, 50 ทวิ no (note when amount ≠ base × rate) |
 | `payroll.run_paid` | one line per `postings[]` entry, `category` = rule leg: Dr 52100 เงินเดือน, 52130 ค่าล่วงเวลา, 52150 เบี้ยเลี้ยง, 52140 โบนัส, 52100 เงินได้อื่น, 52110 ประกันสังคมนายจ้าง, 52120 กองทุนสำรองเลี้ยงชีพนายจ้าง / Cr 21400 ประกันสังคมค้างจ่าย, 21300 ภ.ง.ด.1 ค้างจ่าย, 21410 กองทุนสำรองเลี้ยงชีพค้างจ่าย, 11720 ลูกหนี้พนักงาน (เงินกู้/หักอื่น), 11200 เงินฝาก (สุทธิ). Source = `runId` (one JV per run). Unknown category → posting error |
 
 - **Reports** (posted + reversed only; calendar fiscal year):
@@ -66,6 +78,20 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
     `party_name` (seller/buyer — not the claimant), `party_tax_id`, `party_branch_label` (สำนักงานใหญ่ / สาขา n), base and tax with the sign of the
     posting (returns negative), `ref` / `no` as references. Register totals = the ภ.พ.30 summary of the month.
   - WHT received (role `wht_receivable`): lines per receipt, by month and by customer, and the account balance (to chase 50 ทวิ and offset ภ.ง.ด.50/51).
+  - **ภ.พ.30 return (wave 9, `src/tax.ts`)** — boxes 1–16 of the "การคำนวณภาษี" part of แบบ ภ.พ.30 (numbering from our reading of the form on rd.go.th —
+    **ตรวจกับแบบ ภ.พ.30 ฉบับล่าสุด** before relying on box positions): 4 = output register base, 5 = output VAT, 6/7 = input register base/VAT,
+    2 (0%-rated, §80/1) and 3 (exempt, §81) are **user inputs** (no VAT line exists for them; `revenue_without_vat` hints at the amount), 1 = 4 + 2 + 3,
+    8/9 = 5 − 7 either way, **10 = ภาษีชำระเกินยกมา = box 16 of the previous month's latest recorded filing when it chose `carry`** (0 when refunded); if the
+    previous month has no recorded filing, the ledger's own C11 chain is used and a warning is shown; 11/12 = 8 − 9 − 10 either way; 13 เงินเพิ่ม / 14 เบี้ยปรับ
+    are user inputs (a §89/1 suggestion 1.5% per month or part of a month on box 11 is shown when late); 15/16 = 11 + 13 + 14 − 12 either way.
+    Deadlines (§83): paper the 15th of the next month, e-Filing the 23rd (MoF e-Filing extension measure — check it is still in force; holidays not modelled).
+    `changed_since_filing` when the ledger no longer matches the recorded figures (→ ภ.พ.30 เพิ่มเติม).
+  - **Filing record** — `POST /pp30/:period/file` only RECORDS what the user filed on rd.go.th / on paper. 400: filed date before the month ended or in the future,
+    amendment without reason; 409: already filed (unless `amend`), amendment with nothing filed. Closes nothing; warnings: accounting period still open,
+    `paidAmount` ≠ amount due (box 15, or additional tax + 13 + 14 on an amendment), late without เงินเพิ่ม/เบี้ยปรับ, box 10 not from a recorded filing.
+  - **WHT payable** (wave 9) — lines with `wht_form` (supplier payments; reversals negative) by month × form with base, amount and the ภ.ง.ด.3/53 deadlines
+    (7th of next month on paper, 15th via e-Filing — §59 + e-Filing extension), plus the balances of the accounts mapped by rules `wht_pnd3` / `wht_pnd53`
+    — reconcile against purchasing's ภ.ง.ด.3/53.
 - Summary: revenue/expense/net this month (Bangkok), AR / AP / cash+bank balances, VAT payable (output − input), deposits held, drafts, open posting errors,
   `months[]` (6 × revenue, expense, net), `rows` (recent JVs with in-app `link`).
 
@@ -80,12 +106,19 @@ Requires only `identity`. `enhancedBy` sales, purchasing, expense, payroll (even
 - `GET /periods?year=` (12 months with entries / drafts) · `POST /periods/:period/close | reopen { note? }` (`:period` = YYYY-MM)
 - `GET /reports/trial-balance?asOf=&all=` · `/reports/ledger?accountId=&from=&to=` · `/reports/profit-loss?month=` · `/reports/balance-sheet?asOf=` · `/reports/vat?year=` · `/reports/vat/lines?month=&kind=output|input` · `/reports/wht-received?year=`
 - `GET /summary`
+- wave 9: `GET /reports/pp30?period=YYYY-MM&zeroRated=&exempt=&surcharge=&penalty=&filedDate=&channel=` (preview; inputs default to the latest filing's)
+  · `GET /pp30/:period` (same payload, detail screen) · `GET /pp30?year=` (12 months: boxes 4/5/7/10/11/12/15/16, filing status, overdue)
+  · `GET /reports/pp30/csv?period=` (UTF-8 BOM CSV of boxes 1–16) · `POST /pp30/:period/file { filedDate, channel: efiling|paper, receiptNo?, refundOrCarry: carry|refund,
+  paidAmount, zeroRated?, exempt?, surcharge?, penalty?, amend?, reason? }` (201) · `GET /reports/wht-payable?year=&month=&form=PND3|PND53`
+  · `GET /supplier-bills?q=&kind=&treatment=&from=&to=`
 
 Permissions: `accounting.journal.read` (chart, journals, rules, errors, periods), `accounting.journal.write` (draft JVs), `accounting.journal.post`
-(post, reverse, retry/dismiss posting errors), `accounting.account.write` (chart + posting rules), `accounting.period.close`, `accounting.report.read` (reports, summary).
+(post, reverse, retry/dismiss posting errors), `accounting.account.write` (chart + posting rules), `accounting.period.close`, `accounting.report.read` (reports, summary),
+`accounting.tax.read` (wave 9: ภ.พ.30 boxes / list / CSV, WHT payable), `accounting.tax.file` (wave 9: record a ภ.พ.30 filing / amendment). Supplier bills: `accounting.journal.read`.
 
 ## Events
-- subscribes `sales.invoiced`, `sales.payment_received`, `purchasing.goods_received`, `purchasing.goods_returned`, `expense.claim_paid`, `payroll.run_paid` (table above)
+- subscribes `sales.invoiced`, `sales.payment_received`, `purchasing.goods_received`, `purchasing.goods_returned`, `expense.claim_paid`, `payroll.run_paid`,
+  `sales.note_issued`, `purchasing.bill_recorded`, `purchasing.supplier_paid` (wave 9) (table above)
 - publishes `accounting.period_closed`, `accounting.period_reopened` (wave 8)
 
 ## Gaps
@@ -93,7 +126,11 @@ Permissions: `accounting.journal.read` (chart, journals, rules, errors, periods)
 - `purchasing.goods_received` has no receipt id (source = event id) — VAT is booked at receipt; the supplier's invoice no/date/tax ID shows in the register
   when the store keyed it in at receipt (optional). A supplier invoice arriving later still needs a JV.
 - Cash advances (`expense` advances) publish no event → the advance payment is not booked; a claim that clears an advance is credited in full to cash/bank (JV note).
-- No supplier-invoice (AP bill) or supplier-payment event, no depreciation events → book by JV.
+- ~~No supplier-invoice (AP bill) or supplier-payment event~~ closed in wave 9 (`purchasing.bill_recorded` / `purchasing.supplier_paid`). No depreciation events → book by JV.
+- Wave 9 limits: goods-bill price differences vs the receipt are noted, not posted; goods returns are not netted when comparing billed vs received AP;
+  a PO with a mix of VAT-split and old receipts is treated as "VAT booked". ภ.พ.30 boxes 2/3 (0% / exempt sales) are typed by the user. The ภ.พ.30 is
+  **not** e-filed (needs RD e-Filing credentials / a service provider) — the module computes, prints, exports CSV and records the filing; the same for ภ.ง.ด.3/53.
+  VAT payable is not cleared to 21220 automatically on filing — book the VAT-settlement JV (Dr 21200 / Cr 11500 / Cr 21220 or Dr ลูกหนี้กรมสรรพากร).
 - **C6 — cost of sales (next step, not built):** today a delivery posts nothing, so ต้นทุนขาย is 0 and inventory only grows. Design:
   1. `costing` (it owns the moving-average cost) subscribes `sales.delivered` and publishes a new event `costing.delivery_costed`
      `{ orderId, orderNo, deliveryDate, warehouseCode, lines[{ itemId, itemCode, qty, unitCost, amount }], total }` — the value issued at the average cost at
@@ -108,7 +145,10 @@ Permissions: `accounting.journal.read` (chart, journals, rules, errors, periods)
 `src/ui.ts` (area `finance`, icon `book`): jvList (row post), jvNew (lines, post now), jvEdit, jvDetail (flow, lines, post / edit lines / cancel / reverse,
 printable ใบสำคัญทั่วไป with signatures), accounts (setup action) / accountNew / accountEdit / accountDetail (movements, children, delete),
 postingRules (row: change account), categoryMappings (row: edit / delete) / categoryMappingNew, postingErrors (retry / dismiss), periods (close / reopen), trialBalance, ledger (→ JV), profitLoss (mobile),
-balanceSheet (mobile), vatReport, vatLines (→ JV), whtReceived (→ JV), revenueTrend.
+balanceSheet (mobile), vatReport, vatLines (→ JV; wave 9: column "อ้างอิงใบกำกับเดิม"), whtReceived (→ JV), revenueTrend.
+Wave 9: pp30List (→ pp30Detail), pp30Detail (boxes 1–16 in sections, printable worksheet "ภ.พ.30 — ใบสรุปสำหรับกรอกแบบ", filings table, actions
+บันทึกว่ายื่นแล้ว / บันทึก ภ.พ.30 เพิ่มเติม with `accounting.tax.file`), pp30Boxes (boxes as rows → automatic CSV / print), whtPayable (month × form),
+whtPayableLines (per 50 ทวิ → JV), supplierBills (→ JV). ⌘K `ยื่นภพ30`, `ภงด53`.
 Widgets: KPI (revenue, expense, net, AR, AP, posting errors), trends (revenue, net). ⌘K: `บันทึกบัญชี …` → JV form, `งบกำไรขาดทุน`, `งบทดลอง`,
 `แยกประเภท <รหัส>`, `ภพ30`. Search: journals, accounts.
 

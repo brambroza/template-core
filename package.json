@@ -29,6 +29,7 @@
     "@erp/svc-contracts": "workspace:*",
     "@erp/svc-costing": "workspace:*",
     "@erp/svc-crm": "workspace:*",
+    "@erp/svc-etax": "workspace:*",
     "@erp/svc-expense": "workspace:*",
     "@erp/svc-helpdesk": "workspace:*",
     "@erp/svc-hr": "workspace:*",

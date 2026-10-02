@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { ChevronDown, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
+import { ChevronDown, KeyRound, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
 import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
-import { clearSession, loadSession, type Session } from '@/lib/session';
+import { loadSession, logout, type Session } from '@/lib/session';
 import { screenHref } from '@/lib/nav';
 import { ModuleIcon } from './Icon';
 import { CommandPalette, openCommandPalette } from './CommandPalette';
@@ -137,7 +137,11 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="panel-foot">
           <span className="avatar" aria-hidden>{initials}</span>
           <span className="who"><b>{session.user.name}</b><span>{session.user.email}</span></span>
-          <button type="button" className="icon-btn" aria-label="ออกจากระบบ" title="ออกจากระบบ" onClick={() => { clearSession(); router.replace('/login'); }}>
+          <Link href={screenHref('identity', 'changePassword')} className="icon-btn" aria-label="เปลี่ยนรหัสผ่าน" title="เปลี่ยนรหัสผ่าน">
+            <KeyRound size={18} aria-hidden />
+          </Link>
+          <button type="button" className="icon-btn" aria-label="ออกจากระบบ" title="ออกจากระบบ (ทุกอุปกรณ์)"
+            onClick={async () => { const ok = await logout(); router.replace(ok ? '/login?logout=1' : '/login'); }}>
             <LogOut size={18} aria-hidden />
           </button>
         </div>

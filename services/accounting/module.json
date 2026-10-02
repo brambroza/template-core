@@ -4,19 +4,21 @@
   "nameTh": "บัญชี",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "General ledger for Thai SMEs (TFRS for NPAEs): a ready-made Thai chart of accounts seeded on first use, journal vouchers (JV-2569-0001) that must balance, draft → posted with reversal, monthly period close / reopen, automatic posting of sales invoices, receipts and deposits (incl. withholding tax), goods receipts / returns (with input VAT when the receipt carries it), paid expense claims (expense category → account map with input VAT) and paid payroll runs (salary journal) through editable posting rules with an error queue and retry, and reports: trial balance, general ledger, profit & loss (month + YTD), balance sheet, monthly VAT summary for ภ.พ.30 with output/input tax registers, and withholding tax received (50 ทวิ follow-up).",
+  "description": "General ledger for Thai SMEs (TFRS for NPAEs): a ready-made Thai chart of accounts seeded on first use, journal vouchers (JV-2569-0001) that must balance, draft → posted with reversal, monthly period close / reopen, automatic posting of sales invoices, receipts and deposits (incl. withholding tax), goods receipts / returns (with input VAT when the receipt carries it), paid expense claims (expense category → account map with input VAT) and paid payroll runs (salary journal) through editable posting rules with an error queue and retry, and reports: trial balance, general ledger, profit & loss (month + YTD), balance sheet, monthly VAT summary for ภ.พ.30 with output/input tax registers, and withholding tax received (50 ทวิ follow-up). Wave 9: credit/debit notes (VAT register in the note's month), supplier bills (matched to goods receipts without double-counting VAT) and supplier payments with WHT (ภ.ง.ด.3 / 53 payable), the ภ.พ.30 return in its numbered boxes 1–16 with carry-forward from the previous recorded filing, a filing record (incl. ภ.พ.30 เพิ่มเติม — the filing itself is done on rd.go.th) and a WHT-payable report by month and form.",
   "requires": [
     "identity"
   ],
   "enhancedBy": ["sales", "purchasing", "expense", "payroll", "inventory"],
   "publishes": ["accounting.period_closed", "accounting.period_reopened"],
-  "subscribes": ["sales.invoiced", "sales.payment_received", "purchasing.goods_received", "purchasing.goods_returned", "expense.claim_paid", "payroll.run_paid"],
+  "subscribes": ["sales.invoiced", "sales.payment_received", "purchasing.goods_received", "purchasing.goods_returned", "expense.claim_paid", "payroll.run_paid", "sales.note_issued", "purchasing.bill_recorded", "purchasing.supplier_paid"],
   "permissions": [
     { "key": "accounting.journal.read", "label": "ดูผังบัญชี สมุดรายวัน และกฎการลงบัญชี" },
     { "key": "accounting.journal.write", "label": "บันทึก/แก้ไข/ยกเลิกสมุดรายวัน (ร่าง)" },
     { "key": "accounting.journal.post", "label": "ผ่านรายการ กลับรายการ และลงบัญชีรายการที่ค้าง" },
     { "key": "accounting.account.write", "label": "จัดการผังบัญชีและกฎการลงบัญชีอัตโนมัติ" },
     { "key": "accounting.period.close", "label": "ปิด/เปิดงวดบัญชี" },
-    { "key": "accounting.report.read", "label": "ดูงบการเงินและรายงานภาษี" }
+    { "key": "accounting.report.read", "label": "ดูงบการเงินและรายงานภาษี" },
+    { "key": "accounting.tax.read", "label": "ดูแบบ ภ.พ.30 และภาษีหัก ณ ที่จ่ายค้างจ่าย (ภ.ง.ด.3/53)" },
+    { "key": "accounting.tax.file", "label": "บันทึกการยื่นแบบ ภ.พ.30 (ยื่นจริงที่ rd.go.th)" }
   ]
 }

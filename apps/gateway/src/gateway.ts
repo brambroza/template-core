@@ -3,15 +3,27 @@
  *
  *  - /api/<module>/*      proxied to that module (only modules the customer installed exist)
  *  - /api/_catalog         installed modules + manifests (the web/mobile apps build menus from this)
- *  - /_events/publish      event router: fans each event out to installed modules that subscribe to it
+ *  - /_events/publish      event router: fans each event out to installed modules that subscribe to it, and kernel events
+ *                          (`KERNEL_SUBSCRIPTIONS`, e.g. identity.tokens_revoked) to every installed module
  *
  * The gateway holds no business logic and no database. It discovers wiring from each module's /_manifest.
  */
 import Fastify, { type FastifyInstance } from 'fastify';
-import { safeEqual, toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
+import { isKernelSubscription, safeEqual, toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
 
 /** module response headers passed through to the client */
-export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy'] as const;
+export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy', 'x-erp-session-token'] as const;
+
+/**
+ * Modules an event goes to: those whose manifest subscribes to it, plus — for kernel subscriptions such as
+ * `identity.tokens_revoked` (SEC-07) — every installed module whatever its module.json says. Never back to the publisher.
+ */
+export function routeTargets(manifests: ModuleManifest[], event: { type?: string; source?: string }): ModuleManifest[] {
+  const type = event.type;
+  if (!type) return [];
+  const everyone = isKernelSubscription(type);
+  return manifests.filter((m) => m.id !== event.source && (everyone || m.subscribes.includes(type as never)));
+}
 
 export interface GatewayOptions {
   /** module id -> base URL, e.g. { sales: 'http://sales:3000' } */
@@ -85,7 +97,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
   app.post('/_events/publish', async (req, reply) => {
     if (!safeEqual(req.headers['x-internal-token'], opts.internalToken)) throw unauthorized('Internal endpoint');
     const event = req.body as { type?: string; source?: string };
-    const targets = manifests.filter((m) => event.type && m.subscribes.includes(event.type as never) && m.id !== event.source);
+    const targets = routeTargets(manifests, event);
     const results = await Promise.all(targets.map(async (m) => {
       try {
         const res = await fetch(`${opts.modules[m.id]}/_events`, {

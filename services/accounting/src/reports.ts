@@ -258,6 +258,8 @@ export async function vatReport(c: Client, year: string) {
  * รายงานภาษีขาย / ภาษีซื้อ: each posting on a VAT account in a month, with the tax invoice behind it (C7/C8): invoice number and date,
  * the other party's name, tax ID and branch (null on postings made before they were carried — `ref` is the source document then).
  * A reduction (purchase return, reversal) shows a negative base and negative tax, so the register totals equal the ภ.พ.30 summary.
+ * Wave 9: a credit note (ใบลดหนี้) is a negative row in the month it is issued, a debit note a positive one; `ref_invoice_no` / `ref_invoice_date`
+ * name the tax invoice the note corrects.
  */
 export async function vatLines(c: Client, month: string, kind: 'output' | 'input') {
   const role = kind === 'output' ? 'vat_output' : 'vat_input';
@@ -266,7 +268,8 @@ export async function vatLines(c: Client, month: string, kind: 'output' | 'input
        case when (case when $2 = 'vat_output' then l.credit else l.debit end) > 0 then l.tax_base else -l.tax_base end as tax_base,
        case when $2 = 'vat_output' then l.credit - l.debit else l.debit - l.credit end as vat,
        l.tax_invoice_no, to_char(coalesce(l.tax_invoice_date, j.entry_date), 'YYYY-MM-DD') as tax_invoice_date,
-       coalesce(l.tax_party_name, l.partner_name) as party_name, l.tax_party_tax_id as party_tax_id, l.tax_party_branch as party_branch
+       coalesce(l.tax_party_name, l.partner_name) as party_name, l.tax_party_tax_id as party_tax_id, l.tax_party_branch as party_branch,
+       l.tax_ref_invoice_no as ref_invoice_no, to_char(l.tax_ref_invoice_date, 'YYYY-MM-DD') as ref_invoice_date
      from journal_lines l join journal_entries j on j.id = l.journal_id and j.status in ${EFFECTIVE}
      join accounts a on a.id = l.account_id and a.role = $2
      where j.entry_date between $1::date and (date_trunc('month', $1::date) + interval '1 month - 1 day')::date

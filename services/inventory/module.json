@@ -27,7 +27,8 @@
     "maintenance.parts_used",
     "quality.inspection_created",
     "quality.inspection_completed",
-    "purchasing.goods_returned"
+    "purchasing.goods_returned",
+    "sales.note_issued"
   ],
   "permissions": [
     {

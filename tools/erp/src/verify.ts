@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { isKernelSubscription } from '@erp/kernel';
 import { join } from 'node:path';
 import { loadCatalog, loadManifests } from './catalog.ts';
 import { uiOutOfSync } from './ui-sync.ts';
@@ -32,7 +33,11 @@ export function verify(root: string): { errors: string[]; warnings: string[] } {
     for (const r of m.requires) if (manifests.find((x) => x.id === r)?.tier !== 'core') errors.push(`${m.id}: may only *require* core modules ("${r}" is a feature). Use events + enhancedBy instead.`);
     for (const f of ['src/service.ts', 'src/main.ts', 'migrations', 'CLAUDE.md', 'package.json']) if (!existsSync(join(dir, f))) errors.push(`${m.id}: missing ${f}`);
     if (!walk(join(dir, 'test')).some((f) => f.endsWith('.test.ts'))) errors.push(`${m.id}: has no tests`);
-    for (const t of m.subscribes) if (!publishers.has(t)) warnings.push(`${m.id}: subscribes to ${t} but no installed module publishes it (fine if that module is not purchased)`);
+    for (const t of m.subscribes) {
+      // kernel subscriptions (identity.tokens_revoked, SEC-07) reach every module through the kernel + gateway; listing one is allowed but redundant
+      if (isKernelSubscription(t)) warnings.push(`${m.id}: subscribes to ${t}, which every module's kernel already handles — remove it from module.json unless the module adds its own handler`);
+      else if (!publishers.has(t)) warnings.push(`${m.id}: subscribes to ${t} but no installed module publishes it (fine if that module is not purchased)`);
+    }
 
     // no module may import another module's code: integration happens through @erp/contracts events only
     for (const file of walk(dir).filter((f) => f.endsWith('.ts'))) {

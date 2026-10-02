@@ -1,8 +1,9 @@
-import { auth, badRequest, conflict, guardLockDate, hasPerm, loadManifest, lockThroughPeriod, nextDocNo, one, parse, readLock, requirePerm, s, setLockDate, thaiToday, unlockPeriod, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, guardLockDate, type AuthContext, hasPerm, loadManifest, lockThroughPeriod, nextDocNo, one, parse, readLock, requirePerm, s, setLockDate, thaiToday, unlockPeriod, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import type { EventData } from '@erp/contracts';
-import { bahtText, calcVat, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round } from '@erp/thai';
+import { bahtText, calcVat, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round, VAT_RATE } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { statusTh } from '@erp/ui-schema';
+import { NOTE_SECTION, NOTE_TITLE, reasonSentence, reasonsOf, type NoteKind } from './notes.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -26,6 +27,8 @@ const OrderInput = z.object({
   customerTaxId: z.string().refine(isValidThaiTaxId, 'invalid Thai tax ID').optional(),
   customerBranch: z.string().regex(/^\d{5}$/).optional(),
   customerAddress: z.string().max(500).optional(),
+  /** wave 9: buyer's e-mail (e-Tax invoice by e-mail) */
+  customerEmail: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().trim().email('อีเมลไม่ถูกต้อง').max(200).optional()),
   warehouseCode: s.code.default('MAIN'),
   orderDate: s.isoDate.optional(),
   vatMode: z.enum(['exclusive', 'inclusive']).default('exclusive'),
@@ -49,6 +52,40 @@ const InvoiceInput = z.object({
   /** needed (with perm sales.lock.override) to date the invoice on/before the lock date */
   lockOverrideReason: z.string().trim().max(500).optional(),
 });
+
+/**
+ * wave 9: a line of a credit / debit note. `lineNo` = the invoice line it adjusts: item, description, qty and the unit price after the
+ * line discount are taken from it unless given (so "return line 2" is just `{ lineNo: 2, returnToStock: true }`). Prices are in the
+ * invoice's price basis (before VAT for a VAT-exclusive order, incl. VAT for an inclusive one). `returnToStock` (credit notes, stock
+ * items only): `true` = the whole qty comes back, a number = that many.
+ */
+const NoteLineInput = z.object({
+  lineNo: z.coerce.number().int().positive().optional(),
+  itemId: s.uuid.nullable().optional(),
+  itemCode: z.string().trim().min(1).max(50).optional(),
+  itemName: z.string().max(200).optional(),
+  description: z.string().trim().max(1000).optional(),
+  qty: z.coerce.number().finite().positive().optional(),
+  unitPrice: z.coerce.number().finite().min(0).optional(),
+  returnToStock: z.union([z.boolean(), z.coerce.number().finite().min(0)]).optional(),
+}).refine((l) => !l.itemId || l.itemCode, { message: 'itemCode is required with itemId', path: ['itemCode'] });
+
+const NoteInput = z.object({
+  issueDate: s.isoDate.optional(),
+  /** legal reason (มาตรา 82/10 for credit notes, 82/9 for debit notes) — see src/notes.ts */
+  reasonCode: z.string().trim().min(1, 'เลือกเหตุผล'),
+  /** explanation printed after the legal reason; required for `other` */
+  reasonText: z.string().trim().max(500).optional(),
+  /** shorthand for one line: the difference in the invoice's price basis (e.g. a price reduction on the whole invoice) */
+  amount: z.coerce.number().finite().positive().optional(),
+  lines: z.array(NoteLineInput).default([]),
+  /** where returned goods come back (default: the order's warehouse) */
+  warehouseCode: s.code.optional(),
+  note: z.string().max(1000).optional(),
+  /** needed (with perm sales.lock.override) to date the note on/before the lock date */
+  lockOverrideReason: z.string().trim().max(500).optional(),
+});
+const NoteListQuery = s.listQuery.extend({ kind: z.enum(['credit', 'debit']).optional(), invoiceId: s.uuid.optional(), customerId: s.uuid.optional() });
 
 const METHODS = ['cash', 'transfer', 'cheque', 'card'] as const;
 const METHOD_TH: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', cheque: 'เช็ค', card: 'บัตรเครดิต' };
@@ -94,8 +131,13 @@ const ReceiptInput = z.object({
   return b;
 });
 
-const PAY_STATUS = `case when i.paid_amount >= i.gross then 'paid' when i.paid_amount > 0 then 'partially_paid' else 'outstanding' end`;
-const INVOICE_SELECT = `select i.*, i.gross - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status,
+/**
+ * wave 9: what an invoice bills after its credit / debit notes (ใบลดหนี้ / ใบเพิ่มหนี้): gross + debit notes − credit notes.
+ * Outstanding = billed − paid; it is negative when a credit note came after payment (the customer has a credit balance).
+ */
+const BILLED = (a = 'i') => `(${a}.gross + ${a}.debit_total - ${a}.credit_total)`;
+const PAY_STATUS = `case when ${BILLED()} <= 0 and i.paid_amount = 0 then 'credited' when i.paid_amount >= ${BILLED()} then 'paid' when i.paid_amount > 0 then 'partially_paid' else 'outstanding' end`;
+const INVOICE_SELECT = `select i.*, ${BILLED()} as billed, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status,
   o.no as order_no, o.ref as order_ref, o.customer_id, o.customer_name, o.customer_tax_id, o.customer_branch, o.customer_address
   from invoices i join sales_orders o on o.id = i.order_id`;
 
@@ -109,7 +151,7 @@ export function orderTotals(lines: { qty: number; unitPrice: number; discountPct
 
 interface NewOrder {
   customerId?: string | null; customerName: string; customerTaxId?: string | null; customerBranch?: string | null; customerAddress?: string | null;
-  warehouseCode: string; orderDate?: string | null; vatMode: 'exclusive' | 'inclusive'; creditDays: number; ref?: string | null; note?: string | null;
+  customerEmail?: string | null; warehouseCode: string; orderDate?: string | null; vatMode: 'exclusive' | 'inclusive'; creditDays: number; ref?: string | null; note?: string | null;
   quotationId?: string | null; lines: OrderLine[];
 }
 
@@ -119,10 +161,10 @@ async function insertOrder(c: Client, b: NewOrder, createdBy: string | null): Pr
   const no = await nextDocNo(c, 'SO', new Date(orderDate));
   const o = (await c.query(
     `insert into sales_orders (no, customer_id, customer_name, customer_tax_id, customer_branch, customer_address, warehouse_code, order_date, vat_mode,
-       subtotal, discount, net, vat, gross, note, created_by, ref, quotation_id, credit_days)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
+       subtotal, discount, net, vat, gross, note, created_by, ref, quotation_id, credit_days, customer_email)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) returning id`,
     [no, b.customerId ?? null, b.customerName, b.customerTaxId ?? null, b.customerBranch ?? null, b.customerAddress ?? null, b.warehouseCode, orderDate,
-      b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, createdBy, b.ref ?? null, b.quotationId ?? null, b.creditDays],
+      b.vatMode, t.subtotal, t.discount, t.net, t.vat, t.gross, b.note ?? null, createdBy, b.ref ?? null, b.quotationId ?? null, b.creditDays, b.customerEmail ?? null],
   )).rows[0];
   for (const [i, l] of b.lines.entries()) {
     await c.query(
@@ -137,7 +179,7 @@ async function insertOrder(c: Client, b: NewOrder, createdBy: string | null): Pr
 async function loadOrder(c: Client, id: string, lock = false) {
   const o = await one(c, `select * from sales_orders where id = $1 ${lock ? 'for update' : ''}`, [id], 'Sales order');
   o.lines = (await c.query('select * from so_lines where order_id = $1 order by line_no', [id])).rows;
-  const inv = (await c.query(`select i.id, i.no, i.due_date, i.gross - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.order_id = $1`, [id])).rows[0];
+  const inv = (await c.query(`select i.id, i.no, i.due_date, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.order_id = $1`, [id])).rows[0];
   o.invoice_id = inv?.id ?? null;
   o.invoice_no = inv?.no ?? null;
   o.payment_status = inv?.payment_status ?? null;
@@ -179,7 +221,8 @@ const asOfQuery = z.object({ asOf: s.isoDate.optional() });
  * last month must not show invoices issued since, nor hide ones paid since (bugs-0.4 SAL-02). Columns: invoice `i` + order `o` + `open_amt`.
  */
 const OPEN_AS_OF = `select i.*, o.customer_id, o.customer_name,
-    i.gross - coalesce((select sum(rl.amount) from receipt_lines rl join receipts p on p.id = rl.receipt_id where rl.invoice_id = i.id and p.receipt_date <= $1::date), 0) as open_amt
+    i.gross + coalesce((select sum(case n.kind when 'debit' then n.gross else -n.gross end) from sales_notes n where n.invoice_id = i.id and n.issue_date <= $1::date), 0)
+    - coalesce((select sum(rl.amount) from receipt_lines rl join receipts p on p.id = rl.receipt_id where rl.invoice_id = i.id and p.receipt_date <= $1::date), 0) as open_amt
   from invoices i join sales_orders o on o.id = i.order_id where i.issue_date <= $1::date`;
 /** deposits received on or before $1 with what remained unapplied on that date (used by receipts dated, or deducted on invoices issued, on/before it) */
 const DEPOSITS_AS_OF = `select d.customer_id, d.customer_name,
@@ -220,16 +263,20 @@ export const definition: ServiceDefinition = {
           `select count(*) filter (where status = 'draft')::int as to_confirm,
                   count(*) filter (where status = 'confirmed')::int as to_deliver,
                   count(*) filter (where status = 'delivered')::int as to_invoice from sales_orders`)).rows[0];
-        const revenue = (await c.query(`select coalesce(sum(gross), 0) as total from invoices where date_trunc('month', issue_date) = date_trunc('month', $1::date)`, [today])).rows[0].total;
+        // wave 9: sales of a month = tax invoices + debit notes − credit notes issued in it (the VAT month of each document)
         const months = (await c.query(
-          `select to_char(m, 'YYYY-MM') as month, coalesce(sum(i.gross), 0) as total
-           from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m left join invoices i on date_trunc('month', i.issue_date) = m group by m order by m`, [today])).rows;
+          `with docs as (select issue_date as d, gross as amt from invoices
+                         union all select issue_date, case kind when 'debit' then gross else -gross end from sales_notes)
+           select to_char(m, 'YYYY-MM') as month, coalesce(sum(docs.amt), 0) as total
+           from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m
+           left join docs on date_trunc('month', docs.d) = m group by m order by m`, [today])).rows;
+        const revenue = months[months.length - 1]?.total ?? 0;
         const rows = (await c.query(`select id, no, customer_name, status, gross from sales_orders where status <> 'cancelled' order by created_at desc limit 24`)).rows;
         const ar = (await c.query(
-          `select coalesce(sum(gross - paid_amount), 0) as outstanding,
-                  coalesce(sum(gross - paid_amount) filter (where due_date < $1::date), 0) as overdue,
+          `select coalesce(sum(${BILLED()} - paid_amount), 0) as outstanding,
+                  coalesce(sum(${BILLED()} - paid_amount) filter (where due_date < $1::date), 0) as overdue,
                   count(*) filter (where due_date < $1::date)::int as overdue_count
-           from invoices where paid_amount < gross`, [today])).rows[0];
+           from invoices i where paid_amount < ${BILLED()}`, [today])).rows[0];
         const rc = (await c.query(
           `select coalesce(sum(received) filter (where date_trunc('month', receipt_date) = date_trunc('month', $1::date)), 0) as received_month,
                   coalesce(sum(deposit_remaining) filter (where kind = 'deposit'), 0) as deposits from receipts`, [today])).rows[0];
@@ -338,25 +385,27 @@ export const definition: ServiceDefinition = {
           // C7: buyer's tax ID / branch for the sales VAT register
           customerTaxId: o.customer_tax_id ?? null, customerBranch: o.customer_branch ?? null,
           ...(ded.length ? { depositApplied: { net: dn, vat: dv, gross: dg, deposits: ded } } : {}),
+          // wave 9 (e-Tax): the printed lines (amounts in the order's price basis, see vatMode) and the buyer's address / e-mail
+          lines: invoicedLines(o), customerAddress: o.customer_address ?? null, customerEmail: o.customer_email ?? null,
         });
         return printableInvoice(c, inv.id, k.env);
       });
     });
 
-    /** Invoices with payment status. `status` = outstanding | partially_paid | paid | open (not fully paid); `overdue=1` = open and past due. */
+    /** Invoices with payment status. `status` = outstanding | partially_paid | paid | credited (nothing left after credit notes) | open (not fully paid); `overdue=1` = open and past due. */
     app.get('/invoices', async (req) => {
       const a = auth(req);
       requirePerm(a, 'sales.order.read');
       const q = parse(s.listQuery.extend({
-        status: z.enum(['outstanding', 'partially_paid', 'paid', 'open']).optional(),
+        status: z.enum(['outstanding', 'partially_paid', 'paid', 'credited', 'open']).optional(),
         overdue: z.enum(['0', '1', 'true', 'false']).optional(),
         customerId: s.uuid.optional(),
       }), req.query);
       const overdue = q.overdue === '1' || q.overdue === 'true';
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `select * from (${INVOICE_SELECT}) x
-         where ($1::text is null or ($1 = 'open' and payment_status <> 'paid') or payment_status = $1)
-           and (not $2 or (payment_status <> 'paid' and due_date < $7::date))
+         where ($1::text is null or ($1 = 'open' and payment_status not in ('paid', 'credited')) or payment_status = $1)
+           and (not $2 or (payment_status not in ('paid', 'credited') and due_date < $7::date))
            and ($3::uuid is null or customer_id = $3)
            and ($4::text is null or no ilike $4 or order_no ilike $4 or customer_name ilike $4 or order_ref ilike $4)
          order by due_date, no limit $5 offset $6`,
@@ -368,6 +417,39 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'sales.order.read');
       const { id } = parse(IdParam, req.params);
       return k.db.tx(a.tenantId, (c) => printableInvoice(c, id, k.env));
+    });
+
+    /* ---------------- credit / debit notes (wave 9, มาตรา 86/10 / 86/9) ---------------- */
+
+    for (const kind of ['credit', 'debit'] as const) {
+      const base = kind === 'credit' ? '/credit-notes' : '/debit-notes';
+      app.post(`/invoices/:id${base}`, async (req, reply) => {
+        const a = auth(req);
+        requirePerm(a, 'sales.note.write');
+        const { id } = parse(IdParam, req.params);
+        const b = parse(NoteInput, req.body ?? {});
+        reply.code(201);
+        return k.db.tx(a.tenantId, (c) => issueNote(c, a, k.emit, kind, id, b));
+      });
+      app.get(base, async (req) => {
+        const a = auth(req);
+        requirePerm(a, 'sales.note.read');
+        const q = parse(NoteListQuery, req.query);
+        return k.db.tx(a.tenantId, (c) => listNotes(c, { ...q, kind }));
+      });
+      app.get(`${base}/:id`, async (req) => {
+        const a = auth(req);
+        requirePerm(a, 'sales.note.read');
+        const { id } = parse(IdParam, req.params);
+        return k.db.tx(a.tenantId, (c) => printableNote(c, id, kind));
+      });
+    }
+
+    /** Credit and debit notes together (`kind=credit|debit`, `invoiceId`, `customerId`, `q`: note no., invoice no., customer). */
+    app.get('/notes', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'sales.note.read');
+      return k.db.tx(a.tenantId, (c) => listNotes(c, parse(NoteListQuery, req.query)));
     });
 
     /* ---------------- receipts & deposits ---------------- */
@@ -431,7 +513,7 @@ export const definition: ServiceDefinition = {
           if (customer && !sameCustomer(customer, inv)) throw fieldError('lines', `${inv.no} เป็นของ ${inv.customer_name} ไม่ใช่ลูกค้าในใบเสร็จนี้`);
           customer ??= inv;
           const amount = round(l.amount);
-          const outstanding = round(inv.gross - inv.paid_amount);
+          const outstanding = round(Number(inv.outstanding)); // wave 9: after credit / debit notes
           if (amount > outstanding) throw fieldError('lines', `รับชำระ ${amount.toFixed(2)} เกินยอดค้าง ${outstanding.toFixed(2)} ของ ${inv.no}`);
           // C4: WHT is on services (and other income types), not on goods — default base = the service part of the amount paid, before VAT
           const preVat = inv.gross > 0 ? round((amount * inv.net) / inv.gross) : 0;
@@ -543,10 +625,12 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const rows = (await c.query(
           `select coalesce(x.customer_id::text, x.customer_name) as key, (array_agg(x.customer_id))[1] as customer_id, max(x.customer_name) as customer_name,
-                  count(*)::int as invoices, sum(x.open_amt) as outstanding,
-                  coalesce(sum(x.open_amt) filter (where x.due_date < $1::date), 0) as overdue,
-                  min(x.due_date) as oldest_due, greatest(max($1::date - x.due_date), 0) as max_days_overdue
-           from (${OPEN_AS_OF}) x where x.open_amt > 0 group by 1 order by overdue desc, outstanding desc`, [asOf])).rows;
+                  count(*) filter (where x.open_amt > 0)::int as invoices, coalesce(sum(x.open_amt) filter (where x.open_amt > 0), 0) as outstanding,
+                  coalesce(sum(x.open_amt) filter (where x.open_amt > 0 and x.due_date < $1::date), 0) as overdue,
+                  coalesce(-sum(x.open_amt) filter (where x.open_amt < 0), 0) as credit_balance,
+                  min(x.due_date) filter (where x.open_amt > 0) as oldest_due,
+                  coalesce(greatest(max($1::date - x.due_date) filter (where x.open_amt > 0), 0), 0) as max_days_overdue
+           from (${OPEN_AS_OF}) x where x.open_amt <> 0 group by 1 order by overdue desc, outstanding desc`, [asOf])).rows;
         const deposits = (await c.query(
           `select coalesce(customer_id::text, customer_name) as key, (array_agg(customer_id))[1] as customer_id, max(customer_name) as customer_name, sum(remaining) as deposits
            from (${DEPOSITS_AS_OF}) d where remaining > 0 group by 1`, [asOf])).rows;
@@ -554,11 +638,12 @@ export const definition: ServiceDefinition = {
         for (const d of deposits) {
           const r = byKey.get(d.key);
           if (r) r.deposits = d.deposits;
-          else byKey.set(d.key, { key: d.key, customer_id: d.customer_id, customer_name: d.customer_name, invoices: 0, outstanding: 0, overdue: 0, oldest_due: null, max_days_overdue: 0, deposits: d.deposits });
+          else byKey.set(d.key, { key: d.key, customer_id: d.customer_id, customer_name: d.customer_name, invoices: 0, outstanding: 0, overdue: 0, credit_balance: 0, oldest_due: null, max_days_overdue: 0, deposits: d.deposits });
         }
-        const list = [...byKey.values()].map((r) => ({ ...r, net_outstanding: round(Number(r.outstanding) - Number(r.deposits)) }));
+        // wave 9: credit_balance = invoices credited (ใบลดหนี้) below what was already paid — money the customer has with us
+        const list = [...byKey.values()].map((r) => ({ ...r, net_outstanding: round(Number(r.outstanding) - Number(r.credit_balance) - Number(r.deposits)) }));
         const sum = (f: string) => round(list.reduce((x, r: any) => x + Number(r[f]), 0));
-        return { asOf, totals: { outstanding: sum('outstanding'), overdue: sum('overdue'), deposits: sum('deposits'), customers: list.length }, rows: list };
+        return { asOf, totals: { outstanding: sum('outstanding'), overdue: sum('overdue'), creditBalance: sum('credit_balance'), deposits: sum('deposits'), customers: list.length }, rows: list };
       });
     });
 
@@ -570,16 +655,18 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         const rows = (await c.query(
           `with x as (select coalesce(v.customer_id::text, v.customer_name) as key, v.customer_id, v.customer_name, v.open_amt as amt, $1::date - v.due_date as days
-                      from (${OPEN_AS_OF}) v where v.open_amt > 0)
+                      from (${OPEN_AS_OF}) v where v.open_amt <> 0)
            select key, (array_agg(customer_id))[1] as customer_id, max(customer_name) as customer_name,
-                  coalesce(sum(amt) filter (where days <= 0), 0) as current,
-                  coalesce(sum(amt) filter (where days between 1 and 30), 0) as d1_30,
-                  coalesce(sum(amt) filter (where days between 31 and 60), 0) as d31_60,
-                  coalesce(sum(amt) filter (where days between 61 and 90), 0) as d61_90,
-                  coalesce(sum(amt) filter (where days > 90), 0) as over_90,
-                  sum(amt) as total
+                  coalesce(sum(amt) filter (where amt > 0 and days <= 0), 0) as current,
+                  coalesce(sum(amt) filter (where amt > 0 and days between 1 and 30), 0) as d1_30,
+                  coalesce(sum(amt) filter (where amt > 0 and days between 31 and 60), 0) as d31_60,
+                  coalesce(sum(amt) filter (where amt > 0 and days between 61 and 90), 0) as d61_90,
+                  coalesce(sum(amt) filter (where amt > 0 and days > 90), 0) as over_90,
+                  coalesce(sum(amt) filter (where amt > 0), 0) as total,
+                  coalesce(-sum(amt) filter (where amt < 0), 0) as credit_balance
            from x group by key order by over_90 desc, d61_90 desc, d31_60 desc, d1_30 desc, total desc`, [asOf])).rows;
-        const buckets = ['current', 'd1_30', 'd31_60', 'd61_90', 'over_90', 'total'] as const;
+        // wave 9: buckets age what is still owed; credit balances (credited after payment) are shown apart, not aged
+        const buckets = ['current', 'd1_30', 'd31_60', 'd61_90', 'over_90', 'total', 'credit_balance'] as const;
         const totals = Object.fromEntries(buckets.map((b) => [b, round(rows.reduce((x, r) => x + Number(r[b]), 0))]));
         return { asOf, totals, rows };
       });
@@ -648,6 +735,173 @@ async function depositDeductions(c: Client, o: any, issueDate: string, explicit:
   return out;
 }
 
+/* ---------------- credit / debit notes (wave 9) ---------------- */
+
+type NoteBody = z.infer<typeof NoteInput>;
+type Emit = (c: Client, type: 'sales.note_issued', data: EventData<'sales.note_issued'>) => Promise<unknown>;
+interface NoteLine {
+  invoiceLineNo: number | null; itemId: string | null; itemCode: string | null; itemName: string | null; description: string;
+  qty: number; unitPrice: number; amount: number; returnToStock: number;
+}
+
+/**
+ * Issue a ใบลดหนี้ (credit) / ใบเพิ่มหนี้ (debit) against tax invoice `invoiceId` (มาตรา 82/10 + 86/10, 82/9 + 86/9).
+ * - The difference is computed like the invoice itself (lines in the invoice's price basis, VAT at the invoice's rate on the sum).
+ * - "Value per the original invoice" = the invoice's full value (incl. deposits deducted on it, wave 8) as adjusted by earlier notes;
+ *   credit notes may not take it below zero (cumulative cap); the credit that brings it to exactly zero takes the exact remaining
+ *   base and VAT, so the VAT reversed never differs from the VAT charged by a satang.
+ * - The note is dated in its own VAT month (not the invoice's) — the lock date applies to the note's date.
+ */
+async function issueNote(c: Client, a: AuthContext, emit: Emit, kind: NoteKind, invoiceId: string, b: NoteBody) {
+  const title = NOTE_TITLE[kind];
+  const reasons = reasonsOf(kind);
+  if (!reasons[b.reasonCode]) throw fieldError('reasonCode', `เหตุผลการออก${title}ไม่ถูกต้อง — เลือกจากรายการตามมาตรา ${kind === 'credit' ? '82/10' : '82/9'}`);
+  if (b.reasonCode === 'other' && (b.reasonText ?? '').length < 3) throw fieldError('reasonText', 'ระบุคำอธิบายเหตุผล (เหตุอื่น)');
+  // a blank row from the form (only an unticked checkbox) is not a line
+  b = { ...b, lines: b.lines.filter((l) => l.lineNo || l.itemId || l.description || l.qty !== undefined || l.unitPrice !== undefined) };
+  if (b.amount !== undefined && b.lines.length) throw fieldError('amount', 'ระบุ "จำนวนเงินผลต่าง" หรือรายการ อย่างใดอย่างหนึ่ง');
+  if (b.amount === undefined && !b.lines.length) throw fieldError('lines', `ระบุรายการที่${kind === 'credit' ? 'ลด' : 'เพิ่ม'} หรือจำนวนเงินผลต่าง`);
+  const issueDate = b.issueDate ?? bangkokToday();
+  if (issueDate > bangkokToday()) throw fieldError('issueDate', `ลงวันที่${title}ล่วงหน้าไม่ได้`);
+
+  const inv = await one(c, 'select * from invoices where id = $1 for update', [invoiceId], 'Invoice');
+  const o = await loadOrder(c, inv.order_id);
+  const invoiceDate = isoDay(inv.issue_date);
+  if (issueDate < invoiceDate) throw fieldError('issueDate', `วันที่${title}ต้องไม่ก่อนวันที่ใบกำกับภาษี ${inv.no} (${formatThaiDate(invoiceDate)})`);
+  await guardLockDate(c, a, { module: 'sales', date: issueDate, what: title, overrideReason: b.lockOverrideReason });
+
+  const vatMode: 'exclusive' | 'inclusive' = o.vat_mode;
+  const vatRate = orderVatRate(o);
+  const reason = reasonSentence(kind, b.reasonCode, b.reasonText);
+  const input = b.amount !== undefined ? [{ description: reason, qty: 1, unitPrice: b.amount }] : b.lines;
+
+  const lines: NoteLine[] = [];
+  for (const [i, l] of input.entries()) {
+    const at = `บรรทัดที่ ${i + 1}`;
+    const src = 'lineNo' in l && l.lineNo ? o.lines.find((x: any) => x.line_no === l.lineNo) : null;
+    if ('lineNo' in l && l.lineNo && !src) throw fieldError('lines', `${at}: ใบกำกับ ${inv.no} ไม่มีรายการลำดับที่ ${l.lineNo}`);
+    const item = 'itemId' in l && l.itemId ? { id: l.itemId, code: l.itemCode!, name: l.itemName ?? null } : src?.item_id ? { id: src.item_id, code: src.item_code, name: src.item_name } : null;
+    const qty = l.qty ?? (src ? Number(src.qty) : 1);
+    // the invoice line's unit price after its discount — returning a whole line gives back exactly its amount
+    const effective = src ? Number(src.unit_price) * (1 - Number(src.discount_pct ?? 0) / 100) : undefined;
+    const unitPrice = l.unitPrice ?? effective;
+    if (unitPrice === undefined) throw fieldError('lines', `${at}: ระบุราคาต่อหน่วย (หรือเลือกรายการในใบกำกับ)`);
+    const description = ('description' in l && l.description) || (src ? lineText(src) : '') || item?.name || item?.code || '';
+    if (!description) throw fieldError('lines', `${at}: ระบุคำอธิบายรายการ`);
+    const rts = 'returnToStock' in l ? l.returnToStock : undefined;
+    const returnToStock = rts === true ? qty : typeof rts === 'number' ? rts : 0;
+    if (returnToStock > 0) {
+      if (kind !== 'credit') throw fieldError('lines', `${at}: รับคืนสินค้าเข้าคลังได้เฉพาะใบลดหนี้`);
+      if (!item) throw fieldError('lines', `${at}: รายการค่าบริการ/ไม่มีรหัสสินค้า รับคืนเข้าคลังไม่ได้`);
+      if (returnToStock > qty) throw fieldError('lines', `${at}: รับคืน ${returnToStock} เกินจำนวนในรายการ ${qty}`);
+      if (src) {
+        const before = Number((await c.query(
+          `select coalesce(sum(nl.return_to_stock), 0) as q from sales_note_lines nl join sales_notes n on n.id = nl.note_id
+           where n.invoice_id = $1 and nl.invoice_line_no = $2`, [inv.id, src.line_no])).rows[0].q);
+        if (before + returnToStock > Number(src.qty) + 1e-9) {
+          throw fieldError('lines', `${at}: รับคืน ${returnToStock} เกินจำนวนที่ขายตามใบกำกับ ${Number(src.qty)} (รับคืนไปแล้ว ${before})`);
+        }
+      }
+    }
+    lines.push({
+      invoiceLineNo: src?.line_no ?? null, itemId: item?.id ?? null, itemCode: item?.code ?? null, itemName: item?.name ?? null, description,
+      qty, unitPrice, amount: round(qty * unitPrice), returnToStock,
+    });
+  }
+
+  // the difference: same arithmetic as the invoice (documentTotals) — round each line, VAT on the sum in the invoice's basis
+  let { net, vat, gross } = calcVat(round(lines.reduce((x, l) => x + l.amount, 0)), vatMode, vatRate);
+  if (!(gross > 0) || !(net > 0)) throw fieldError('lines', `ผลต่างของ${title}ต้องมากกว่า 0`);
+
+  // value in effect before this note: the invoice's full value (incl. deposits deducted on it) ± earlier notes
+  const prior = (await c.query(
+    `select coalesce(sum(case kind when 'debit' then net else -net end), 0) as net, coalesce(sum(case kind when 'debit' then vat else -vat end), 0) as vat,
+            coalesce(sum(case kind when 'debit' then gross else -gross end), 0) as gross
+     from sales_notes where invoice_id = $1`, [inv.id])).rows[0];
+  const cur = {
+    net: round(Number(inv.net) + Number(inv.deposit_net) + Number(prior.net)),
+    vat: round(Number(inv.vat) + Number(inv.deposit_vat) + Number(prior.vat)),
+    gross: round(Number(inv.gross) + Number(inv.deposit_gross) + Number(prior.gross)),
+  };
+  if (kind === 'credit') {
+    // cumulative credit notes may not exceed the invoice's value (in its own price basis)
+    const [mine, left] = vatMode === 'exclusive' ? [net, cur.net] : [gross, cur.gross];
+    if (mine > left) {
+      throw fieldError('lines', `ลดหนี้ ${fmtMoney(mine)} เกินมูลค่าคงเหลือของใบกำกับ ${inv.no} ${fmtMoney(left)}${vatMode === 'exclusive' ? ' (ก่อน VAT)' : ' (รวม VAT)'} — รวมใบลดหนี้ทุกใบต้องไม่เกินมูลค่าตามใบกำกับภาษี`);
+    }
+    if (mine === left) ({ net, vat, gross } = cur); // the last credit takes exactly what is left (no satang drift)
+    else if (vat > cur.vat) { vat = cur.vat; gross = round(net + vat); }
+  }
+  const originalNet = cur.net;
+  const correctNet = round(kind === 'credit' ? cur.net - net : cur.net + net);
+  const anyReturn = lines.some((l) => l.returnToStock > 0);
+  const warehouseCode = anyReturn ? (b.warehouseCode ?? o.warehouse_code) : (b.warehouseCode ?? null);
+
+  const no = await nextDocNo(c, kind === 'credit' ? 'CN' : 'DN', new Date(issueDate));
+  const n = (await c.query(
+    `insert into sales_notes (no, kind, invoice_id, invoice_no, invoice_date, order_id, issue_date, customer_id, customer_name, customer_tax_id, customer_branch,
+       customer_address, reason_code, reason_text, reason, vat_mode, vat_rate, original_net, correct_net, net, vat, gross, warehouse_code, note, created_by, created_by_name)
+     values ($1,$2,$3,$4,$5::date,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) returning id`,
+    [no, kind, inv.id, inv.no, invoiceDate, o.id, issueDate, o.customer_id, o.customer_name, o.customer_tax_id, o.customer_branch, o.customer_address,
+      b.reasonCode, b.reasonText ?? null, reason, vatMode, vatRate, originalNet, correctNet, net, vat, gross, warehouseCode, b.note ?? null, a.userId, a.userName ?? null],
+  )).rows[0];
+  for (const [i, l] of lines.entries()) {
+    await c.query(
+      `insert into sales_note_lines (note_id, line_no, invoice_line_no, item_id, item_code, item_name, description, qty, unit_price, amount, return_to_stock)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [n.id, i + 1, l.invoiceLineNo, l.itemId, l.itemCode, l.itemName, l.description, l.qty, round(l.unitPrice, 4), l.amount, l.returnToStock]);
+  }
+  await c.query(`update invoices set ${kind === 'credit' ? 'credit_total = credit_total' : 'debit_total = debit_total'} + $2 where id = $1`, [inv.id, gross]);
+  await emit(c, 'sales.note_issued', {
+    noteId: n.id, noteNo: no, kind, issueDate, invoiceId: inv.id, invoiceNo: inv.no, invoiceDate,
+    customerId: o.customer_id ?? null, customerName: o.customer_name, customerTaxId: o.customer_tax_id ?? null, customerBranch: o.customer_branch ?? null,
+    reason, originalNet, correctNet, net, vat, gross, warehouseCode,
+    lines: lines.map((l) => ({
+      itemId: l.itemId, itemCode: l.itemCode, description: l.description, qty: l.qty, unitPrice: round(l.unitPrice, 4), amount: l.amount,
+      ...(l.returnToStock > 0 ? { returnToStock: l.returnToStock } : {}),
+    })),
+  });
+  return printableNote(c, n.id, kind);
+}
+
+const fmtMoney = (v: number) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function listNotes(c: Client, q: z.infer<typeof NoteListQuery>) {
+  return (await c.query(
+    `select n.*, case n.kind when 'credit' then 'ใบลดหนี้' else 'ใบเพิ่มหนี้' end as kind_label
+     from sales_notes n
+     where ($1::text is null or n.kind = $1) and ($2::uuid is null or n.invoice_id = $2) and ($3::uuid is null or n.customer_id = $3)
+       and ($4::text is null or n.no ilike $4 or n.invoice_no ilike $4 or n.customer_name ilike $4)
+     order by n.issue_date desc, n.no desc limit $5 offset $6`,
+    [q.kind ?? null, q.invoiceId ?? null, q.customerId ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows;
+}
+
+/** Everything a ใบลดหนี้ / ใบเพิ่มหนี้ needs on paper (มาตรา 86/10 / 86/9), already formatted. `kind` = the route's kind (404 otherwise). */
+async function printableNote(c: Client, id: string, kind: NoteKind) {
+  const n = await one(c, 'select * from sales_notes where id = $1 and kind = $2', [id, kind], kind === 'credit' ? 'Credit note' : 'Debit note');
+  const lines = (await c.query('select * from sales_note_lines where note_id = $1 order by line_no', [id])).rows;
+  const inv = (await c.query(`select i.no, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.id = $1`, [n.invoice_id])).rows[0];
+  const title = NOTE_TITLE[kind];
+  const pct = `${round(Number(n.vat_rate) * 100, 2)}%`;
+  return {
+    ...n,
+    title,
+    issueDateTh: formatThaiDate(n.issue_date),
+    invoiceDateTh: formatThaiDate(n.invoice_date),
+    customer: { id: n.customer_id, name: n.customer_name, taxId: n.customer_tax_id, branch: n.customer_branch, address: n.customer_address },
+    lines,
+    priceBasis: n.vat_mode === 'inclusive' ? 'ราคาตามรายการรวมภาษีมูลค่าเพิ่มแล้ว' : 'ราคาตามรายการยังไม่รวมภาษีมูลค่าเพิ่ม',
+    vatLabel: `ภาษีมูลค่าเพิ่มของผลต่าง ${pct}`,
+    amountText: bahtText(Number(n.gross)),
+    returned: lines.some((l: any) => Number(l.return_to_stock) > 0) ? `รับคืนสินค้าเข้าคลัง ${n.warehouse_code}` : null,
+    legalText: `${title}ฉบับนี้ออกตามมาตรา ${NOTE_SECTION[kind]} แห่งประมวลรัษฎากร เพื่อ${kind === 'credit' ? 'ลด' : 'เพิ่ม'}มูลค่าตามใบกำกับภาษีเลขที่ ${n.invoice_no} ลงวันที่ ${formatThaiDate(n.invoice_date)}`
+      + ` — ผู้ขาย${kind === 'credit' ? 'นำไปลดภาษีขาย' : 'นำไปรวมเป็นภาษีขาย'}ในเดือนที่ออก${title}`,
+    /** screen only: what the invoice still has to be paid after all notes */
+    invoiceOutstanding: inv ? Number(inv.outstanding) : null,
+    invoicePaymentStatus: inv?.payment_status ?? null,
+  };
+}
+
 /** `contracts.installment_due` → one draft service order (amount before VAT, VAT exclusive), ref = contract no + installment. Once per installment. */
 export async function draftInstallmentOrder(c: Client, e: EventData<'contracts.installment_due'>) {
   if (!(e.amount > 0)) return;
@@ -665,15 +919,27 @@ export async function draftInstallmentOrder(c: Client, e: EventData<'contracts.i
 
 const isoDay = (d: unknown) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : String(d).slice(0, 10));
 
+/** wave 9: the invoice lines as `sales.invoiced` carries them (e-Tax): discount = gross line value − amount after discount. */
+function invoicedLines(o: { vat: unknown; net: unknown; lines: any[] }) {
+  const vatRate = orderVatRate(o);
+  return o.lines.map((l) => ({
+    itemId: l.item_id ?? null, itemCode: l.item_code ?? null, description: lineText(l), qty: Number(l.qty), uom: null,
+    unitPrice: Number(l.unit_price), discount: round(round(Number(l.qty) * Number(l.unit_price)) - Number(l.amount)), amount: Number(l.amount), vatRate,
+  }));
+}
+const lineText = (l: { description?: string | null; item_name?: string | null; item_code?: string | null }) => l.description || l.item_name || l.item_code || '-';
+/** VAT rate of an order: sales charges the standard rate (มาตรา 80); an order without VAT (0 on a positive base) is 0. */
+const orderVatRate = (o: { vat: unknown; net: unknown }) => (Number(o.vat) === 0 && Number(o.net) > 0 ? 0 : VAT_RATE);
+
 function withDaysOverdue(r: any) {
   const due = isoDay(r.due_date);
-  const days = r.payment_status === 'paid' ? 0 : Math.max(0, Math.round((Date.parse(bangkokToday()) - Date.parse(due)) / 86400000));
+  const days = r.payment_status === 'paid' || r.payment_status === 'credited' ? 0 : Math.max(0, Math.round((Date.parse(bangkokToday()) - Date.parse(due)) / 86400000));
   return { ...r, days_overdue: days };
 }
 
 /** Everything a Thai tax invoice template needs, already formatted. */
 async function printableInvoice(c: Client, id: string, env: NodeJS.ProcessEnv) {
-  const inv = await one(c, `select i.*, i.gross - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.id = $1`, [id], 'Invoice');
+  const inv = await one(c, `select i.*, ${BILLED()} as billed, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.id = $1`, [id], 'Invoice');
   const order = await loadOrder(c, inv.order_id);
   const receipts = (await c.query(
     `select r.id, r.no, r.receipt_date, l.amount from receipt_lines l join receipts r on r.id = l.receipt_id where l.invoice_id = $1 order by r.receipt_date, r.no`, [id])).rows;
@@ -693,7 +959,11 @@ async function printableInvoice(c: Client, id: string, env: NodeJS.ProcessEnv) {
     depositDeductions: (await c.query(
       `select da.deposit_id, da.deposit_no, r.tax_invoice_no, r.receipt_date, da.net, da.vat, da.amount as gross
        from deposit_applications da join receipts r on r.id = da.deposit_id where da.invoice_id = $1 order by r.receipt_date, da.deposit_no`, [id])).rows,
-    promptPay: env.PROMPTPAY_ID && inv.gross > inv.paid_amount ? promptPayPayload(env.PROMPTPAY_ID, round(inv.gross - inv.paid_amount)) : null,
+    /** wave 9: credit / debit notes issued against this invoice (screen only — the invoice itself never changes on paper) */
+    notes: (await c.query(
+      `select id, no, kind, case kind when 'credit' then 'ใบลดหนี้' else 'ใบเพิ่มหนี้' end as kind_label, issue_date, reason, net, vat, gross
+       from sales_notes where invoice_id = $1 order by issue_date, no`, [id])).rows,
+    promptPay: env.PROMPTPAY_ID && Number(inv.outstanding) > 0 ? promptPayPayload(env.PROMPTPAY_ID, round(Number(inv.outstanding))) : null,
   };
 }
 

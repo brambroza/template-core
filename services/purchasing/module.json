@@ -4,7 +4,7 @@
   "nameTh": "จัดซื้อ",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Purchase orders with Thai VAT, approval, goods receipt (full or partial) and returns to supplier. Feeds Inventory (stock in) and Costing (actual material cost) when installed.",
+  "description": "Purchase orders with Thai VAT, approval, goods receipt (full or partial), returns to supplier, supplier bills (payables & aging), supplier payments with withholding tax, 50 ทวิ certificates and the monthly ภ.ง.ด.3 / ภ.ง.ด.53 attachment. Feeds Inventory (stock in), Costing (actual material cost) and Accounting (AP, input VAT, WHT payable) when installed.",
   "requires": [
     "identity",
     "master-data"
@@ -18,9 +18,14 @@
     "purchasing.goods_received",
     "purchasing.po_created",
     "purchasing.po_approved",
-    "purchasing.goods_returned"
+    "purchasing.goods_returned",
+    "purchasing.bill_recorded",
+    "purchasing.supplier_paid"
   ],
-  "subscribes": ["accounting.period_closed", "accounting.period_reopened"],
+  "subscribes": [
+    "accounting.period_closed",
+    "accounting.period_reopened"
+  ],
   "permissions": [
     {
       "key": "purchasing.po.read",
@@ -61,6 +66,26 @@
     {
       "key": "purchasing.lock.override",
       "label": "รับสินค้า/ส่งคืนย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)"
+    },
+    {
+      "key": "purchasing.bill.read",
+      "label": "ดูบิลผู้ขาย / เจ้าหนี้ค้างจ่าย"
+    },
+    {
+      "key": "purchasing.bill.write",
+      "label": "ตั้งหนี้ (บันทึกใบกำกับภาษี/ใบแจ้งหนี้ผู้ขาย)"
+    },
+    {
+      "key": "purchasing.payment.read",
+      "label": "ดูใบสำคัญจ่ายและหนังสือรับรอง 50 ทวิ"
+    },
+    {
+      "key": "purchasing.payment.write",
+      "label": "จ่ายชำระหนี้ผู้ขาย (หักภาษี ณ ที่จ่าย)"
+    },
+    {
+      "key": "purchasing.wht.read",
+      "label": "ดูรายงาน ภ.ง.ด.3 / ภ.ง.ด.53 และส่งออกไฟล์ใบแนบ"
     }
   ]
 }

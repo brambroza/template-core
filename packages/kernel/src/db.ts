@@ -92,10 +92,19 @@ create index if not exists _audit_entity on _audit (tenant_id, entity_id, at des
 create table if not exists _lock_date (
   tenant_id uuid primary key, lock_date date, source text check (source in ('accounting', 'manual')), period text,
   updated_at timestamptz not null default now(), updated_by_name text);
+create table if not exists _revoked_tokens (
+  tenant_id uuid not null, user_id uuid not null, before bigint not null, reason text not null,
+  updated_at timestamptz not null default now(), primary key (tenant_id, user_id));
 `;
 
+/**
+ * `_revoked_tokens` is tenant-isolated like any business table, but every service must load ALL tenants' cutoffs at boot
+ * (auth() is synchronous). This extra SELECT-only policy is used by `RevocationList.load` alone (it sets `app.kernel_read`).
+ */
+const REVOKED_LOAD_POLICY = `create policy kernel_revocation_load on _revoked_tokens for select using (current_setting('app.kernel_read', true) = 'revoked_tokens')`;
+
 /** Kernel tables holding tenant data: row-level security exactly like a `-- @tenant` business table. */
-export const KERNEL_TENANT_TABLES = ['_attachments', '_audit', '_lock_date'] as const;
+export const KERNEL_TENANT_TABLES = ['_attachments', '_audit', '_lock_date', '_revoked_tokens'] as const;
 
 /**
  * Apply `migrations/*.sql` in name order, once each.
@@ -110,6 +119,8 @@ export async function migrate(db: Db, dir: string): Promise<string[]> {
       const has = await c.query(`select 1 from pg_policies where schemaname = current_schema() and tablename = $1 and policyname = 'tenant_isolation'`, [t]);
       if (!has.rowCount) await c.query(tenantTableSql(t));
     }
+    const load = await c.query(`select 1 from pg_policies where schemaname = current_schema() and tablename = '_revoked_tokens' and policyname = 'kernel_revocation_load'`);
+    if (!load.rowCount) await c.query(REVOKED_LOAD_POLICY);
     if (!existsSync(dir)) return;
     const done = new Set((await c.query<{ name: string }>('select name from _migrations')).rows.map((r) => r.name));
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {

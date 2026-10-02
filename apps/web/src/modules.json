@@ -8,6 +8,7 @@
     "@erp/svc-contracts",
     "@erp/svc-costing",
     "@erp/svc-crm",
+    "@erp/svc-etax",
     "@erp/svc-expense",
     "@erp/svc-helpdesk",
     "@erp/svc-hr",

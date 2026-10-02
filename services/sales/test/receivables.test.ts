@@ -124,11 +124,11 @@ describe('sales receivables — reports, permissions, tenants', () => {
     await invoice(c2, 1, '2026-08-03', {}, tok); //  due 09-02 → 30 days → 1–30 (edge)
     await t.api('POST', '/receipts', { ...c2, depositAmount: 50, method: 'cash', receiptDate: '2026-10-01' }, { token: tok });
     const aging = (await t.api('GET', '/receivables/aging?asOf=2026-10-02', undefined, { token: tok })).body;
-    expect(aging.totals).toEqual({ current: 107, d1_30: 215.07, d31_60: 321, d61_90: 428, over_90: 535, total: 1606.07 });
+    expect(aging.totals).toEqual({ current: 107, d1_30: 215.07, d31_60: 321, d61_90: 428, over_90: 535, total: 1606.07, credit_balance: 0 });
     expect(aging.rows[0]).toMatchObject({ customer_name: c2.customerName, customer_id: null, d1_30: 1.07, d61_90: 428, over_90: 535, total: 964.07 });
     expect(aging.rows[1]).toMatchObject({ customer_id: c1.customerId, current: 107, d1_30: 214, d31_60: 321, total: 642 });
     const ar = (await t.api('GET', '/receivables?asOf=2026-10-02', undefined, { token: tok })).body;
-    expect(ar.totals).toEqual({ outstanding: 1606.07, overdue: 1499.07, deposits: 50, customers: 2 });
+    expect(ar.totals).toEqual({ outstanding: 1606.07, overdue: 1499.07, creditBalance: 0, deposits: 50, customers: 2 });
     expect(ar.rows.find((r: any) => r.customer_name === c2.customerName)).toMatchObject({ invoices: 3, outstanding: 964.07, overdue: 964.07, deposits: 50, net_outstanding: 914.07, max_days_overdue: 124, oldest_due: '2026-05-31' });
     // the same invoices are overdue "today" too
     const overdueList = (await t.api('GET', '/invoices?overdue=1', undefined, { token: tok })).body;
@@ -212,8 +212,8 @@ describe('QA regressions (bugs-0.4)', () => {
     const before = (await t.api('GET', '/receivables/aging?asOf=2026-09-10', undefined, { token: tok })).body;
     expect(before.totals).toMatchObject({ current: 107000, total: 107000 });
     const ar10 = (await t.api('GET', '/receivables?asOf=2026-09-10', undefined, { token: tok })).body;
-    expect(ar10.totals).toEqual({ outstanding: 107000, overdue: 0, deposits: 0, customers: 1 });
+    expect(ar10.totals).toEqual({ outstanding: 107000, overdue: 0, creditBalance: 0, deposits: 0, customers: 1 });
     const end = (await t.api('GET', '/receivables?asOf=2026-09-30', undefined, { token: tok })).body;
-    expect(end.totals).toEqual({ outstanding: 10700, overdue: 0, deposits: 500, customers: 1 });
+    expect(end.totals).toEqual({ outstanding: 10700, overdue: 0, creditBalance: 0, deposits: 500, customers: 1 });
   });
 });

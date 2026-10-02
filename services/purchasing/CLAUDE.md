@@ -1,6 +1,6 @@
 # purchasing — Purchasing (จัดซื้อ) · feature
 
-Purchase orders with Thai VAT and goods receipt.
+Purchase orders with Thai VAT and goods receipt; supplier bills (payables), supplier payments with withholding tax, 50 ทวิ and ภ.ง.ด.3/53 (wave 9).
 
 ## Flow
 `draft` → (approve, perm `purchasing.po.approve` / `purchasing.po.approve-high` by amount) → `approved` → receive (partial → `partially_received`) → `received`. `draft|approved` → `cancelled`.
@@ -50,6 +50,50 @@ Purchase orders with Thai VAT and goods receipt.
 - publishes `purchasing.goods_returned` per return (lines with unit price + reason) → Inventory issues the qty (QC-HOLD for rejected material);
   wave 5 adds `vatMode`, the return's `net`/`vat`/`gross` and `returnDate` (always sent since wave 8) → Accounting reverses ภาษีซื้อ.
   Costing does not reverse the moving average yet (extension idea).
+
+## Payables, payments & withholding tax (wave 9) — `src/payables.ts`, pure helpers in `@erp/thai` (`wht.ts`)
+Legal basis is in the code comments (ประมวลรัษฎากร มาตรา 3 เตรส + คำสั่ง ท.ป.4/2528, 50 / 69 ทวิ, 50 ทวิ, 52 / 59; input VAT 82/3, 86/4).
+Nothing is filed with the Revenue Department — reports/exports only; the company files itself.
+
+Data (migration 005): `po_lines.billed_qty` · `supplier_bills` (`AP-2569-0001`, kind goods|service|expense, supplier snapshot id/code/name/tax_id/branch/address
+from master-data's lookup in the request, supplier invoice no/date, `vat_mode` exclusive|inclusive|none, `vat_claimable`, `wht_income_type` hint, `paid`, status open|partially_paid|paid)
+· `supplier_bill_lines` · `supplier_payments` (`PV-2569-0001`, payee snapshot, `form` PND3|PND53|null, gross / wht_total / net_paid, `warnings` jsonb)
+· `supplier_payment_bills` · `supplier_payment_wht` (income_type, description, rate fraction, base, amount, condition '1') · `wht_certificates` (id = payment id,
+`WHT-2569-0001` → เล่มที่ 2569 เลขที่ 0001, per tenant via `nextDocNo`, `print_count`). Attachment entities `bill`, `payment`.
+
+API
+- `POST /bills` (`purchasing.bill.write`) `{ kind, supplierId?, supplierCode?, supplierName, supplierTaxId? (13 digits + checksum), supplierBranch?, supplierAddress?,
+  supplierInvoiceNo, supplierInvoiceDate, billDate? (default today, not future, lock date), dueDate? | creditDays?, vatClaimable? (true|false|'auto'), whtIncomeType?, note?, lockOverrideReason?,
+  goods: poId + poLines? [{ lineId, qty }] · service/expense: vatMode, lines [{ description, qty, unitPrice }] }`.
+  Goods: PO `partially_received|received`; per line ≤ received − returned − billed (409); totals = `documentTotals` at the PO's VAT mode; supplier from the PO.
+  `vatClaimable` default = VAT > 0 and a seller tax ID; true without a tax ID → 400 (§86/4). Same supplier + same invoice no again → 409.
+- `POST /purchase-orders/:id/bills` — goods bill from the PO screen (omit `lines` = everything received and not billed yet)
+- `GET /bills?status=open|partially_paid|paid|unpaid&kind=&supplierId=&q=` · `GET /bills/:id` (lines, payments, outstanding) — `purchasing.bill.read`
+- `GET /payables?asOf=&overdue=&supplierId=&q=` (days_overdue, bucket; due = due_date or bill_date) · `GET /payables/aging?asOf=` → `{ asOf, rows per supplier, totals }`
+- `POST /supplier-payments` (`purchasing.payment.write`) `{ bills: [{ billId, amount? (default outstanding) }], paymentDate?, method, wht?: [{ incomeType, base?, rate?, description? }],
+  form? (PND3|PND53|'auto'), bankRef?, note?, lockOverrideReason? }` + form shortcut `whtIncomeType` ('none' | type), `whtRatePercent`, `whtBase`, `whtDescription`.
+  All bills of one supplier (400); amount ≤ outstanding (409 จ่ายเกินยอดค้าง); default base = pre-VAT part of what is paid now (Σ amount × net/gross) — only with one WHT line;
+  Σbase ≤ amount paid (400); WHT = round(base × rate) to the satang. Form default: tax ID starting 0 → PND53, other 13-digit → PND3, no ID → company-looking name → PND53.
+  Warnings (stored, shown, never block): base under 1,000 for types usually exempt, rate ≠ standard, form ≠ expected, payee without tax ID, base above pre-VAT, bill hints WHT but none taken.
+- `POST /bills/:id/payments` — pay one bill (`amount?` + the same fields)
+- `GET /supplier-payments?period=YYYY-MM&form=&supplierId=&q=` · `GET /supplier-payments/:id` — `purchasing.payment.read`
+- `GET /wht-certificates?period=&form=&q=` · `GET /wht-certificates/:id` (id = payment id; everything the 50 ทวิ prints: เล่มที่/เลขที่, payee, ลำดับที่ในแบบ,
+  ภ.ง.ด. boxes, income lines under ข้อ 5 (มาตรา 3 เตรส), totals + baht text, ผู้จ่ายเงิน (1) หัก ณ ที่จ่าย ticked, copy captions) ·
+  `POST /wht-certificates/:id/print` (print log) — `purchasing.wht.read` or `purchasing.payment.read`. Payer = company letterhead (identity company profile).
+- `GET /wht/returns?year=` (per month × form: payees, totals, due dates) · `GET /wht/returns/:id` (id `2026-09_PND53`: header, ใบแนบ rows, totals, due dates, `rd_text`) ·
+  `GET /wht/returns/:id/export?format=csv|rd&encoding=tis620|utf8` (file download; header `x-rd-prep-layout: unverified`) ·
+  `GET /wht/attachment-rows?period=&form=` (the rows as a list — the web's list CSV button) — `purchasing.wht.read`.
+- Due: paper by the 7th, e-filing by the 15th of the next month (`whtDueDates`); holidays not adjusted.
+- RD Prep text layout: see `docs/wht-rd-prep-export.md` — **ต้องตรวจกับโปรแกรม RD Prep เวอร์ชันล่าสุดก่อนยื่นจริง**, never verified.
+
+Events: publishes `purchasing.bill_recorded` (per bill) and `purchasing.supplier_paid` (per payment; `wht[]` with form + certificateNo) → Accounting (AP, ภาษีซื้อ, WHT payable).
+
+Screens: บิลผู้ขาย (billList/billNew/billDetail + "จ่ายชำระ"), PO action "ตั้งหนี้", เจ้าหนี้ค้างจ่าย (payables), อายุเจ้าหนี้ (aging report),
+จ่ายชำระหนี้ผู้ขาย (payNew), ใบสำคัญจ่าย (paymentList/paymentDetail printable), 50 ทวิ (whtCerts, whtCert1 = ฉบับที่ 1, whtCert2 = ฉบับที่ 2, printable),
+ภ.ง.ด.3/53 (whtReturns → whtReturn printable ใบแนบ + RD text), ใบแนบ (ส่งออก CSV) (whtRows). WHT type options in ui.ts are literal — keep them equal to `WHT_INCOME_TYPES` (test).
+
+Not yet: void/cancel of a bill or payment (needs reversal events), WHT conditions 2/3 (ออกให้ — gross-up), ภ.ง.ด.3/53 cover form figures beyond totals,
+a download button in the generic renderer (the RD text is shown on screen and available from the export endpoint).
 
 ## Extension ideas
 Purchase requests, multi-level approval by amount, supplier price lists, AP invoice matching.

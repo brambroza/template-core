@@ -8,6 +8,7 @@ import { toErrorBody, unauthorized } from './errors.ts';
 import { dispatchOutbox, emit, receiveEvent, type EventHandlers } from './events.ts';
 import { checkLicense } from './license.ts';
 import type { ModuleManifest } from './manifest.ts';
+import { applyRevocation, DEFAULT_REVOCATION_RELOAD_MS, isKernelSubscription, RevocationList } from './revocation.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -25,8 +26,13 @@ export interface Kernel {
   db: Db;
   manifest: ModuleManifest;
   env: NodeJS.ProcessEnv;
-  /** publish an event inside the current transaction */
+  /**
+   * publish an event inside the current transaction. `identity.tokens_revoked` is also applied to this module's own
+   * revocation list in the same transaction (the router does not send an event back to its publisher).
+   */
   emit<T extends EventType>(c: Client, type: T, data: EventData<T>): Promise<string>;
+  /** token revocation cutoffs this service enforces (SEC-07, see revocation.ts) */
+  revocations: RevocationList;
 }
 
 export interface ServiceDefinition {
@@ -58,6 +64,8 @@ export interface Service {
   manifest: ModuleManifest;
   migrate(): Promise<string[]>;
   dispatch(): Promise<{ sent: number; failed: number }>;
+  /** reload `_revoked_tokens` into memory (done at boot and every TOKEN_REVOCATION_RELOAD_MS) */
+  reloadRevocations(): Promise<number>;
   start(opts?: { port?: number; host?: string }): Promise<string>;
   close(): Promise<void>;
 }
@@ -82,15 +90,32 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     const missing = attachmentPerms(def.attachments, `${prefix}.attachment.delete`).filter((p) => !own.has(p));
     if (missing.length) throw new Error(`${manifest.id}: attachments use permissions not declared in module.json: ${missing.join(', ')}`);
   }
-  const handlers = def.handlers ?? {};
-  const handled = Object.keys(handlers).sort().join(',');
-  const declared = [...manifest.subscribes].sort().join(',');
+  const ownHandlers = def.handlers ?? {};
+  // kernel subscriptions (identity.tokens_revoked) are handled by the kernel itself and need not be listed in module.json
+  const handled = Object.keys(ownHandlers).filter((x) => !isKernelSubscription(x)).sort().join(',');
+  const declared = manifest.subscribes.filter((x) => !isKernelSubscription(x)).sort().join(',');
   if (handled !== declared) throw new Error(`${manifest.id}: module.json "subscribes" [${declared}] must match handlers [${handled}]`);
+  const revocations = new RevocationList();
+  const handlers: EventHandlers = {
+    ...ownHandlers,
+    // built-in: store the cutoff, then run the module's own handler if it has one
+    'identity.tokens_revoked': async (data, ctx) => {
+      await applyRevocation(ctx.client, revocations, data);
+      await ownHandlers['identity.tokens_revoked']?.(data, ctx);
+    },
+  };
 
   const jwtSecret = required(env, 'JWT_SECRET');
   const internalToken = required(env, 'INTERNAL_TOKEN');
   const db = createDb(required(env, 'DATABASE_URL'));
-  const kernel: Kernel = { db, manifest, env, emit: (c, type, data) => emit(c, manifest.id, type, data) };
+  const kernel: Kernel = {
+    db, manifest, env, revocations,
+    async emit(c, type, data) {
+      const id = await emit(c, manifest.id, type, data);
+      if (type === 'identity.tokens_revoked') await applyRevocation(c, revocations, data as EventData<'identity.tokens_revoked'>);
+      return id;
+    },
+  };
 
   const app = Fastify({ logger: env.LOG_LEVEL ? { level: env.LOG_LEVEL } : false, bodyLimit: 5 * 1024 * 1024 });
   app.decorateRequest('authCtx', null);
@@ -105,7 +130,13 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     }
     const h = req.headers.authorization;
     if (!h?.startsWith('Bearer ')) throw unauthorized();
-    req.authCtx = verifyToken(jwtSecret, h.slice(7));
+    req.authCtx = verifyToken(jwtSecret, h.slice(7), revocations.before);
+  });
+
+  const reloadRevocations = () => revocations.load(db);
+  // boot: load every cutoff before the first request is served (start() migrates before listen → ready)
+  app.addHook('onReady', async () => {
+    try { await reloadRevocations(); } catch (e) { app.log.warn(`[${manifest.id}] token revocations not loaded: ${(e as Error).message}`); }
   });
 
   // audit log: every successful write by a signed-in user (runs before the response leaves, so readers see it at once)
@@ -125,11 +156,12 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body, env) }));
 
   mountAudit(app, { db, permPrefix: prefix });
-  if (def.attachments) mountAttachments(app, { db, moduleId: manifest.id, permPrefix: prefix, jwtSecret, spec: def.attachments });
+  if (def.attachments) mountAttachments(app, { db, moduleId: manifest.id, permPrefix: prefix, jwtSecret, spec: def.attachments, revokedBefore: revocations.before });
 
   const ready = Promise.resolve(def.routes(app, kernel));
 
   let timer: NodeJS.Timeout | undefined;
+  let reloadTimer: NodeJS.Timeout | undefined;
   let dispatching = false;
   const dispatch = async () => {
     const router = env.EVENT_ROUTER_URL;
@@ -141,6 +173,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     app, db, kernel, manifest,
     migrate: () => migrate(db, def.migrationsDir),
     dispatch,
+    reloadRevocations,
     async start(opts = {}) {
       const weak = secretProblems(env);
       if (weak.length) throw new Error(`[${manifest.id}] refusing to start: ${weak.join('; ')}`);
@@ -156,11 +189,18 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
           try { await dispatch(); } catch (e) { app.log.error(e); } finally { dispatching = false; }
         }, Number(env.EVENT_DISPATCH_MS ?? 1000));
       }
+      // other instances of this module may have received a revocation this one did not (SEC-07)
+      const reloadMs = Number(env.TOKEN_REVOCATION_RELOAD_MS ?? DEFAULT_REVOCATION_RELOAD_MS);
+      if (reloadMs > 0) {
+        reloadTimer = setInterval(() => { reloadRevocations().catch((e) => app.log.error(e)); }, reloadMs);
+        reloadTimer.unref();
+      }
       app.log.info(`${manifest.id} ${lic.mode} listening on ${address}`);
       return address;
     },
     async close() {
       if (timer) clearInterval(timer);
+      if (reloadTimer) clearInterval(reloadTimer);
       await app.close();
       await db.close();
     },

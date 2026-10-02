@@ -1,6 +1,6 @@
 import {
   auth, badRequest, forbidden, hashPassword, hasPerm, HttpError, loadManifest, one, parse, requirePerm, s, signToken, unauthorized, verifyPassword, z,
-  type AuthContext, type Client, type ServiceDefinition,
+  type AuthContext, type Client, type Kernel, type ServiceDefinition,
 } from '@erp/kernel';
 import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,10 @@ const TenantInput = z.object({
 });
 const LoginInput = z.object({ tenant: z.string().trim().toLowerCase(), email, password: z.string() });
 const UserInput = z.object({ email, name: s.name, password, roleIds: z.array(s.uuid).default([]) });
+const PasswordChangeInput = z.object({
+  currentPassword: z.string().min(1, 'กรอกรหัสผ่านปัจจุบัน'),
+  newPassword: z.string().min(8, 'รหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร').max(200),
+});
 const RoleInput = z.object({ name: s.name, permissions: z.array(z.string().regex(/^(\*|[a-z-]+\.(\*|[a-z_.]+))$/)) });
 
 /** Largest logo accepted (decoded bytes). It is embedded in every printed document. */
@@ -117,6 +121,35 @@ async function permissionsOfRoles(c: Client, roleIds: string[]): Promise<string[
   return rows.flatMap((r) => r.permissions);
 }
 
+/* ---- token revocation (security review 0.3, SEC-07) ---- */
+
+export type RevokeReason = 'logout' | 'password_changed' | 'user_disabled' | 'roles_changed' | 'admin';
+const REVOKE_REASON_TH: Record<RevokeReason, string> = {
+  logout: 'ออกจากระบบ', password_changed: 'เปลี่ยนรหัสผ่าน', user_disabled: 'ปิดใช้งานบัญชี', roles_changed: 'เปลี่ยนบทบาท', admin: 'ผู้ดูแลบังคับออกจากระบบ',
+};
+
+/**
+ * Cutoff for "every token issued up to now": the NEXT second. Token `iat` has 1-second resolution, so a cutoff of the current
+ * second would let a token issued earlier in this same second survive. A login right after a revocation is issued with
+ * `iat` = the cutoff (see `/auth/login`), so it is not refused — which is why a second revocation must go past the previous
+ * cutoff (`previous + 1`), not just past now. Real wall-clock time — not the kernel's (freezable) business clock — because
+ * token `iat` is real time.
+ */
+export const revocationCutoff = (nowMs = Date.now(), previous?: number) => Math.max(Math.floor(nowMs / 1000), previous ?? 0) + 1;
+
+/** Refuse every token of `userId` issued up to now: stored here at once (kernel) and delivered to every module by the gateway. */
+async function revokeTokens(k: Kernel, c: Client, userId: string, reason: RevokeReason): Promise<number> {
+  const before = revocationCutoff(Date.now(), await cutoffOf(c, userId));
+  await k.emit(c, 'identity.tokens_revoked', { userId, before, reason });
+  return before;
+}
+
+/** This user's revocation cutoff from identity's own copy of the kernel table (inside the tenant transaction). */
+async function cutoffOf(c: Client, userId: string): Promise<number | undefined> {
+  const r = await c.query<{ before: string }>('select before from _revoked_tokens where user_id = $1', [userId]);
+  return r.rows[0] ? Number(r.rows[0].before) : undefined;
+}
+
 /* ---- login throttling (security review 0.3, SEC-02) ---- */
 export const LOGIN_MAX_FAILURES = 10;
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -175,7 +208,8 @@ export const definition: ServiceDefinition = {
         }
         loginFailures.delete(key);
         const perms = await permissionsOf(c, u.id);
-        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl);
+        // signed at or after the user's revocation cutoff, so a login in the same second as a logout is not refused (SEC-07)
+        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl, { iat: await cutoffOf(c, u.id) });
         return { token, expiresIn: ttl, tenant, user: { id: u.id, email: u.email, name: u.name }, permissions: perms };
       });
     });
@@ -186,6 +220,46 @@ export const definition: ServiceDefinition = {
         const u = await one(c, `select ${publicUser} from users where id = $1`, [a.userId], 'User');
         return { ...u, tenantId: a.tenantId, permissions: await permissionsOf(c, a.userId) };
       });
+    });
+
+    /** Log out everywhere: every token of the signed-in user issued up to now stops working in every module (SEC-07). */
+    app.post('/logout', async (req) => {
+      const a = auth(req);
+      return k.db.tx(a.tenantId, async (c) => {
+        const before = await revokeTokens(k, c, a.userId, 'logout');
+        return { ok: true, revokedBefore: before, message: 'ออกจากระบบทุกอุปกรณ์แล้ว' };
+      });
+    });
+
+    /**
+     * Change own password: the current one must be right (wrong → 400 on `currentPassword`, counted like a wrong login), then every
+     * older token is revoked and a fresh token is returned (body `token` + header `x-erp-session-token`, which the web app picks up).
+     */
+    app.post('/me/password', async (req, reply) => {
+      const a = auth(req);
+      const b = parse(PasswordChangeInput, req.body);
+      const key = `me|${a.tenantId}|${a.userId}`;
+      if (recentFailures(key).length >= LOGIN_MAX_FAILURES) {
+        throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
+      }
+      const out = await k.db.tx(a.tenantId, async (c) => {
+        const u = (await c.query('select id, name, password_hash from users where id = $1 and active', [a.userId])).rows[0];
+        if (!u) throw unauthorized('บัญชีนี้ถูกปิดใช้งาน');
+        if (!verifyPassword(b.currentPassword, u.password_hash)) {
+          noteLoginFailure(key);
+          throw badRequest('รหัสผ่านปัจจุบันไม่ถูกต้อง', { fieldErrors: { currentPassword: ['รหัสผ่านปัจจุบันไม่ถูกต้อง'] }, formErrors: [] });
+        }
+        if (b.newPassword === b.currentPassword) {
+          throw badRequest('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม', { fieldErrors: { newPassword: ['รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม'] }, formErrors: [] });
+        }
+        await c.query('update users set password_hash = $2 where id = $1', [a.userId, hashPassword(b.newPassword)]);
+        const before = await revokeTokens(k, c, a.userId, 'password_changed');
+        const perms = await permissionsOf(c, a.userId);
+        return { before, token: signToken(secret, { tenantId: a.tenantId, userId: a.userId, perms, userName: u.name }, ttl, { iat: before }) };
+      });
+      loginFailures.delete(key);
+      reply.header('x-erp-session-token', out.token);
+      return { ok: true, message: 'เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นที่เข้าสู่ระบบไว้จะต้องเข้าสู่ระบบใหม่', token: out.token, expiresIn: ttl, revokedBefore: out.before };
     });
 
     /** Seller details for letterheads and tax invoices. Any signed-in user may read them (they print documents). */
@@ -245,6 +319,23 @@ export const definition: ServiceDefinition = {
           group by u.id order by u.email`)).rows);
     });
 
+    /** One user (detail screen): roles by name + id, and when their sessions were last revoked. */
+    app.get('/users/:id', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.user.read');
+      const { id } = parse(z.object({ id: s.uuid }), req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const u = await one(c, `select ${publicUser} from users where id = $1`, [id], 'User');
+        const roles = (await c.query<{ id: string; name: string }>(
+          'select r.id, r.name from user_roles ur join roles r on r.id = ur.role_id where ur.user_id = $1 order by r.name', [id])).rows;
+        const rev = (await c.query('select before, reason, updated_at from _revoked_tokens where user_id = $1', [id])).rows[0];
+        return {
+          ...u, roles: roles.map((r) => r.name), roleIds: roles.map((r) => r.id), permissions: await permissionsOf(c, id),
+          sessions_revoked_at: rev ? rev.updated_at : null, sessions_revoked_reason: rev ? REVOKE_REASON_TH[rev.reason as RevokeReason] ?? rev.reason : null,
+        };
+      });
+    });
+
     app.post('/users', async (req, reply) => {
       const a = auth(req);
       requirePerm(a, 'identity.user.write');
@@ -270,7 +361,9 @@ export const definition: ServiceDefinition = {
         requireGrantable(a, await permissionsOfRoles(c, roleIds), 'กำหนดบทบาทไม่ได้');
         await c.query('delete from user_roles where user_id = $1', [id]);
         for (const roleId of roleIds) await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [id, roleId]);
-        return { userId: id, permissions: await permissionsOf(c, id) };
+        // old tokens still carry the old permissions: refuse them so the change applies now, not at the next login (SEC-07)
+        await revokeTokens(k, c, id, 'roles_changed');
+        return { userId: id, permissions: await permissionsOf(c, id), message: 'บันทึกบทบาทแล้ว ผู้ใช้ต้องเข้าสู่ระบบใหม่เพื่อใช้สิทธิ์ใหม่' };
       });
     });
 
@@ -281,7 +374,22 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => {
         await one(c, 'select id from users where id = $1', [id], 'User');
         requireGrantable(a, await permissionsOf(c, id), 'ปิดบัญชีผู้ใช้ที่มีสิทธิ์มากกว่าคุณไม่ได้');
-        return one(c, `update users set active = false where id = $1 returning ${publicUser}`, [id], 'User');
+        const u = await one(c, `update users set active = false where id = $1 returning ${publicUser}`, [id], 'User');
+        await revokeTokens(k, c, id, 'user_disabled');
+        return u;
+      });
+    });
+
+    /** Admin "บังคับออกจากระบบ": every token of that user stops working now (they can log in again). */
+    app.post('/users/:id/revoke-sessions', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.user.write');
+      const { id } = parse(z.object({ id: s.uuid }), req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        const u = await one(c, `select ${publicUser} from users where id = $1`, [id], 'User');
+        requireGrantable(a, await permissionsOf(c, id), 'บังคับออกจากระบบผู้ใช้ที่มีสิทธิ์มากกว่าคุณไม่ได้');
+        const before = await revokeTokens(k, c, id, 'admin');
+        return { ...u, revokedBefore: before, message: `บังคับให้ ${u.name} ออกจากระบบทุกอุปกรณ์แล้ว` };
       });
     });
 

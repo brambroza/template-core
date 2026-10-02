@@ -36,6 +36,8 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     'projects.project.read', 'projects.timesheet.approve', 'purchasing.po.read', 'purchasing.po.approve', 'purchasing.po.approve-high', 'expense.claim.approve-over-limit',
     'quality.plan.read', 'quality.inspection.read', 'quality.ncr.read', 'sales.order.read', 'sales.receivable.read',
     'accounting.report.read', 'accounting.journal.read', 'payroll.run.read', 'payroll.run.approve', 'contracts.contract.read', 'contracts.billing.read',
+    // wave 9: see credit/debit notes, payables, WHT returns, ภ.พ.30 and e-Tax status (read only)
+    'sales.note.read', 'purchasing.bill.read', 'purchasing.payment.read', 'purchasing.wht.read', 'accounting.tax.read', 'etax.document.read',
   ]),
   t('staff', 'พนักงานทั่วไป', 'บริการตนเอง: ขออนุมัติ เบิกค่าใช้จ่าย ลา ลงเวลา จองห้อง/รถ แจ้งปัญหา แจ้งซ่อม และรับการแจ้งเตือน — ไม่เห็นข้อมูลของคนอื่นและตัวเลขการเงิน', []),
   t('supervisor', 'หัวหน้างาน', 'บริการตนเอง + อนุมัติคำขอ ใบเบิก ใบลา การจอง และดูเวลาทำงาน/งานของทีม', [
@@ -58,6 +60,10 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     // wave 8 lock dates (bugs-0.4 ID-05): the accountant who closes periods sets the modules' lock dates and may, with an audited reason, date a
     // tax invoice / receipt / claim payment into a closed month. No purchasing.lock.override: goods receipts are the buyer's; reopen the period instead.
     'sales.lock.write', 'sales.lock.override', 'expense.lock.write', 'expense.lock.override', 'purchasing.lock.write',
+    // wave 9: credit/debit notes, supplier bills & payments with WHT (50 ทวิ, ภ.ง.ด.3/53), ภ.พ.30 filing records, e-Tax XML/signing.
+    // etax.attachment.delete stays admin-only (it deletes generated XML).
+    'sales.note.read', 'sales.note.write', 'purchasing.bill.read', 'purchasing.bill.write', 'purchasing.payment.read', 'purchasing.payment.write', 'purchasing.wht.read',
+    'accounting.tax.read', 'accounting.tax.file', 'etax.document.read', 'etax.document.write', 'etax.settings.write',
   ]),
   t('purchasing', 'จัดซื้อ', 'ใบสั่งซื้อ ผู้ขาย รับสินค้าตามใบสั่งซื้อ ส่งคืนผู้ขาย และพิจารณาใบขอซื้อที่ส่งมาถึง (ไม่อนุมัติใบสั่งซื้อของตัวเอง)', [
     // po.return: QC-rejected material in QC-HOLD goes back to the supplier (bugs-0.4 ID-03 — no suggested role could do it)
@@ -65,11 +71,15 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     // approvals.request.approve: purchase requests (PR) route จัดซื้อ → MD; the approvals module only lets the person on the chain decide
     'purchasing.po.read', 'purchasing.po.write', 'purchasing.po.receive', 'purchasing.po.return', 'master.item.read', 'master.partner.read', 'master.partner.write',
     'inventory.stock.read', 'quality.inspection.read', 'approvals.request.approve',
+    // wave 9: the buyer records the supplier's tax invoice against the PO (ตั้งหนี้); paying it is accounting's (segregation of duties)
+    'purchasing.bill.read', 'purchasing.bill.write', 'purchasing.payment.read',
   ]),
   t('sales', 'ฝ่ายขาย', 'ลีด โอกาสขาย ใบเสนอราคา ใบสั่งขาย ลูกค้า และติดตามลูกหนี้', [
     'crm.lead.read', 'crm.lead.write', 'crm.activity.write', 'crm.quote.read', 'crm.quote.write', 'crm.quote.decide',
     'contracts.contract.read', 'contracts.contract.write', 'contracts.contract.activate', 'contracts.visit.read', 'contracts.visit.plan',
     'sales.order.read', 'sales.order.write', 'sales.receivable.read', 'master.item.read', 'master.partner.read', 'master.partner.write', 'inventory.stock.read',
+    // wave 9: see notes and e-Tax status on their customers' invoices
+    'sales.note.read', 'etax.document.read',
   ]),
   t('warehouse', 'คลังสินค้า', 'รับ-จ่าย-โอนสต็อก รับของตามใบสั่งซื้อ และส่งของตามใบสั่งขาย', [
     'inventory.stock.read', 'inventory.move.write', 'purchasing.po.read', 'purchasing.po.receive', 'sales.order.read', 'sales.order.deliver',

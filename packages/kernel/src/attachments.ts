@@ -13,7 +13,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { hasPerm, verifyToken, type AuthContext } from './auth.ts';
+import { hasPerm, verifyToken, type AuthContext, type RevokedBefore } from './auth.ts';
 import type { Client, Db } from './db.ts';
 import { badRequest, conflict, forbidden, HttpError, notFound, parse, unauthorized } from './errors.ts';
 
@@ -168,6 +168,8 @@ export interface MountAttachmentsOptions {
   permPrefix: string;
   jwtSecret: string;
   spec: AttachmentsSpec;
+  /** the service's token revocation list (SEC-07) — bearer downloads refuse revoked tokens like every other route */
+  revokedBefore?: RevokedBefore;
 }
 
 export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOptions): void {
@@ -280,7 +282,7 @@ export function mountAttachments(app: FastifyInstance, o: MountAttachmentsOption
     } else {
       const h = req.headers.authorization;
       if (!h?.startsWith('Bearer ')) throw unauthorized();
-      a = verifyToken(o.jwtSecret, h.slice(7));
+      a = verifyToken(o.jwtSecret, h.slice(7), o.revokedBefore);
       req.authCtx = a;
       tenantId = a.tenantId;
     }

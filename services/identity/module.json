@@ -7,7 +7,7 @@
   "description": "Tenants (companies), users, roles and login. Issues the JWT every other module trusts.",
   "requires": [],
   "enhancedBy": [],
-  "publishes": [],
+  "publishes": ["identity.tokens_revoked"],
   "subscribes": [],
   "permissions": [
     { "key": "identity.user.read", "label": "ดูผู้ใช้" },

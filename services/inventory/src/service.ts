@@ -64,7 +64,7 @@ const LOG_TH: Record<string, string> = { release: 'ปล่อยเข้า�
 const thHold = (h: any) => ({ ...h, status_th: HOLD_STATUS_TH[h.status] ?? h.status });
 const REF_TH: Record<string, string> = {
   sales_order: 'ส่งของตามใบสั่งขาย', production_order: 'ผลิต (ตัดวัตถุดิบ)', work_order: 'ใบสั่งซ่อม (อะไหล่)', purchase_order: 'รับตามใบสั่งซื้อ',
-  purchase_return: 'ส่งคืนผู้ขาย', qc_inspection: 'QC กักกัน/ปล่อย', qc_release: 'ปล่อยจากคลังกักกัน', transfer: 'โอนย้าย', adjustment: 'ปรับปรุงยอด',
+  purchase_return: 'ส่งคืนผู้ขาย', sales_note: 'รับคืนตามใบลดหนี้', qc_inspection: 'QC กักกัน/ปล่อย', qc_release: 'ปล่อยจากคลังกักกัน', transfer: 'โอนย้าย', adjustment: 'ปรับปรุงยอด',
 };
 
 export const definition: ServiceDefinition = {
@@ -329,6 +329,22 @@ export const definition: ServiceDefinition = {
     },
     'sales.delivered': async (e, { client, emit }) => {
       for (const l of e.lines) await postMove(emit, client, { ...l, qty: -l.qty, warehouseCode: e.warehouseCode, kind: 'issue', refType: 'sales_order', refId: e.orderNo }, { autoCreateWarehouse: true, force: true });
+    },
+    /**
+     * wave 9: a sales credit note (ใบลดหนี้) with goods returned → receive them back into the note's warehouse (auto-created).
+     * Idempotent beyond the kernel's event-id de-duplication: a note already on the stock card (ref sales_note + note no.) is skipped.
+     * Never throws for business reasons — debit notes, service lines and lines without a return qty are ignored.
+     */
+    'sales.note_issued': async (e, { client, emit }) => {
+      if (e.kind !== 'credit' || !e.warehouseCode) return;
+      const lines = e.lines.filter((l) => l.itemId && l.itemCode && (l.returnToStock ?? 0) > 0);
+      if (!lines.length) return;
+      if ((await client.query(`select 1 from stock_moves where ref_type = 'sales_note' and ref_id = $1 limit 1`, [e.noteNo])).rowCount) return;
+      const note = `รับคืนจากลูกค้า ${e.customerName} ตามใบลดหนี้ ${e.noteNo} (ใบกำกับ ${e.invoiceNo}): ${e.reason}`.slice(0, 500);
+      for (const l of lines) {
+        await postMove(emit, client, { itemId: l.itemId!, itemCode: l.itemCode!, qty: l.returnToStock!, warehouseCode: e.warehouseCode, kind: 'receive',
+          refType: 'sales_note', refId: e.noteNo, note }, { autoCreateWarehouse: true });
+      }
     },
     'production.completed': async (e, { client, emit }) => {
       for (const l of e.components) await postMove(emit, client, { ...l, qty: -l.qty, warehouseCode: e.warehouseCode, kind: 'issue', refType: 'production_order', refId: e.orderNo }, { autoCreateWarehouse: true, force: true });

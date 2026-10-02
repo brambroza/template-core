@@ -75,11 +75,39 @@ export default defineUi({
         { key: 'roles', label: 'บทบาท', format: 'list' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'userNew', createLabel: 'เพิ่มผู้ใช้',
+      rowLink: { screen: 'userDetail' },
       rowActions: [
-        { id: 'roles', label: 'กำหนดบทบาท', method: 'PUT', endpoint: '/users/:id/roles', perm: 'identity.user.write',
+        { id: 'roles', label: 'กำหนดบทบาท', method: 'PUT', endpoint: '/users/:id/roles', perm: 'identity.user.write', toast: 'message',
           fields: [{ name: 'roleIds', label: 'บทบาท', type: 'multilookup', lookup: roleLookup, required: true }] },
         { id: 'deactivate', label: 'ปิดใช้งาน', method: 'POST', endpoint: '/users/:id/deactivate', perm: 'identity.user.write',
-          when: { field: 'active', in: [true] }, confirm: 'ผู้ใช้นี้จะเข้าสู่ระบบไม่ได้อีก', tone: 'danger' },
+          when: { field: 'active', in: [true] }, confirm: 'ผู้ใช้นี้จะเข้าสู่ระบบไม่ได้อีก และถูกออกจากระบบทุกอุปกรณ์ทันที', tone: 'danger' },
+      ],
+    },
+    userDetail: {
+      kind: 'detail', title: 'ผู้ใช้', endpoint: '/users/:id', heading: 'name', perm: 'identity.user.read',
+      fields: [
+        { key: 'email', label: 'อีเมล' },
+        { key: 'active', label: 'ใช้งาน', format: 'boolean' },
+        { key: 'roles', label: 'บทบาท', format: 'list' },
+        { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' },
+        { key: 'sessions_revoked_at', label: 'ยกเลิกเซสชันล่าสุด', format: 'datetime' },
+        { key: 'sessions_revoked_reason', label: 'สาเหตุ' },
+      ],
+      actions: [
+        { id: 'forceLogout', label: 'บังคับออกจากระบบ', method: 'POST', endpoint: '/users/:id/revoke-sessions', perm: 'identity.user.write', toast: 'message',
+          confirm: 'ผู้ใช้นี้จะถูกออกจากระบบทุกอุปกรณ์ทันที (เข้าสู่ระบบใหม่ได้ด้วยรหัสผ่านเดิม) — ใช้เมื่อเครื่องหาย หรือสงสัยว่ามีคนอื่นใช้บัญชี', tone: 'danger' },
+        { id: 'roles', label: 'กำหนดบทบาท', method: 'PUT', endpoint: '/users/:id/roles', perm: 'identity.user.write', toast: 'message',
+          fields: [{ name: 'roleIds', label: 'บทบาท', type: 'multilookup', lookup: roleLookup, required: true }] },
+        { id: 'deactivate', label: 'ปิดใช้งาน', method: 'POST', endpoint: '/users/:id/deactivate', perm: 'identity.user.write',
+          when: { field: 'active', in: [true] }, confirm: 'ผู้ใช้นี้จะเข้าสู่ระบบไม่ได้อีก และถูกออกจากระบบทุกอุปกรณ์ทันที', tone: 'danger' },
+      ],
+    },
+    changePassword: {
+      // every signed-in user (no perm, not in the menu — the web links it from the user box next to "ออกจากระบบ")
+      kind: 'form', title: 'เปลี่ยนรหัสผ่าน', method: 'POST', endpoint: '/me/password', submitLabel: 'เปลี่ยนรหัสผ่าน',
+      fields: [
+        { name: 'currentPassword', label: 'รหัสผ่านปัจจุบัน', type: 'password', required: true },
+        { name: 'newPassword', label: 'รหัสผ่านใหม่', type: 'password', required: true, help: 'อย่างน้อย 8 ตัวอักษร — อุปกรณ์อื่นที่เข้าสู่ระบบไว้จะถูกออกจากระบบ' },
       ],
     },
     userNew: {

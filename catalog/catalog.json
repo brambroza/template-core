@@ -69,6 +69,9 @@
     },
     "contracts": {
       "price": 20000
+    },
+    "etax": {
+      "price": 15000
     }
   },
   "bundles": [
@@ -373,7 +376,8 @@
       "booking": 390,
       "accounting": 1590,
       "payroll": 1190,
-      "contracts": 890
+      "contracts": 890,
+      "etax": 590
     },
     "bundles": {
       "trading": 1990,

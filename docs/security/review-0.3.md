@@ -17,7 +17,7 @@ service ต่อฐานข้อมูลด้วย role ที่ไม่
 |---|---|---|---|
 | Critical | 0 | – | – |
 | High | 3 | 3 | – |
-| Medium | 6 | 4 | 2 (SEC-07 เพิกถอน token, SEC-14 การติดตั้ง/HTTPS) |
+| Medium | 6 | 5 | 1 (SEC-14 การติดตั้ง/HTTPS) — SEC-07 เพิกถอน token แก้แล้วใน wave 9 |
 | Low / Info | 12 | 6 | 6 |
 
 ความเสี่ยงสูงที่ปิดแล้ว:
@@ -26,8 +26,11 @@ service ต่อฐานข้อมูลด้วย role ที่ไม่
 2. **SEC-02 เดารหัสผ่านไม่จำกัด** — login ไม่มีการจำกัดจำนวนครั้ง และเวลาในการตอบบอกได้ว่าอีเมล/รหัสบริษัทมีอยู่จริง → จำกัด 10 ครั้ง/15 นาที/บัญชี และตอบเวลาเท่ากัน
 3. **SEC-03 ค่า secret ตัวอย่าง** — ถ้าลูกค้าใช้ `.env.example` ตามที่ได้ไป ใครก็ปลอม token เป็นแอดมินของทุกบริษัทได้ และยิง event ปลอมผ่าน gateway ได้ → service/gateway ไม่ยอม start
 
-สิ่งที่ยังต้องตัดสินใจ (ไม่ได้แก้เพราะกระทบการใช้งาน/ราคา): token ยกเลิกไม่ได้ก่อนหมดอายุ 12 ชม. (คนลาออกยังใช้ token เดิมได้),
-การติดตั้งมาตรฐานยังเป็น HTTP และไม่ได้ตั้ง `NODE_ENV=production`, ไม่มีหน้าเปลี่ยน/รีเซ็ตรหัสผ่าน และ `pnpm erp pack` ส่งโฟลเดอร์ `docs/`
+อัปเดต wave 9: **SEC-07 แก้แล้ว** — ออกจากระบบ (ทุกอุปกรณ์), เปลี่ยนรหัสผ่าน, ปิดบัญชี, เปลี่ยนบทบาท และปุ่ม "บังคับออกจากระบบ" ของผู้ดูแล
+ทำให้ token เดิมใช้ไม่ได้ในทุกโมดูล (identity ทันที, โมดูลอื่นภายใน ~1 วินาที, instance อื่นของโมดูลเดียวกันภายใน 30 วินาที) และมีหน้าเปลี่ยนรหัสผ่านแล้ว
+
+สิ่งที่ยังต้องตัดสินใจ (ไม่ได้แก้เพราะกระทบการใช้งาน/ราคา):
+การติดตั้งมาตรฐานยังเป็น HTTP และไม่ได้ตั้ง `NODE_ENV=production`, ยังไม่มีการรีเซ็ตรหัสผ่านทางอีเมล และ `pnpm erp pack` ส่งโฟลเดอร์ `docs/`
 (รวมรายงานนี้) ให้ลูกค้าด้วย — ดูหัวข้อ "Open decisions" ด้านล่าง
 
 ---
@@ -104,14 +107,28 @@ Status legend: **Fixed** (code + regression test in this change) · **Documented
   targets are allowed, which further limits internal reach.
 - Tests: `services/automation/test/service.test.ts` › SEC-06.
 
-### SEC-07 — Medium — Tokens cannot be revoked — Documented (product decision)
+### SEC-07 — Medium — Tokens cannot be revoked — Fixed (wave 9)
 
-- Evidence: `signToken` 12 h TTL (`JWT_TTL_SECONDS`), stateless verification in every module; `POST /users/:id/deactivate` and role changes
-  only affect the next login (identity CLAUDE.md says so).
-- Impact: a dismissed employee (or a stolen token) keeps full access — payslips, bank-transfer lists — for up to 12 hours.
-- Options: (a) shorter TTL (e.g. 1 h) + refresh endpoint in identity that re-checks `active`/roles; (b) a `ver` claim per user and a
-  revocation event (`identity.user_deactivated`) that modules cache; (c) at minimum lower `JWT_TTL_SECONDS` in compose. Needs a decision
-  because it changes the mobile/web session UX.
+- Evidence (before): `signToken` 12 h TTL (`JWT_TTL_SECONDS`), stateless verification in every module; `POST /users/:id/deactivate` and role changes
+  only affected the next login.
+- Impact (before): a dismissed employee (or a stolen token) kept full access — payslips, bank-transfer lists — for up to 12 hours.
+- Fix (option (b), without any module reading identity's database):
+  - Tokens carry a unique `jti` (older tokens without one are still accepted until they expire).
+  - Identity emits `identity.tokens_revoked { userId, before, reason }` on `POST /logout` (logout everywhere), `POST /me/password` (change own
+    password: current + new ≥ 8 chars), `POST /users/:id/deactivate`, `PUT /users/:id/roles` and the admin action `POST /users/:id/revoke-sessions`
+    ("บังคับออกจากระบบ", same no-more-rights-than-you rule as SEC-01). `before` = the next whole second; new logins are issued with `iat` = that cutoff.
+  - It is a **kernel subscription**: the gateway router delivers it to every installed module regardless of module.json, every kernel stores it in
+    its own `_revoked_tokens` table (tenant_id + RLS, max cutoff per user, idempotent) and keeps it in memory, so `auth()` stays synchronous; the
+    kernel refuses `iat < before` with 401 `session_revoked` ("เซสชันถูกยกเลิก กรุณาเข้าสู่ระบบใหม่"), including bearer attachment downloads.
+  - Propagation delay: identity at once (applied in the emitting transaction); other modules when the outbox delivers (~1 s, retried while the gateway
+    is down); other instances of a module ≤ `TOKEN_REVOCATION_RELOAD_MS` (30 s periodic reload; also loaded at boot).
+  - Web: the logout button calls `/api/identity/logout` before clearing the local session; a 401 `session_revoked` sends the user to
+    `/login?revoked=1` with a Thai notice; the change-password screen (identity `changePassword`, linked from the user box) keeps the user signed in
+    with the new token the server returns (`x-erp-session-token`).
+- Remaining limits: a signed attachment link (≤ 5 min) already handed out stays valid until it expires; the Expo mobile app still only clears its
+  local session on logout (it is refused at once anyway on its next call after a revocation, but does not call `/logout` itself yet).
+- Tests: `packages/kernel/test/revocation.test.ts`, `packages/kernel/test/platform.test.ts` (attachment download), `services/identity/test/sessions.test.ts`,
+  `apps/gateway/test/router.test.ts`, `tests/e2e/token-revocation.test.ts`, `apps/web/test/session.test.ts`.
 
 ### SEC-08 — Low — AI assistant: percent-encoded dot segments in `read_data` ids — Fixed
 
@@ -228,8 +245,8 @@ Status legend: **Fixed** (code + regression test in this change) · **Documented
 
 ## Open decisions (need product owner)
 
-1. SEC-07 token revocation / shorter TTL + refresh.
-2. SEC-14 HTTPS in the standard bundle, `NODE_ENV=production` in compose, change-password / reset flow, optional 2FA for admins.
+1. ~~SEC-07 token revocation~~ — done in wave 9 (a shorter TTL + refresh is still an option on top).
+2. SEC-14 HTTPS in the standard bundle, `NODE_ENV=production` in compose, password reset by e-mail (change-password exists since wave 9), optional 2FA for admins.
 3. SEC-20 whether security docs ship to customers.
 4. SEC-05 nonce-based `script-src` CSP (and/or moving the web token from `localStorage` to an httpOnly cookie).
 

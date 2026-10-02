@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { CATEGORIES, CATEGORY_TH, EVENT_TH, ROLE_TH, ROLES, TYPE_CATEGORIES, TYPE_TH, TYPES, type AccountType, type PostedEvent } from './chart.ts';
 import { checkLines, createJournal, EFFECTIVE, ensureChart, assertPeriodOpen, periodTh, postEvent, seedChart, todayTh, writeLines } from './ledger.ts';
 import { balanceSheet, debitNormal, generalLedger, profitLoss, trialBalance, vatLines, vatReport, whtReceived } from './reports.ts';
+import { computePp30, pp30Csv, pp30Year, recordFiling, whtPayable } from './tax.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -72,6 +73,27 @@ const MappingUpdate = MappingInput.partial();
 const NoteInput = z.object({ note: text(500).optional() }).default({});
 
 const IdParam = z.object({ id: s.uuid });
+const money2 = z.number().finite().min(0).max(1e13);
+/** query-string amounts for the ภ.พ.30 preview (boxes 2, 3, 13, 14) */
+const qMoney = z.coerce.number().finite().min(0).max(1e13).optional();
+const Pp30Query = z.object({ zeroRated: qMoney, exempt: qMoney, surcharge: qMoney, penalty: qMoney, filedDate: s.isoDate.optional(), channel: z.enum(['efiling', 'paper']).optional() });
+const Pp30File = z.object({
+  filedDate: s.isoDate,
+  channel: z.enum(['efiling', 'paper']),
+  receiptNo: text(100).optional(),
+  refundOrCarry: z.enum(['carry', 'refund']).default('carry'),
+  paidAmount: money2.default(0),
+  zeroRated: money2.optional(), exempt: money2.optional(), surcharge: money2.optional(), penalty: money2.optional(),
+  amend: z.boolean().default(false),
+  reason: text(500).optional(),
+});
+const BillQuery = s.listQuery.extend({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  kind: z.enum(['goods', 'service', 'expense']).optional(), treatment: z.enum(['posted', 'matched', 'vat_reclassed']).optional(),
+  from: s.isoDate.optional(), to: s.isoDate.optional(),
+});
+const TREATMENT_TH: Record<string, string> = { posted: 'ลงบัญชีค่าใช้จ่าย/บริการ', matched: 'จับคู่กับการรับสินค้า (ไม่ลงซ้ำ)', vat_reclassed: 'ปรับภาษีซื้อของสินค้าที่รับแล้ว' };
+const BILL_KIND_TH: Record<string, string> = { goods: 'สินค้า', service: 'บริการ', expense: 'ค่าใช้จ่าย' };
 const PeriodParam = z.object({ period: month });
 
 const AccountQuery = z.object({
@@ -404,7 +426,11 @@ export const definition: ServiceDefinition = {
         const rev = await createJournal(c, {
           entryDate: date, description: `กลับรายการ ${j.no}: ${b.reason || j.description}`.slice(0, 500), ref: j.ref,
           note: b.reason ? `เหตุผล: ${b.reason}` : null, sourceType: 'reversal', sourceId: j.id, reversalOf: j.id,
-        }, lines.map((l) => ({ accountId: l.account_id, debit: l.credit, credit: l.debit, description: l.description, partnerId: l.partner_id, partnerName: l.partner_name, taxBase: l.tax_base })),
+        }, lines.map((l) => ({ accountId: l.account_id, debit: l.credit, credit: l.debit, description: l.description, partnerId: l.partner_id, partnerName: l.partner_name, taxBase: l.tax_base,
+          // wave 9: keep the tax document behind VAT / WHT lines so the registers and the WHT-payable report show the reversal against it
+          taxInvoiceNo: l.tax_invoice_no, taxInvoiceDate: l.tax_invoice_date, taxPartyName: l.tax_party_name, taxPartyTaxId: l.tax_party_tax_id, taxPartyBranch: l.tax_party_branch,
+          taxRefInvoiceNo: l.tax_ref_invoice_no, taxRefInvoiceDate: l.tax_ref_invoice_date,
+          whtForm: l.wht_form, whtIncomeType: l.wht_income_type, whtRate: l.wht_rate === null ? null : Number(l.wht_rate), whtCertificateNo: l.wht_certificate_no })),
         'posted', byOf(a));
         await c.query(`update journal_entries set status = 'reversed', reversed_by = $2, updated_at = now() where id = $1`, [id, rev.id]);
         reply.code(201);
@@ -543,6 +569,10 @@ export const definition: ServiceDefinition = {
         if (e.status !== 'open') throw conflict(`รายการนี้${ERROR_TH[e.status]}แล้ว`);
         const r = await postEvent(c, e.event_type as PostedEvent, e.payload, { eventId: e.event_id, occurredAt: new Date(e.occurred_at).toISOString() }, { name: a.userName ?? null });
         if (r.status === 'error') return { ok: false, status: 'open', message: `ยังลงบัญชีไม่ได้: ${r.reason}` };
+        if (r.status === 'skipped' && r.message) {
+          // wave 9: handled without a journal (a supplier bill matched to its goods receipt) — postEvent resolved the error
+          return { ok: true, status: 'resolved', message: r.message };
+        }
         if (r.status === 'skipped') {
           await c.query(`update posting_errors set status = 'dismissed', resolved_at = now(), resolved_by_name = $2 where id = $1`, [id, a.userName ?? null]);
           return { ok: true, status: 'dismissed', message: 'ไม่มียอดเงินที่ต้องลงบัญชี' };
@@ -683,6 +713,71 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => ({ ...(await whtReceived(c, q.year ?? todayTh().slice(0, 4))), title: 'ภาษีเงินได้ถูกหัก ณ ที่จ่าย' }));
     });
 
+    /* ---------- wave 9: tax returns (ภ.พ.30, WHT payable) and supplier bills ---------- */
+
+    // ภ.พ.30 of a month (boxes 1–16) — a preview: zeroRated / exempt / surcharge / penalty / filedDate / channel may be passed to see the effect
+    const pp30 = async (req: any) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.tax.read');
+      const period = req.params?.period ?? parse(z.object({ period: month.optional() }), req.query).period ?? todayTh().slice(0, 7);
+      parse(PeriodParam, { period });
+      const q = parse(Pp30Query, req.query);
+      return k.db.tx(a.tenantId, async (c) => { await ensureChart(c); return computePp30(c, period, q); });
+    };
+    app.get('/reports/pp30', pp30);
+    app.get('/pp30/:period', pp30);
+
+    app.get('/reports/pp30/csv', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.tax.read');
+      const { period } = parse(z.object({ period: month }), req.query);
+      const q = parse(Pp30Query, req.query);
+      const x = await k.db.tx(a.tenantId, (c) => computePp30(c, period, q));
+      reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="pp30-${period}.csv"`);
+      return pp30Csv(x);
+    });
+
+    app.get('/pp30', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.tax.read');
+      const q = parse(z.object({ year: year.optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => { await ensureChart(c); return pp30Year(c, q.year ?? todayTh().slice(0, 4)); });
+    });
+
+    // RECORD a filing made on rd.go.th / on paper — nothing is sent to the Revenue Department
+    app.post('/pp30/:period/file', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.tax.file');
+      const { period } = parse(PeriodParam, req.params);
+      const b = parse(Pp30File, req.body);
+      reply.code(201);
+      return k.db.tx(a.tenantId, async (c) => { await ensureChart(c); return recordFiling(c, period, b, byOf(a)); });
+    });
+
+    app.get('/reports/wht-payable', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.tax.read');
+      const q = parse(z.object({ year: year.optional(), month: month.optional(), form: z.enum(['PND3', 'PND53']).optional() }), req.query);
+      const y = q.year ?? q.month?.slice(0, 4) ?? todayTh().slice(0, 4);
+      return k.db.tx(a.tenantId, async (c) => { await ensureChart(c); return whtPayable(c, { year: y, month: q.month, form: q.form }); });
+    });
+
+    app.get('/supplier-bills', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'accounting.journal.read');
+      const q = parse(BillQuery, req.query);
+      return k.db.tx(a.tenantId, async (c) => {
+        const rows = (await c.query(
+          `select b.*, j.no as journal_no from supplier_bills b left join journal_entries j on j.id = b.journal_id
+           where ($1::text is null or b.bill_no ilike '%' || $1 || '%' or b.supplier_name ilike '%' || $1 || '%' or b.supplier_invoice_no ilike '%' || $1 || '%' or b.po_no ilike '%' || $1 || '%')
+             and ($2::text is null or b.kind = $2) and ($3::text is null or b.treatment = $3)
+             and ($4::date is null or b.bill_date >= $4) and ($5::date is null or b.bill_date <= $5)
+           order by b.bill_date desc, b.bill_no desc limit $6 offset $7`,
+          [q.q?.trim() || null, q.kind ?? null, q.treatment ?? null, q.from ?? null, q.to ?? null, q.limit, q.offset])).rows;
+        return rows.map((r) => ({ ...r, kind_label: BILL_KIND_TH[r.kind], treatment_label: TREATMENT_TH[r.treatment] }));
+      });
+    });
+
     /* ---------- dashboard ---------- */
 
     app.get('/summary', async (req) => {
@@ -731,6 +826,9 @@ export const definition: ServiceDefinition = {
     'purchasing.goods_returned': autoPost('purchasing.goods_returned'),
     'expense.claim_paid': autoPost('expense.claim_paid'),
     'payroll.run_paid': autoPost('payroll.run_paid'),
+    'sales.note_issued': autoPost('sales.note_issued'),
+    'purchasing.bill_recorded': autoPost('purchasing.bill_recorded'),
+    'purchasing.supplier_paid': autoPost('purchasing.supplier_paid'),
   },
 };
 

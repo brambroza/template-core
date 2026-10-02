@@ -4,7 +4,18 @@ Treat as a library with a stable API. Prefer adding new helpers over changing ex
 Customers receive kernel updates as drop-in replacements, so never put customer-specific logic here.
 
 - `createService(def, env)` — Fastify app + auth hook + error format + `/_health`, `/_manifest`, `/_events` + outbox dispatcher + license check.
-- `auth(req)`, `requirePerm`, `hasPerm`, `signToken`, `verifyToken`, `hashPassword` — JWT HS256 shared secret (`JWT_SECRET`).
+- `auth(req)`, `requirePerm`, `hasPerm`, `signToken`, `verifyToken`, `hashPassword` — JWT HS256 shared secret (`JWT_SECRET`). Tokens carry a unique `jti`
+  (`AuthContext.tokenId`, undefined for older tokens — still accepted) and `iat` (`issuedAt`); `signToken(secret, ctx, ttl, { iat })`.
+- `revocation.ts` — token revocation (security review 0.3, SEC-07). `KERNEL_SUBSCRIPTIONS` = events every module's kernel handles itself
+  (`identity.tokens_revoked`): not listed in module.json (allowed if listed; the module's own handler then runs after the kernel's), the gateway router
+  sends them to every installed module. Stored in the kernel tenant table `_revoked_tokens (tenant_id, user_id, before, reason)` — one row per user,
+  the largest cutoff wins (idempotent) — and in memory (`k.revocations`, a `RevocationList`), loaded at boot (`onReady`), updated on delivery and
+  reloaded every `TOKEN_REVOCATION_RELOAD_MS` (default 30000; 0 = off). `verifyToken(secret, token, revokedBefore)` refuses `iat < before` with
+  401 `session_revoked` "เซสชันถูกยกเลิก กรุณาเข้าสู่ระบบใหม่" (also on bearer attachment downloads). `k.emit(c, 'identity.tokens_revoked', …)` applies
+  the revocation to the publishing service in the same transaction (the router never sends an event back to its publisher).
+  Propagation delay: publisher immediately; other modules when the outbox is dispatched (~`EVENT_DISPATCH_MS`, 1 s); other instances of a module
+  that did not get the delivery ≤ reload interval. Loading all tenants uses a SELECT-only policy gated by `app.kernel_read = 'revoked_tokens'`
+  (`RevocationList.load` only — never set it in module code).
 - `db.tx(tenantId, fn)` — sets `app.tenant_id` for RLS, the transaction's `TimeZone` to Asia/Bangkok (wave 8: leftover SQL `current_date` / `date_trunc` is the Thai day)
   and `app.today` = `thaiToday()`; `TODAY_SQL` is the SQL expression for it (follows `setClock`) — use it for SQL date defaults instead of `current_date`. `migrate()` applies `-- @tenant` directives. `nextDocNo`, `one`.
 - `emit`, `dispatchOutbox`, `receiveEvent` — transactional outbox, at-least-once delivery, inbox de-dup.
@@ -23,4 +34,5 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
   `accounting.period_closed`), `unlockPeriod(c, 'YYYY-MM')` (steps an accounting lock back — `accounting.period_reopened`), `setLockDate(c, date|null, byName)` (manual), `readLock(c)`.
 - `testing.ts` — `bootTestService`, `createTestDatabase`; `t.raw()` for binary responses / requests without a token.
 
-Env: `ERP_CLOCK` (tests/demos only: frozen ISO instant), `DATABASE_URL`, `JWT_SECRET`, `INTERNAL_TOKEN`, `EVENT_ROUTER_URL` (optional), `ERP_LICENSE`, `PORT`, `LOG_LEVEL`.
+Env: `ERP_CLOCK` (tests/demos only: frozen ISO instant), `DATABASE_URL`, `JWT_SECRET`, `INTERNAL_TOKEN`, `EVENT_ROUTER_URL` (optional), `ERP_LICENSE`, `PORT`, `LOG_LEVEL`,
+`TOKEN_REVOCATION_RELOAD_MS` (default 30000). Token `iat`/revocation cutoffs use real wall-clock time, never the (freezable) business clock.

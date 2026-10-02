@@ -7,6 +7,8 @@ const WRITE = 'accounting.journal.write';
 const POST = 'accounting.journal.post';
 const ACCOUNT = 'accounting.account.write';
 const REPORT = 'accounting.report.read';
+const TAX = 'accounting.tax.read';
+const FILE = 'accounting.tax.file';
 
 const jvStatuses = [
   { value: 'draft', label: 'ร่าง' }, { value: 'posted', label: 'ผ่านรายการแล้ว' },
@@ -16,7 +18,9 @@ const sources = [
   { value: 'manual', label: 'บันทึกเอง' }, { value: 'reversal', label: 'กลับรายการ' },
   { value: 'sales.invoiced', label: 'ขาย — ใบกำกับภาษี' }, { value: 'sales.payment_received', label: 'ขาย — รับชำระ/มัดจำ' },
   { value: 'purchasing.goods_received', label: 'จัดซื้อ — รับสินค้า' }, { value: 'purchasing.goods_returned', label: 'จัดซื้อ — ส่งคืน' },
-  { value: 'expense.claim_paid', label: 'เบิกค่าใช้จ่าย — จ่ายเงิน' },
+  { value: 'expense.claim_paid', label: 'เบิกค่าใช้จ่าย — จ่ายเงิน' }, { value: 'payroll.run_paid', label: 'เงินเดือน — จ่ายเงินเดือน' },
+  { value: 'sales.note_issued', label: 'ขาย — ใบลดหนี้/ใบเพิ่มหนี้' }, { value: 'purchasing.bill_recorded', label: 'จัดซื้อ — ตั้งหนี้' },
+  { value: 'purchasing.supplier_paid', label: 'จัดซื้อ — จ่ายชำระเจ้าหนี้' },
 ];
 const types = [
   { value: 'asset', label: 'สินทรัพย์' }, { value: 'liability', label: 'หนี้สิน' }, { value: 'equity', label: 'ส่วนของผู้ถือหุ้น' },
@@ -37,6 +41,19 @@ const roles = [
   { value: 'deposit_received', label: 'เงินมัดจำรับ' }, { value: 'retained_earnings', label: 'กำไรสะสม' }, { value: 'sales_revenue', label: 'รายได้จากการขาย' },
   { value: 'cogs', label: 'ต้นทุนขาย' }, { value: 'expense_default', label: 'ค่าใช้จ่ายทั่วไป' },
 ];
+/** ภ.พ.30 filing record fields (boxes 2, 3, 13, 14 are typed by the user — they are not in the VAT register) */
+const pp30FileFields: Field[] = [
+  { name: 'filedDate', label: 'วันที่ยื่นแบบ', type: 'date', required: true },
+  { name: 'channel', label: 'ช่องทาง', type: 'select', required: true, default: 'efiling', options: [{ value: 'efiling', label: 'ยื่นทางอินเทอร์เน็ต (e-Filing)' }, { value: 'paper', label: 'ยื่นแบบกระดาษ' }] },
+  { name: 'receiptNo', label: 'เลขที่ใบเสร็จ / เลขอ้างอิงการยื่น (จาก rd.go.th)', type: 'text' },
+  { name: 'paidAmount', label: 'จำนวนเงินที่ชำระ (บาท)', type: 'number', step: 0.01, default: 0 },
+  { name: 'refundOrCarry', label: 'กรณีชำระเกิน', type: 'select', default: 'carry', options: [{ value: 'carry', label: 'ขอนำไปชำระภาษีเดือนถัดไป' }, { value: 'refund', label: 'ขอคืนเป็นเงินสด' }] },
+  { name: 'zeroRated', label: 'ช่อง 2: ยอดขายอัตราร้อยละ 0', type: 'number', step: 0.01, help: 'เช่น ส่งออก (มาตรา 80/1) — ไม่มีในรายงานภาษีขาย กรอกเอง' },
+  { name: 'exempt', label: 'ช่อง 3: ยอดขายที่ได้รับยกเว้น', type: 'number', step: 0.01, help: 'มาตรา 81 — กรอกเอง' },
+  { name: 'surcharge', label: 'ช่อง 13: เงินเพิ่ม', type: 'number', step: 0.01, help: 'ยื่นเกินกำหนด: 1.5% ต่อเดือนหรือเศษของเดือน (มาตรา 89/1) — ดูยอดประมาณในหน้าแบบ' },
+  { name: 'penalty', label: 'ช่อง 14: เบี้ยปรับ', type: 'number', step: 0.01, help: 'ตามที่คำนวณในระบบ e-Filing / เจ้าหน้าที่ (ลดเบี้ยปรับตามระเบียบ ท.ป.4/2528)' },
+];
+
 const yesNo = [{ value: 'true', label: 'ใช้งาน' }, { value: 'false', label: 'ปิดใช้งาน' }];
 
 const accountLookup = (name: string, label = 'บัญชี', required = true): Field => ({
@@ -85,7 +102,12 @@ export default defineUi({
     { label: 'งบแสดงฐานะการเงิน', screen: 'balanceSheet' },
     { label: 'ภาษีมูลค่าเพิ่ม (ภ.พ.30)', screen: 'vatReport' },
     { label: 'รายงานภาษีขาย/ภาษีซื้อ', screen: 'vatLines' },
+    { label: 'แบบ ภ.พ.30 (ยื่นรายเดือน)', screen: 'pp30List' },
+    { label: 'ตัวเลข ภ.พ.30 ช่อง 1–16 (CSV)', screen: 'pp30Boxes' },
+    { label: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย (ภ.ง.ด.3/53)', screen: 'whtPayable' },
+    { label: 'รายการหัก ณ ที่จ่ายตาม 50 ทวิ', screen: 'whtPayableLines' },
     { label: 'ภาษีถูกหัก ณ ที่จ่าย', screen: 'whtReceived' },
+    { label: 'ใบแจ้งหนี้ผู้ขาย (ตั้งหนี้)', screen: 'supplierBills' },
     { label: 'ลงบัญชีอัตโนมัติไม่สำเร็จ', screen: 'postingErrors' },
     { label: 'กฎการลงบัญชีอัตโนมัติ', screen: 'postingRules' },
     { label: 'จับคู่หมวดค่าใช้จ่าย', screen: 'categoryMappings' },
@@ -98,6 +120,8 @@ export default defineUi({
     { id: 'ledger', label: 'บัญชีแยกประเภทของบัญชี', example: 'แยกประเภท 11200', keywords: ['บัญชีแยกประเภท', 'แยกประเภท', 'ledger'], screen: 'ledger', perm: REPORT,
       arg: { lookup: { path: '/accounts', query: { postable: 'true' }, label: ['code', 'name'], assign: { accountId: 'id' } } } },
     { id: 'vat', label: 'สรุปภาษีมูลค่าเพิ่ม ภ.พ.30', example: 'ภพ30', keywords: ['ภพ30', 'ภ.พ.30', 'ภาษีซื้อขาย', 'vat'], screen: 'vatReport', perm: REPORT },
+    { id: 'pp30', label: 'แบบ ภ.พ.30 รายเดือน (ช่อง 1–16 / บันทึกการยื่น)', example: 'ยื่นภพ30', keywords: ['ยื่นภพ30', 'ยื่น ภพ30', 'ยื่น ภ.พ.30', 'แบบ ภพ30', 'pp30'], screen: 'pp30List', perm: TAX },
+    { id: 'whtPayable', label: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.3 / ภ.ง.ด.53', example: 'ภงด53', keywords: ['ภงด3', 'ภงด53', 'ภ.ง.ด.3', 'ภ.ง.ด.53', 'หัก ณ ที่จ่ายค้างจ่าย'], screen: 'whtPayable', perm: TAX },
   ],
   search: [
     { id: 'journals', title: 'สมุดรายวัน', endpoint: '/journals', label: ['no', 'description', 'ref'], screen: 'jvDetail', perm: READ },
@@ -357,6 +381,7 @@ export default defineUi({
       ],
       columns: [
         { key: 'seq', label: 'ลำดับ' }, { key: 'tax_invoice_date', label: 'วันที่ใบกำกับ', format: 'date' }, { key: 'document_no', label: 'เลขที่ใบกำกับภาษี' },
+        { key: 'ref_invoice_no', label: 'อ้างอิงใบกำกับเดิม (ใบลด/เพิ่มหนี้)', phone: false },
         { key: 'party_name', label: 'ชื่อผู้ซื้อ/ผู้ขาย' }, { key: 'party_tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'party_branch_label', label: 'สำนักงานใหญ่/สาขา' },
         acc('tax_base', 'มูลค่าสินค้า/บริการ', true), acc('vat', 'ภาษีมูลค่าเพิ่ม', true), { key: 'no', label: 'สมุดรายวัน', phone: false }, { key: 'ref', label: 'เอกสารอ้างอิง', phone: false },
       ],
@@ -374,6 +399,111 @@ export default defineUi({
       report: { subtitle: 'ปี {year|year}' },
       rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
       empty: 'ไม่มีภาษีถูกหัก ณ ที่จ่ายในปีนี้',
+    },
+
+    /* ---------- wave 9: ภ.พ.30 return, WHT payable, supplier bills ---------- */
+    pp30List: {
+      kind: 'list', title: 'แบบ ภ.พ.30 รายเดือน', endpoint: '/pp30', rows: 'rows', perm: TAX,
+      filters: [{ name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }],
+      columns: [
+        { key: 'period_th', label: 'เดือนภาษี' }, acc('box4', 'ยอดขายที่ต้องเสียภาษี', true), acc('box5', 'ภาษีขาย', true), acc('box7', 'ภาษีซื้อ', true),
+        acc('box10', 'ชำระเกินยกมา'), acc('box11', 'ต้องชำระ', true), acc('box12', 'ชำระเกิน'), { key: 'status_label', label: 'สถานะการยื่น' },
+        { key: 'deadline_efiling', label: 'กำหนดยื่น (e-Filing)', format: 'date', phone: false }, { key: 'filed_date', label: 'วันที่ยื่น', format: 'date' },
+        { key: 'receipt_no', label: 'เลขที่ใบเสร็จ', phone: false },
+      ],
+      report: { subtitle: 'ปีภาษี {year|year} — คำนวณจากรายงานภาษีขาย/ภาษีซื้อ; ยื่นจริงที่ efiling.rd.go.th แล้วกลับมาบันทึกการยื่น' },
+      rowLink: { screen: 'pp30Detail', idFrom: 'period' },
+    },
+    pp30Detail: {
+      kind: 'detail', title: 'แบบ ภ.พ.30', endpoint: '/pp30/:period', perm: TAX, heading: 'title',
+      // laid out in the form's numbered boxes 1–16 (แบบ ภ.พ.30 กรมสรรพากร) — a worksheet to copy into e-Filing, not the official form
+      print: { title: 'แบบแสดงรายการภาษีมูลค่าเพิ่ม (ภ.พ.30) — ใบสรุปสำหรับกรอกแบบ', signatures: ['ผู้จัดทำ', 'ผู้ตรวจสอบ'] },
+      fields: [
+        { key: 'period_th', label: 'เดือนภาษี', section: 'การยื่นแบบ' }, { key: 'status_label', label: 'สถานะ', print: false },
+        { key: 'deadline_paper', label: 'กำหนดยื่นแบบกระดาษ (มาตรา 83)', format: 'date' }, { key: 'deadline_efiling', label: 'กำหนดยื่นทาง e-Filing (+8 วัน)', format: 'date' },
+        { key: 'filed_date', label: 'วันที่ยื่น', format: 'date' }, { key: 'channel_label', label: 'ช่องทาง' }, { key: 'receipt_no', label: 'เลขที่ใบเสร็จ' },
+        money('paid_amount', 'ชำระแล้ว'), { key: 'period_status_label', label: 'งวดบัญชี', print: false },
+        { key: 'warnings_text', label: 'ข้อควรตรวจสอบ', print: false }, { key: 'boundary', label: 'หมายเหตุ', print: false },
+        { ...money('box1', '1. ยอดขายแล้วในเดือนนี้'), section: 'ยอดขาย' }, money('box2', '2. หัก ยอดขายที่เสียภาษีในอัตราร้อยละ 0'), money('box3', '3. หัก ยอดขายที่ได้รับยกเว้น'),
+        money('box4', '4. ยอดขายที่ต้องเสียภาษี (1. − 2. − 3.)'), money('box5', '5. ภาษีขายเดือนนี้'),
+        { ...money('box6', '6. ยอดซื้อที่มีสิทธิ์นำภาษีซื้อมาหักในการคำนวณภาษีเดือนนี้'), section: 'ยอดซื้อ' }, money('box7', '7. ภาษีซื้อเดือนนี้ (ตามรายงานภาษีซื้อ)'),
+        { ...money('box8', '8. ภาษีที่ต้องชำระเดือนนี้ (ถ้า 5. มากกว่า 7.)'), section: 'การคำนวณภาษี' }, money('box9', '9. ภาษีที่ชำระเกินเดือนนี้ (ถ้า 5. น้อยกว่า 7.)'),
+        money('box10', '10. ภาษีที่ชำระเกินยกมา'), { key: 'carried_in_source_label', label: 'ที่มาของช่อง 10', print: false },
+        money('box11', '11. ต้องชำระ (ถ้า 8. มากกว่า 10.)'), money('box12', '12. ชำระเกิน (ถ้า 10. มากกว่า 8. หรือ 9. รวมกับ 10.)'),
+        { ...money('box13', '13. เงินเพิ่ม'), section: 'เงินเพิ่ม เบี้ยปรับ' }, money('box14', '14. เบี้ยปรับ'),
+        { ...money('surcharge_suggested', 'เงินเพิ่มโดยประมาณ (1.5% ต่อเดือน มาตรา 89/1 — ตรวจสอบ)'), hideZero: true, print: false },
+        { ...money('box15', '15. รวมภาษี เงินเพิ่ม และเบี้ยปรับที่ต้องชำระ (11. + 13. + 14.)'), emphasis: true },
+        money('box16', '16. รวมภาษีที่ชำระเกินหลังคำนวณเงินเพิ่มและเบี้ยปรับ (12. − 13. − 14.)'),
+        { ...money('revenue_without_vat', 'รายได้ในบัญชีเดือนนี้ที่ไม่มีภาษีขาย (ตรวจว่าเป็นช่อง 2 / 3 หรือไม่อยู่ในบังคับ)'), section: 'ข้อมูลประกอบ', hideZero: true, print: false },
+        { key: 'output_count', label: 'จำนวนรายการภาษีขาย', format: 'qty', print: false }, { key: 'input_count', label: 'จำนวนรายการภาษีซื้อ', format: 'qty', print: false },
+      ],
+      lines: [{ path: 'filings', label: 'การยื่นที่บันทึกไว้', print: false, columns: [
+        { key: 'kind_label', label: 'แบบ' }, { key: 'filed_date', label: 'วันที่ยื่น', format: 'date' }, { key: 'channel_label', label: 'ช่องทาง' },
+        { key: 'receipt_no', label: 'ใบเสร็จ' }, money('paid_amount', 'ชำระ'), { key: 'refund_or_carry_label', label: 'กรณีชำระเกิน' }, { key: 'reason', label: 'เหตุผล (เพิ่มเติม)' },
+        { key: 'filed_by_name', label: 'บันทึกโดย' },
+      ] }],
+      actions: [
+        { id: 'file', label: 'บันทึกว่ายื่นแล้ว', method: 'POST', endpoint: '/pp30/:period/file', perm: FILE, when: { field: 'filed', in: [false] }, tone: 'primary',
+          confirm: 'บันทึกว่ายื่นแบบ ภ.พ.30 เดือนนี้แล้ว? (ระบบไม่ได้ส่งแบบไปกรมสรรพากร — ยื่นและชำระที่ efiling.rd.go.th ก่อน)', fields: pp30FileFields, toast: 'message' },
+        { id: 'amend', label: 'บันทึก ภ.พ.30 เพิ่มเติม', method: 'POST', endpoint: '/pp30/:period/file', perm: FILE, when: { field: 'filed', in: [true] },
+          fields: [...pp30FileFields, { name: 'amend', label: 'ยื่นเพิ่มเติม (แก้ไขแบบที่ยื่นแล้ว)', type: 'boolean', default: true },
+            { name: 'reason', label: 'เหตุผลที่ยื่นเพิ่มเติม', type: 'text', required: true }], toast: 'message' },
+      ],
+    },
+    pp30Boxes: {
+      kind: 'list', title: 'ตัวเลขแบบ ภ.พ.30 (ส่งออก CSV)', endpoint: '/reports/pp30', rows: 'boxes', perm: TAX,
+      filters: [
+        { name: 'period', label: 'เดือนภาษี (เว้นว่าง = เดือนนี้)', type: 'month' },
+        { name: 'zeroRated', label: 'ช่อง 2 ยอดขาย 0%', type: 'number' }, { name: 'exempt', label: 'ช่อง 3 ยอดขายยกเว้น', type: 'number' },
+        { name: 'surcharge', label: 'ช่อง 13 เงินเพิ่ม', type: 'number' }, { name: 'penalty', label: 'ช่อง 14 เบี้ยปรับ', type: 'number' },
+      ],
+      columns: [{ key: 'no', label: 'ช่อง' }, { key: 'label', label: 'รายการ' }, acc('amount', 'จำนวนเงิน (บาท)')],
+      report: { subtitle: '{title} — ตรวจกับแบบ ภ.พ.30 ฉบับล่าสุดก่อนยื่น' },
+    },
+    whtPayable: {
+      kind: 'list', title: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย (ภ.ง.ด.3 / ภ.ง.ด.53)', endpoint: '/reports/wht-payable', rows: 'summary', perm: TAX,
+      filters: [
+        { name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }, { name: 'month', label: 'เดือน', type: 'month' },
+        { name: 'form', label: 'แบบ', type: 'select', options: [{ value: 'PND3', label: 'ภ.ง.ด.3 (บุคคลธรรมดา)' }, { value: 'PND53', label: 'ภ.ง.ด.53 (นิติบุคคล)' }] },
+      ],
+      columns: [
+        { key: 'month_th', label: 'เดือน' }, { key: 'form_label', label: 'แบบ' }, { key: 'count', label: 'รายการ', format: 'qty' },
+        acc('base', 'เงินได้ที่จ่าย', true), acc('amount', 'ภาษีที่หักนำส่ง', true),
+        { key: 'due_paper', label: 'กำหนดยื่นกระดาษ', format: 'date', phone: false }, { key: 'due_efiling', label: 'กำหนดยื่น e-Filing', format: 'date' },
+      ],
+      report: { subtitle: 'ปี {year|year} — จากการจ่ายชำระเจ้าหนี้ (กระทบยอดกับ ภ.ง.ด.3/53 ของจัดซื้อ)' },
+      empty: 'ยังไม่มีภาษีหัก ณ ที่จ่ายจากการจ่ายชำระเจ้าหนี้',
+    },
+    whtPayableLines: {
+      kind: 'list', title: 'รายการภาษีหัก ณ ที่จ่ายค้างจ่าย (ตามหนังสือรับรอง 50 ทวิ)', endpoint: '/reports/wht-payable', rows: 'lines', perm: TAX,
+      filters: [
+        { name: 'year', label: 'ปี ค.ศ. (เว้นว่าง = ปีนี้)', type: 'number' }, { name: 'month', label: 'เดือน', type: 'month' },
+        { name: 'form', label: 'แบบ', type: 'select', options: [{ value: 'PND3', label: 'ภ.ง.ด.3' }, { value: 'PND53', label: 'ภ.ง.ด.53' }] },
+      ],
+      columns: [
+        { key: 'entry_date', label: 'วันที่จ่าย', format: 'date' }, { key: 'ref', label: 'ใบสำคัญจ่าย' }, { key: 'partner_name', label: 'ผู้ถูกหักภาษี' },
+        { key: 'party_tax_id', label: 'เลขประจำตัวผู้เสียภาษี', phone: false }, { key: 'form_label', label: 'แบบ' }, { key: 'income_type', label: 'ประเภทเงินได้', phone: false },
+        { key: 'rate_pct', label: 'อัตรา' }, { key: 'certificate_no', label: '50 ทวิ เลขที่' }, acc('base', 'เงินได้', true), acc('amount', 'ภาษีที่หัก', true),
+      ],
+      report: { subtitle: 'ปี {year|year}' },
+      rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
+      empty: 'ไม่มีรายการ',
+    },
+    supplierBills: {
+      kind: 'list', title: 'ใบแจ้งหนี้ผู้ขาย (ตั้งหนี้จากจัดซื้อ)', endpoint: '/supplier-bills', perm: READ,
+      filters: [
+        { name: 'q', label: 'ค้นหาเลขที่ ผู้ขาย ใบกำกับ ใบสั่งซื้อ', type: 'text' },
+        { name: 'kind', label: 'ประเภท', type: 'select', options: [{ value: 'goods', label: 'สินค้า' }, { value: 'service', label: 'บริการ' }, { value: 'expense', label: 'ค่าใช้จ่าย' }] },
+        { name: 'treatment', label: 'การลงบัญชี', type: 'select', options: [{ value: 'posted', label: 'ลงบัญชีค่าใช้จ่าย/บริการ' }, { value: 'matched', label: 'จับคู่กับการรับสินค้า' }, { value: 'vat_reclassed', label: 'ปรับภาษีซื้อ' }] },
+        { name: 'from', label: 'ตั้งแต่วันที่', type: 'date' }, { name: 'to', label: 'ถึงวันที่', type: 'date' },
+      ],
+      columns: [
+        { key: 'bill_date', label: 'วันที่' }, { key: 'bill_no', label: 'เลขที่' }, { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'supplier_invoice_no', label: 'ใบกำกับภาษี' },
+        { key: 'kind_label', label: 'ประเภท' }, { key: 'po_no', label: 'ใบสั่งซื้อ', phone: false }, money('net', 'ก่อน VAT'), money('vat', 'VAT'), money('gross', 'รวม'),
+        { key: 'treatment_label', label: 'การลงบัญชี' }, { key: 'journal_no', label: 'สมุดรายวัน' }, { key: 'note', label: 'หมายเหตุ', phone: false },
+      ],
+      rowLink: { screen: 'jvDetail', idFrom: 'journal_id' },
+      empty: 'ยังไม่มีใบแจ้งหนี้จากจัดซื้อ',
     },
     revenueTrend: {
       kind: 'list', title: 'รายได้ ค่าใช้จ่าย กำไร 6 เดือน', endpoint: '/summary', rows: 'months', perm: REPORT, mobile: true,

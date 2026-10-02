@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { forbidden, unauthorized } from './errors.ts';
+import { forbidden, HttpError, unauthorized } from './errors.ts';
 
 export interface AuthContext {
   tenantId: string;
@@ -8,20 +8,44 @@ export interface AuthContext {
   perms: string[];
   /** display name of the signed-in user (from the token) — use it to fill "requested by" snapshots */
   userName?: string;
+  /** unique token id (`jti`); undefined for tokens issued before wave 9 */
+  tokenId?: string;
+  /** issue time of the token (`iat`, epoch seconds) */
+  issuedAt?: number;
+}
+
+/** Message of the 401 a revoked token gets (error code `session_revoked`; apps send the user to login with a notice). */
+export const SESSION_REVOKED_MESSAGE = 'เซสชันถูกยกเลิก กรุณาเข้าสู่ระบบใหม่';
+export const sessionRevoked = () => new HttpError(401, 'session_revoked', SESSION_REVOKED_MESSAGE);
+
+/** Epoch seconds before which tokens of (tenant, user) are refused, or undefined — see revocation.ts. */
+export type RevokedBefore = (tenantId: string, userId: string) => number | undefined;
+
+export interface SignOptions {
+  /**
+   * Issue time (epoch seconds). Default: now. Identity passes the user's revocation cutoff when it is later than now, so a token
+   * issued in the same second as a logout/password change (cutoff = that second + 1) is not refused.
+   */
+  iat?: number;
 }
 
 const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
 
 /** Sign an HS256 JWT. Identity issues these; every module verifies with the shared JWT_SECRET. */
-export function signToken(secret: string, ctx: AuthContext, ttlSeconds = 60 * 60 * 12): string {
-  const now = Math.floor(Date.now() / 1000);
+export function signToken(secret: string, ctx: AuthContext, ttlSeconds = 60 * 60 * 12, opts: SignOptions = {}): string {
+  const now = Math.max(Math.floor(Date.now() / 1000), opts.iat ?? 0);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, ...(ctx.userName ? { name: ctx.userName } : {}), iat: now, exp: now + ttlSeconds }));
+  const jti = randomBytes(16).toString('base64url');
+  const payload = b64url(JSON.stringify({ sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, ...(ctx.userName ? { name: ctx.userName } : {}), jti, iat: now, exp: now + ttlSeconds }));
   const sig = b64url(createHmac('sha256', secret).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
 }
 
-export function verifyToken(secret: string, token: string): AuthContext {
+/**
+ * Verify signature, expiry and claims. With `revokedBefore` (every service passes its revocation list, SEC-07) a token whose
+ * `iat` is earlier than the user's cutoff is refused with 401 `session_revoked`; a token without `iat` counts as issued at 0.
+ */
+export function verifyToken(secret: string, token: string, revokedBefore?: RevokedBefore): AuthContext {
   const parts = token.split('.');
   if (parts.length !== 3) throw unauthorized('Malformed token');
   const [header, payload, sig] = parts;
@@ -33,7 +57,15 @@ export function verifyToken(secret: string, token: string): AuthContext {
   if (typeof claims.exp !== 'number') throw unauthorized('Invalid token claims');
   if (claims.exp < Math.floor(Date.now() / 1000)) throw unauthorized('Token expired');
   if (!claims.tid || !claims.sub) throw unauthorized('Invalid token claims');
-  return { tenantId: claims.tid, userId: claims.sub, perms: Array.isArray(claims.perms) ? claims.perms : [], ...(typeof claims.name === 'string' && claims.name ? { userName: claims.name } : {}) };
+  const iat = typeof claims.iat === 'number' ? claims.iat : 0;
+  const cutoff = revokedBefore?.(String(claims.tid), String(claims.sub));
+  if (cutoff !== undefined && iat < cutoff) throw sessionRevoked();
+  return {
+    tenantId: claims.tid, userId: claims.sub, perms: Array.isArray(claims.perms) ? claims.perms : [],
+    ...(typeof claims.name === 'string' && claims.name ? { userName: claims.name } : {}),
+    ...(typeof claims.jti === 'string' && claims.jti ? { tokenId: claims.jti } : {}),
+    ...(typeof claims.iat === 'number' ? { issuedAt: claims.iat } : {}),
+  };
 }
 
 /** "*" grants everything, "sales.*" grants every sales permission. */

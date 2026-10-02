@@ -149,6 +149,8 @@ export const STANDARD_CHART: SeedAccount[] = [
   A('53100', 'ค่าทำบัญชีและค่าสอบบัญชี', 'Accounting and audit fees', 'expense', '52000'),
   A('53200', 'ค่าวัสดุสิ้นเปลืองและเครื่องเขียน', 'Supplies and stationery', 'expense', '52000'),
   A('53300', 'ค่าโฆษณาและส่งเสริมการขาย', 'Advertising', 'expense', '52000'),
+  /* wave 9: default account for supplier bills of kind `service` (ค่าจ้างทำของ / ค่าบริการ — usually the ones with WHT 3%) */
+  A('53400', 'ค่าบริการและค่าจ้างทำของ', 'Contract services', 'expense', '52000'),
   A('53900', 'ค่าใช้จ่ายเบ็ดเตล็ด', 'Miscellaneous expenses', 'expense', '52000', { role: 'expense_default' }),
   A('54000', 'ดอกเบี้ยจ่าย', 'Interest expense', 'expense', '50000'),
   A('55000', 'ภาษีเงินได้นิติบุคคล', 'Corporate income tax', 'income_tax', '50000'),
@@ -156,7 +158,11 @@ export const STANDARD_CHART: SeedAccount[] = [
 
 /* ---------------- auto-posting rules ---------------- */
 
-export const POSTED_EVENTS = ['sales.invoiced', 'sales.payment_received', 'purchasing.goods_received', 'purchasing.goods_returned', 'expense.claim_paid', 'payroll.run_paid'] as const;
+export const POSTED_EVENTS = [
+  'sales.invoiced', 'sales.payment_received', 'purchasing.goods_received', 'purchasing.goods_returned', 'expense.claim_paid', 'payroll.run_paid',
+  /* wave 9 */
+  'sales.note_issued', 'purchasing.bill_recorded', 'purchasing.supplier_paid',
+] as const;
 export type PostedEvent = (typeof POSTED_EVENTS)[number];
 
 export const EVENT_TH: Record<string, string> = {
@@ -168,6 +174,9 @@ export const EVENT_TH: Record<string, string> = {
   'purchasing.goods_returned': 'จัดซื้อ — ส่งคืนสินค้า',
   'expense.claim_paid': 'เบิกค่าใช้จ่าย — จ่ายเงิน',
   'payroll.run_paid': 'เงินเดือน — จ่ายเงินเดือน',
+  'sales.note_issued': 'ขาย — ใบลดหนี้ / ใบเพิ่มหนี้',
+  'purchasing.bill_recorded': 'จัดซื้อ — ตั้งหนี้ (ใบแจ้งหนี้ผู้ขาย)',
+  'purchasing.supplier_paid': 'จัดซื้อ — จ่ายชำระเจ้าหนี้',
 };
 
 export interface RuleSeed {
@@ -221,6 +230,24 @@ export const DEFAULT_RULES: RuleSeed[] = [
   /* wave 8 (C2): VAT on deposits — appended for the lazy re-seed */
   { eventType: 'sales.payment_received', leg: 'vat', label: 'ภาษีขาย (ใบกำกับภาษีเงินมัดจำ)', side: 'credit', code: '21200' },
   { eventType: 'sales.invoiced', leg: 'deposit', label: 'เงินมัดจำรับ (หักในใบกำกับภาษี — ฐานภาษีของมัดจำ)', side: 'debit', code: '21700' },
+
+  /* wave 9: credit / debit notes (§86/9, §86/10) */
+  { eventType: 'sales.note_issued', leg: 'ar', label: 'ลูกหนี้การค้า (ลดหนี้ = Cr, เพิ่มหนี้ = Dr)', side: 'both', code: '11300' },
+  { eventType: 'sales.note_issued', leg: 'returns', label: 'รับคืนและส่วนลดจ่าย (ใบลดหนี้ — ก่อน VAT)', side: 'debit', code: '41900' },
+  { eventType: 'sales.note_issued', leg: 'revenue', label: 'รายได้จากการขาย (ใบเพิ่มหนี้ — ก่อน VAT)', side: 'credit', code: '41000' },
+  { eventType: 'sales.note_issued', leg: 'vat', label: 'ภาษีขาย (ลดหนี้ = Dr, เพิ่มหนี้ = Cr)', side: 'both', code: '21200' },
+  /* wave 9: supplier bills (ตั้งหนี้) */
+  { eventType: 'purchasing.bill_recorded', leg: 'service', label: 'ค่าบริการ / ค่าจ้างทำของ (ใบแจ้งหนี้ประเภทบริการ)', side: 'debit', code: '53400' },
+  { eventType: 'purchasing.bill_recorded', leg: 'expense', label: 'ค่าใช้จ่าย (ใบแจ้งหนี้ประเภทค่าใช้จ่าย)', side: 'debit', code: '53900' },
+  { eventType: 'purchasing.bill_recorded', leg: 'vat', label: 'ภาษีซื้อ (ใบกำกับภาษีของผู้ขาย)', side: 'both', code: '11500' },
+  { eventType: 'purchasing.bill_recorded', leg: 'inventory', label: 'สินค้าคงเหลือ (ปรับ VAT ของสินค้าที่รับแล้ว)', side: 'both', code: '11400' },
+  { eventType: 'purchasing.bill_recorded', leg: 'ap', label: 'เจ้าหนี้การค้า (ยอดรวม VAT)', side: 'credit', code: '21100' },
+  /* wave 9: supplier payments with WHT (ภ.ง.ด.3 / ภ.ง.ด.53) */
+  { eventType: 'purchasing.supplier_paid', leg: 'ap', label: 'เจ้าหนี้การค้า (ตัดหนี้)', side: 'debit', code: '21100' },
+  { eventType: 'purchasing.supplier_paid', leg: 'bank', label: 'จ่ายจากเงินฝากธนาคาร (โอน / เช็ค)', side: 'credit', code: '11200' },
+  { eventType: 'purchasing.supplier_paid', leg: 'cash', label: 'จ่ายเป็นเงินสด', side: 'credit', code: '11100' },
+  { eventType: 'purchasing.supplier_paid', leg: 'wht_pnd3', label: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.3 (บุคคลธรรมดา)', side: 'credit', code: '21310' },
+  { eventType: 'purchasing.supplier_paid', leg: 'wht_pnd53', label: 'ภาษีหัก ณ ที่จ่ายค้างจ่าย ภ.ง.ด.53 (นิติบุคคล)', side: 'credit', code: '21320' },
 ];
 
 /** Thai labels of the payroll posting categories (`payroll.run_paid` → `postings[].category`). */

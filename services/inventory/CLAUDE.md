@@ -29,6 +29,9 @@ balance ends below zero, emits `inventory.stock_changed`. Never insert into `sto
   when the item's open holds there exceed what is left on hand, they are reduced (rejected first, then pending, oldest first; `forced_out` when empty)
   and each reduction is logged (`override` / `external`). Untracked stock in the hold warehouse is taken first. Callers that manage holds themselves
   (release, QC verdict, purchase return) pass `holdManaged: true`.
+- `sales.note_issued` (wave 9, credit notes only): lines with `itemId` and `returnToStock > 0` are received into the note's `warehouseCode` (auto-created),
+  stock card ref `sales_note` / note no. (`ref_th` รับคืนตามใบลดหนี้), note `รับคืนจากลูกค้า … ตามใบลดหนี้ CN-… (ใบกำกับ INV-…): <reason>`. Idempotent beyond the kernel's
+  event-id de-duplication (a note already on the stock card is skipped); debit notes / no warehouse / service lines are ignored — never throws.
 - `purchasing.goods_returned` issues from its warehouse; from a hold warehouse it settles that item's `rejected` then `pending` holds oldest first (`returned` when empty), logged as `return`.
 
 ## API
@@ -48,6 +51,7 @@ balance ends below zero, emits `inventory.stock_changed`. Never insert into `sto
   - `purchasing.goods_received` → receipt (auto-creates the warehouse code)
   - `sales.delivered` → issue · `production.completed` → issue components + receive finished good · `maintenance.parts_used` → issue
   - `quality.inspection_created` / `quality.inspection_completed` → QC-HOLD (see Behaviour) · `purchasing.goods_returned` → issue (return to supplier)
+  - `sales.note_issued` → receive goods returned on a credit note (see Behaviour)
   - event-driven issues use `force: true` (record even if stock goes negative; the physical fact already happened)
 - publishes `inventory.low_stock` once when on-hand crosses below a reorder point → Automation alert
 

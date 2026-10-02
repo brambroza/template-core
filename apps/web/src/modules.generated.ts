@@ -8,6 +8,7 @@ import bookingUi from '@erp/svc-booking/ui';
 import contractsUi from '@erp/svc-contracts/ui';
 import costingUi from '@erp/svc-costing/ui';
 import crmUi from '@erp/svc-crm/ui';
+import etaxUi from '@erp/svc-etax/ui';
 import expenseUi from '@erp/svc-expense/ui';
 import helpdeskUi from '@erp/svc-helpdesk/ui';
 import hrUi from '@erp/svc-hr/ui';
@@ -22,4 +23,4 @@ import purchasingUi from '@erp/svc-purchasing/ui';
 import qualityUi from '@erp/svc-quality/ui';
 import salesUi from '@erp/svc-sales/ui';
 
-export const moduleUis: ModuleUi[] = [accountingUi, approvalsUi, assetsUi, automationUi, bookingUi, contractsUi, costingUi, crmUi, expenseUi, helpdeskUi, hrUi, identityUi, inventoryUi, maintenanceUi, masterDataUi, payrollUi, productionUi, projectsUi, purchasingUi, qualityUi, salesUi];
+export const moduleUis: ModuleUi[] = [accountingUi, approvalsUi, assetsUi, automationUi, bookingUi, contractsUi, costingUi, crmUi, etaxUi, expenseUi, helpdeskUi, hrUi, identityUi, inventoryUi, maintenanceUi, masterDataUi, payrollUi, productionUi, projectsUi, purchasingUi, qualityUi, salesUi];
