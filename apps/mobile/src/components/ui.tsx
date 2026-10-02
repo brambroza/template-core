@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { formatValue, statusTone, type Format } from '@erp/ui-schema';
 import { c, radius, toneColor } from '../lib/theme';
@@ -17,18 +17,22 @@ export function Button({ label, onPress, tone = 'default', disabled, busy }: { l
   );
 }
 
+/** The current module's own status wording (ModuleUi.statusLabels). */
+export const LabelsContext = createContext<Record<string, string> | undefined>(undefined);
+
 export function ValueText({ value, format }: { value: unknown; format?: Format }) {
+  const labels = useContext(LabelsContext);
   if (format === 'status' && typeof value === 'string' && value) {
     const color = toneColor[statusTone(value)];
     return (
       <View style={s.status}>
         <View style={[s.dot, { backgroundColor: color }]} />
-        <Text style={[s.value, { color }]}>{formatValue(value, 'status')}</Text>
+        <Text style={[s.value, { color }]}>{formatValue(value, 'status', labels)}</Text>
       </View>
     );
   }
   if (format === 'qr') return null; // payment QR is printed from the web app
-  return <Text style={s.value}>{formatValue(value, format)}</Text>;
+  return <Text style={s.value}>{formatValue(value, format, labels)}</Text>;
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: ViewStyle }) {

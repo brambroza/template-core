@@ -10,6 +10,7 @@ export default defineUi({
   label: 'ซ่อมบำรุง',
   glyph: 'บ',
   icon: 'wrench',
+  statusLabels: { in_progress: 'กำลังซ่อม' },
   menu: [
     { label: 'งานซ่อม', screen: 'woList' },
     { label: 'แจ้งซ่อม', screen: 'woNew' },

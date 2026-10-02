@@ -1,25 +1,36 @@
 {
   "id": "assets",
   "name": "Fixed Assets",
-  "nameTh": "ทรัพย์สิน",
+  "nameTh": "ทะเบียนทรัพย์สิน",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Fixed Assets module",
+  "description": "Fixed asset register with QR labels: categories with useful life, custodian and location history, monthly straight-line depreciation (schedule, book value, monthly report by category), repair log, disposal with gain/loss against book value, and physical audits by location using QR scans (found / missing / unexpected, missing can be written off as lost).",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
     {
-      "key": "assets.record.read",
-      "label": "ดูทรัพย์สิน"
+      "key": "assets.asset.read",
+      "label": "ดูทะเบียนทรัพย์สินและค่าเสื่อม"
     },
     {
-      "key": "assets.record.write",
-      "label": "จัดการทรัพย์สิน"
+      "key": "assets.asset.write",
+      "label": "ลงทะเบียน/แก้ไขทรัพย์สิน หมวด และโอนผู้ถือครอง"
+    },
+    {
+      "key": "assets.repair.report",
+      "label": "แจ้งซ่อมและบันทึกการซ่อมทรัพย์สิน"
+    },
+    {
+      "key": "assets.asset.dispose",
+      "label": "ตัดจำหน่ายทรัพย์สิน"
+    },
+    {
+      "key": "assets.audit.run",
+      "label": "ตรวจนับทรัพย์สิน (สแกน ปิดรอบ ตัดเป็นสูญหาย)"
     }
   ]
 }

@@ -4,22 +4,27 @@
   "nameTh": "ควบคุมคุณภาพ",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Quality Control module",
+  "description": "ISO 9001-friendly quality control: inspection plans per item and stage (incoming, in-process, final) with sampling and measured / pass-fail / visual checkpoints, inspections with automatic pass / fail / conditional verdicts, non-conformance reports (NCR) with 5-Why root cause and disposition, corrective actions with due dates and verification, and pass-rate / defect / supplier-quality reports. Incoming inspections are queued automatically when Purchasing receives goods, final inspections when Production completes an order.",
   "requires": [
     "identity",
     "master-data"
   ],
-  "enhancedBy": [],
+  "enhancedBy": [
+    "purchasing",
+    "production"
+  ],
   "publishes": [],
-  "subscribes": [],
+  "subscribes": [
+    "purchasing.goods_received",
+    "production.completed"
+  ],
   "permissions": [
-    {
-      "key": "quality.record.read",
-      "label": "ดูควบคุมคุณภาพ"
-    },
-    {
-      "key": "quality.record.write",
-      "label": "จัดการควบคุมคุณภาพ"
-    }
+    { "key": "quality.plan.read", "label": "ดูแผนการตรวจ" },
+    { "key": "quality.plan.write", "label": "จัดการแผนการตรวจ (จุดตรวจ/การสุ่มตัวอย่าง)" },
+    { "key": "quality.inspection.read", "label": "ดูงานตรวจคุณภาพและรายงานคุณภาพ" },
+    { "key": "quality.inspection.record", "label": "สร้างงานตรวจและบันทึกผลตรวจ" },
+    { "key": "quality.ncr.read", "label": "ดู NCR และการแก้ไข" },
+    { "key": "quality.ncr.write", "label": "ออก NCR และวิเคราะห์สาเหตุ" },
+    { "key": "quality.ncr.close", "label": "ปิด NCR และทวนสอบการแก้ไข" }
   ]
 }

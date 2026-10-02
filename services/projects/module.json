@@ -1,10 +1,10 @@
 {
   "id": "projects",
   "name": "Projects & Timesheets",
-  "nameTh": "โครงการ",
+  "nameTh": "โครงการ งาน และ timesheet",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Projects & Timesheets module",
+  "description": "Projects for service companies, contractors, IT/consulting teams and internal work: budget, members with hourly cost rates, milestones, a task board (todo → doing → review → done) with 'my tasks', and weekly timesheets with submit/approve. Project detail shows progress, hours vs estimate and labour cost vs budget.",
   "requires": [
     "identity",
     "master-data"
@@ -14,12 +14,24 @@
   "subscribes": [],
   "permissions": [
     {
-      "key": "projects.record.read",
-      "label": "ดูโครงการ"
+      "key": "projects.project.read",
+      "label": "ดูโครงการและงาน"
     },
     {
-      "key": "projects.record.write",
-      "label": "จัดการโครงการ"
+      "key": "projects.project.write",
+      "label": "สร้าง/แก้ไขโครงการ สมาชิก และ milestone"
+    },
+    {
+      "key": "projects.task.write",
+      "label": "สร้างงานและอัปเดตสถานะงาน"
+    },
+    {
+      "key": "projects.timesheet.log",
+      "label": "ลงชั่วโมงทำงานของตนเอง"
+    },
+    {
+      "key": "projects.timesheet.approve",
+      "label": "ดูและอนุมัติ timesheet ของทุกคน"
     }
   ]
 }

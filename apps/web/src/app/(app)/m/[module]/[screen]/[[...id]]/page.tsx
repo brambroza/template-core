@@ -6,6 +6,7 @@ import { hasPerm } from '@erp/ui-schema';
 import { DetailView } from '@/components/DetailView';
 import { FormView } from '@/components/FormView';
 import { ListView } from '@/components/ListView';
+import { LabelsContext } from '@/components/Value';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 
@@ -21,11 +22,13 @@ export default function ScreenPage() {
   const id = p.id?.[0] ? decodeURIComponent(p.id[0]) : undefined;
   const key = `${p.module}/${p.screen}/${id ?? ''}`;
   return (
+    <LabelsContext.Provider value={mod.statusLabels}>
     <Suspense fallback={<p className="muted">กำลังโหลด…</p>}>
       {screen.kind === 'list' && <ListView key={key} module={p.module} screen={screen} id={id} />}
       {screen.kind === 'form' && <FormView key={key} module={p.module} screen={screen} id={id} />}
       {screen.kind === 'detail' && <DetailView key={key} module={p.module} screen={screen} id={id} />}
     </Suspense>
+    </LabelsContext.Provider>
   );
 }
 

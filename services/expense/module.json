@@ -4,22 +4,33 @@
   "nameTh": "เบิกค่าใช้จ่าย",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Expense Claims module",
+  "description": "Employee expense claims and cash advances: categories with per-person monthly limits (warn, never block) and receipt rules, numbered claims (EXP-2569-0001) with VAT lines, submit / approve / reject / return / pay (transfer, cash, cheque), cash advances (ADV-…) cleared against claims with the amount to return or pay more, printable claim form with baht text, spend by category, monthly trend and an outstanding-to-pay report.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
     {
-      "key": "expense.record.read",
-      "label": "ดูเบิกค่าใช้จ่าย"
+      "key": "expense.claim.read",
+      "label": "ดูใบเบิกและเงินทดรองของตนเอง"
     },
     {
-      "key": "expense.record.write",
-      "label": "จัดการเบิกค่าใช้จ่าย"
+      "key": "expense.claim.write",
+      "label": "สร้าง/แก้ไข/ส่งใบเบิกและขอเงินทดรอง"
+    },
+    {
+      "key": "expense.claim.approve",
+      "label": "อนุมัติ/ไม่อนุมัติ/ส่งกลับใบเบิกและเงินทดรอง (เห็นของทุกคน)"
+    },
+    {
+      "key": "expense.claim.pay",
+      "label": "บันทึกจ่ายเงินและเคลียร์เงินทดรอง (เห็นของทุกคน)"
+    },
+    {
+      "key": "expense.category.write",
+      "label": "ตั้งค่าหมวดค่าใช้จ่ายและวงเงิน"
     }
   ]
 }

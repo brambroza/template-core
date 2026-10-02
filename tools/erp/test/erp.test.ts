@@ -81,13 +81,13 @@ describe('scaffold + verify', () => {
   it('creates a new module that follows the rules', () => {
     const root = join(tmp, 'scaffold');
     cpSync(REPO_ROOT, root, { recursive: true, filter: (s) => !/node_modules|\.git$|\.next|[\\/]dist[\\/]/.test(s) });
-    scaffoldModule(root, 'quality', 'Quality Control', 'ควบคุมคุณภาพ');
-    expect(existsSync(join(root, 'services', 'quality', 'src', 'ui.ts'))).toBe(true);
+    scaffoldModule(root, 'training', 'Training', 'ฝึกอบรม');
+    expect(existsSync(join(root, 'services', 'training', 'src', 'ui.ts'))).toBe(true);
     expect(verify(root).errors).toContain('apps/web: module registry is out of date — run `pnpm erp ui-sync`');
     syncUi(root, loadManifests(root).map((m) => m.id));
     const r = verify(root);
-    expect(r.errors).toEqual(['quality: no price in catalog/catalog.json']);
-    expect(() => scaffoldModule(root, 'quality', 'x', 'x')).toThrow(/already exists/);
+    expect(r.errors).toEqual(['training: no price in catalog/catalog.json']);
+    expect(() => scaffoldModule(root, 'training', 'x', 'x')).toThrow(/already exists/);
   });
 
   it('flags modules that import each other', () => {

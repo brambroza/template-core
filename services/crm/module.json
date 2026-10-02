@@ -1,10 +1,10 @@
 {
   "id": "crm",
   "name": "CRM & Quotations",
-  "nameTh": "ลูกค้าสัมพันธ์",
+  "nameTh": "ลูกค้าสัมพันธ์และใบเสนอราคา",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "CRM & Quotations module",
+  "description": "Sales pipeline for B2B SMEs: leads from website/LINE/phone/trade shows, conversion to opportunities with stage, probability and weighted forecast, follow-up activities (calls, meetings, visits) with overdue tracking, and printable Thai quotations with discounts, VAT and revisions. Accepting a quotation marks its opportunity won.",
   "requires": [
     "identity",
     "master-data"
@@ -13,13 +13,11 @@
   "publishes": [],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "crm.record.read",
-      "label": "ดูลูกค้าสัมพันธ์"
-    },
-    {
-      "key": "crm.record.write",
-      "label": "จัดการลูกค้าสัมพันธ์"
-    }
+    { "key": "crm.lead.read", "label": "ดูลีดและโอกาสขาย" },
+    { "key": "crm.lead.write", "label": "จัดการลีดและโอกาสขาย" },
+    { "key": "crm.activity.write", "label": "บันทึกกิจกรรมและการเยี่ยมลูกค้า" },
+    { "key": "crm.quote.read", "label": "ดูใบเสนอราคา" },
+    { "key": "crm.quote.write", "label": "สร้าง แก้ไข และส่งใบเสนอราคา" },
+    { "key": "crm.quote.decide", "label": "บันทึกผลใบเสนอราคา (ลูกค้าตอบรับ/ปฏิเสธ)" }
   ]
 }

@@ -4,22 +4,21 @@
   "nameTh": "บุคคลและลงเวลา",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "HR & Attendance module",
+  "description": "Employee register (departments, positions, probation/resignation, link to a login), work calendar (holidays, start time, grace minutes, Saturday work), leave types with yearly quotas, leave requests (LV-…) with working-day calculation, balance check and approval, and mobile check-in/check-out with GPS, late minutes, a daily board and a monthly attendance summary. No national ID numbers are stored.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "hr.record.read",
-      "label": "ดูบุคคลและลงเวลา"
-    },
-    {
-      "key": "hr.record.write",
-      "label": "จัดการบุคคลและลงเวลา"
-    }
+    { "key": "hr.employee.read", "label": "ดูข้อมูลพนักงาน ใบลา และภาพรวมฝ่ายบุคคล" },
+    { "key": "hr.employee.write", "label": "จัดการพนักงาน แผนก และตำแหน่ง" },
+    { "key": "hr.setup.write", "label": "ตั้งค่าวันหยุด เวลาเข้างาน และประเภทการลา" },
+    { "key": "hr.leave.request", "label": "ยื่นใบลาของตนเอง" },
+    { "key": "hr.leave.approve", "label": "อนุมัติ/ไม่อนุมัติใบลา และยื่นลาแทนพนักงาน" },
+    { "key": "hr.attendance.self", "label": "ลงเวลาเข้า-ออกงานของตนเอง" },
+    { "key": "hr.attendance.read", "label": "ดูเวลาทำงานรายวันและสรุปรายเดือน" },
+    { "key": "hr.attendance.manage", "label": "บันทึกเวลาแทนพนักงาน/ย้อนหลัง" }
   ]
 }

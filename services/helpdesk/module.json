@@ -1,25 +1,22 @@
 {
   "id": "helpdesk",
-  "name": "Helpdesk",
-  "nameTh": "แจ้งปัญหา",
+  "name": "Helpdesk & Service",
+  "nameTh": "แจ้งปัญหาและบริการ",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Helpdesk module",
+  "description": "Ticketing for internal IT/facility requests or customer service: tickets from web, phone, LINE, email or walk-in with categories, priority-based SLA due times and overdue flags, assignment to technicians, public replies and internal notes, resolve/close with satisfaction rating, canned replies and a searchable knowledge base.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "helpdesk.record.read",
-      "label": "ดูแจ้งปัญหา"
-    },
-    {
-      "key": "helpdesk.record.write",
-      "label": "จัดการแจ้งปัญหา"
-    }
+    { "key": "helpdesk.ticket.create", "label": "แจ้งปัญหาและติดตามเรื่องของตัวเอง" },
+    { "key": "helpdesk.ticket.read", "label": "ดูเรื่องแจ้งปัญหาทั้งหมด" },
+    { "key": "helpdesk.ticket.work", "label": "รับงาน ตอบกลับ และแก้ไขปัญหา" },
+    { "key": "helpdesk.setup.write", "label": "ตั้งค่าหมวดหมู่ SLA และข้อความตอบกลับสำเร็จรูป" },
+    { "key": "helpdesk.kb.read", "label": "อ่านฐานความรู้" },
+    { "key": "helpdesk.kb.write", "label": "เขียนและเผยแพร่บทความฐานความรู้" }
   ]
 }

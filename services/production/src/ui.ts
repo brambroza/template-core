@@ -10,6 +10,7 @@ export default defineUi({
   label: 'วางแผนการผลิต',
   glyph: 'ผ',
   icon: 'factory',
+  statusLabels: { completed: 'ผลิตเสร็จ' },
   menu: [{ label: 'ใบสั่งผลิต', screen: 'moList' }, { label: 'สูตรการผลิต (BOM)', screen: 'bomList' }],
   commands: [
     { id: 'mo', label: 'สั่งผลิต', example: 'ผลิต FG-BRACKET 500', keywords: ['ผลิต', 'สั่งผลิต', 'mo'], screen: 'moNew', perm: 'production.order.write',

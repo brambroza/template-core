@@ -4,22 +4,33 @@
   "nameTh": "อนุมัติออนไลน์",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "e-Approval module",
+  "description": "Online approval (e-Approval / e-Memo) for any organisation: request types with a default multi-step approver chain, numbered requests (APV-2569-0001) routed approver by approver, approve / reject / return-for-edit / cancel / comment with a full audit trail, a personal inbox on web and mobile, and a dashboard of decision speed.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
     {
-      "key": "approvals.record.read",
-      "label": "ดูอนุมัติออนไลน์"
+      "key": "approvals.request.read",
+      "label": "ดูใบขออนุมัติของตนเองและที่ต้องอนุมัติ"
     },
     {
-      "key": "approvals.record.write",
-      "label": "จัดการอนุมัติออนไลน์"
+      "key": "approvals.request.write",
+      "label": "สร้าง/แก้ไข/ส่ง/ยกเลิกใบขออนุมัติของตนเอง"
+    },
+    {
+      "key": "approvals.request.approve",
+      "label": "อนุมัติ/ไม่อนุมัติ/ส่งกลับแก้ไข ในขั้นที่ได้รับมอบหมาย"
+    },
+    {
+      "key": "approvals.request.admin",
+      "label": "ผู้ดูแลงานอนุมัติ (เห็นทุกใบ อนุมัติแทนได้ทุกขั้น)"
+    },
+    {
+      "key": "approvals.type.write",
+      "label": "ตั้งค่าประเภทคำขอและสายอนุมัติ"
     }
   ]
 }

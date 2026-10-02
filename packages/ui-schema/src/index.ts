@@ -271,6 +271,8 @@ export interface ModuleUi {
   screens: Record<string, Screen>;
   widgets?: Widget[];
   notifications?: NotificationsSpec;
+  /** this module's wording for shared status/label codes, e.g. { in_progress: 'กำลังซ่อม' } */
+  statusLabels?: Record<string, string>;
   search?: SearchSpec[];
   commands?: CommandSpec[];
 }
@@ -395,8 +397,8 @@ export function matches(record: unknown, cond?: Condition): boolean {
 export const STATUS_TH: Record<string, string> = {
   draft: 'ร่าง', approved: 'อนุมัติแล้ว', partially_received: 'รับบางส่วน', received: 'รับครบ', cancelled: 'ยกเลิก',
   confirmed: 'ยืนยันแล้ว', delivered: 'ส่งของแล้ว', invoiced: 'ออกใบกำกับแล้ว',
-  planned: 'วางแผน', released: 'ปล่อยงาน', completed: 'ผลิตเสร็จ',
-  open: 'รอดำเนินการ', in_progress: 'กำลังซ่อม', done: 'เสร็จแล้ว',
+  planned: 'วางแผน', released: 'ปล่อยงาน', completed: 'เสร็จสิ้น',
+  open: 'รอดำเนินการ', in_progress: 'กำลังดำเนินการ', done: 'เสร็จแล้ว',
   running: 'เดินเครื่อง', down: 'เครื่องเสีย', retired: 'เลิกใช้',
   receive: 'รับเข้า', issue: 'จ่ายออก', transfer_in: 'โอนเข้า', transfer_out: 'โอนออก', adjust: 'ปรับปรุง',
   breakdown: 'แจ้งเสีย', pm: 'PM', purchase: 'จากการซื้อ', manual: 'กำหนดเอง',
@@ -405,15 +407,29 @@ export const STATUS_TH: Record<string, string> = {
   failed: 'ล้มเหลว', skipped: 'ข้าม',
   inventory: 'คลังสินค้า', purchasing: 'จัดซื้อ', sales: 'ขาย', production: 'ผลิต', maintenance: 'ซ่อมบำรุง',
   info: 'ข้อมูล', warn: 'เตือน', stop: 'ด่วน', ok: 'สำเร็จ',
+  // workflow statuses shared by the business modules
+  pending: 'รออนุมัติ', submitted: 'ส่งแล้ว', rejected: 'ไม่อนุมัติ', returned: 'ส่งกลับแก้ไข', paid: 'จ่ายแล้ว',
+  requested: 'ขอเบิก', cleared: 'เคลียร์แล้ว', sent: 'ส่งแล้ว', accepted: 'ตอบรับ', expired: 'หมดอายุ',
+  new: 'ใหม่', contacted: 'ติดต่อแล้ว', qualified: 'มีโอกาส', converted: 'แปลงเป็นโอกาสขาย', lost: 'สูญหาย/ไม่สำเร็จ',
+  prospect: 'สนใจ', proposal: 'เสนอราคา', negotiation: 'ต่อรอง', won: 'ปิดการขายได้',
+  waiting: 'รอลูกค้า', resolved: 'แก้ไขแล้ว', closed: 'ปิดแล้ว', investigating: 'กำลังตรวจสอบ', action: 'ดำเนินการแก้ไข', verified: 'ยืนยันผลแล้ว',
+  active: 'ใช้งาน', probation: 'ทดลองงาน', resigned: 'ลาออก', present: 'มาทำงาน', late: 'สาย', leave: 'ลา', absent: 'ขาดงาน', not_in: 'ยังไม่ลงเวลา', off: 'วันหยุด',
+  self: 'ตนเอง', admin: 'ผู้ดูแล',
+  planning: 'วางแผน', on_hold: 'พักไว้', todo: 'ยังไม่เริ่ม', doing: 'กำลังทำ', review: 'รอตรวจ',
+  in_use: 'ใช้งานอยู่', in_storage: 'เก็บในคลัง', in_repair: 'ส่งซ่อม', disposed: 'จำหน่ายแล้ว', missing: 'ไม่พบ', unexpected: 'ไม่อยู่ในรายการ',
+  sold: 'ขาย', scrapped: 'ทำลาย', donated: 'บริจาค', straight_line: 'เส้นตรง', none: 'ไม่คิด',
+  low: 'ต่ำ', normal: 'ปกติ', high: 'สูง', urgent: 'ด่วนมาก',
+  pass: 'ผ่าน', fail: 'ไม่ผ่าน', conditional: 'ผ่านแบบมีเงื่อนไข', minor: 'เล็กน้อย', major: 'สำคัญ', critical: 'วิกฤต',
+  room: 'ห้อง', vehicle: 'รถ', equipment: 'อุปกรณ์',
 };
 
 export type Tone = 'neutral' | 'progress' | 'ok' | 'warn' | 'stop';
 
 export function statusTone(status: string): Tone {
-  if (['received', 'delivered', 'invoiced', 'completed', 'done', 'running', 'ok'].includes(status)) return 'ok';
-  if (['approved', 'confirmed', 'released', 'in_progress'].includes(status)) return 'progress';
-  if (['partially_received', 'warn', 'skipped'].includes(status)) return 'warn';
-  if (['cancelled', 'down', 'retired', 'failed', 'stop'].includes(status)) return 'stop';
+  if (['received', 'delivered', 'invoiced', 'completed', 'done', 'running', 'ok', 'paid', 'accepted', 'won', 'resolved', 'closed', 'verified', 'pass', 'present', 'cleared', 'converted', 'in_use'].includes(status)) return 'ok';
+  if (['approved', 'confirmed', 'released', 'in_progress', 'submitted', 'sent', 'doing', 'review', 'active', 'investigating', 'action', 'proposal', 'negotiation', 'qualified', 'contacted'].includes(status)) return 'progress';
+  if (['partially_received', 'warn', 'skipped', 'pending', 'returned', 'waiting', 'late', 'on_hold', 'conditional', 'in_repair', 'probation', 'expired', 'high'].includes(status)) return 'warn';
+  if (['cancelled', 'down', 'retired', 'failed', 'stop', 'rejected', 'lost', 'fail', 'absent', 'missing', 'urgent', 'critical', 'disposed', 'resigned'].includes(status)) return 'stop';
   return 'neutral';
 }
 
@@ -429,7 +445,7 @@ export function formatDate(value: string, withTime = false): string {
     : { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function formatValue(value: unknown, format: Format = 'text'): string {
+export function formatValue(value: unknown, format: Format = 'text', labels?: Record<string, string>): string {
   if (value === null || value === undefined || value === '') return '—';
   switch (format) {
     case 'money': return money.format(Number(value));
@@ -442,7 +458,7 @@ export function formatValue(value: unknown, format: Format = 'text'): string {
     }
     case 'datetime': return formatDate(String(value), true);
     case 'status':
-    case 'label': return STATUS_TH[String(value)] ?? String(value);
+    case 'label': return labels?.[String(value)] ?? STATUS_TH[String(value)] ?? String(value);
     case 'boolean': return value ? 'ใช่' : 'ไม่ใช่';
     case 'list': return Array.isArray(value) ? value.join(', ') || '—' : String(value);
     default: return String(value);

@@ -1,19 +1,57 @@
-# hr — HR & Attendance (บุคคลและลงเวลา)
+# hr — HR & Attendance (บุคคลและลงเวลา) · feature
 
-Read the root CLAUDE.md first. This file is the module-level brief.
-
-## What this module does
-TODO: describe the business process in 3–5 lines (who uses it, which documents, which statuses).
+Employee register, leave with quotas and approval, mobile check-in/out with late minutes. Requires only `identity`
+(an employee can be linked to a login via `user_id` so "me" endpoints and self-service work). Never store national ID numbers here.
 
 ## Data
-- `records` — placeholder table from the scaffold. Rename/replace it in a NEW migration file.
+- `departments` (code, name, manager_name, active) · `positions` (code, name)
+- `employees` (code, prefix นาย/นาง/นางสาว, first/last name, nickname, department, position, start/birth date, phone, email,
+  `active | probation | resigned` + `resigned_on`, `user_id` = identity user, unique per tenant)
+- `holidays` (holiday_date, name) · `work_settings` (one row per tenant: start_time, end_time, grace_minutes, saturday_workday)
+- `leave_types` (code, name, `days_per_year` null = unlimited, allow_half_day, active, sort_order)
+- `leave_requests` (`LV-2569-0001`, employee, type, from/to, half_day, `days` = working days, reason, `pending → approved | rejected | cancelled`, decided_by/at/note)
+- `attendance` (one row per employee per `work_date`: check_in_at/out_at, late_minutes, early_minutes, work_minutes, GPS in/out, note, `source self | admin`)
+
+## Behaviour
+- Time zone is Asia/Bangkok (`src/calendar.ts`). Working day = Mon–Fri (+ Sat if `saturday_workday`) and not a holiday.
+- Leave `days` counts working days only; half day = 0.5 and only for a single day of a type with `allow_half_day`.
+  One request may not cross a calendar year. Overlapping pending/approved leave → 409.
+- Balance per type and year (by `from_date`): quota, used (approved), pending, remaining = quota − used − pending.
+  A request bigger than remaining → **400** `วันลาคงเหลือไม่พอ: ลากิจ ปี 2570 คงเหลือ 1 วัน แต่ขอลา 2 วัน`.
+- Without `employeeId` a request/check-in is for the employee linked to the token's user; for someone else you need
+  `hr.leave.approve` (leave) or `hr.attendance.manage` (attendance). Approvers cannot approve their own leave (409).
+- Staff cancel their own *pending* leave; approvers can also cancel *approved* leave.
+- Check-in uses server time; `late_minutes` = minutes after start_time when beyond `grace_minutes` (0 on non-working days).
+  Only `hr.attendance.manage` may pass `at` or `date`+`time` (forgotten scans; recorded as `source = admin`).
+  Check-out closes the latest open check-in within 20 h (night shifts), stores work and early-leave minutes.
+- Resigning cancels the employee's pending leave after the last day; resigned staff cannot check in or file leave.
+- `POST /leave-types/defaults` seeds Thai Labour Protection Act types (ลาป่วย 30, ลากิจ 3, ลาพักร้อน 6, ลาคลอด 98, ลาบวช, ลารับราชการทหาร, ลาไม่รับค่าจ้าง); idempotent.
 
 ## API
-- GET /records, GET /records/:id, POST /records
+- `GET/POST /departments` · `GET/PATCH /departments/:id` · `GET/POST /positions`
+- `GET /employees` (`?q=` code/name/nickname, `status` active|probation|resigned|current, `departmentId`, `positionId`) · `POST /employees`
+- `GET/PATCH /employees/:id` · `POST /employees/:id/confirm` (probation → active) · `POST /employees/:id/resign { resignedOn }`
+- `GET /employees/:id/balance?year=` (ค.ศ. or พ.ศ.) · `GET /employees/:id/attendance?month=YYYY-MM`
+- `POST /employees/:id/check-in | check-out { date, time, note }` (perm `hr.attendance.manage`)
+- `GET/POST /holidays` (`?year=`) · `DELETE /holidays/:id` · `GET/PUT /schedule`
+- `GET/POST /leave-types` · `GET/PATCH /leave-types/:id` · `POST /leave-types/defaults`
+- `POST /leave-requests` · `GET /leave-requests` (`q`, status, employeeId, departmentId, leaveTypeId, from, to) · `GET /leave-requests/pending`
+- `GET /leave-requests/:id` (with balance) · `POST /leave-requests/:id/approve { note } | reject { note* } | cancel { note }`
+- `POST /attendance/check-in | check-out { lat, lng, note, employeeId?, at?/date+time? }`
+- `GET /attendance?date=&status=&departmentId=&q=` (daily board: present/late/leave/not_in/absent/off) · `GET /attendance/monthly?month=`
+- `GET /me` (linked employee, today, balance, recent leave) · `GET /me/leave-requests` · `GET /summary`
 
-## Screens (src/ui.ts)
-- records (list) → recordNew (form) → record (detail); all marked mobile
+Permissions: `hr.employee.read|write`, `hr.setup.write`, `hr.leave.request|approve`, `hr.attendance.self|read|manage`.
 
 ## Events
-- publishes: (none yet) — add to module.json + @erp/contracts first
-- subscribes: (none yet)
+- publishes: none · subscribes: none
+- Candidates (not added): `hr.leave_requested` / `hr.leave_decided` (automation alerts to the approver/employee), `hr.employee_resigned` (identity deactivation).
+
+## Screens
+`src/ui.ts`: self-service `me` (check-in/out buttons, balance, recent leave), `checkIn`/`checkOut`/`leaveNew`/`myLeaves` (mobile),
+approver inbox `leaveInbox` (approve/reject per row, mobile), `leaveList`, `leaveDetail` (flow, printable), daily board and monthly summary,
+employees (+edit, confirm, resign, record time for them), departments, positions, leave types, holidays, schedule.
+Widgets: kpi (present/late/on leave/pending), leave pipeline, approved-leave trend. ⌘K: `ลา ป่วย ไข้หวัด`, `ลงเวลา`, `ออกงาน`, `พนักงาน EMP-001`.
+
+## Extension ideas
+Shifts per department, OT requests, payroll export of the monthly summary, geofence check on GPS, carry-over of annual leave, leave attachments (medical certificate URL).

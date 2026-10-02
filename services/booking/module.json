@@ -4,22 +4,17 @@
   "nameTh": "จองห้องและรถ",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Room & Vehicle Booking module",
+  "description": "Book meeting rooms, company vehicles and shared equipment (BK-…): conflict-free time slots, capacity check, optional approval per resource, a daily availability board, vehicle trip log with mileage, distance and fuel cost, and weekly utilisation for the dashboard.",
   "requires": [
-    "identity",
-    "master-data"
+    "identity"
   ],
   "enhancedBy": [],
   "publishes": [],
   "subscribes": [],
   "permissions": [
-    {
-      "key": "booking.record.read",
-      "label": "ดูจองห้องและรถ"
-    },
-    {
-      "key": "booking.record.write",
-      "label": "จัดการจองห้องและรถ"
-    }
+    { "key": "booking.resource.read", "label": "ดูห้อง รถ อุปกรณ์ และตารางการจอง" },
+    { "key": "booking.resource.write", "label": "จัดการทะเบียนห้อง รถ และอุปกรณ์" },
+    { "key": "booking.book.create", "label": "จองห้อง/รถ/อุปกรณ์ และยกเลิกหรือปิดงานการจองของตนเอง" },
+    { "key": "booking.book.approve", "label": "อนุมัติ/ไม่อนุมัติการจอง และจัดการการจองของทุกคน" }
   ]
 }
