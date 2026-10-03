@@ -13,7 +13,7 @@ import {
   type AuthContext, type Client, type ServiceDefinition,
 } from '@erp/kernel';
 import {
-  bahtText, buildRdPrepText, buildWhtCsv, checkWhtLine, documentTotals, formatThaiMonth, isValidThaiTaxId, RD_PREP_COLUMNS, RD_PREP_DISCLAIMER,
+  bahtText, buildRdPrepText, buildWhtCsv, checkWhtLine, documentTotals, formatThaiDate, formatThaiMonth, isValidThaiTaxId, RD_PREP_COLUMNS, RD_PREP_DISCLAIMER,
   round, thaiSlashDate, toTis620, WHT_FORM_TH, WHT_INCOME_TYPE_CODES, WHT_INCOME_TYPES, whtDueDates, whtFormFor, whtTotals, type WhtForm, type WhtReturnRow,
 } from '@erp/thai';
 
@@ -370,7 +370,7 @@ async function returnSummary(c: Client, period: string, form: WhtForm) {
     id: `${period}_${form}`, period, period_label: formatThaiMonth(period), form, form_label: WHT_FORM_TH[form],
     title: `${WHT_FORM_TH[form]} เดือน${formatThaiMonth(period)}`,
     due_paper: due.paper, due_efiling: due.efiling,
-    due_text: `ยื่นแบบกระดาษภายใน ${due.paper} · ยื่นทางอินเทอร์เน็ต (e-Filing) ภายใน ${due.efiling} — วันครบกำหนดตรงวันหยุดให้ตรวจประกาศกรมสรรพากร`,
+    due_text: `ยื่นแบบกระดาษภายใน ${formatThaiDate(due.paper)} · ยื่นทางอินเทอร์เน็ต (e-Filing) ภายใน ${formatThaiDate(due.efiling)} — วันครบกำหนดตรงวันหยุดให้ตรวจประกาศกรมสรรพากร`,
     payees: t.payees, lines: t.lines, total_amount: t.amount, total_tax: t.tax, total_tax_text: bahtText(t.tax),
     filing_note: 'ระบบนี้ไม่ได้ยื่นแบบให้ — นำยอดและใบแนบไปยื่นเองทางกระดาษ หรือ RD Prep / e-Filing ของกรมสรรพากร',
     rd_note: RD_PREP_DISCLAIMER,

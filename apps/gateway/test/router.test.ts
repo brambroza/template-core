@@ -17,6 +17,11 @@ async function fakeModule(m: ModuleManifest): Promise<string> {
   const app = Fastify();
   received[m.id] = [];
   app.get('/_manifest', async () => m);
+  app.get('/export', async (_req, reply) => {
+    reply.header('content-type', 'text/plain; charset=utf-8').header('content-disposition', 'attachment; filename="x.txt"');
+    reply.header('x-rd-prep-layout', 'unverified').header('x-internal-secret', 'nope');
+    return 'a|b';
+  });
   app.post('/_events', async (req) => {
     if (req.headers['x-internal-token'] !== TOKEN) return { status: 'bad token' };
     received[m.id].push((req.body as { type: string }).type);
@@ -69,5 +74,16 @@ describe('event router', () => {
     expect(routeTargets(ms, { type: 'identity.tokens_revoked', source: 'identity' }).map((m) => m.id)).toEqual(['a', 'b']);
     expect(routeTargets(ms, { type: 'x.y', source: 'b' }).map((m) => m.id)).toEqual(['a']);
     expect(routeTargets(ms, { source: 'b' })).toEqual([]);
+  });
+});
+
+describe('proxy', () => {
+  it('passes the RD Prep "unverified" marker and download headers through, but not arbitrary module headers', async () => {
+    const res = await gw.app.inject({ method: 'GET', url: '/api/sales/export' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['x-rd-prep-layout']).toBe('unverified');
+    expect(res.headers['content-disposition']).toContain('x.txt');
+    expect(res.headers['x-internal-secret']).toBeUndefined();
+    expect(res.body).toBe('a|b');
   });
 });

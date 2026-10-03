@@ -7325,7 +7325,7 @@
    "service"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -7340,7 +7340,7 @@
    "service"
   ],
   "priority": "P2",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8557,7 +8557,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8814,7 +8814,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -8826,7 +8826,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8838,7 +8838,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "M"
  },
  {
@@ -8881,12 +8881,12 @@
   "id": "F0683",
   "module": "tax",
   "area": "ภาษีอิเล็กทรอนิกส์",
-  "name": "e-Tax Invoice & e-Receipt ลงลายมือชื่อดิจิทัล (XML)",
+  "name": "e-Tax Invoice ลงลายมือชื่อดิจิทัล (XML ใบกำกับภาษี ใบลดหนี้ ใบเพิ่มหนี้) — e-Receipt ยังไม่ทำ",
   "industries": [
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "L"
  },
  {
@@ -12790,7 +12790,7 @@
    "all"
   ],
   "priority": "P1",
-  "status": "planned",
+  "status": "done",
   "effort": "S"
  },
  {
@@ -13522,5 +13522,140 @@
   "priority": "P1",
   "status": "planned",
   "effort": "S"
+ },
+ {
+  "id": "F1052",
+  "module": "platform",
+  "area": "ความปลอดภัย",
+  "name": "ยกเลิก token ทุกโมดูลเมื่อออกจากระบบ เปลี่ยนรหัสผ่าน ปิดผู้ใช้ หรือเปลี่ยนบทบาท",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1053",
+  "module": "identity",
+  "area": "ผู้ใช้",
+  "name": "เปลี่ยนรหัสผ่านของตัวเอง (ต้องใส่รหัสเดิม) แล้วออกจากระบบทุกอุปกรณ์",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1054",
+  "module": "identity",
+  "area": "ผู้ใช้",
+  "name": "ผู้ดูแลบังคับออกจากระบบผู้ใช้รายคน",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1055",
+  "module": "accounting",
+  "area": "ภาษี",
+  "name": "บันทึกการยื่น ภ.พ.30 (วันที่ ช่องทาง เลขที่ใบเสร็จ) และ ภ.พ.30 เพิ่มเติม พร้อมคำนวณเงินเพิ่มเมื่อยื่นช้า",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1056",
+  "module": "accounting",
+  "area": "ภาษี",
+  "name": "รายงานภาษีหัก ณ ที่จ่ายค้างจ่ายแยก ภ.ง.ด.3/53 รายเดือน กระทบยอดกับบัญชี",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1057",
+  "module": "purchasing",
+  "area": "เจ้าหนี้",
+  "name": "จ่ายชำระผู้ขายหลายใบในครั้งเดียว พร้อมหักภาษี ณ ที่จ่ายหลายประเภทเงินได้",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1058",
+  "module": "purchasing",
+  "area": "ภาษี",
+  "name": "ส่งออกใบแนบ ภ.ง.ด.3/53 เป็น CSV และไฟล์ข้อความสำหรับ RD Prep (ต้องตรวจรูปแบบกับ RD Prep ก่อนยื่นจริง)",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1059",
+  "module": "tax",
+  "area": "e-Tax",
+  "name": "ยกเลิกและออกใบกำกับภาษีแทนฉบับเดิม (รหัสเหตุผล TIVC) โดยอ้างอิงฉบับเดิมใน XML",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1060",
+  "module": "inventory",
+  "area": "คลัง",
+  "name": "รับสินค้าคืนเข้าคลังอัตโนมัติจากใบลดหนี้",
+  "industries": [
+   "factory",
+   "trading",
+   "service",
+   "office"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
  }
 ]

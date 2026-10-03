@@ -219,7 +219,7 @@ export default defineUi({
         { key: 'postcode', label: 'รหัสไปรษณีย์' }, { key: 'email', label: 'อีเมล' }, { key: 'phone', label: 'โทรศัพท์' },
         { key: 'invoice_type_label', label: 'ประเภทใบกำกับภาษีเริ่มต้น' },
         { key: 'has_certificate', label: 'มีใบรับรองดิจิทัล', format: 'boolean', section: 'ใบรับรองดิจิทัล (.p12)' },
-        { key: 'cert_subject', label: 'ผู้ถือใบรับรอง' }, { key: 'certificate.issuer', label: 'ออกโดย' },
+        { key: 'cert_subject', label: 'ผู้ถือใบรับรอง' }, { key: 'cert_warnings', label: 'ข้อควรตรวจ', format: 'list' }, { key: 'certificate.issuer', label: 'ออกโดย' },
         { key: 'cert_not_after', label: 'หมดอายุ', format: 'datetime' }, { key: 'cert_expired', label: 'หมดอายุแล้ว', format: 'boolean' },
         { key: 'password_source_label', label: 'รหัสผ่านใบรับรอง' },
         { key: 'help', label: 'วิธีส่ง e-Tax', section: 'ขอบเขตของโมดูลนี้' },

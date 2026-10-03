@@ -251,6 +251,8 @@ describe('monthly ภ.ง.ด.3 / ภ.ง.ด.53', () => {
     ]);
     expect(list[2]).toMatchObject({ due_paper: '2026-10-07', due_efiling: '2026-10-15', period_label: 'กันยายน 2569', form_label: 'ภ.ง.ด.53' });
     const r = (await x.api('GET', '/wht/returns/2026-09_PND53')).body;
+    // UAT wave 9 UX: the deadline is written the way the accountant reads it (Buddhist era), not 2026-10-07
+    expect(r.due_text).toContain('ยื่นแบบกระดาษภายใน 7 ตุลาคม 2569 · ยื่นทางอินเทอร์เน็ต (e-Filing) ภายใน 15 ตุลาคม 2569');
     expect(r).toMatchObject({ title: 'ภ.ง.ด.53 เดือนกันยายน 2569', payees: 2, lines: 2, total_amount: 22345.67, total_tax: 670.37, total_tax_text: 'หกร้อยเจ็ดสิบบาทสามสิบเจ็ดสตางค์' });
     expect(r.rows.map((w: any) => [w.seq, w.tax_id, w.branch, w.paid_date, w.income_type, w.rate_percent, w.amount, w.tax, w.condition])).toEqual([
       [1, JURISTIC, '00000', '2026-09-05', 'ค่าบริการ', 3, 10000, 300, '1'],

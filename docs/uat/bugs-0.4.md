@@ -143,3 +143,62 @@ and 50 ทวิ; LINE link code (Thai digits) → personal push only to the lin
   accounting posts on it. Tests: `services/purchasing/test/lock-dates.test.ts`, `services/accounting/test/vat-register.test.ts`.
 - Originally: `purchasing.goods_received` had no date and PO receive took none, so goods received on the 30th but keyed on the 1st post next month
   (already listed under Gaps in services/accounting/CLAUDE.md). Needs `receivedDate` on receive + in the event.
+
+---
+
+## Wave 9 — credit/debit notes, supplier bills & WHT paid, ภ.พ.30, e-Tax, token revocation
+
+UAT run 2026-10-03 on a fresh installation of identity, master-data, inventory, purchasing, sales, accounting, etax (tenant `uat-tax`), in
+Chromium as the role that does each step (accounting / purchasing / sales / warehouse / executive templates, admin). Cases UAT-65 … UAT-77 in
+`docs/uat/cases.json`, run by `tests/uat/tax.test.ts`; expected values are worked out by hand in the case text. Result: 13/13 pass after the fixes below.
+
+| ID | Module | Severity | Status | Summary |
+| --- | --- | --- | --- | --- |
+| BUG-0.4-W9-01 | gateway (purchasing) | Medium | Fixed | The ภ.ง.ด.3/53 RD Prep export's `x-rd-prep-layout: unverified` marker is dropped by the gateway — callers through `/api` never see that the layout is unverified |
+| UX-W9-01 | purchasing | Low | Fixed | ภ.ง.ด.3/53 "กำหนดยื่น" written as ISO dates (2026-10-07) instead of Thai dates |
+| UX-W9-02 | purchasing | Low | Fixed | RD Prep text label tells the accountant to "download from API /wht/returns/:id/export?format=rd" |
+| UX-W9-03 | etax | Medium | Fixed | A certificate of another company (tax ID not in the subject) only warns in the upload reply; the settings screen then shows nothing, and signing reports "ผ่าน" |
+| UX-W9-04 | accounting | Low | Fixed | Two menu entries look like the VAT return: "ภาษีมูลค่าเพิ่ม (ภ.พ.30)" (summary report) next to "แบบ ภ.พ.30 (ยื่นรายเดือน)" |
+| UX-W9-05 | etax / web | Medium | Open | Uploading the .p12 means pasting base64 made with `certutil -encode` — no file picker |
+| UX-W9-06 | purchasing / web | Low | Open | No button downloads the RD Prep .txt (TIS-620) from the ภ.ง.ด. screen; the accountant copies the on-screen text |
+
+### BUG-0.4-W9-01 — RD Prep "unverified" header lost at the gateway · gateway · Medium · Fixed
+- Steps: accounting pays a 10,000 + VAT service bill with 3% WHT → `GET /api/purchasing/wht/returns/<P>_PND53/export?format=rd&encoding=utf8`.
+- Expected: header `x-rd-prep-layout: unverified` (purchasing sets it; its unit test, which calls the module directly, passes). Actual: absent through the gateway.
+- Cause: the gateway forwards only an allow-list of module response headers (`FORWARDED_RESPONSE_HEADERS`), which did not include it.
+- Fix: added `x-rd-prep-layout` to the allow-list (other module headers are still not forwarded).
+- Test: `apps/gateway/test/router.test.ts` › proxy (marker + download headers passed, an arbitrary header not); UAT-70.
+
+### UX-W9-01 — ภ.ง.ด. deadlines in ISO dates · purchasing · Low · Fixed
+- The ภ.ง.ด.53 return screen / print showed "ยื่นแบบกระดาษภายใน 2026-10-07 · … e-Filing ภายใน 2026-10-15". `due_text` now uses `formatThaiDate`
+  ("7 ตุลาคม 2569"); `due_paper` / `due_efiling` stay ISO for the list columns (formatted there). Test: `services/purchasing/test/payables.test.ts`; UAT-70.
+
+### UX-W9-02 — RD Prep label points at an API · purchasing · Low · Fixed
+- Label now: "ข้อความไฟล์ RD Prep (คัดลอกทั้งหมดไปบันทึกเป็นไฟล์ .txt — ถ้า RD Prep แสดงภาษาไทยเพี้ยน ให้บันทึกแบบ ANSI / TIS-620)". See UX-W9-06.
+
+### UX-W9-03 — certificate of another company not flagged on the settings screen · etax · Medium · Fixed
+- Steps: e-Tax settings for 0105560001235, upload a .p12 whose subject is serialNumber=0105561234567 → dialog closes; settings show "มีใบรับรองดิจิทัล: ใช่"
+  and nothing else; documents sign and verify "ผ่าน" — the RD would reject them.
+- Fix: `GET /settings` returns `cert_warnings` (computed from the stored subject vs tax ID, so it stays until a matching certificate is uploaded); the
+  settings screen shows it as "ข้อควรตรวจ". The upload reply's `warnings` is the same list.
+- Test: `services/etax/test/service.test.ts` (settings keep the warning); UAT-73.
+
+### UX-W9-04 — two "ภ.พ.30" menu entries · accounting · Low · Fixed
+- The summary report menu entry is now "สรุปภาษีซื้อ-ขายรายเดือน"; "แบบ ภ.พ.30 (ยื่นรายเดือน)" is the return with boxes 1–16 and the filing record.
+
+### UX-W9-05 — .p12 upload is a base64 paste · etax / web · Medium · Open
+- `ui-schema` has no file field type (only `image`), so the dialog asks for base64 text plus a `certutil` hint — hard for an accountant. UAT-73 drives
+  this dialog in the browser with the fixture's base64. Needs a generic `file` field (web + mobile renderer) that reads the file into base64.
+
+### UX-W9-06 — no RD Prep file download on screen · purchasing / web · Low · Open
+- The TIS-620 .txt (and the CSV) is available from `GET /wht/returns/:id/export`, but a detail screen cannot declare a download action; the web
+  app's only download is the client-side list CSV. Copying the on-screen text produces UTF-8 unless the user saves as ANSI. Needs a generic
+  "download" action kind in `ui-schema` (authorised fetch → save file).
+
+Verified OK (no bug): ใบลดหนี้ amounts (original / correct / difference / VAT on the difference, cumulative cap, return quantity cap 15 of 20),
+stock back into MAIN with the CN on the stock card, AR outstanding 16,050 as of month end, ใบเพิ่มหนี้ 86/9 print; bill from PO matched to the receipt
+(no second input VAT), duplicate supplier invoice 409, buyer cannot pay (SoD); WHT 3% on the pre-VAT base, 50 ทวิ copy 1 with ☑ ภ.ง.ด.53 and baht
+text; journals for CN / DN / service bill / payment on their document dates, WHT payable = ภ.ง.ด.53; ภ.พ.30 boxes incl. the credit note, filing
+record, excess 3,150 carried into box 10 next month; e-Tax XML / XAdES signature / "sent" record lock; logout revokes every token across modules
+(401 `session_revoked` via the gateway), change password keeps this browser, admin force logout.
+Note: the UAT seed now passes `itemName` on order lines (as the web lookup does) — without it the credit note line printed the item code twice.

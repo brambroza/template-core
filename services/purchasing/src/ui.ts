@@ -430,7 +430,7 @@ export default defineUi({
         { key: 'total_tax_text', label: 'ตัวอักษร' }, { key: 'due_text', label: 'กำหนดยื่น' },
         { key: 'filing_note', label: 'การยื่นแบบ', print: false, section: 'ส่งออกไฟล์' }, { key: 'rd_note', label: 'ไฟล์ RD Prep', print: false },
         { key: 'rd_columns', label: 'คอลัมน์ไฟล์ RD Prep (คั่นด้วย |)', print: false },
-        { key: 'rd_text', label: 'ข้อความไฟล์ RD Prep (คัดลอกไปบันทึกเป็น .txt หรือดาวน์โหลดจาก API /wht/returns/:id/export?format=rd)', print: false },
+        { key: 'rd_text', label: 'ข้อความไฟล์ RD Prep (คัดลอกทั้งหมดไปบันทึกเป็นไฟล์ .txt — ถ้า RD Prep แสดงภาษาไทยเพี้ยน ให้บันทึกแบบ ANSI / TIS-620)', print: false },
       ],
       lines: [{ path: 'rows', label: 'ใบแนบ', columns: RETURN_COLUMNS }],
     },

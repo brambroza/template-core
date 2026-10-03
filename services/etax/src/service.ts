@@ -94,6 +94,12 @@ async function loadSettings(c: Client): Promise<any | null> {
   return (await c.query('select * from etax_settings limit 1')).rows[0] ?? null;
 }
 
+/** UAT wave 9 (UX-W9): the holder of the uploaded certificate should be this seller (its tax ID in the subject). */
+function certWarnings(r: any | null): string[] {
+  if (!r?.p12 || !r.tax_id || String(r.cert_subject ?? '').includes(r.tax_id)) return [];
+  return [`ใบรับรองนี้ไม่มีเลขผู้เสียภาษี ${r.tax_id} ในชื่อผู้ถือ — ตรวจว่าเป็นใบรับรองของบริษัทนี้ (ใบกำกับที่ลงลายมือชื่อด้วยใบรับรองของบริษัทอื่น กรมสรรพากรไม่รับ)`];
+}
+
 function settingsView(r: any | null, env: NodeJS.ProcessEnv) {
   const seller = sellerFrom(r);
   const problems = sellerProblems(seller);
@@ -113,6 +119,8 @@ function settingsView(r: any | null, env: NodeJS.ProcessEnv) {
     } : null,
     has_certificate: !!r?.p12,
     cert_subject: r?.cert_subject ?? null, cert_not_after: r?.cert_not_after ?? null, cert_expired: expired,
+    // kept on the settings screen (not only in the upload reply): a certificate of another company signs "valid" XML the RD will reject
+    cert_warnings: certWarnings(r),
     password_source: env.ETAX_P12_PASSWORD ? 'env' : 'per_session',
     password_source_label: env.ETAX_P12_PASSWORD ? 'ตั้งไว้ในตัวแปรระบบ ETAX_P12_PASSWORD' : 'กรอกทุกครั้งที่ลงลายมือชื่อ (ไม่บันทึก)',
     boundary: BOUNDARY,
@@ -409,9 +417,7 @@ export const definition: ServiceDefinition = {
           [file, b.fileName || 'certificate.p12', info.subject, info.issuer, info.serial, info.notBefore, info.notAfter, info.fingerprint256, a.userName ?? null],
         );
         const v = settingsView(await loadSettings(c), k.env);
-        const taxId = cur.tax_id as string | null;
-        const warnings = taxId && !info.subject.includes(taxId) ? [`ใบรับรองนี้ไม่มีเลขผู้เสียภาษี ${taxId} ในชื่อผู้ถือ — ตรวจว่าเป็นใบรับรองของบริษัทนี้`] : [];
-        return { ...v, warnings };
+        return { ...v, warnings: v.cert_warnings };
       });
     });
 

@@ -45,6 +45,7 @@ sent_* (tax invoices only) ─replace→ replaced   + a NEW draft document (sour
 ## API (all JSON unless noted)
 - GET /settings (read, write or settings perm) · PUT /settings (`etax.settings.write`)
 - POST /settings/certificate `{ fileName?, dataBase64, password? }` · DELETE /settings/certificate (`etax.settings.write`)
+  (settings carry `cert_warnings` — e.g. the certificate's subject does not contain the seller's tax ID — shown as "ข้อควรตรวจ"; the upload reply's `warnings` is the same list)
 - GET /meta, GET /summary (`incomplete`, `draft`, `ready`, `sent` counts)
 - GET /documents `?status=…|open|sent&kind=&from=&to=&q=` · GET /documents/:id (`etax.document.read`)
 - GET /documents/:id/xml `[?signed=1]` → application/xml download · GET /documents/:id/verification (read)

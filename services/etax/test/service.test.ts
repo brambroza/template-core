@@ -186,6 +186,8 @@ describe('seller settings and certificate', () => {
     expect(up.body.cert_subject).toContain('ETAX TEST SIGNER');
     // the fixture certificate belongs to 0105561234567, not this seller → a warning, not a refusal
     expect(up.body.warnings.join(' ')).toContain(SELLER_TAX);
+    // … and the warning stays on the settings screen afterwards (UAT wave 9 UX finding)
+    expect((await x.api('GET', '/settings')).body.cert_warnings.join(' ')).toContain(SELLER_TAX);
     const all = JSON.stringify((await x.api('GET', '/settings')).body);
     expect(all).not.toContain(P12_PASSWORD);
     expect(all).not.toContain(p12b64('signer-3des').slice(0, 40)); // the file itself is never sent back

@@ -100,7 +100,7 @@ export default defineUi({
     { label: 'บัญชีแยกประเภท', screen: 'ledger' },
     { label: 'งบกำไรขาดทุน', screen: 'profitLoss' },
     { label: 'งบแสดงฐานะการเงิน', screen: 'balanceSheet' },
-    { label: 'ภาษีมูลค่าเพิ่ม (ภ.พ.30)', screen: 'vatReport' },
+    { label: 'สรุปภาษีซื้อ-ขายรายเดือน', screen: 'vatReport' },
     { label: 'รายงานภาษีขาย/ภาษีซื้อ', screen: 'vatLines' },
     { label: 'แบบ ภ.พ.30 (ยื่นรายเดือน)', screen: 'pp30List' },
     { label: 'ตัวเลข ภ.พ.30 ช่อง 1–16 (CSV)', screen: 'pp30Boxes' },

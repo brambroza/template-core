@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.1 — 2026-10-03 · ภาษีไทยครบรอบเดือน + ยกเลิกเซสชัน
+
+**In numbers:** 22 modules (new: `etax`) · 931 automated tests · **77 UAT cases (UAT-01..77)** all passing in Chromium · roadmap 553 of 1,060 functions done.
+
+**Tax documents and returns**
+- `sales`: ใบลดหนี้ (CN, §86/10) and ใบเพิ่มหนี้ (DN, §86/9) against a tax invoice — legal reason lists, original/correct value,
+  VAT on the difference (exclusive and inclusive invoices, satang-exact), credit limited to the invoice value, receivables and aging net of
+  notes (credit balances shown, not aged), goods returned to stock through `inventory`.
+- `purchasing`: supplier bills (ตั้งหนี้) against a PO or for services/expenses, payables aging, supplier payments (PV) with withholding tax
+  by income type, 50 ทวิ certificates (two copies), monthly ภ.ง.ด.3 / ภ.ง.ด.53 return with CSV and an RD Prep text export.
+- `accounting`: posts credit/debit notes, supplier bills (no double-counted input VAT on goods) and payments with WHT payable per form;
+  ภ.พ.30 in boxes 1–16 with carry-forward, filing records and ภ.พ.30 เพิ่มเติม, late-filing surcharge hint, WHT payable report.
+- `etax` (new, sellable add-on): ETDA e-Tax Invoice XML (ขมธอ. 3-2560) for 388/T02/80/81, XAdES-BES signing with the company's own .p12
+  (password never stored), delivery status recorded by the user, cancel and replacement invoices (TIVC codes).
+
+**Security**
+- SEC-07 fixed: `identity.tokens_revoked` reaches every module's kernel; logout, change password, disabling a user, changing roles and an
+  admin "force logout" revoke older tokens (identity immediately, other modules ~1 s, other instances ≤ 30 s). Change-password screen.
+
+**Not done — what the system does NOT do (say this to customers)**
+- Nothing is filed or submitted for the customer: ภ.พ.30 and ภ.ง.ด.3/53 are filed by the user on rd.go.th and recorded here; e-Tax files
+  are sent by the user via e-Tax Invoice by Email or a service provider. No PDF/A-3 for e-Tax by Email yet; no e-Receipt.
+- Must be checked before relying on it: the RD Prep text layout, ภ.พ.30 box numbering, the e-Tax XML against ETDA's XSD/validator.
+- Open UX: the .p12 is uploaded as pasted base64 (no file picker yet); the RD Prep .txt is copied from the screen (no download button).
+
 ## 0.3.0 — 2026-10-03 · "ทั้งบริษัท" — office, service and finance modules
 
 **In numbers:** 21 modules (2 core + 19 feature, up from 9) · ~700 automated test cases in 82 test files (unit, permission,

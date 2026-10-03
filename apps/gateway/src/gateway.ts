@@ -11,8 +11,11 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { isKernelSubscription, safeEqual, toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
 
-/** module response headers passed through to the client */
-export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy', 'x-erp-session-token'] as const;
+/**
+ * module response headers passed through to the client. `x-rd-prep-layout` is purchasing's "this RD Prep text layout is
+ * unverified" marker on the ภ.ง.ด.3/53 export (UAT wave 9, BUG-0.4-W9-01: it was dropped here, so callers never saw it).
+ */
+export const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy', 'x-erp-session-token', 'x-rd-prep-layout'] as const;
 
 /**
  * Modules an event goes to: those whose manifest subscribes to it, plus — for kernel subscriptions such as
