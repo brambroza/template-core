@@ -30,7 +30,7 @@ export default function Login() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.chrome }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.concrete }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
         <View style={{ backgroundColor: c.paper, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: c.rule }}>
           <BrandBar height={6} />

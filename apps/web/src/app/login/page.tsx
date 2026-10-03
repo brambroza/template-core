@@ -31,9 +31,10 @@ function FloorArt() {
         const pts = (p: readonly (readonly [number, number])[]) => p.map((q) => q.join(',')).join(' ');
         return (
           <g key={i} className={`blk${hot ? ' hot' : ''}`}>
-            <polygon points={pts(left)} fill={hot ? '#3F3AC4' : '#121B30'} />
-            <polygon points={pts(right)} fill={hot ? '#6B4FD6' : '#18233D'} />
-            <polygon points={pts(top)} fill={hot ? 'url(#hot-top)' : '#22304F'} stroke="#2E3D61" strokeWidth={hot ? 0 : 0.6} />
+            {/* plain blocks take their colours from CSS (--blk-*: light by default); AI-hue "hot" blocks keep the gradient */}
+            <polygon points={pts(left)} className={hot ? undefined : 'f-left'} fill={hot ? '#4F46E5' : undefined} />
+            <polygon points={pts(right)} className={hot ? undefined : 'f-right'} fill={hot ? '#7C5CF0' : undefined} />
+            <polygon points={pts(top)} className={hot ? undefined : 'f-top'} fill={hot ? 'url(#hot-top)' : undefined} />
           </g>
         );
       })}

@@ -1,5 +1,7 @@
 /* ERP web — brand v2: "trustworthy tech + this is AI".
-   Layout: navy icon rail + module menu panel + work area with a command bar on top.
+   Light theme for everyone: the OS dark preference is NOT followed (no theme switch ships); the dark tokens below apply
+   only when something explicitly sets <html data-theme="dark">.
+   Layout: light icon rail (navy icons, blue "you are here") + module menu panel + work area with a command bar on top.
    Trust: navy ink on calm cool neutrals, ONE confident blue (--accent) for primary actions and "you are here".
    AI: the indigo → violet → cyan gradient (--ai-*) appears ONLY on real AI/automation surfaces
    (⌘K command bar, assistant, "สรุปให้หน่อย", AI receipt fill, bots). Never on ordinary buttons, tables or status chips.
@@ -36,11 +38,15 @@
   --warn-text: #9A5B00;
   --stop-text: #C2302A;
   --info-text: #1E40D8;
-  /* the navy rail / login art: dark in both modes */
-  --chrome: #0B1324;
-  --chrome-2: #131C33;
-  --chrome-ink: #A3AEC4;
-  --chrome-line: rgba(255, 255, 255, .10);
+  /* the icon rail: light, navy icons, blue active state */
+  --chrome: #FFFFFF;
+  --chrome-2: #F6F7FB;
+  --chrome-ink: #4A5568;
+  --chrome-ink-hover: #0B1324;
+  --chrome-hover: #EEF1F7;
+  --chrome-line: #E3E7EF;
+  /* login art blocks (isometric) */
+  --blk-top: #F4F6FA; --blk-left: #BDC6D7; --blk-right: #D4DBE7; --blk-edge: #BAC3D4;
   /* AI signal */
   --ai-1: #4F46E5;
   --ai-2: #8B5CF6;
@@ -64,28 +70,6 @@
   --font: 'IBM Plex Sans Thai', 'Noto Sans Thai', 'Sarabun', system-ui, sans-serif;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #070B16; --surface: #0E1526; --surface-2: #141D33; --ink: #E8EDF7; --ink-2: #A3AEC4; --ink-3: #6B7690;
-    --line: #1C2740; --line-strong: #2A3757;
-    --accent: #5B7CFF; --accent-deep: #3D5EF5; --accent-ink: #FFFFFF; --accent-soft: rgba(91, 124, 255, .16); --accent-text: #8EA4FF;
-    --btn-primary: #3D5EF5; --btn-primary-hover: #2F4FE0;
-    --ok: #2FC488; --warn: #EFA53A; --stop: #F2675C; --info: #5B7CFF;
-    --ok-soft: rgba(47, 196, 136, .14); --warn-soft: rgba(239, 165, 58, .15); --stop-soft: rgba(242, 103, 92, .15); --info-soft: rgba(91, 124, 255, .16);
-    --ok-text: #4FD9A0; --warn-text: #F3B95E; --stop-text: #FF8A80; --info-text: #8EA4FF;
-    --chrome: #050913; --chrome-2: #0E1526; --chrome-ink: #8D99B3; --chrome-line: rgba(255, 255, 255, .08);
-    --ai-1: #6366F1; --ai-2: #A78BFA; --ai-3: #22D3EE;
-    --ai-gradient: linear-gradient(120deg, #6366F1 0%, #A78BFA 45%, #22D3EE 100%);
-    --ai-glow: 0 0 0 1px rgba(167, 139, 250, .30), 0 8px 30px rgba(99, 102, 241, .30);
-    --ai-glow-soft: 0 6px 24px -8px rgba(99, 102, 241, .45);
-    --ai-wash: linear-gradient(120deg, rgba(99, 102, 241, .12) 0%, rgba(167, 139, 250, .08) 45%, rgba(34, 211, 238, .09) 100%);
-    --ai-text: #A5A8FF;
-    --floor-plate: #18223A; --floor-edge: #2C3A5C; --machine: #8796B5;
-    --float: 0 1px 2px rgba(0, 0, 0, .35), 0 16px 40px rgba(0, 0, 0, .55);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
-    color-scheme: dark;
-  }
-}
 :root[data-theme='dark'] {
   --bg: #070B16; --surface: #0E1526; --surface-2: #141D33; --ink: #E8EDF7; --ink-2: #A3AEC4; --ink-3: #6B7690;
   --line: #1C2740; --line-strong: #2A3757;
@@ -94,7 +78,8 @@
   --ok: #2FC488; --warn: #EFA53A; --stop: #F2675C; --info: #5B7CFF;
   --ok-soft: rgba(47, 196, 136, .14); --warn-soft: rgba(239, 165, 58, .15); --stop-soft: rgba(242, 103, 92, .15); --info-soft: rgba(91, 124, 255, .16);
   --ok-text: #4FD9A0; --warn-text: #F3B95E; --stop-text: #FF8A80; --info-text: #8EA4FF;
-  --chrome: #050913; --chrome-2: #0E1526; --chrome-ink: #8D99B3; --chrome-line: rgba(255, 255, 255, .08);
+  --chrome: #050913; --chrome-2: #0E1526; --chrome-ink: #8D99B3; --chrome-ink-hover: #FFFFFF; --chrome-hover: rgba(255, 255, 255, .07); --chrome-line: rgba(255, 255, 255, .08);
+  --blk-top: #22304F; --blk-left: #121B30; --blk-right: #18233D; --blk-edge: #2E3D61;
   --ai-1: #6366F1; --ai-2: #A78BFA; --ai-3: #22D3EE;
   --ai-gradient: linear-gradient(120deg, #6366F1 0%, #A78BFA 45%, #22D3EE 100%);
   --ai-glow: 0 0 0 1px rgba(167, 139, 250, .30), 0 8px 30px rgba(99, 102, 241, .30);
@@ -141,14 +126,16 @@ a { color: inherit; }
   position: relative; width: 42px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 12px;
   color: var(--chrome-ink); background: none; border: none; cursor: pointer; text-decoration: none;
 }
-.rail a:hover, .rail button:hover { color: #fff; background: rgba(255, 255, 255, .07); }
-.rail a.is-active { color: #fff; background: var(--accent); box-shadow: 0 6px 16px -6px rgba(47, 91, 255, .7); }
+.rail a:hover, .rail button:hover { color: var(--chrome-ink-hover); background: var(--chrome-hover); }
+.rail a.is-active { color: var(--accent-deep); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.rail a.is-active::before { content: ''; position: absolute; left: -11px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
 /* bots/automation module + the ⌘K assistant: AI gradient strokes, gradient tile when active */
-.rail .is-ai svg, .rail .rail-cmd svg { stroke: url(#ai-stroke-bright); }
+.rail .is-ai svg, .rail .rail-cmd svg { stroke: url(#ai-stroke); }
 .rail a.is-ai.is-active { background: var(--ai-gradient); box-shadow: var(--ai-glow-soft); }
+.rail a.is-ai.is-active::before { background: var(--ai-gradient); }
 .rail a.is-ai.is-active svg { stroke: #fff; }
-.rail .rail-cmd { background: rgba(255, 255, 255, .04); box-shadow: inset 0 0 0 1px rgba(167, 139, 250, .28); }
-.rail .rail-cmd:hover { background: rgba(139, 92, 246, .16); }
+.rail .rail-cmd { background: var(--ai-wash); box-shadow: inset 0 0 0 1px rgba(139, 92, 246, .30); }
+.rail .rail-cmd:hover { background: rgba(139, 92, 246, .12); }
 .rail a:focus-visible, .rail button:focus-visible { outline-color: var(--accent); outline-offset: -2px; }
 .rail-sep { flex: none; width: 22px; height: 1px; margin: 5px 0; background: var(--chrome-line); }
 .rail-cmd { margin-top: 6px; }
@@ -501,13 +488,18 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
 
 /* ---------- login ---------- */
 .login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); background: var(--surface); }
-.login-art { position: relative; overflow: hidden; background: radial-gradient(90% 70% at 85% 10%, rgba(79, 70, 229, .22), transparent 60%), radial-gradient(70% 60% at 10% 100%, rgba(6, 182, 212, .12), transparent 60%), var(--chrome); color: #E8EDF7; display: flex; flex-direction: column; justify-content: flex-end; padding: 48px; }
-.login-art .wordmark { position: absolute; top: 36px; left: 48px; z-index: 1; color: #fff; }
-.login-art .wordmark-text small { color: var(--chrome-ink); }
+.login-art { position: relative; overflow: hidden; isolation: isolate; border-right: 1px solid var(--line); background: radial-gradient(80% 60% at 88% 8%, rgba(79, 70, 229, .12), transparent 62%), radial-gradient(60% 50% at 4% 100%, rgba(6, 182, 212, .10), transparent 62%), radial-gradient(50% 40% at 40% 40%, rgba(139, 92, 246, .06), transparent 70%), linear-gradient(180deg, #FFFFFF 0%, var(--bg) 55%, var(--surface-2) 100%); color: var(--ink); display: flex; flex-direction: column; justify-content: flex-end; padding: 48px; }
+.login-art .wordmark { position: absolute; top: 36px; left: 48px; z-index: 1; color: var(--ink); }
+.login-art .wordmark-text small { color: var(--ink-3); }
 .login-art h2 { font-size: clamp(1.8rem, 3vw, 2.6rem); line-height: 1.2; max-width: 14ch; }
-.login-art p { color: #A3AEC4; max-width: 40ch; }
-.login-art .ai-line { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 4px 12px 4px 8px; border-radius: 999px; font-size: .82rem; color: #E8EDF7; background: rgba(255, 255, 255, .05); box-shadow: inset 0 0 0 1px rgba(167, 139, 250, .35); }
-.login-art .grid3d { position: absolute; inset: 0; opacity: .9; }
+.login-art p { color: var(--ink-2); max-width: 40ch; }
+.login-art .ai-line { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 4px 12px 4px 8px; border-radius: 999px; font-size: .82rem; font-weight: 500; color: var(--ai-text); background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--ai-gradient) border-box; border: 1px solid transparent; box-shadow: 0 6px 20px rgba(79, 70, 229, .10); }
+.login-art .grid3d { position: absolute; inset: 0; z-index: -1; opacity: .95; -webkit-mask-image: linear-gradient(180deg, #000 45%, transparent 85%); mask-image: linear-gradient(180deg, #000 45%, transparent 85%); }
+.grid3d .f-top { fill: var(--blk-top); stroke: var(--blk-edge); stroke-width: .6; }
+.grid3d .f-left { fill: var(--blk-left); }
+.grid3d .f-right { fill: var(--blk-right); }
+/* phones: the art sits behind the headline — keep it a quiet texture so the text stays crisp */
+@media (max-width: 900px) { .login-art .grid3d { opacity: .35; } }
 .login-pane { display: grid; place-items: center; padding: 32px 20px; }
 .login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; }
 .login-mark { display: block; }

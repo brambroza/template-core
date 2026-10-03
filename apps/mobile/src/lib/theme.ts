@@ -2,8 +2,9 @@ import { useColorScheme } from 'react-native';
 
 /**
  * Same palette as the web app (apps/web/src/app/globals.css), brand v2: navy ink on calm cool neutrals,
- * one confident trust blue (`signal`) for primary actions. `light` = :root, `dark` = the `prefers-color-scheme: dark`
- * values. The app follows the phone's setting. (Field names are kept from v1 so screens did not change.)
+ * one confident trust blue (`signal`) for primary actions. `light` = :root (the default everywhere, even when the phone
+ * is set to dark — same as the web app); `dark` = the web's explicit `[data-theme='dark']` values, kept for camera/scanner
+ * UI and for a future in-app appearance switch. (Field names are kept from v1 so screens did not change.)
  */
 export interface Palette {
   /** main text */
@@ -30,7 +31,7 @@ export interface Palette {
   warn: string;
   stop: string;
   progress: string;
-  /** navigation header, login backdrop, scanner (dark in both modes) */
+  /** navigation header (light: white with navy ink) */
   chrome: string;
   onChrome: string;
   /** pressed row/tile */
@@ -58,8 +59,8 @@ export const light: Palette = {
   warn: '#D9860B',
   stop: '#E0443A',
   progress: '#2F5BFF',
-  chrome: '#0B1324',
-  onChrome: '#FFFFFF',
+  chrome: '#FFFFFF',
+  onChrome: '#0B1324',
   pressed: '#F1F4FA',
   pressedSignal: 'rgba(47,91,255,0.12)',
   errorBg: '#FDEDEC',
@@ -98,13 +99,22 @@ export type Tone = 'neutral' | 'progress' | 'ok' | 'warn' | 'stop';
 export const toneColor = (c: Palette, tone: Tone): string =>
   ({ neutral: c.inkSoft, progress: c.progress, ok: c.ok, warn: c.warn, stop: c.stop })[tone];
 
-/** The palette for the phone's current light/dark setting (re-renders when it changes). */
+/**
+ * Explicit appearance choice. Light is the default regardless of the phone's setting; dark only when a user explicitly
+ * picks it (no switch ships yet — set this from a future settings screen). `'system'` follows the phone.
+ */
+export type Appearance = 'light' | 'dark' | 'system';
+let appearance: Appearance = 'light';
+export function setAppearance(a: Appearance) { appearance = a; }
+
+/** The palette for the chosen appearance (light by default). */
 export function usePalette(): Palette {
-  return useColorScheme() === 'dark' ? dark : light;
+  return useIsDark() ? dark : light;
 }
 
 export function useIsDark(): boolean {
-  return useColorScheme() === 'dark';
+  const scheme = useColorScheme();
+  return appearance === 'dark' || (appearance === 'system' && scheme === 'dark');
 }
 
 /**

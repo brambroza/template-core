@@ -5,7 +5,9 @@ import './globals.css';
 export const metadata: Metadata = { title: 'Factory OS — ERP', description: 'ระบบ ERP สำหรับโรงงาน' };
 export const viewport: Viewport = {
   width: 'device-width', initialScale: 1,
-  themeColor: [{ media: '(prefers-color-scheme: light)', color: '#F6F7FB' }, { media: '(prefers-color-scheme: dark)', color: '#070B16' }],
+  // light for everyone (globals.css does not follow the OS dark preference)
+  themeColor: '#F6F7FB',
+  colorScheme: 'light',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

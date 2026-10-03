@@ -29,12 +29,12 @@ export default function RootLayout() {
     if (ready && !getSession() && segments[0] !== 'login') router.replace('/login');
   }, [ready, segments]);
 
-  if (!ready) return <View style={{ flex: 1, backgroundColor: c.chrome }} />;
+  if (!ready) return <View style={{ flex: 1, backgroundColor: c.concrete }} />;
   return (
     <SafeAreaProvider>
       <ThemeProvider value={navTheme(c, dark)}>
-        {/* header and login backdrop are dark in both themes */}
-        <StatusBar style="light" />
+        {/* light header by default: dark status-bar icons */}
+        <StatusBar style={dark ? 'light' : 'dark'} />
         <RegistryProvider>
           <Stack
             screenOptions={{
@@ -45,7 +45,7 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: c.concrete },
             }}
           >
-            <Stack.Screen name="login" options={{ headerShown: false, contentStyle: { backgroundColor: c.chrome } }} />
+            <Stack.Screen name="login" options={{ headerShown: false, contentStyle: { backgroundColor: c.concrete } }} />
             <Stack.Screen name="index" options={{ title: 'งานวันนี้' }} />
           </Stack>
         </RegistryProvider>
