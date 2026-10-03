@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { hasPerm } from '@erp/ui-schema';
 import { moduleUis } from '@/modules.generated';
 import { AiFillError, runAiFill } from '@/lib/ai-fill';
-import { AI_OFFLINE, aiEnv, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
+import { aiEnv, aiOfflineText, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const authorization = bearer(req);
   if (!authorization) return json({ error: { message: 'กรุณาเข้าสู่ระบบ' } }, 401);
   const env = aiEnv();
-  if (!env) return json({ offline: true, message: AI_OFFLINE });
+  if (!env) return json({ offline: true, message: aiOfflineText() });
   let body: any;
   try { body = await req.json(); } catch { return json({ error: { message: 'ไฟล์ใหญ่เกินไปหรือรูปแบบคำขอไม่ถูกต้อง' } }, 400); }
   if (limited(authorization)) return json({ error: { message: 'สแกนถี่เกินไป รอสักครู่แล้วลองใหม่' } }, 429);

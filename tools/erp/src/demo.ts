@@ -124,8 +124,8 @@ export const DEMO_COMPANY = {
   branchCode: '00000',
   address: '88/8 หมู่ 4 ถนนสุขุมวิท ตำบลแพรกษา อำเภอเมืองสมุทรปราการ จังหวัดสมุทรปราการ 10280',
   phone: '02-123-4567',
-  email: 'account@siampart.co.th',
-  website: 'www.siampart.co.th',
+  email: 'account@siampart.example.co.th',
+  website: 'www.siampart.example.co.th',
   logo: DEMO_LOGO,
   footerNote: 'โปรดชำระเงินภายใน 30 วันนับจากวันที่ในเอกสาร · โอนเข้าบัญชี บจก. สยามพาร์ท เมทัลเวิร์ค เท่านั้น',
   signatureLabels: ['ผู้จัดทำ', 'ผู้อนุมัติ'],
@@ -196,14 +196,15 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     items[code] = { itemId: r.id, itemCode: code, itemName: name };
   }
   const partners: Record<string, any> = {};
-  for (const [code, name, kind, taxId, address] of [
-    ['S-001', 'บริษัท สยามเหล็กกล้า จำกัด', 'supplier', '0105536000313', 'นิคมอุตสาหกรรมบางปู สมุทรปราการ'],
-    ['S-002', 'บริษัท ไทยสแตนเลส ซัพพลาย จำกัด', 'supplier', null, 'บางนา กรุงเทพฯ'],
-    ['S-003', 'หจก. ช่างไทยอะไหล่', 'supplier', null, 'พระประแดง สมุทรปราการ'],
-    ['C-001', 'บริษัท คูลแอร์ แมนูแฟคเจอริ่ง จำกัด', 'customer', null, 'อมตะนคร ชลบุรี'],
-    ['C-002', 'บริษัท อีสเทิร์น อิเล็คทริค จำกัด', 'customer', null, 'ปลวกแดง ระยอง'],
-    ['C-003', 'บริษัท โฮมสโตร์ เรนเจอร์ จำกัด', 'customer', null, 'ลาดกระบัง กรุงเทพฯ'],
-  ] as const) partners[code] = await call('POST', '/api/master-data/partners', { code, name, kind, taxId: taxId ?? undefined, address });
+  // Tax IDs are made up (they pass the mod-11 check digit); full addresses with postcodes — tax invoices, 50 ทวิ and e-Tax need them
+  for (const [code, name, kind, taxId, address, email] of [
+    ['S-001', 'บริษัท สยามเหล็กกล้า จำกัด', 'supplier', '0105536000313', '555 หมู่ 2 นิคมอุตสาหกรรมบางปู ตำบลแพรกษา อำเภอเมืองสมุทรปราการ จังหวัดสมุทรปราการ 10280', null],
+    ['S-002', 'บริษัท ไทยสแตนเลส ซัพพลาย จำกัด', 'supplier', '0105547023450', '1/88 ถนนบางนา-ตราด แขวงบางนาใต้ เขตบางนา กรุงเทพมหานคร 10260', null],
+    ['S-003', 'หจก. ช่างไทยอะไหล่', 'supplier', '0103546007891', '45/7 ถนนสุขสวัสดิ์ ตำบลบางพึ่ง อำเภอพระประแดง จังหวัดสมุทรปราการ 10130', null],
+    ['C-001', 'บริษัท คูลแอร์ แมนูแฟคเจอริ่ง จำกัด', 'customer', '0205555011227', '700/123 หมู่ 1 นิคมอุตสาหกรรมอมตะซิตี้ ชลบุรี ตำบลดอนหัวฬ่อ อำเภอเมืองชลบุรี จังหวัดชลบุรี 20000', 'ap@coolair-mfg.example.co.th'],
+    ['C-002', 'บริษัท อีสเทิร์น อิเล็คทริค จำกัด', 'customer', '0215558024681', '64/12 หมู่ 4 ตำบลแม่น้ำคู้ อำเภอปลวกแดง จังหวัดระยอง 21140', 'account@eastern-electric.example.co.th'],
+    ['C-003', 'บริษัท โฮมสโตร์ เรนเจอร์ จำกัด', 'customer', '0105558034563', '99 ถนนฉลองกรุง แขวงลาดกระบัง เขตลาดกระบัง กรุงเทพมหานคร 10520', 'invoice@homestore-ranger.example.co.th'],
+  ] as const) partners[code] = await call('POST', '/api/master-data/partners', { code, name, kind, taxId, branch: '00000', address, email: email ?? undefined });
 
   // QC plans before any goods receipt / production completion, so those events raise real inspections
   if (has('quality')) await business.seedQualityPlans(call, items).catch((e) => console.error('demo seed: quality plans failed —', e.message));
@@ -247,7 +248,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
       if (approve) await call('POST', `/api/purchasing/purchase-orders/${po.id}/approve`);
       // C8: the supplier's tax invoice came with the goods (number/date/tax ID → the purchase VAT register)
       if (receive) {
+        // dated when the goods came (not the day the seed runs), so each month's ภาษีซื้อ lands in that month's ภ.พ.30
         await store('POST', `/api/purchasing/purchase-orders/${po.id}/receive`, {
+          receivedDate: notAfterToday(when),
           supplierInvoiceNo: `IV${String(po.no).slice(-7).replace('-', '')}`, supplierInvoiceDate: notAfterToday(when),
           ...(partners[supplier].tax_id ? { supplierTaxId: partners[supplier].tax_id, supplierBranch: '00000' } : {}),
         });
@@ -296,6 +299,7 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
       const when = notAfterToday(date);
       const so = await call('POST', '/api/sales/orders', {
         customerId: partners[customer].id, customerName: partners[customer].name, customerAddress: partners[customer].address, orderDate: when, warehouseCode: 'MAIN',
+        customerTaxId: partners[customer].tax_id ?? undefined, customerBranch: '00000', customerEmail: partners[customer].email ?? undefined,
         creditDays: creditDays[customer],
         lines: lines.map(([c, qty, unitPrice]) => ({ ...items[c], qty, unitPrice })),
       });

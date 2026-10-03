@@ -15,6 +15,8 @@
  *   ui-sync                                   regenerate web/mobile module registries from services/<id>/src/ui.ts
  *   uat-report                                build docs/uat/uat-pack.html from the UAT cases, runs and screenshots
  *   verify                                    architecture rules (run in CI)
+ *   showcase-capture [--gateway URL] [--tenant demo] [--password demo1234] [--rows 5] [--out apps/web/showcase/snapshot.json]
+ *                                             record a running demo's answers for the public showcase (SHOWCASE=1, docs/deploy-vercel.md)
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
  */
@@ -177,14 +179,30 @@ function main() {
       if (r.errors.length) process.exitCode = 1;
       return;
     }
+    case 'showcase-capture': {
+      // async: the walk talks to a running demo gateway
+      pending = import('./showcase-capture.ts').then(async ({ captureShowcase }) => {
+        const r = await captureShowcase({
+          gateway: flags.gateway, tenant: flags.tenant, password: flags.password, out: flags.out ? resolve(flags.out) : undefined,
+          rowsPerList: flags.rows ? Number(flags.rows) : undefined, log: (l) => console.log(l),
+        });
+        console.log(`Wrote ${r.file} — ${(r.bytes / 1024 / 1024).toFixed(2)} MB, ${r.responses} recorded answers, personas ${r.personas.join(', ')}`);
+      });
+      return;
+    }
     default:
       console.log(readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace('/**', '').replace(/^ \* ?/gm, ''));
   }
 }
 
-try {
-  main();
-} catch (e) {
+let pending: Promise<void> | undefined;
+const fail = (e: unknown) => {
   console.error(`error: ${(e as Error).message}`);
   process.exitCode = 1;
+};
+try {
+  main();
+  await pending?.catch(fail);
+} catch (e) {
+  fail(e);
 }

@@ -18,8 +18,34 @@ const SECURITY_HEADERS = [
   { key: 'Permissions-Policy', value: 'camera=(self), geolocation=(self), microphone=()' },
 ];
 
+/**
+ * Public showcase (SHOWCASE=1 at build time, see docs/deploy-vercel.md): /api answers from showcase/snapshot.json, the landing page
+ * (site/dist, copied to public/landing by `pnpm showcase:build`) is served at `/` and the dashboard moves to `/app`.
+ * Default off — a normal installation builds exactly as before.
+ */
+const SHOWCASE = process.env.SHOWCASE === '1';
+
 const config: NextConfig = {
   poweredByHeader: false,
+  // `pnpm showcase:build` on a developer machine builds into .next-showcase so the normal build (and a running demo) stays intact
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // baked into the browser bundle (banner, persona login) and the server (lib/showcase-server.ts)
+  env: { NEXT_PUBLIC_SHOWCASE: SHOWCASE ? '1' : '' },
+  ...(SHOWCASE ? {
+    async rewrites() {
+      return {
+        beforeFiles: [
+          { source: '/', destination: '/landing/index.html' },
+          { source: '/assets/:file*', destination: '/landing/assets/:file*' },
+          { source: '/vendor/:file*', destination: '/landing/vendor/:file*' },
+        ],
+        afterFiles: [],
+        fallback: [],
+      };
+    },
+    // the recorded answers travel with the /api function on Vercel (read with fs at run time)
+    outputFileTracingIncludes: { '/api/**': ['./showcase/**/*.json'] },
+  } : {}),
   async headers() {
     // /api/* answers come from the gateway with their own headers (attachments carry a sandboxing CSP that must not be replaced)
     return [{ source: '/:path((?!api/).*)', headers: SECURITY_HEADERS }];

@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { moduleUis } from '@/modules.generated';
 import { findScreen } from '@/lib/assistant';
-import { AI_OFFLINE, aiEnv, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
+import { aiEnv, aiOfflineText, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const authorization = bearer(req);
   if (!authorization) return json({ error: { message: 'กรุณาเข้าสู่ระบบ' } }, 401);
   const env = aiEnv();
-  if (!env) return json({ offline: true, reply: AI_OFFLINE, actions: [] });
+  if (!env) return json({ offline: true, reply: aiOfflineText(), actions: [] });
   let body: any;
   try { body = await req.json(); } catch { return json({ error: { message: 'รูปแบบคำขอไม่ถูกต้อง' } }, 400); }
   const text = typeof body?.text === 'string' ? body.text.trim() : '';

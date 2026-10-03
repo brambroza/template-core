@@ -10,3 +10,5 @@ keys/
 *.tsbuildinfo
 .expo
 site/dist
+apps/web/public/landing
+.next-showcase

@@ -198,21 +198,40 @@ export async function computePp30(c: Client, period: string, inputs: Pp30Inputs 
   };
 }
 
+/**
+ * First tax month with VAT in the ledger (output or input VAT line, any year), or null. Months before it predate the company's
+ * use of this module for VAT (go-live / VAT registration) — the year list shows them as "ไม่มีรายการ" instead of overdue.
+ * A month after it with nothing posted is still a month a VAT registrant must file (a zero return), so it can be overdue.
+ */
+export async function firstVatPeriod(c: Client): Promise<string | null> {
+  const r = (await c.query(
+    `select to_char(min(j.entry_date), 'YYYY-MM') as p from journal_lines l join journal_entries j on j.id = l.journal_id and j.status in ${EFFECTIVE}
+     join accounts a on a.id = l.account_id and a.role in ('vat_output', 'vat_input')`)).rows[0];
+  return r?.p ?? null;
+}
+
+export const PP30_NO_ACTIVITY_NOTE = 'เดือนที่ไม่มีรายการยังต้องยื่นแบบเปล่า หากจดทะเบียน VAT แล้ว';
+
 /** 12 months of a year: what each ภ.พ.30 comes to and whether it was recorded as filed. */
 export async function pp30Year(c: Client, year: string) {
   const cache: VatCache = new Map();
+  const first = await firstVatPeriod(c);
   const rows = [];
   for (let m = 1; m <= 12; m++) {
     const p = `${year}-${String(m).padStart(2, '0')}`;
     const x = await computePp30(c, p, {}, cache);
+    // before the first VAT activity: nothing in the ledger to file from here — neutral, not overdue (a filed month keeps its status)
+    const before = !x.filed && (first === null || p < first);
     rows.push({
       id: p, period: p, period_th: x.period_th, box4: x.box4, box5: x.box5, box6: x.box6, box7: x.box7, box10: x.box10, box11: x.box11, box12: x.box12, box15: x.box15, box16: x.box16,
-      status: x.status, status_label: x.overdue ? 'เกินกำหนด — ยังไม่บันทึกการยื่น' : x.status_label, overdue: x.overdue,
+      status: before ? 'no_activity' : x.status,
+      status_label: before ? 'ไม่มีรายการ' : x.overdue ? 'เกินกำหนด — ยังไม่บันทึกการยื่น' : x.status_label,
+      overdue: before ? false : x.overdue,
       deadline_efiling: x.deadline_efiling, filed_date: x.latest_filing?.filed_date ?? null, receipt_no: x.receipt_no, paid_amount: x.paid_amount,
       changed_since_filing: x.changed_since_filing,
     });
   }
-  return { year, rows };
+  return { year, first_vat_period: first, note: PP30_NO_ACTIVITY_NOTE, rows };
 }
 
 export interface FileInput {

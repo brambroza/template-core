@@ -352,6 +352,29 @@ describe('ภ.พ.30 — boxes 1–16, carry-forward from the previous recorded 
     expect(year.rows[3]).toMatchObject({ period: '2025-04', status: 'not_filed', overdue: true });
   });
 
+  it('year list: months before the first VAT posting are "ไม่มีรายการ" (not overdue); later months without a filing stay overdue, even empty ones', async () => {
+    const x = tenant();
+    await x.deliver('sales.invoiced', invoice('INV-2568-0301', '2025-03-10', 2_000, 140));
+    await x.deliver('purchasing.bill_recorded', bill('BL-2568-0601', '2025-06-05', 'service', 1_000, 70));
+    const year = (await x.api('GET', '/pp30?year=2025')).body;
+    expect(year).toMatchObject({ first_vat_period: '2025-03', note: 'เดือนที่ไม่มีรายการยังต้องยื่นแบบเปล่า หากจดทะเบียน VAT แล้ว' });
+    for (const r of year.rows.slice(0, 2)) expect(r).toMatchObject({ status: 'no_activity', status_label: 'ไม่มีรายการ', overdue: false });
+    expect(year.rows[2]).toMatchObject({ period: '2025-03', status: 'not_filed', overdue: true, status_label: 'เกินกำหนด — ยังไม่บันทึกการยื่น', box5: 140 });
+    expect(year.rows[3]).toMatchObject({ period: '2025-04', status: 'not_filed', overdue: true }); // a VAT registrant files a zero return
+    expect(year.rows[5]).toMatchObject({ period: '2025-06', overdue: true, box7: 70 });
+    // a filed month keeps its status; the detail screen of a month before activity is unchanged (still computable / fileable)
+    expect((await x.api('POST', '/pp30/2025-03/file', { filedDate: '2025-04-20', channel: 'efiling', refundOrCarry: 'carry', paidAmount: 140 })).status).toBe(201);
+    expect((await x.api('GET', '/pp30?year=2025')).body.rows[2]).toMatchObject({ status: 'filed', overdue: false });
+    expect((await x.api('GET', '/pp30/2025-01')).body).toMatchObject({ status: 'not_filed', box5: 0 });
+    // the first VAT month spans years: 2024 is entirely before it
+    expect((await x.api('GET', '/pp30?year=2024')).body.rows.every((r: any) => r.status === 'no_activity' && !r.overdue)).toBe(true);
+    // a company with no VAT postings at all (other tenant): nothing flagged overdue
+    const other = tenant();
+    const empty = (await other.api('GET', '/pp30?year=2025')).body;
+    expect(empty.first_vat_period).toBeNull();
+    expect(empty.rows.every((r: any) => r.status === 'no_activity' && r.status_label === 'ไม่มีรายการ' && !r.overdue)).toBe(true);
+  });
+
   it('permissions and tenant isolation of filings, bills and the tax reports', async () => {
     const x = tenant();
     await x.deliver('sales.invoiced', invoice('INV-2568-0501', '2025-04-10', 1_000, 70));

@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { moduleUis } from '@/modules.generated';
 import { BriefingCache, runBriefing } from '@/lib/assistant';
-import { AI_OFFLINE, aiEnv, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
+import { aiEnv, aiOfflineText, bearer, json, limited, whoIsAsking } from '@/lib/assist-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const authorization = bearer(req);
   if (!authorization) return json({ error: { message: 'กรุณาเข้าสู่ระบบ' } }, 401);
   const env = aiEnv();
-  if (!env) return json({ offline: true, reply: AI_OFFLINE, bullets: [], actions: [] });
+  if (!env) return json({ offline: true, reply: aiOfflineText(), bullets: [], actions: [] });
   try {
     const who = await whoIsAsking(env.gatewayUrl, authorization, moduleUis);
     if (who instanceof Response) return who;

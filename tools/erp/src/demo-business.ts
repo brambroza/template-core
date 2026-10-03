@@ -183,9 +183,14 @@ export async function seedBusiness(base: BusinessCtx): Promise<void> {
   await finale(ctx).catch((err) => { failed.push('finale'); console.error('demo seed: finale failed —', err instanceof Error ? err.message : err); });
   // files on records of several modules, then the books: check them and close last month once every event has posted
   await note(finance.seedAttachments(ctx)).catch((err) => { failed.push('attachments'); console.error('demo seed: attachments failed —', err instanceof Error ? err.message : err); });
+  // wave 9 tax documents of the past months (credit/debit notes, supplier bills, payments with WHT) — before the books close last month
+  const tax = await import('./demo-tax.ts');
+  await note(tax.seedTaxDocuments(ctx)).catch((err) => { failed.push('tax documents'); console.error('demo seed: tax documents failed —', err instanceof Error ? err.message : err); });
   if (base.has('accounting')) {
     await note(finance.closeBooks(ctx)).catch((err) => { failed.push('accounting'); console.error('demo seed: accounting close failed —', err instanceof Error ? err.message : err); });
   }
+  // ภ.พ.30 filing records (every past month but this one) and e-Tax, once everything has posted and last month is closed
+  await note(tax.seedTaxFilings(ctx)).catch((err) => { failed.push('tax filings'); console.error('demo seed: tax filings / e-Tax failed —', err instanceof Error ? err.message : err); });
   console.log(`  business modules seeded in ${((Date.now() - t0) / 1000).toFixed(1)}s (${timings.join(', ')})`);
   for (const n of notes) console.log(`  ${n}`);
   if (failed.length) console.error(`  demo seed: incomplete modules: ${failed.join(', ')}`);
@@ -702,7 +707,7 @@ async function seedHelpdesk(x: Ctx) {
   await ticket('store', 'FAC', 'ก๊อกน้ำห้องน้ำชาย อาคารผลิต รั่ว', 'low', 'web', { start: true, resolve: 'เปลี่ยนวาล์วก๊อกน้ำใหม่ 2 จุด', close: [5, 'ขอบคุณครับ'] });
   await ticket('plan', 'IT', 'อีเมลขยะเข้าเยอะผิดปกติ', 'low', 'web', { start: true, resolve: 'เพิ่มกฎกรองสแปมที่ Firewall และ Mail gateway', close: [3, 'ยังมีหลุดมาบ้าง'] });
   await ticket('sales', 'AFTER', 'อีสเทิร์น อิเล็คทริค: ขอใบรับรองวัสดุ (Mill cert) ล็อตล่าสุด', 'normal', 'email', { start: true, resolve: 'ส่ง Mill certificate SPCC ล็อตเดือนนี้ทางอีเมลแล้ว', close: [5, 'ลูกค้าได้รับเอกสารครบ'] },
-    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'ลูกค้าขอเอกสารประกอบการตรวจรับ'));
+    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.example.co.th', 'ลูกค้าขอเอกสารประกอบการตรวจรับ'));
   await ticket('sales', 'AFTER', 'คูลแอร์: ขอเลื่อนส่งของล็อตถัดไป 2 วัน', 'normal', 'line', { start: true, resolve: 'ประสานฝ่ายวางแผน ปรับแผนส่งเป็นวันศุกร์ ลูกค้ารับทราบ', close: [4] },
     cust('C-001', 'คุณจิราพร (จัดซื้อ คูลแอร์)', 'LINE: jiraporn.coolair', 'คลังลูกค้าเต็ม ขอเลื่อนรับของ'));
   await ticket('it', 'IT', 'ขอติดตั้งโปรแกรม AutoCAD LT ให้ฝ่ายผลิต', 'normal', 'web', { start: true, resolve: 'ติดตั้ง AutoCAD LT 2026 ที่เครื่องวางแผนการผลิตแล้ว' });
@@ -720,7 +725,7 @@ async function seedHelpdesk(x: Ctx) {
     cust('C-003', 'คุณเอกพล (สาขาลาดกระบัง)', 'LINE: ekkapol.hs', 'พบรอยถลอกที่เสา 2 ต้น', 'RACK-08'));
   await ticket('plan', 'IT', 'ขอเพิ่มสิทธิ์เข้าโฟลเดอร์แชร์ฝ่ายผลิต', 'low', 'web', {});
   await ticket('sales', 'AFTER', 'อีสเทิร์น อิเล็คทริค: กล่อง CASE-01 บานพับหลวม', 'high', 'email', {},
-    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.co.th', 'พบ 6 ตู้จาก 150 ตู้ บานพับหลวม ต้องขันน็อตใหม่', 'FG-CASE-01'));
+    cust('C-002', 'คุณภาณุมาศ (QA อีสเทิร์น อิเล็คทริค)', 'qa@eastern-electric.example.co.th', 'พบ 6 ตู้จาก 150 ตู้ บานพับหลวม ต้องขันน็อตใหม่', 'FG-CASE-01'));
   await ticket('qc', 'FAC', 'ปลั๊กไฟจุดตรวจ QC ช็อต มีประกายไฟ', 'urgent', 'phone', { start: true });
   // past SLA: calls the technicians logged with the time the store really phoned (urgent = 24x7 clock, high = business hours)
   await ticket('store', 'IT', 'คอมพิวเตอร์จุดชั่งน้ำหนักคลังเปิดไม่ติด', 'urgent', 'phone', { reportedAt: iso(wd(-1), '15:40') },

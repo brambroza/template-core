@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fillPath, get, initialValues, missingRequired, toBody, type Action } from '@erp/ui-schema';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
@@ -40,6 +40,7 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
       else toast({ title: `${action.label} — เรียบร้อย`, tone: action.tone === 'danger' ? 'warn' : 'ok' });
       onDone(result);
     } catch (e) {
+      if (isShowcaseRefusal(e)) { setOpen(false); return; } // showcase: the toast explains it, no red error
       setError(e instanceof Error ? e.message : 'ทำรายการไม่สำเร็จ');
       if (e instanceof ApiError) setFieldErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k, v[0]])));
     } finally {

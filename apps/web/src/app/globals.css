@@ -128,6 +128,31 @@ a { color: inherit; }
 .icon-btn .dot { position: absolute; top: -6px; right: -10px; border: 2px solid var(--bg); min-width: 20px; height: 20px; border-radius: 10px; background: var(--stop); color: #fff; font-size: .68rem; font-weight: 600; display: grid; place-items: center; padding: 0 4px; }
 
 .main-col { min-width: 0; display: flex; flex-direction: column; }
+/* public showcase (SHOWCASE=1): one quiet line above the top bar */
+.showcase-bar {
+  margin: 0; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; padding: 6px 16px 6px 28px; position: relative;
+  font-size: .82rem; color: var(--ink-2); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border-bottom: 1px solid var(--line);
+}
+.showcase-bar::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: var(--tape); }
+.showcase-bar b { color: var(--ink); font-weight: 600; }
+.showcase-bar a { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--accent-deep); text-underline-offset: 3px; }
+@media print { .showcase-bar { display: none; } }
+/* showcase login: one-click personas instead of the password form */
+.persona-list { display: flex; flex-direction: column; gap: 8px; }
+.persona {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.persona:hover, .persona:focus-visible { border-color: var(--ink); transform: translateY(-1px); box-shadow: 0 6px 18px -10px rgb(0 0 0 / .35); }
+.persona.is-main { border-color: var(--accent-deep); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.persona .avatar { width: 36px; height: 36px; }
+.persona b { display: block; font-weight: 600; }
+.persona small { display: block; color: var(--ink-2); font-size: .8rem; line-height: 1.35; }
+.persona .go { color: var(--ink-3); font-size: .85rem; white-space: nowrap; }
+.persona[disabled] { opacity: .6; cursor: progress; }
+.showcase-note { font-size: .85rem; color: var(--ink-2); margin: 0; }
+.showcase-note a { color: var(--ink); }
 .topbar {
   position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 12px; padding: 12px 28px;
   background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);

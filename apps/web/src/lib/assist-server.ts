@@ -4,6 +4,7 @@
  * the customer's own ANTHROPIC_API_KEY, a small per-token rate limit, Thai messages.
  */
 import type { ModuleUi } from '@erp/ui-schema';
+import { isShowcase, SHOWCASE_AI_OFF } from './showcase-server';
 
 export const json = (body: unknown, status = 200) => Response.json(body, { status });
 
@@ -22,9 +23,16 @@ export function limited(key: string, limit = LIMIT): boolean {
   return recent.length > limit;
 }
 
+/** The "AI is off" text: the showcase says AI is simply not part of the demo (no key, no API calls). */
+export function aiOfflineText(): string {
+  return isShowcase() ? SHOWCASE_AI_OFF : AI_OFFLINE;
+}
+
 export interface AiEnv { apiKey: string; model?: string; baseUrl?: string; gatewayUrl: string; tenantName?: string }
 
 export function aiEnv(): AiEnv | null {
+  // public showcase: never call an AI provider, whatever keys the host happens to have
+  if (isShowcase()) return null;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   return {

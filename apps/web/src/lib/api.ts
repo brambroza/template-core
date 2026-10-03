@@ -2,12 +2,18 @@
 
 import { SESSION_TOKEN_HEADER } from './proxy-headers';
 import { clearSession, isRevokedError, loadSession, replaceSessionToken } from './session';
+import { SHOWCASE_READ_ONLY } from './showcase';
 import { toast } from './toast';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}) {
+  constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}, public code?: string) {
     super(message);
   }
+}
+
+/** A write the public showcase refused (it never saves). The toast is already shown — callers just stop, without a red error. */
+export function isShowcaseRefusal(e: unknown): boolean {
+  return e instanceof ApiError && e.code === SHOWCASE_READ_ONLY;
 }
 
 const MESSAGES: Record<number, string> = {
@@ -63,9 +69,13 @@ export async function api<T = any>(module: string, path: string, opts: { method?
       window.location.href = isRevokedError(data?.error) ? '/login?revoked=1' : '/login?expired=1';
     }
     const err = data?.error ?? {};
+    if (res.status === 403 && err.code === SHOWCASE_READ_ONLY) {
+      toast({ title: 'โหมดตัวอย่าง — ไม่บันทึกข้อมูล', body: 'ลองกดดูได้ทุกปุ่ม ระบบจริงจะบันทึกให้ทันที ติดต่อทีม GO Along เพื่อทดลองระบบเต็ม', tone: 'info' });
+      throw new ApiError(403, String(err.message ?? 'โหมดตัวอย่าง — ไม่บันทึกข้อมูล'), {}, SHOWCASE_READ_ONLY);
+    }
     const fieldErrors = err.details?.fieldErrors ?? {};
     // server messages are specific (e.g. "สต็อกไม่พอ: RM-STEEL …"); fall back to Thai generic text
-    throw new ApiError(res.status, thaiMessage(res.status, err.message), fieldErrors);
+    throw new ApiError(res.status, thaiMessage(res.status, err.message), fieldErrors, err.code);
   }
   return data as T;
 }

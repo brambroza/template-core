@@ -3,7 +3,8 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
+import { HOME } from '@/lib/showcase';
 import { screenHref } from '@/lib/nav';
 import { useRegistry } from '@/lib/registry';
 import { toast } from '@/lib/toast';
@@ -100,11 +101,12 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
           toast({ title: 'บันทึกแล้ว แต่แนบรูปไม่ได้', body: `${(err as Error).message} — แนบเองได้ที่หน้าเอกสาร`, tone: 'warn' });
         }
       }
-      router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : '/');
+      router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME);
     } catch (err) {
+      setBusy(false);
+      if (isShowcaseRefusal(err)) return; // showcase: a toast already explained it, the form stays as typed
       setError(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
       if (err instanceof ApiError) setFieldErrors(Object.fromEntries(Object.entries(err.fieldErrors).map(([k, v]) => [k, v[0]])));
-      setBusy(false);
     }
   };
 

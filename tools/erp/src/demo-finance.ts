@@ -23,29 +23,29 @@ export interface FinanceCtx {
 
 /* ------------------------------------------------------------------ dates (Asia/Bangkok) ------------------------------------------------------------------ */
 
-const today = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-const addDays = (date: string, n: number) => {
+export const today = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+export const addDays = (date: string, n: number) => {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
 /** first day of the month `n` months from this one (0 = this month, -1 = last month) */
-const monthStart = (n: number) => {
+export const monthStart = (n: number) => {
   const d = new Date(`${today().slice(0, 7)}-01T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + n);
   return d.toISOString().slice(0, 10);
 };
-const monthEnd = (n: number) => addDays(monthStart(n + 1), -1);
+export const monthEnd = (n: number) => addDays(monthStart(n + 1), -1);
 /** last Mon–Fri on or before `date` */
-const weekdayOnOrBefore = (date: string) => {
+export const weekdayOnOrBefore = (date: string) => {
   let d = date;
   while ([0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay())) d = addDays(d, -1);
   return d;
 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** poll `fn` until it returns a truthy value (events arrive asynchronously through the gateway's router) */
-async function waitFor<T>(what: string, fn: () => Promise<T | undefined | null | false>, tries = 40, ms = 300): Promise<T> {
+export async function waitFor<T>(what: string, fn: () => Promise<T | undefined | null | false>, tries = 40, ms = 300): Promise<T> {
   for (let i = 0; i < tries; i++) {
     const v = await fn();
     if (v) return v;

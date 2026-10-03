@@ -1,11 +1,14 @@
 import type { NextRequest } from 'next/server';
-import { responseHeaders } from '@/lib/proxy-headers';
+import { responseHeaders } from '../../../lib/proxy-headers';
+import { isShowcase, loadSnapshot, showcaseResponse } from '../../../lib/showcase-server';
 
 export const dynamic = 'force-dynamic';
 
 /** Same-origin proxy to the ERP gateway (GATEWAY_URL read at runtime, so one build serves any installation). */
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
+  // public showcase (SHOWCASE=1): answers from the recorded snapshot, never reaches a gateway, never writes
+  if (isShowcase()) return showcaseResponse(loadSnapshot(), req, path);
   const base = (process.env.GATEWAY_URL ?? 'http://localhost:8080').replace(/\/$/, '');
   const target = `${base}/api/${path.map(encodeURIComponent).join('/')}${req.nextUrl.search}`;
   const headers = new Headers();

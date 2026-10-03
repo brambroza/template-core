@@ -78,7 +78,10 @@ export function buildSite(): string {
     if (noRent.length) throw new Error(`catalog.json rental.modules: no monthly price for ${noRent.join(', ')}`);
   }
   const { rental, pilot, partner } = catalog;
-  const data = { site: { ...site, modules: undefined }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services, rental, pilot, partner }, modules, roadmap };
+  // number of UAT cases run in a real browser (docs/uat/cases.json) — shown on the "real system" showcase
+  const uatFile = join(root, 'docs', 'uat', 'cases.json');
+  const uatCases: number = existsSync(uatFile) ? (JSON.parse(readFileSync(uatFile, 'utf8')).cases ?? []).length : 0;
+  const data = { site: { ...site, modules: undefined }, stats: { uatCases }, catalog: { platform: catalog.platform, modules: catalog.modules, bundles, updatePlanPct: catalog.updatePlanPct, services: catalog.services, rental, pilot, partner }, modules, roadmap };
   // JSON inside <script>: escape "<" so no value can close the tag
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
   const html = readFileSync(join(here, 'src', 'index.html'), 'utf8').replace('__DATA__', () => json);
@@ -97,7 +100,7 @@ export function buildSite(): string {
   return out;
 }
 
-const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.webp': 'image/webp', '.png': 'image/png', '.json': 'application/json' };
+const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json' };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = buildSite();

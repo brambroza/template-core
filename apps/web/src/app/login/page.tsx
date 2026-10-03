@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { gsap, reducedMotion } from '@/lib/motion';
 import { loadSession, loginNotice, loginReasonFrom, saveSession, type LoginReason, type Session } from '@/lib/session';
+import { HOME, SHOWCASE, SHOWCASE_CONTACT } from '@/lib/showcase';
 
 /** Isometric blocks that assemble on load — the factory being built, in 2D. */
 function FloorArt() {
@@ -36,6 +37,49 @@ function FloorArt() {
   );
 }
 
+interface Persona { id: string; label: string; description: string; email: string; name: string; tenant: string }
+
+/** Showcase login: one click per recorded role (GET /api/_showcase lists them; the tokens are fake and only work on this site). */
+function PersonaPicker({ onDone }: { onDone: () => void }) {
+  const [personas, setPersonas] = useState<Persona[] | null>(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api<{ personas: Persona[] }>('_showcase', '').then((r) => setPersonas(r.personas)).catch(() => { setPersonas([]); setError('โหลดตัวอย่างไม่สำเร็จ ลองรีเฟรชหน้านี้'); });
+  }, []);
+  const enter = async (p: Persona) => {
+    setBusy(p.id);
+    setError('');
+    try {
+      const r = await api<Session & { token: string }>('identity', '/auth/login', { method: 'POST', body: { persona: p.id, email: p.email } });
+      saveSession({ token: r.token, tenant: r.tenant, user: r.user, permissions: r.permissions });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เข้าชมไม่สำเร็จ');
+      setBusy('');
+    }
+  };
+  return (
+    <div className="login-card">
+      <div className="login-tape" aria-hidden />
+      <h1>ลองใช้ระบบจริง</h1>
+      <p className="showcase-note">หน้าจอจริงของ Factory OS กับข้อมูลบริษัทสมมติ — เลือกบทบาทเพื่อดูว่าแต่ละฝ่ายเห็นอะไร ไม่ต้องสมัคร ไม่บันทึกข้อมูล</p>
+      {!personas && <p className="muted">กำลังโหลด…</p>}
+      <div className="persona-list">
+        {personas?.map((p, i) => (
+          <button key={p.id} type="button" className={`persona${i === 0 ? ' is-main' : ''}`} disabled={!!busy} onClick={() => enter(p)}>
+            <span className="avatar" aria-hidden>{(p.name || p.label).trim().slice(0, 1)}</span>
+            <span><b>เข้าชมในฐานะ {p.label}</b><small>{p.description || p.name}</small></span>
+            <span className="go" aria-hidden>{busy === p.id ? 'กำลังเข้า…' : 'เข้าชม →'}</span>
+          </button>
+        ))}
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <p className="showcase-note">อยากเห็นกับข้อมูลแบบธุรกิจคุณ? <a href={SHOWCASE_CONTACT}>ขอเดโมเต็มกับทีม GO Along</a></p>
+    </div>
+  );
+}
+
 export default function Login() {
   const router = useRouter();
   const [tenant, setTenant] = useState('');
@@ -46,7 +90,7 @@ export default function Login() {
   const [reason, setReason] = useState<LoginReason>(null);
 
   useEffect(() => {
-    if (loadSession()) router.replace('/');
+    if (loadSession()) router.replace(HOME);
     setReason(loginReasonFrom(window.location.search));
     try { setTenant(window.localStorage.getItem('erp.tenant') ?? ''); } catch { /* ignore */ }
   }, [router]);
@@ -59,7 +103,7 @@ export default function Login() {
       const r = await api<Session & { token: string }>('identity', '/auth/login', { method: 'POST', body: { tenant, email, password } });
       saveSession({ token: r.token, tenant: r.tenant, user: r.user, permissions: r.permissions });
       try { window.localStorage.setItem('erp.tenant', tenant); } catch { /* ignore */ }
-      router.replace('/');
+      router.replace(HOME);
     } catch (err) {
       setError(err instanceof Error && err.message !== 'Invalid credentials' ? err.message : 'รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง');
       setBusy(false);
@@ -76,6 +120,7 @@ export default function Login() {
         </div>
       </section>
       <section className="login-pane">
+        {SHOWCASE ? <PersonaPicker onDone={() => router.replace(HOME)} /> : (
         <form className="login-card" onSubmit={submit}>
           <div className="login-tape" aria-hidden />
           <h1>เข้าสู่ระบบ</h1>
@@ -86,6 +131,7 @@ export default function Login() {
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="btn-primary" type="submit" disabled={busy}>{busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}</button>
         </form>
+        )}
       </section>
     </main>
   );

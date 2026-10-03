@@ -7,7 +7,8 @@ import { ChevronDown, KeyRound, LogOut, Menu, Sparkles, Gauge } from 'lucide-rea
 import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
-import { loadSession, logout, type Session } from '@/lib/session';
+import { clearSession, loadSession, logout, type Session } from '@/lib/session';
+import { HOME, SHOWCASE, SHOWCASE_CONTACT } from '@/lib/showcase';
 import { screenHref } from '@/lib/nav';
 import { ModuleIcon } from './Icon';
 import { CommandPalette, openCommandPalette } from './CommandPalette';
@@ -73,7 +74,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="rail" aria-label="โมดูล" onMouseLeave={hideTip}>
         <div className="rail-logo" aria-hidden />
         <div className="rail-scroll" onScroll={hideTip}>
-          <Link href="/" className={path === '/' ? 'is-active' : undefined} aria-label="ภาพรวมวันนี้" onMouseEnter={showTip('ภาพรวมวันนี้')} onFocus={showTip('ภาพรวมวันนี้')} onBlur={hideTip}>
+          <Link href={HOME} className={path === HOME ? 'is-active' : undefined} aria-label="ภาพรวมวันนี้" onMouseEnter={showTip('ภาพรวมวันนี้')} onFocus={showTip('ภาพรวมวันนี้')} onBlur={hideTip}>
             <Gauge size={20} strokeWidth={1.8} aria-hidden />
           </Link>
           {areas.map((g) => (
@@ -96,7 +97,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <aside className="panel-nav" aria-label="เมนูหลัก">
         <div className="brand">
-          <Link href="/">{session.tenant.name}</Link>
+          <Link href={HOME}>{session.tenant.name}</Link>
           <span>{session.tenant.code}</span>
         </div>
         <nav>
@@ -141,7 +142,11 @@ export function Shell({ children }: { children: ReactNode }) {
             <KeyRound size={18} aria-hidden />
           </Link>
           <button type="button" className="icon-btn" aria-label="ออกจากระบบ" title="ออกจากระบบ (ทุกอุปกรณ์)"
-            onClick={async () => { const ok = await logout(); router.replace(ok ? '/login?logout=1' : '/login'); }}>
+            onClick={async () => {
+              // showcase: nothing to revoke — forget the persona and go back to the landing page
+              if (SHOWCASE) { clearSession(); window.location.href = '/'; return; }
+              const ok = await logout(); router.replace(ok ? '/login?logout=1' : '/login');
+            }}>
             <LogOut size={18} aria-hidden />
           </button>
         </div>
@@ -149,6 +154,12 @@ export function Shell({ children }: { children: ReactNode }) {
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden />}
 
       <div className="main-col">
+        {SHOWCASE && (
+          <p className="showcase-bar" role="note">
+            <span><b>โหมดตัวอย่าง</b> · ข้อมูลสมมติ · ไม่บันทึก</span>
+            <a href={SHOWCASE_CONTACT}>ขอเดโมเต็ม</a>
+          </p>
+        )}
         <header className="topbar">
           <button type="button" className="btn menu-toggle" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
             <Menu size={18} aria-hidden />เมนู

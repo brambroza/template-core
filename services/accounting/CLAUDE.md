@@ -107,7 +107,9 @@ and the user RECORDS the filing made on rd.go.th — **nothing is submitted to t
 - `GET /reports/trial-balance?asOf=&all=` · `/reports/ledger?accountId=&from=&to=` · `/reports/profit-loss?month=` · `/reports/balance-sheet?asOf=` · `/reports/vat?year=` · `/reports/vat/lines?month=&kind=output|input` · `/reports/wht-received?year=`
 - `GET /summary`
 - wave 9: `GET /reports/pp30?period=YYYY-MM&zeroRated=&exempt=&surcharge=&penalty=&filedDate=&channel=` (preview; inputs default to the latest filing's)
-  · `GET /pp30/:period` (same payload, detail screen) · `GET /pp30?year=` (12 months: boxes 4/5/7/10/11/12/15/16, filing status, overdue)
+  · `GET /pp30/:period` (same payload, detail screen) · `GET /pp30?year=` (12 months: boxes 4/5/7/10/11/12/15/16, filing status, overdue; `first_vat_period`, `note`) —
+  months before the first VAT posting in the ledger (any year; = go-live of VAT in this module) and not filed are `status: 'no_activity'` "ไม่มีรายการ", never overdue;
+  later months without a filing past the e-Filing deadline stay overdue even when empty (a VAT registrant files zero returns — the screen says so)
   · `GET /reports/pp30/csv?period=` (UTF-8 BOM CSV of boxes 1–16) · `POST /pp30/:period/file { filedDate, channel: efiling|paper, receiptNo?, refundOrCarry: carry|refund,
   paidAmount, zeroRated?, exempt?, surcharge?, penalty?, amend?, reason? }` (201) · `GET /reports/wht-payable?year=&month=&form=PND3|PND53`
   · `GET /supplier-bills?q=&kind=&treatment=&from=&to=`

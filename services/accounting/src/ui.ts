@@ -411,7 +411,8 @@ export default defineUi({
         { key: 'deadline_efiling', label: 'กำหนดยื่น (e-Filing)', format: 'date', phone: false }, { key: 'filed_date', label: 'วันที่ยื่น', format: 'date' },
         { key: 'receipt_no', label: 'เลขที่ใบเสร็จ', phone: false },
       ],
-      report: { subtitle: 'ปีภาษี {year|year} — คำนวณจากรายงานภาษีขาย/ภาษีซื้อ; ยื่นจริงที่ efiling.rd.go.th แล้วกลับมาบันทึกการยื่น' },
+      // `note`: months before the first VAT posting show "ไม่มีรายการ" (not overdue) — but a VAT registrant still files zero returns
+      report: { subtitle: 'ปีภาษี {year|year} — คำนวณจากรายงานภาษีขาย/ภาษีซื้อ; ยื่นจริงที่ efiling.rd.go.th แล้วกลับมาบันทึกการยื่น · {note}' },
       rowLink: { screen: 'pp30Detail', idFrom: 'period' },
     },
     pp30Detail: {
