@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { formatValue, statusTone, type Format } from '@erp/ui-schema';
 import { displayValue } from '../lib/dates';
-import { radius, themed, toneColor, usePalette } from '../lib/theme';
+import { light, radius, themed, toneColor, usePalette } from '../lib/theme';
 
 export function Button({ label, onPress, tone = 'default', disabled, busy, size = 'normal', accessibilityLabel }: {
   label: string;
@@ -75,14 +75,12 @@ export function EmptyState({ title, hint, loading }: { title: string; hint?: str
   );
 }
 
-/** Safety-yellow/ink hatching used as the brand mark (floor tape). */
-export function Tape({ height = 10 }: { height?: number }) {
+/** Brand v2 bar on top of the login card: navy strip with a short trust-blue segment (replaces the v1 hazard tape). */
+export function BrandBar({ height = 6 }: { height?: number }) {
   const c = usePalette();
   return (
-    <View style={{ height, flexDirection: 'row', overflow: 'hidden' }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {Array.from({ length: 60 }).map((_, i) => (
-        <View key={i} style={{ width: 12, height: height * 3, backgroundColor: i % 2 ? c.onSignal : c.signal, transform: [{ skewX: '-45deg' }], marginTop: -height }} />
-      ))}
+    <View style={{ height, flexDirection: 'row', backgroundColor: light.ink }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={{ width: 72, backgroundColor: c.signal }} />
     </View>
   );
 }

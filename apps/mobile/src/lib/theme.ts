@@ -1,8 +1,9 @@
 import { useColorScheme } from 'react-native';
 
 /**
- * Same palette as the web app (apps/web/src/app/globals.css): ink on quiet greys, one safety-yellow accent.
- * `light` = :root, `dark` = the `prefers-color-scheme: dark` values. The app follows the phone's setting.
+ * Same palette as the web app (apps/web/src/app/globals.css), brand v2: navy ink on calm cool neutrals,
+ * one confident trust blue (`signal`) for primary actions. `light` = :root, `dark` = the `prefers-color-scheme: dark`
+ * values. The app follows the phone's setting. (Field names are kept from v1 so screens did not change.)
  */
 export interface Palette {
   /** main text */
@@ -20,9 +21,10 @@ export interface Palette {
   /** hairlines inside cards, quiet tiles */
   ruleSoft: string;
   ruleStrong: string;
+  /** primary actions, "you are here" (web --accent / --btn-primary) */
   signal: string;
   signalDeep: string;
-  /** text/icons on the yellow accent (always dark, in both modes) */
+  /** text/icons on the blue accent (white in both modes) */
   onSignal: string;
   ok: string;
   warn: string;
@@ -33,7 +35,7 @@ export interface Palette {
   onChrome: string;
   /** pressed row/tile */
   pressed: string;
-  /** yellow tint on a pressed tile */
+  /** blue tint on a pressed tile */
   pressedSignal: string;
   errorBg: string;
   errorText: string;
@@ -41,52 +43,52 @@ export interface Palette {
 }
 
 export const light: Palette = {
-  ink: '#141C22',
-  inkSoft: '#5B6670',
-  inkFaint: '#8A949C',
-  concrete: '#F5F6F5',
+  ink: '#0B1324',
+  inkSoft: '#4A5568',
+  inkFaint: '#8892A6',
+  concrete: '#F6F7FB',
   paper: '#FFFFFF',
-  rule: '#E3E6E3',
-  ruleSoft: '#EFF1EF',
-  ruleStrong: '#CDD2CE',
-  signal: '#F5C518',
-  signalDeep: '#D9A800',
-  onSignal: '#141C22',
-  ok: '#1F9D6B',
-  warn: '#C98207',
-  stop: '#D64535',
-  progress: '#3B6FD8',
-  chrome: '#141C22',
+  rule: '#E3E7EF',
+  ruleSoft: '#EEF1F7',
+  ruleStrong: '#CBD2DE',
+  signal: '#2F5BFF',
+  signalDeep: '#1E40D8',
+  onSignal: '#FFFFFF',
+  ok: '#12A16B',
+  warn: '#D9860B',
+  stop: '#E0443A',
+  progress: '#2F5BFF',
+  chrome: '#0B1324',
   onChrome: '#FFFFFF',
-  pressed: '#F7F8F5',
-  pressedSignal: 'rgba(245,197,24,0.22)',
-  errorBg: '#FBEDEB',
-  errorText: '#7D241C',
-  backdrop: 'rgba(31,42,51,0.45)',
+  pressed: '#F1F4FA',
+  pressedSignal: 'rgba(47,91,255,0.12)',
+  errorBg: '#FDEDEC',
+  errorText: '#9B241D',
+  backdrop: 'rgba(7,11,22,0.45)',
 };
 
 export const dark: Palette = {
-  ink: '#E9EEF1',
-  inkSoft: '#9AA7B1',
-  inkFaint: '#6E7B85',
-  concrete: '#0D1216',
-  paper: '#141B21',
-  rule: '#232D35',
-  ruleSoft: '#1B242B',
-  ruleStrong: '#33404A',
-  signal: '#F5C518',
-  signalDeep: '#D9A800',
-  onSignal: '#141C22',
-  ok: '#3DC48D',
-  warn: '#E9A93A',
-  stop: '#F06A5B',
-  progress: '#6E9BF5',
-  chrome: '#141B21',
-  onChrome: '#E9EEF1',
-  pressed: '#1B242B',
-  pressedSignal: 'rgba(245,197,24,0.18)',
-  errorBg: 'rgba(240,106,91,0.14)',
-  errorText: '#F6B3AA',
+  ink: '#E8EDF7',
+  inkSoft: '#A3AEC4',
+  inkFaint: '#6B7690',
+  concrete: '#070B16',
+  paper: '#0E1526',
+  rule: '#1C2740',
+  ruleSoft: '#141D33',
+  ruleStrong: '#2A3757',
+  signal: '#3D5EF5',
+  signalDeep: '#8EA4FF',
+  onSignal: '#FFFFFF',
+  ok: '#2FC488',
+  warn: '#EFA53A',
+  stop: '#F2675C',
+  progress: '#5B7CFF',
+  chrome: '#0E1526',
+  onChrome: '#E8EDF7',
+  pressed: '#141D33',
+  pressedSignal: 'rgba(91,124,255,0.18)',
+  errorBg: 'rgba(242,103,92,0.14)',
+  errorText: '#FFB4AD',
   backdrop: 'rgba(0,0,0,0.6)',
 };
 

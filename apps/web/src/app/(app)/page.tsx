@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, ChevronDown, Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, Loader2, SlidersHorizontal, X } from 'lucide-react';
 import { groupByArea, hasPerm, type AreaId, type ModuleUi, type Widget } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 import { readPref, writePref } from '@/lib/prefs';
 import { ModuleIcon } from '@/components/Icon';
+import { AiSpark, isAiModule } from '@/components/Brand';
 import { Bars, Feed, Kpi, Pipeline, Trend, WidgetLink } from '@/components/widgets/Basic';
 import { Floor3D } from '@/components/widgets/Floor3D';
 import { useReveal } from '@/lib/motion';
@@ -175,7 +176,7 @@ function PulseSection({ id, label, entries, data, want, collapsed, onToggle, cla
 
 function WidgetCard({ m, w, data, size }: { m: ModuleUi; w: Widget; data?: Data; size?: Widget['size'] }) {
   return (
-    <section className={`widget ${size ?? w.size ?? 'sm'} kind-${w.kind}`} aria-label={w.title}>
+    <section className={`widget ${size ?? w.size ?? 'sm'} kind-${w.kind}${isAiModule(m.module) ? ' is-ai' : ''}`} aria-label={w.title}>
       <div className="widget-head">
         <h3><ModuleIcon name={m.icon} glyph={m.glyph} size={16} />{w.title}</h3>
         <WidgetLink module={m.module} screen={w.href} />
@@ -262,8 +263,8 @@ function BriefingButton({ onResult, busy }: { onResult: (b: BriefingState) => vo
     }
   };
   return (
-    <button type="button" className="btn briefing-btn" onClick={run} disabled={busy}>
-      {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <Sparkles size={16} aria-hidden />}
+    <button type="button" className="btn-ai briefing-btn" onClick={run} disabled={busy}>
+      {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <AiSpark size={16} />}
       {busy ? 'AI กำลังดูข้อมูล…' : 'สรุปให้หน่อย'}
     </button>
   );
@@ -276,7 +277,7 @@ function BriefingCard({ b, onClose }: { b: Briefing; onClose: () => void }) {
   return (
     <section className={`briefing${problem ? ' is-error' : ''}`} aria-label="สรุปวันนี้โดย AI" aria-live="polite">
       <header>
-        <b><Sparkles size={16} aria-hidden /> สรุปวันนี้{at ? ` · ณ ${at} น.` : ''}</b>
+        <b><AiSpark size={18} /> สรุปวันนี้{at ? ` · ณ ${at} น.` : ''} <span className="ai-tag">AI</span></b>
         <button type="button" className="btn-ghost" onClick={onClose} aria-label="ปิดสรุป"><X size={16} aria-hidden /></button>
       </header>
       {problem ? <p>{problem}</p> : (
@@ -289,7 +290,7 @@ function BriefingCard({ b, onClose }: { b: Briefing; onClose: () => void }) {
               ))}
             </div>
           )}
-          <p className="muted" style={{ margin: '8px 0 0', fontSize: '.8rem' }}>AI อ่านข้อมูลตามสิทธิ์ของคุณเท่านั้น ไม่บันทึกอะไรแทนคุณ{b.cached ? ' · สรุปเดิม (อัปเดตได้ทุก 10 นาที)' : ''}</p>
+          <p className="muted briefing-foot">AI อ่านข้อมูลตามสิทธิ์ของคุณเท่านั้น ไม่บันทึกอะไรแทนคุณ{b.cached ? ' · สรุปเดิม (อัปเดตได้ทุก 10 นาที)' : ''}</p>
         </>
       )}
     </section>

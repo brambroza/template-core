@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { gsap, reducedMotion } from '@/lib/motion';
 import { loadSession, loginNotice, loginReasonFrom, saveSession, type LoginReason, type Session } from '@/lib/session';
 import { HOME, SHOWCASE, SHOWCASE_CONTACT } from '@/lib/showcase';
+import { AiSpark, LogoMark, Wordmark } from '@/components/Brand';
 
 /** Isometric blocks that assemble on load — the factory being built, in 2D. */
 function FloorArt() {
@@ -20,6 +21,9 @@ function FloorArt() {
   }, []);
   return (
     <svg ref={ref} className="grid3d" viewBox="0 0 600 420" preserveAspectRatio="xMidYMid slice" aria-hidden>
+      <defs>
+        <linearGradient id="hot-top" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6366F1" /><stop offset=".5" stopColor="#A78BFA" /><stop offset="1" stopColor="#22D3EE" /></linearGradient>
+      </defs>
       {blocks.sort((a, b) => a[0] + a[1] - (b[0] + b[1])).map(([x, y, h, hot], i) => {
         const top = [iso(x, y, h), iso(x + 1, y, h), iso(x + 1, y + 1, h), iso(x, y + 1, h)];
         const left = [iso(x, y + 1, h), iso(x + 1, y + 1, h), iso(x + 1, y + 1, 0), iso(x, y + 1, 0)];
@@ -27,9 +31,9 @@ function FloorArt() {
         const pts = (p: readonly (readonly [number, number])[]) => p.map((q) => q.join(',')).join(' ');
         return (
           <g key={i} className={`blk${hot ? ' hot' : ''}`}>
-            <polygon points={pts(left)} fill={hot ? '#B8920F' : '#1E2A33'} />
-            <polygon points={pts(right)} fill={hot ? '#D9A800' : '#26343F'} />
-            <polygon points={pts(top)} fill={hot ? '#F5C518' : '#33434F'} />
+            <polygon points={pts(left)} fill={hot ? '#3F3AC4' : '#121B30'} />
+            <polygon points={pts(right)} fill={hot ? '#6B4FD6' : '#18233D'} />
+            <polygon points={pts(top)} fill={hot ? 'url(#hot-top)' : '#22304F'} stroke="#2E3D61" strokeWidth={hot ? 0 : 0.6} />
           </g>
         );
       })}
@@ -61,7 +65,7 @@ function PersonaPicker({ onDone }: { onDone: () => void }) {
   };
   return (
     <div className="login-card">
-      <div className="login-tape" aria-hidden />
+      <LogoMark size={44} className="login-mark" />
       <h1>ลองใช้ระบบจริง</h1>
       <p className="showcase-note">หน้าจอจริงของ Factory OS กับข้อมูลบริษัทสมมติ — เลือกบทบาทเพื่อดูว่าแต่ละฝ่ายเห็นอะไร ไม่ต้องสมัคร ไม่บันทึกข้อมูล</p>
       {!personas && <p className="muted">กำลังโหลด…</p>}
@@ -114,7 +118,9 @@ export default function Login() {
     <main className="login">
       <section className="login-art">
         <FloorArt />
+        <Wordmark size={34} by />
         <div style={{ position: 'relative' }}>
+          <p className="ai-line"><AiSpark size={14} />ผู้ช่วย AI สั่งงานด้วยภาษาไทย</p>
           <h2>โรงงานทั้งหมด ในหน้าจอเดียว</h2>
           <p>เห็นเครื่องจักร สต็อก งานผลิต และเงินเข้าออกแบบสด พร้อมผู้ช่วยที่สั่งงานด้วยภาษาไทย</p>
         </div>
@@ -122,7 +128,7 @@ export default function Login() {
       <section className="login-pane">
         {SHOWCASE ? <PersonaPicker onDone={() => router.replace(HOME)} /> : (
         <form className="login-card" onSubmit={submit}>
-          <div className="login-tape" aria-hidden />
+          <LogoMark size={44} className="login-mark" />
           <h1>เข้าสู่ระบบ</h1>
           {reason && <p className="login-note" role="status">{loginNotice(reason)}</p>}
           <label>รหัสบริษัท<input value={tenant} onChange={(e) => setTenant(e.target.value)} autoComplete="organization" required /></label>

@@ -85,9 +85,9 @@ export function Trend({ w, data }: { w: TrendWidget; data: Data }) {
     <div className="trend">
       <div className="now">{w.format === 'money' ? `฿${formatValue(last, 'money')}` : formatValue(last, w.format)}<span className="now-label">เดือนนี้</span></div>
       <svg ref={ref} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${w.title}: ${rows.map((r) => `${formatValue(get(r, w.x), 'month')} ${formatValue(get(r, w.y), w.format)}`).join(', ')}`}>
-        <path className="trend-area" d={area} fill="color-mix(in srgb, var(--accent) 22%, transparent)" />
-        <path className="trend-line" d={line} fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={i === pts.length - 1 ? 4 : 2.5} fill={i === pts.length - 1 ? 'var(--accent-deep)' : 'var(--ink)'} />)}
+        <path className="trend-area" d={area} fill="color-mix(in srgb, var(--accent) 12%, transparent)" />
+        <path className="trend-line" d={line} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={i === pts.length - 1 ? 4 : 2.5} fill={i === pts.length - 1 ? 'var(--accent-deep)' : 'var(--accent)'} />)}
         {rows.map((r, i) => <text key={i} x={pts[i][0]} y={H - 2} textAnchor="middle" fontSize="9" fill="var(--ink-3)">{formatValue(get(r, w.x), 'month')}</text>)}
       </svg>
     </div>

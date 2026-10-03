@@ -19,6 +19,7 @@ import { loadCompany } from './print/company';
 import { Letterhead } from './print/PrintParts';
 import { ImportButton } from './ImportButton';
 import { isNumeric, isWideColumn, LabelsContext, Value } from './Value';
+import { AiSpark, isAiModule } from './Brand';
 
 /** "ประเภท: วัตถุดิบ · ค้นหา: เหล็ก" — the active filters, printed above the list. */
 function filterSummary(fields: Field[], values: Values): string {
@@ -99,7 +100,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
     const target = get(row, screen.rowLink.idFrom ?? 'id');
     return target === undefined || target === null || target === '' ? undefined : screenHref(module, screen.rowLink.screen, target);
   };
-  // one yellow button per page: the create button when there is one, else the first primary action
+  // one solid blue (primary) button per page: the create button when there is one, else the first primary action
   const listActions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm));
   const firstPrimary = screen.create ? undefined : listActions.find((a) => a.tone === 'primary');
   const headActions = listActions.map((a) => (a.tone === 'primary' && a !== firstPrimary ? { ...a, tone: 'default' as const } : a));
@@ -127,11 +128,11 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   );
 
   return (
-    <div className={`screen${report ? ' report print-doc' : ''}`}>
+    <div className={`screen${report ? ' report print-doc' : ''}${isAiModule(module) ? ' is-ai' : ''}`}>
       {report && <Letterhead company={company} title={screen.title} docNo="" subtitle={subtitle} />}
       <header className="screen-head">
         <div>
-          <h1>{screen.title}</h1>
+          <h1>{isAiModule(module) && !report && <AiSpark size={22} />}{screen.title}</h1>
           {subtitle && <p className="report-period">{subtitle}</p>}
         </div>
         <div className="screen-actions no-print">

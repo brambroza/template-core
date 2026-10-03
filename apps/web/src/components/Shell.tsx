@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, KeyRound, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
+import { AiGradientDefs, AiSpark, LogoMark, isAiModule } from './Brand';
 import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
@@ -70,9 +71,10 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className={`shell${menuOpen ? ' menu-open' : ''}`}>
       <a className="skip" href="#main">ข้ามไปเนื้อหา</a>
+      <AiGradientDefs />
 
       <div className="rail" aria-label="โมดูล" onMouseLeave={hideTip}>
-        <div className="rail-logo" aria-hidden />
+        <Link href={HOME} className="rail-logo" aria-label="Factory OS — ภาพรวมวันนี้"><LogoMark size={36} /></Link>
         <div className="rail-scroll" onScroll={hideTip}>
           <Link href={HOME} className={path === HOME ? 'is-active' : undefined} aria-label="ภาพรวมวันนี้" onMouseEnter={showTip('ภาพรวมวันนี้')} onFocus={showTip('ภาพรวมวันนี้')} onBlur={hideTip}>
             <Gauge size={20} strokeWidth={1.8} aria-hidden />
@@ -81,7 +83,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Fragment key={g.area}>
               <span className="rail-sep" aria-hidden title={g.label} />
               {g.items.map(({ m, items }) => (
-                <Link key={m.module} href={screenHref(m.module, items[0].screen)} className={activeModule === m.module ? 'is-active' : undefined} aria-label={m.label}
+                <Link key={m.module} href={screenHref(m.module, items[0].screen)} className={[activeModule === m.module && 'is-active', isAiModule(m.module) && 'is-ai'].filter(Boolean).join(' ') || undefined} aria-label={m.label}
                   onMouseEnter={showTip(m.label)} onFocus={showTip(m.label)} onBlur={hideTip}>
                   <ModuleIcon name={m.icon} glyph={m.glyph} size={20} />
                 </Link>
@@ -106,7 +108,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {areas.map((g) => {
             const open = isOpen(g.area);
             const groups = g.items.map(({ m, items }) => (
-              <div key={m.module} className="nav-group" id={`nav-${m.module}`}>
+              <div key={m.module} className={`nav-group${isAiModule(m.module) ? ' is-ai' : ''}`} id={`nav-${m.module}`}>
                 <p className="nav-group-title"><ModuleIcon name={m.icon} glyph={m.glyph} size={14} />{m.label}</p>
                 <ul>
                   {items.map((i) => {
@@ -161,11 +163,12 @@ export function Shell({ children }: { children: ReactNode }) {
           </p>
         )}
         <header className="topbar">
+          <Link href={HOME} className="topbar-logo" aria-label="Factory OS — ภาพรวมวันนี้"><LogoMark size={34} /></Link>
           <button type="button" className="btn menu-toggle" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-            <Menu size={18} aria-hidden />เมนู
+            <Menu size={18} aria-hidden /><span className="menu-label">เมนู</span>
           </button>
           <button type="button" className="cmd-trigger" onClick={() => openCommandPalette()} aria-label="ค้นหาหรือสั่งงาน">
-            <Sparkles size={18} className="spark" aria-hidden />
+            <AiSpark size={18} />
             <span>{example ? `พิมพ์ค้นหา หรือสั่งงาน เช่น “${example}”` : 'พิมพ์ค้นหาเมนู เอกสาร หรือสั่งงาน'}</span>
             <kbd>⌘K</kbd>
           </button>

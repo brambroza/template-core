@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Loader2, ScanLine, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
+import { AiSpark } from './Brand';
 import type { AiFillSpec } from '@erp/ui-schema';
 import { loadSession } from '@/lib/session';
 
@@ -87,8 +88,8 @@ export function AiFillButton({ module, screen, spec, onProposal, onFile }: {
     <div className="ai-fill">
       <input ref={input} type="file" accept="image/*,application/pdf" hidden aria-hidden tabIndex={-1}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) run(f); }} />
-      <button type="button" className="btn ai-fill-btn" disabled={busy} onClick={() => input.current?.click()}>
-        {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <ScanLine size={16} aria-hidden />}
+      <button type="button" className="btn-ai ai-fill-btn" disabled={busy} onClick={() => input.current?.click()}>
+        {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <AiSpark size={16} />}
         {busy ? 'AI กำลังอ่าน…' : spec.label}
       </button>
       {message && <p className="ai-fill-msg" role="status">{message}</p>}
@@ -105,7 +106,7 @@ export function AiFillReview({ proposal, filled, attach, onAttach, onClose }: {
   return (
     <section className="ai-review" aria-label="ข้อมูลที่ AI อ่านได้">
       <header>
-        <b><ScanLine size={16} aria-hidden /> AI กรอกให้ {filled} ช่อง/รายการ — ตรวจแล้วค่อยกดบันทึก</b>
+        <b><AiSpark size={16} /> AI กรอกให้ {filled} ช่อง/รายการ — ตรวจแล้วค่อยกดบันทึก</b>
         <button type="button" className="btn-ghost" onClick={onClose} aria-label="ปิด"><X size={16} aria-hidden /></button>
       </header>
       {proposal.facts.length > 0 && (

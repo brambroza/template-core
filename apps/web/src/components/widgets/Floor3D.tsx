@@ -12,7 +12,9 @@ import { screenHref } from '@/lib/nav';
 type Data = Record<string, unknown>;
 interface Machine { id: string; code: string; name: string; status: string; group: string; badge: number }
 
-const STATUS_COLOR: Record<string, string> = { running: '#1F9D6B', down: '#D64535', retired: '#8A949C' };
+/** Lamp colours = the semantic tokens (--ok / --stop / --ink-3), read from CSS at render time; these are fallbacks. */
+const STATUS_FALLBACK: Record<string, string> = { running: '#12A16B', down: '#E0443A', retired: '#8892A6' };
+const STATUS_VAR: Record<string, string> = { running: '--ok', down: '--stop', retired: '--ink-3' };
 
 function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
@@ -85,7 +87,7 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
       };
       placeCamera();
 
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.2));
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x8a96b4, 1.2));
       const sun = new THREE.DirectionalLight(0xffffff, 1.6);
       sun.position.set(center.x + 8, 18, center.z + 10);
       sun.castShadow = true;
@@ -94,8 +96,10 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
       sun.target.position.copy(center);
       scene.add(sun, sun.target);
 
-      const floorColor = new THREE.Color(cssVar(el, '--surface-2', '#EFF1EF'));
-      const plateColor = new THREE.Color(cssVar(el, '--surface', '#FFFFFF'));
+      // brand v2: light cool-grey plates (deep navy in dark mode), navy/slate machines, status lamps from the semantic tokens
+      const edgeColor = new THREE.Color(cssVar(el, '--floor-edge', '#C3CBDA'));
+      const plateColor = new THREE.Color(cssVar(el, '--floor-plate', '#E6EAF2'));
+      const status = (s: string) => new THREE.Color(cssVar(el, STATUS_VAR[s] ?? '--ink-3', STATUS_FALLBACK[s] ?? STATUS_FALLBACK.retired));
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.ShadowMaterial({ opacity: 0.12 }));
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
@@ -105,23 +109,23 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
         plate.position.set(p.x, 0.06, 0);
         plate.receiveShadow = true;
         scene.add(plate);
-        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(plate.geometry), new THREE.LineBasicMaterial({ color: floorColor.clone().offsetHSL(0, 0, -0.12) }));
+        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(plate.geometry), new THREE.LineBasicMaterial({ color: edgeColor }));
         edge.position.copy(plate.position);
         scene.add(edge);
       }
 
-      const bodyColor = new THREE.Color(cssVar(el, '--ink', '#141C22'));
+      const bodyColor = new THREE.Color(cssVar(el, '--machine', '#33415C'));
       const tweens: gsap.core.Tween[] = [];
       const meshes: { m: Machine; group: import('three').Group; top: import('three').Vector3 }[] = [];
       for (const { m, x, z } of placed) {
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1, 1.2), new THREE.MeshStandardMaterial({ color: m.status === 'down' ? new THREE.Color('#D64535') : bodyColor, roughness: 0.55, metalness: 0.2 }));
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1, 1.2), new THREE.MeshStandardMaterial({ color: m.status === 'down' ? status('down') : bodyColor, roughness: 0.55, metalness: 0.2 }));
         body.position.y = 0.62;
         body.castShadow = true;
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.7), new THREE.MeshStandardMaterial({ color: bodyColor.clone().offsetHSL(0, 0, 0.12), roughness: 0.6 }));
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.7), new THREE.MeshStandardMaterial({ color: bodyColor.clone().offsetHSL(0, 0, 0.1), roughness: 0.6 }));
         head.position.set(-0.2, 1.35, 0);
         head.castShadow = true;
-        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 20), new THREE.MeshStandardMaterial({ color: STATUS_COLOR[m.status] ?? '#8A949C', emissive: STATUS_COLOR[m.status] ?? '#8A949C', emissiveIntensity: 1.2 }));
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 20), new THREE.MeshStandardMaterial({ color: status(m.status), emissive: status(m.status), emissiveIntensity: 1.2 }));
         lamp.position.set(0.38, 1.3, 0.2);
         g.add(body, head, lamp);
         g.position.set(x, 0, z);
@@ -218,8 +222,8 @@ export function Floor3D({ w, data, module }: { w: FloorWidget; data: Data; modul
         ))}
       </div>
       <div className="floor-legend">
-        <span><i style={{ background: STATUS_COLOR.running }} />เดินเครื่อง</span>
-        <span><i style={{ background: STATUS_COLOR.down }} />เสีย</span>
+        <span><i style={{ background: 'var(--ok)' }} />เดินเครื่อง</span>
+        <span><i style={{ background: 'var(--stop)' }} />เสีย</span>
         <span>ลากเพื่อหมุน</span>
       </div>
     </div>

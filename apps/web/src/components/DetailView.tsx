@@ -68,7 +68,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
   if (error) return <p className="form-error" role="alert">{error}</p>;
   if (!record) return <p className="muted">กำลังโหลด…</p>;
 
-  // one yellow button per page: the first primary action is the next step, any other primary becomes a normal button
+  // one solid blue (primary) button per page: the first primary action is the next step, any other primary becomes a normal button
   const firstPrimary = (screen.actions ?? []).find((a) => a.tone === 'primary' && hasPerm(perms, a.perm) && matches(record, a.when));
   const actions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm) && matches(record, a.when))
     .map((a) => (a.tone === 'primary' && a !== firstPrimary ? { ...a, tone: 'default' as const } : a))

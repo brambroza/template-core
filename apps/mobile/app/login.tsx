@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from 'react-native';
-import { Button, ErrorText, Tape, useS } from '../src/components/ui';
+import { BrandBar, Button, ErrorText, useS } from '../src/components/ui';
 import { api } from '../src/lib/api';
 import { defaultGatewayUrl, saveSession } from '../src/lib/session';
 import { usePalette } from '../src/lib/theme';
@@ -33,7 +33,7 @@ export default function Login() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.chrome }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
         <View style={{ backgroundColor: c.paper, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: c.rule }}>
-          <Tape height={12} />
+          <BrandBar height={6} />
           <View style={{ padding: 20, gap: 14 }}>
             <Text style={s.h1}>เข้าสู่ระบบ</Text>
             <View><Text style={s.label}>รหัสบริษัท</Text><TextInput style={s.input} value={tenant} onChangeText={setTenant} autoCapitalize="none" accessibilityLabel="รหัสบริษัท" placeholderTextColor={c.inkFaint} /></View>

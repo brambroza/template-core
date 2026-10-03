@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Bot, CornerDownLeft, FileText, LayoutGrid, ListFilter, Loader2, Search, Sparkles, Zap } from 'lucide-react';
+import { ArrowRight, Bot, CornerDownLeft, FileText, LayoutGrid, ListFilter, Loader2, Search, Zap } from 'lucide-react';
 import {
   commandExample, commandTarget, get, hasPerm, matchCommand, pickRecord,
   type CommandSpec, type ModuleUi, type SearchSpec,
@@ -13,6 +13,7 @@ import { screenHref } from '@/lib/nav';
 import { useRegistry } from '@/lib/registry';
 import { loadSession } from '@/lib/session';
 import { ModuleIcon } from './Icon';
+import { AiSpark } from './Brand';
 import { safeHref } from '@/lib/href';
 
 /** Open the palette from anywhere: openCommandPalette('สต็อก ') or openCommandPalette('…', { ask: true }). */
@@ -269,7 +270,7 @@ export function CommandPalette() {
       <div className="palette-backdrop" onClick={close} aria-hidden />
       <div className="palette" ref={panel} role="dialog" aria-modal="true" aria-label="ผู้ช่วยสั่งงาน">
         <div className="pal-input">
-          {chat ? <Bot size={18} className="spark" aria-hidden /> : <Sparkles size={18} className="spark" aria-hidden />}
+          <AiSpark size={20} />
           <input
             ref={input}
             value={text}
@@ -305,12 +306,13 @@ export function CommandPalette() {
             <p className="pal-empty"><Search size={16} aria-hidden /> พิมพ์เพื่อเริ่ม</p>
           ) : (
             shown.map((it, i) => {
-              const head = it.group !== lastGroup ? <p className="pal-group" key={`g-${it.group}`}>{it.group}</p> : null;
+              const ai = isAi(it);
+              const head = it.group !== lastGroup ? <p className={`pal-group${ai ? ' is-ai' : ''}`} key={`g-${it.group}`}>{ai && <AiSpark size={12} />}{it.group}</p> : null;
               lastGroup = it.group;
               return (
                 <div key={it.key}>
                   {head}
-                  <div id={`pal-${i}`} role="option" aria-selected={i === active} className={`pal-item${i === active ? ' is-active' : ''}`}
+                  <div id={`pal-${i}`} role="option" aria-selected={i === active} className={`pal-item${i === active ? ' is-active' : ''}${ai ? ' is-ai' : ''}`}
                     onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); it.run(); }}>
                     <span className="pal-icon">{it.icon}</span>
                     <span className="pal-text"><b>{it.title}</b>{it.sub && <span>{it.sub}</span>}</span>
