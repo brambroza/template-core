@@ -6,6 +6,7 @@ deploy/*/
 !deploy/.gitkeep
 keys/
 *.pem
+!packages/kernel/license-public.pem
 .next
 *.tsbuildinfo
 .expo

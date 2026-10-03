@@ -35,6 +35,9 @@ pnpm erp pack maintenance,inventory --customer "บริษัท เอ จำ
 
 ## 5. Key ของใบอนุญาต
 
+วิธีสร้างและเก็บแบบละเอียด (ทำครั้งเดียวต่อบริษัท): [license-keys.md](license-keys.md)
+
+
 - `pnpm erp license keygen` สร้าง `keys/license-private.pem` (**เก็บเป็นความลับ สำรองไว้ ห้าม commit**) และ `packages/kernel/license-public.pem` (commit ได้)
 - ถ้า private key หาย ต้องสร้างใหม่ → ใบอนุญาตเก่าทั้งหมดใช้ไม่ได้ ต้องออกใหม่และส่ง public key ใหม่ให้ลูกค้า
 - dev/test ใช้ `ERP_LICENSE=dev` ได้ ยกเว้น `NODE_ENV=production`
