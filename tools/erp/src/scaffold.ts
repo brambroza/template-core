@@ -14,7 +14,7 @@ export function scaffoldModule(root: string, id: string, name: string, nameTh: s
       permissions: [{ key: `${id}.record.read`, label: `ดู${nameTh}` }, { key: `${id}.record.write`, label: `จัดการ${nameTh}` }],
     }, null, 2) + '\n',
     'package.json': JSON.stringify({
-      name: `@erp/svc-${id}`, version: '0.1.0', private: true, type: 'module', exports: { '.': './src/service.ts', './ui': './src/ui.ts' },
+      name: `@erp/svc-${id}`, version: '0.1.0', private: true, type: 'module', exports: { '.': './src/service.ts', './ui': './src/ui.ts', './ext/ui': './ext/ui.ts' },
       scripts: { start: 'node --import tsx src/main.ts', dev: 'node --watch --import tsx src/main.ts', test: `vitest run --root ../.. services/${id}` },
       dependencies: { '@erp/contracts': 'workspace:*', '@erp/kernel': 'workspace:*', '@erp/thai': 'workspace:*', '@erp/ui-schema': 'workspace:*', tsx: '^4.19.2' },
     }, null, 2) + '\n',

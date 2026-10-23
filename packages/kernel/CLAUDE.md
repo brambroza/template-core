@@ -32,6 +32,11 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
   `guardLockDate(c, auth, { module, date, what, overrideReason })` → Thai 409 for a document dated on/before the lock unless the user has
   `<module>.lock.override` and gives a reason (≥ 3 chars; the request is in `_audit`). `lockThroughPeriod(c, 'YYYY-MM')` (forward only — handler for
   `accounting.period_closed`), `unlockPeriod(c, 'YYYY-MM')` (steps an accounting lock back — `accounting.period_reopened`), `setLockDate(c, date|null, byName)` (manual), `readLock(c)`.
+- `extension.ts` — customer extension layer `services/<module>/ext/` (ext.json, index.ts `defineExtension({ routes, guards, handlers })`,
+  migrations/ recorded as `ext/<file>`). `createService` finds it next to `migrationsDir` (`ServiceDefinition.extDir` overrides, `false` = off):
+  ext permissions/events join the served manifest (`manifest.extension` says which); ext routes register in a child scope after the vendor routes
+  (a duplicate path fails at ready); guards run as a root `preHandler` keyed `METHOD /route/template` and a guard on a missing route fails at ready;
+  ext handlers run after the vendor handler in the same transaction and must match `ext.json` `subscribes`.
 - `testing.ts` — `bootTestService`, `createTestDatabase`; `t.raw()` for binary responses / requests without a token.
 
 Env: `ERP_CLOCK` (tests/demos only: frozen ISO instant), `DATABASE_URL`, `JWT_SECRET`, `INTERNAL_TOKEN`, `EVENT_ROUTER_URL` (optional), `ERP_LICENSE`, `PORT`, `LOG_LEVEL`,

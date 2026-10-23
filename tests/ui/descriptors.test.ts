@@ -2,12 +2,14 @@ import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createService, type Service, type ServiceDefinition } from '@erp/kernel';
-import { brokenLinks, endpointsOf, type ModuleUi } from '@erp/ui-schema';
+import { brokenLinks, endpointsOf, extendUi, type ModuleUi, type UiExtension } from '@erp/ui-schema';
 
 /**
  * UI <-> API contract for every module in this repo (works in a customer's package too):
  * each screen calls a route that really exists, with a permission the module declares,
  * and only looks data up from itself or a core module — so the module stays sellable on its own.
+ * A customer extension (services/<module>/ext/: routes + ext/ui.ts) is checked the same way, merged with the vendor screens
+ * exactly as the apps render them.
  */
 const SERVICES = fileURLToPath(new URL('../../services', import.meta.url));
 const ids = readdirSync(SERVICES).filter((d) => existsSync(`${SERVICES}/${d}/src/service.ts`)).sort();
@@ -22,7 +24,11 @@ beforeAll(async () => {
     await svc.app.ready();
     services.set(id, svc);
     defs.set(id, definition);
-    if (existsSync(`${SERVICES}/${id}/src/ui.ts`)) uis.set(id, (await import(`${SERVICES}/${id}/src/ui.ts`)).default as ModuleUi);
+    if (existsSync(`${SERVICES}/${id}/src/ui.ts`)) {
+      const base = (await import(`${SERVICES}/${id}/src/ui.ts`)).default as ModuleUi;
+      const ext = existsSync(`${SERVICES}/${id}/ext/ui.ts`) ? ((await import(`${SERVICES}/${id}/ext/ui.ts`)).default as UiExtension) : null;
+      uis.set(id, extendUi(base, ext));
+    }
   }
 });
 afterAll(async () => { for (const s of services.values()) await s.close(); });
@@ -81,5 +87,29 @@ describe.each(ids)('%s screens', (id) => {
     if (!ui) return;
     expect(brokenLinks(ui)).toEqual([]);
     expect(ui.menu.length).toBeGreaterThan(0);
+  });
+});
+
+/** The documented example extensions (docs/examples/<name>/ext) must keep working against today's vendor screens and routes. */
+const EXAMPLES = fileURLToPath(new URL('../../docs/examples', import.meta.url));
+const examples = existsSync(EXAMPLES) ? readdirSync(EXAMPLES).filter((d) => existsSync(`${EXAMPLES}/${d}/ext/ui.ts`)).sort() : [];
+
+describe.each(examples)('example extension %s', (name) => {
+  it('patches existing screens and calls only routes the extended module really has', async () => {
+    const extUi = (await import(`${EXAMPLES}/${name}/ext/ui.ts`)).default as UiExtension;
+    const { definition } = (await import(`${SERVICES}/${extUi.module}/src/service.ts`)) as { definition: ServiceDefinition };
+    const svc = createService({ ...definition, extDir: `${EXAMPLES}/${name}/ext` }, { DATABASE_URL: 'postgres://unused@127.0.0.1:1/x', JWT_SECRET: 'x', INTERNAL_TOKEN: 'x' });
+    try {
+      await svc.app.ready();
+      const ui = extendUi((await import(`${SERVICES}/${extUi.module}/src/ui.ts`)).default as ModuleUi, extUi);
+      const missing = endpointsOf(ui).filter((e) => e.module === extUi.module && !svc.app.hasRoute({ method: e.method as 'GET', url: e.path }));
+      expect(missing.map((e) => `${e.where}: ${e.method} ${e.path}`)).toEqual([]);
+      expect(brokenLinks(ui)).toEqual([]);
+      const declared = new Set(svc.manifest.permissions.map((p) => p.key));
+      const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : [])]);
+      expect(used.filter((p) => p && !declared.has(p))).toEqual([]);
+    } finally {
+      await svc.close();
+    }
   });
 });

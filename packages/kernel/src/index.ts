@@ -5,6 +5,7 @@ export * from './clock.ts';
 export * from './db.ts';
 export * from './errors.ts';
 export * from './events.ts';
+export * from './extension.ts';
 export * from './license.ts';
 export * from './lock.ts';
 export * from './manifest.ts';

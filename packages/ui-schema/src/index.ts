@@ -1489,3 +1489,151 @@ export function mergeAiFill(
   const lines = added.length ? [...kept, ...added] : current.lines;
   return { values, lines, filled };
 }
+
+/* ---------------- customer extensions (services/<module>/ext/ui.ts) ---------------- */
+
+/**
+ * Screen changes a customer makes in `services/<module>/ext/ui.ts` — without editing the vendor `src/ui.ts`.
+ * `pnpm erp ui-sync` wires `extendUi(vendorUi, extension)` into the web and mobile apps, so the vendor file can be
+ * replaced by an update and the customer's columns, fields, buttons and screens stay.
+ *
+ * ```ts
+ * export default defineUiExtension({
+ *   module: 'purchasing',
+ *   patch: {
+ *     poList:   { columns: [{ key: 'x_budget_code', label: 'รหัสงบ' }], after: 'supplier_name' },
+ *     poDetail: { fields: [{ key: 'x_budget_code', label: 'รหัสงบ' }],
+ *                 actions: [{ id: 'x-budget', label: 'ตั้งรหัสงบ', method: 'POST', endpoint: '/x/purchase-orders/:id/budget', perm: 'purchasing.x_budget.write',
+ *                             fields: [{ name: 'code', label: 'รหัสงบ', type: 'text', required: true }] }] },
+ *   },
+ *   hide: { poList: ['currency'] },
+ * });
+ * ```
+ */
+export interface ScreenPatch {
+  title?: string;
+  perm?: string;
+  mobile?: boolean;
+  /** list: more columns · detail: more facts (Column) · form: more input fields (Field) */
+  columns?: Column[];
+  fields?: (Field | Column)[];
+  /** list: more filters */
+  filters?: Field[];
+  /** list / detail: more buttons */
+  actions?: Action[];
+  /** list: more row buttons */
+  rowActions?: Action[];
+  /**
+   * where new columns / fields go: after the column `key` / field `name` given here (default: at the end).
+   * Unknown keys are an error — an update that renamed the column must not silently move customer fields.
+   */
+  after?: string;
+}
+
+export interface UiExtension {
+  /** the module this extends — must equal the vendor ui's `module` */
+  module: string;
+  /** new menu entries (appended) */
+  menu?: MenuItem[];
+  /** new screens; ids must not exist in the vendor ui (prefix them, e.g. `xBudgetList`) */
+  screens?: Record<string, Screen>;
+  /** additions to existing screens */
+  patch?: Record<string, ScreenPatch>;
+  /** remove vendor columns / fields / filters / actions from a screen, by column key, field name or action id */
+  hide?: Record<string, string[]>;
+  widgets?: Widget[];
+  commands?: CommandSpec[];
+  search?: SearchSpec[];
+  statusLabels?: Record<string, string>;
+}
+
+export function defineUiExtension(ext: UiExtension): UiExtension {
+  return ext;
+}
+
+const idOf = (x: { key?: string; name?: string; id?: string }) => x.key ?? x.name ?? x.id ?? '';
+
+function insertAfter<T extends { key?: string; name?: string }>(list: T[], items: T[], after: string | undefined, where: string): T[] {
+  if (!items.length) return list;
+  if (after === undefined) return [...list, ...items];
+  const i = list.findIndex((x) => idOf(x) === after);
+  if (i < 0) throw new Error(`${where}: "after: ${after}" — no such column/field on the vendor screen`);
+  return [...list.slice(0, i + 1), ...items, ...list.slice(i + 1)];
+}
+
+function without<T extends { key?: string; name?: string; id?: string }>(list: T[] | undefined, ids: Set<string>, used: Set<string>): T[] | undefined {
+  if (!list) return list;
+  return list.filter((x) => {
+    const hit = ids.has(idOf(x));
+    if (hit) used.add(idOf(x));
+    return !hit;
+  });
+}
+
+/**
+ * Vendor ui + customer extension = the ui the apps render. Throws (at `ui-sync` / test time, never silently) when the
+ * extension points at screens, columns or ids the vendor ui no longer has, or reuses a vendor screen id.
+ */
+export function extendUi(base: ModuleUi, ext?: UiExtension | null): ModuleUi {
+  if (!ext) return base;
+  const where = `${base.module} ext/ui.ts`;
+  if (ext.module !== base.module) throw new Error(`${where}: module is "${ext.module}", expected "${base.module}"`);
+  const screens: Record<string, Screen> = { ...base.screens };
+
+  for (const [sid, p] of Object.entries(ext.patch ?? {})) {
+    const s = screens[sid];
+    if (!s) throw new Error(`${where}: patch "${sid}" — the vendor ui has no such screen`);
+    const at = `${where} patch.${sid}`;
+    const next: any = { ...s };
+    if (p.title) next.title = p.title;
+    if (p.perm) next.perm = p.perm;
+    if (p.mobile !== undefined) next.mobile = p.mobile;
+    if (s.kind === 'list') {
+      next.columns = insertAfter(s.columns, [...(p.columns ?? []), ...((p.fields ?? []) as Column[])], p.after, at);
+      if (p.filters) next.filters = [...(s.filters ?? []), ...p.filters];
+      if (p.actions) next.actions = [...(s.actions ?? []), ...p.actions];
+      if (p.rowActions) next.rowActions = [...(s.rowActions ?? []), ...p.rowActions];
+    } else if (s.kind === 'detail') {
+      next.fields = insertAfter(s.fields, [...(p.columns ?? []), ...((p.fields ?? []) as Column[])], p.after, at);
+      if (p.actions) next.actions = [...(s.actions ?? []), ...p.actions];
+      if (p.filters || p.rowActions) throw new Error(`${at}: a detail screen has no filters/rowActions`);
+    } else {
+      if (p.columns || p.filters || p.actions || p.rowActions) throw new Error(`${at}: a form screen takes only "fields"`);
+      next.fields = insertAfter(s.fields, (p.fields ?? []) as Field[], p.after, at);
+    }
+    screens[sid] = next as Screen;
+  }
+
+  for (const [sid, ids] of Object.entries(ext.hide ?? {})) {
+    const s = screens[sid];
+    if (!s) throw new Error(`${where}: hide "${sid}" — the vendor ui has no such screen`);
+    const want = new Set(ids);
+    const used = new Set<string>();
+    const next: any = { ...s };
+    for (const k of ['columns', 'fields', 'filters', 'actions', 'rowActions'] as const) if (k in next) next[k] = without(next[k], want, used);
+    const missing = ids.filter((x) => !used.has(x));
+    if (missing.length) throw new Error(`${where}: hide.${sid} — nothing named ${missing.map((x) => `"${x}"`).join(', ')} on that screen`);
+    screens[sid] = next as Screen;
+  }
+
+  for (const [sid, s] of Object.entries(ext.screens ?? {})) {
+    if (base.screens[sid]) throw new Error(`${where}: screen "${sid}" already exists in the vendor ui — patch it, or give the new screen another id`);
+    screens[sid] = s;
+  }
+
+  const dup = <T>(a: T[] | undefined, b: T[] | undefined, key: (x: T) => string, what: string) => {
+    const seen = new Set((a ?? []).map(key));
+    for (const x of b ?? []) if (seen.has(key(x))) throw new Error(`${where}: ${what} "${key(x)}" already exists in the vendor ui`);
+    return b?.length ? [...(a ?? []), ...b] : a;
+  };
+
+  return {
+    ...base,
+    menu: [...base.menu, ...(ext.menu ?? [])],
+    screens,
+    widgets: dup(base.widgets, ext.widgets, (w) => w.id, 'widget'),
+    commands: dup(base.commands, ext.commands, (c) => c.id, 'command'),
+    search: dup(base.search, ext.search, (x) => x.id, 'search'),
+    ...(ext.statusLabels ? { statusLabels: { ...(base.statusLabels ?? {}), ...ext.statusLabels } } : {}),
+  };
+}

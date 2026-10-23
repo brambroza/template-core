@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — "ขายฐานที่ถูกต้อง ให้ AI ต่อยอด" (customer extension layer)
+
+The product promise is now enforced in code: GO Along ships a tested base, the customer's AI extends it **without editing it**,
+and both sides can prove which is which.
+
+- **Extension layer `services/<module>/ext/`** (kernel `extension.ts`, loaded automatically — no module code changed):
+  `ext.json` (permissions, events), `index.ts` → `defineExtension({ routes, guards, handlers })`, `migrations/` (tracked as `ext/<file>`),
+  `ui.ts` → `defineUiExtension({ patch, hide, screens, menu })`, `test/`. **Guards** are company rules on existing routes ("PO over 50,000 needs a budget")
+  that refuse with a Thai message before the vendor code runs. Every mistake fails loudly at startup/test time (guard on a missing route,
+  patch on a renamed screen/column, route overriding a vendor route, handlers ≠ ext.json).
+- **UI**: `extendUi` in `@erp/ui-schema`; `pnpm erp ui-sync` merges `ext/ui.ts` into the web and mobile registries (output unchanged when there is none);
+  the UI↔API contract test checks merged screens against vendor + ext routes.
+- **Vendor lock** `.erp/vendor-lock.json` written by `pnpm erp pack`; `pnpm erp doctor` (base intact? what did this company add?);
+  `pnpm erp verify` warns on edited vendor files (`--strict` fails) and on ext names that could clash with future releases (`/x/`, `x_`);
+  `pnpm erp upgrade <release> [--apply]` replaces untouched vendor files, keeps customer edits, puts real conflicts in `.erp/upgrade/`.
+- **Pack**: CLAUDE.md tailored to the installed modules, `CUSTOM.md` for the company's conventions, GO Along-internal documents
+  (roadmap, UAT, UX reviews, licensing/showcase how-tos) no longer shipped.
+- **For AI tools**: CLAUDE.md "Where a change goes" table + extension reference, new `/extend` command, `/upgrade` rewritten around the tool,
+  `docs/extending-with-ai.md` rewritten, a complete tested example `docs/examples/purchasing-budget/` (run by `pnpm check`).
+
 ## 0.3.1 — 2026-10-03 · ภาษีไทยครบรอบเดือน + ยกเลิกเซสชัน
 
 **In numbers:** 22 modules (new: `etax`) · 931 automated tests · **77 UAT cases (UAT-01..77)** all passing in Chromium · roadmap 553 of 1,060 functions done.

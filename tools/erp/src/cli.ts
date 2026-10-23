@@ -14,7 +14,9 @@
  *   new-module <id> --name "English" --name-th "ไทย"
  *   ui-sync                                   regenerate web/mobile module registries from services/<id>/src/ui.ts
  *   uat-report                                build docs/uat/uat-pack.html from the UAT cases, runs and screenshots
- *   verify                                    architecture rules (run in CI)
+ *   verify [--strict]                         architecture rules (run in CI); --strict: edited vendor files are errors, not warnings
+ *   doctor                                    installation: is GO Along's base intact (.erp/vendor-lock.json)? what did this company add (ext/, own modules)?
+ *   upgrade <release-folder> [--apply]        installation: move to a newer pack; replaces untouched vendor files, never touches ext/ or own modules
  *   showcase-capture [--gateway URL] [--tenant demo] [--password demo1234] [--rows 5] [--out apps/web/showcase/snapshot.json]
  *                                             record a running demo's answers for the public showcase (SHOWCASE=1, docs/deploy-vercel.md)
  *
@@ -29,6 +31,7 @@ import { compose } from './compose.ts';
 import { pack } from './pack.ts';
 import { scaffoldModule } from './scaffold.ts';
 import { verify } from './verify.ts';
+import { doctor, formatUpgradePlan, upgrade } from './vendor.ts';
 import { syncUi } from './ui-sync.ts';
 import { buildUatReport } from './uat-report.ts';
 
@@ -171,8 +174,21 @@ function main() {
       console.log(`Wrote ${buildUatReport(REPO_ROOT)}`);
       return;
     }
+    case 'doctor': {
+      const r = doctor(REPO_ROOT);
+      console.log(r.text);
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    case 'upgrade': {
+      if (!args[0]) throw new Error('Usage: pnpm erp upgrade <release-folder> [--apply]');
+      const apply = flags.apply === 'true';
+      const plan = upgrade(REPO_ROOT, resolve(args[0]), { apply });
+      console.log(formatUpgradePlan(plan, apply));
+      return;
+    }
     case 'verify': {
-      const r = verify(REPO_ROOT);
+      const r = verify(REPO_ROOT, { strict: flags.strict === 'true' });
       for (const w of r.warnings) console.log(`warn  ${w}`);
       for (const e of r.errors) console.log(`ERROR ${e}`);
       console.log(r.errors.length ? `\n${r.errors.length} error(s)` : `\nOK: ${manifests.length} modules follow the rules`);

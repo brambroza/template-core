@@ -30,8 +30,12 @@ pnpm erp pack maintenance,inventory --customer "บริษัท เอ จำ
 
 ## 4. อัปเดตเวอร์ชัน
 
-- `packages/*` และ `apps/gateway` = แทนที่ทั้งโฟลเดอร์ได้ (ลูกค้าไม่ควรแก้)
-- `services/<module>` = ลูกค้าอาจแก้แล้ว → ส่งเป็น migration ใหม่ + diff/changelog ให้ AI ของลูกค้า apply (ดู `.claude/commands/upgrade.md`)
+- `pnpm erp pack` เขียน `.erp/vendor-lock.json` (sha256 ของทุกไฟล์ที่ส่งมอบ) — ใช้พิสูจน์ว่าฐานยังเป็นของที่เราทดสอบ (`pnpm erp doctor`)
+  และเป็นเส้นแบ่งการซัพพอร์ต: ไฟล์ที่ลูกค้าแก้เองแสดงในรายงาน doctor
+- ลูกค้าต่อยอดใน `services/<module>/ext/` และโมดูลของตัวเอง (ดู [extending-with-ai.md](extending-with-ai.md)) — ไม่อยู่ใน lock ไม่ถูกอัปเดตทับ
+- ส่งรุ่นใหม่ = `pnpm erp pack <โมดูลเดิม> --customer "<ชื่อเดิม>" --out <release>` แล้วลูกค้ารัน `pnpm erp upgrade <release> --apply`
+  (แทนที่ไฟล์ที่ไม่ได้แก้ทั้งหมด, ไฟล์ที่ลูกค้าแก้และเราก็แก้ → เก็บของลูกค้าไว้ + วางของเราที่ `.erp/upgrade/` ให้ AI ของลูกค้ารวม — `.claude/commands/upgrade.md`)
+- ซื้อโมดูลเพิ่ม: pack รุ่นใหม่ที่รวมโมดูลนั้น + license ใหม่ → `upgrade --apply` ก็เพิ่มโมดูลให้ (และรัน `pnpm erp compose` ใหม่สำหรับ deploy)
 
 ## 5. Key ของใบอนุญาต
 
