@@ -35,6 +35,10 @@ describe('pack for one installation', () => {
   });
 
   it('writes a CLAUDE.md for this installation only and keeps GO Along-internal documents out', () => {
+    const readme = readFileSync(join(site, 'README.md'), 'utf8');
+    expect(readme).toContain('โทร: 085 608 3298');
+    expect(readme).toContain('sales@goalong.co.th');
+    expect(readme).toContain('สมุทรปราการ 10290');
     const md = readFileSync(join(site, 'CLAUDE.md'), 'utf8');
     expect(md).toContain('Modules in THIS installation: `identity`, `master-data` (core) · `purchasing`, `sales` (features)');
     expect(md).not.toMatch(/erp:(internal|modules)/);

@@ -36,6 +36,19 @@ export function installationClaudeMd(src: string, selection: string[], manifests
     .replace(/<!-- erp:modules:start -->[\s\S]*?<!-- erp:modules:end -->/, modules);
 }
 
+/** GO Along's company contact for the customer README (read from site/site.config.json, which itself is never shipped). */
+export function vendorContact(root: string): string {
+  try {
+    const site = JSON.parse(readFileSync(join(root, 'site', 'site.config.json'), 'utf8'));
+    const c = site.contact ?? {};
+    const lines = [c.phone && `- โทร: ${c.phone}`, c.email && `- อีเมล: ${c.email}`, c.address && `- ที่อยู่: ${c.address}`].filter(Boolean);
+    if (!lines.length) return '';
+    return `\n## ติดต่อ GO Along (ซัพพอร์ต, แจ้งปัญหาในโค้ดหลัก, ซื้อโมดูลเพิ่ม)\n\n${site.company ? `${site.company}\n\n` : ''}${lines.join('\n')}\n`;
+  } catch {
+    return '';
+  }
+}
+
 const CUSTOM_MD = (customer: string) => `# CUSTOM.md — ${customer}
 
 This file belongs to ${customer}, not to GO Along: updates never overwrite it. AI coding tools read it after CLAUDE.md.
@@ -121,7 +134,7 @@ Purchased modules: ${selection.map((id) => `\`${id}\``).join(', ')}
 - Deploy: see \`deploy/README.md\`
 - Updates: \`pnpm erp upgrade <release-folder>\` replaces GO Along's files and keeps everything in \`ext/\` and your own modules
 - Add more modules later: ask GO Along for an updated release + license, then \`pnpm erp upgrade <release-folder> --apply\`.
-`);
+${vendorContact(root)}`);
   // last: fingerprint exactly what was shipped
   writeVendorLock(outDir, { customer: opts.customer, modules: [...selection].sort(), versions: installed.versions, packedAt: installed.packedAt });
   return outDir;

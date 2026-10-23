@@ -3,9 +3,11 @@
   "product": "Factory OS",
   "tagline": "ระบบงานบริษัทแบบแยกโมดูล ที่เห็นภาพ สั่งงานเป็นภาษาไทย และมีบอทเฝ้าให้ — สำหรับโรงงาน สำนักงาน ธุรกิจบริการ ค้าส่ง ผู้รับเหมา อาคารและโรงเรียน",
   "contact": {
-    "email": "brambroza@gmail.com",
-    "phone": "",
+    "email": "sales@goalong.co.th",
+    "phone": "085 608 3298",
     "line": "",
+    "address": "918/288 หมู่ 10 ต.ในคลองบางปลากด อ.พระสมุทรเจดีย์ จ.สมุทรปราการ 10290",
+    "addressEn": "918/288 Moo 10, Nai Khlong Bang Pla Kot, Phra Samut Chedi, Samut Prakan 10290",
     "leadEndpoint": ""
   },
   "demoUrl": "/login",
