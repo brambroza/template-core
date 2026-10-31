@@ -46,55 +46,66 @@ async function prepare(file: File): Promise<File> {
   }
 }
 
+export type ReadResult = { proposal: AiProposal; file: File } | { offline: string };
+
+/** Send one file to /assist/fill for this form. Throws an Error with a Thai message. */
+export async function readDocument(module: string, screen: string, picked: File): Promise<ReadResult> {
+  const file = await prepare(picked);
+  const session = loadSession();
+  const res = await fetch('/assist/fill', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(session ? { authorization: `Bearer ${session.token}` } : {}) },
+    body: JSON.stringify({ module, screen, file: { mediaType: file.type, name: file.name, dataBase64: await readBase64(file) } }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.offline) return { offline: data.message };
+  if (!res.ok) throw new Error(data?.error?.message ?? 'AI อ่านเอกสารไม่ได้');
+  return { proposal: data as AiProposal, file };
+}
+
 /**
- * The "สแกนใบเสร็จ" button of a form with `aiFill`: pick or take a photo (or a PDF) → /assist/fill → `onProposal`.
+ * The AI button of a form with `aiFill`: pick or take a photo / PDF (several = a queue, read one by one) → /assist/fill.
  * Nothing is saved; the form shows what was read and the person checks it and presses save.
  */
-export function AiFillButton({ module, screen, spec, onProposal, onFile }: {
-  module: string; screen: string; spec: AiFillSpec;
-  onProposal: (p: AiProposal) => void;
-  /** the (shrunk) file that was read, so the form can attach it after saving */
-  onFile: (f: File) => void;
+export function AiFillButton({ spec, busy, message, onFiles }: {
+  spec: AiFillSpec; busy: boolean; message: string;
+  /** chosen files, in order; the form reads the first and queues the rest */
+  onFiles: (files: File[]) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const run = async (picked: File) => {
-    setBusy(true);
-    setMessage('');
-    try {
-      const file = await prepare(picked);
-      const session = loadSession();
-      const res = await fetch('/assist/fill', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(session ? { authorization: `Bearer ${session.token}` } : {}) },
-        body: JSON.stringify({ module, screen, file: { mediaType: file.type, name: file.name, dataBase64: await readBase64(file) } }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data?.offline) { setMessage(data.message); return; }
-      if (!res.ok) throw new Error(data?.error?.message ?? 'AI อ่านเอกสารไม่ได้');
-      onFile(file);
-      onProposal(data as AiProposal);
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'AI อ่านเอกสารไม่ได้');
-    } finally {
-      setBusy(false);
-      if (input.current) input.current.value = '';
-    }
-  };
-
   return (
     <div className="ai-fill">
-      <input ref={input} type="file" accept="image/*,application/pdf" hidden aria-hidden tabIndex={-1}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) run(f); }} />
+      <input ref={input} type="file" accept="image/*,application/pdf" multiple hidden aria-hidden tabIndex={-1}
+        onChange={(e) => { const f = [...(e.target.files ?? [])]; if (f.length) onFiles(f); e.target.value = ''; }} />
       <button type="button" className="btn-ai ai-fill-btn" disabled={busy} onClick={() => input.current?.click()}>
         {busy ? <Loader2 size={16} className="spin" aria-hidden /> : <AiSpark size={16} />}
         {busy ? 'AI กำลังอ่าน…' : spec.label}
       </button>
-      {message && <p className="ai-fill-msg" role="status">{message}</p>}
+      {message ? <p className="ai-fill-msg" role="status">{message}</p> : <p className="ai-fill-msg muted">หรือลากรูป / PDF มาวางบนฟอร์ม · เลือกหลายไฟล์ได้</p>}
     </div>
   );
+}
+
+/** Drop target over a whole screen: shows a frame while files are dragged over it. */
+export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) {
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  const isFiles = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  return {
+    over,
+    props: enabled ? {
+      onDragEnter: (e: React.DragEvent) => { if (!isFiles(e)) return; e.preventDefault(); depth.current++; setOver(true); },
+      onDragOver: (e: React.DragEvent) => { if (isFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
+      onDragLeave: (e: React.DragEvent) => { if (!isFiles(e)) return; depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false); },
+      onDrop: (e: React.DragEvent) => { if (!isFiles(e)) return; e.preventDefault(); depth.current = 0; setOver(false); if (e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]); },
+    } : {},
+  };
+}
+
+/** The frame shown while files are dragged over a drop target. */
+export function DropOverlay({ show, label }: { show: boolean; label: string }) {
+  if (!show) return null;
+  return <div className="drop-overlay" aria-hidden><span><AiSpark size={22} /> {label}</span></div>;
 }
 
 /** What the AI read off the paper + what to double-check, shown above the form until dismissed. */

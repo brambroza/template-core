@@ -156,6 +156,9 @@ export default defineUi({
   },
 });
 ```
+A status list can be a drag-and-drop kanban: `display: 'board'` + `board: { field, lanes, moves }` — `moves` names the detail screen's
+own actions (drag = the same endpoint + dialog as the button). A form with `aiFill: { kind, label, hint }` is filled from a photo/PDF by AI
+(the person saves); its list then offers "create from documents" for many files. Both are data — no module-specific React.
 Full reference: docs/ui.md. A module can also declare `widgets` (home dashboard: kpi/bars/pipeline/trend/floor3d/feed),
 `commands` (Thai ⌘K commands that prefill forms), `search` (palette record search) and `notifications` (the bell).
 The AI assistant (`apps/web/src/app/assist`) reads only GET endpoints declared there, with the user's token, and never writes.

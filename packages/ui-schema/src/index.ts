@@ -142,8 +142,14 @@ export interface ListScreen extends ScreenBase {
   endpoint: string;
   /** path of the array inside the response when it is not the response itself, e.g. "items" */
   rows?: string;
-  /** 'cards': a grid of cards (first column = title, second = text, the rest as small facts) — for galleries */
-  display?: 'table' | 'cards';
+  /**
+   * 'cards': a grid of cards (first column = title, second = text, the rest as small facts) — for galleries.
+   * 'board': a kanban board (needs `board`): one lane per status, cards dragged between lanes run the module's own actions.
+   * The person can still switch a board to the table (web remembers the choice).
+   */
+  display?: 'table' | 'cards' | 'board';
+  /** kanban lanes and drag moves when `display: 'board'` — see BoardSpec */
+  board?: BoardSpec;
   columns: Column[];
   filters?: Field[];
   /** screen id of the create form */
@@ -161,6 +167,38 @@ export interface ListScreen extends ScreenBase {
   report?: ReportSpec;
   empty?: string;
 }
+
+/**
+ * A list drawn as a kanban board. Cards are grouped by the record field `field` into `lanes` (in order; records whose
+ * value is in no lane are not shown). Card = the list's columns: the first is the title (links to `rowLink`), the second
+ * a subtitle, the rest small facts; the lane field itself is left out.
+ *
+ * Dragging a card to another lane does NOT write the status: it runs an action that already exists on the row's detail
+ * screen (`rowLink.screen`), named in `moves` — e.g. `moves: { in_progress: ['start'], resolved: ['resolve'] }`. The first
+ * listed action whose `when` matches the card and whose `perm` the user has is run, with its confirmation / input dialog,
+ * so every business rule (segregation of duties, required reasons, stock checks) stays on the server. Lanes no move
+ * can reach for that card are shown as closed while it is dragged.
+ */
+export interface BoardSpec {
+  /** record field that picks the lane, usually `status` or `stage` */
+  field: string;
+  lanes: { value: string; label: string }[];
+  /**
+   * lane value -> actions on the detail screen of `rowLink.screen` that move a card into that lane: an action id, or
+   * `{ action, from }` when the action only lands in this lane from some lanes (a "next stage" action used for several lanes).
+   */
+  moves?: Record<string, BoardMove[]>;
+  /** column keys a card shows, in order: title, subtitle, then small facts (default: all columns in list order) */
+  card?: string[];
+  /** a numeric field summed in each lane header, e.g. the expected value of opportunities */
+  sum?: { key: string; label?: string; format?: Format; /** printed after the number, e.g. "ชม." */ unit?: string };
+  /** lanes shown narrow until a card is dragged over them (finished / lost) */
+  collapsed?: string[];
+  /** rows requested for the board (default 200; the list API caps at 500) */
+  limit?: number;
+}
+
+export type BoardMove = string | { action: string; from: string[] };
 
 /**
  * CSV bulk import on a list screen. `endpoint` is a POST route of this module that accepts
@@ -222,6 +260,11 @@ export interface AiFillSpec {
   kind: 'receipt' | 'document';
   /** button text, e.g. "สแกนใบเสร็จ" */
   label: string;
+  /**
+   * what the paper usually is and how to read it, for the AI (Thai), e.g.
+   * "ใบเสนอราคา/ใบแจ้งราคาจากผู้ขาย: ผู้ขาย = บริษัทที่ออกเอกสาร, รายการ = สินค้าที่เสนอพร้อมจำนวนและราคาต่อหน่วย"
+   */
+  hint?: string;
 }
 
 /** The happy path of a document's status, drawn as a 2D stepper on its detail screen. */
@@ -775,6 +818,7 @@ export function brokenLinks(ui: ModuleUi): string[] {
       }
     }
   }
+  for (const [id, s] of Object.entries(ui.screens)) if (s.kind === 'list') problems.push(...boardProblems(ui, id, s));
   return [...problems, ...brokenScreenLinks(ui)];
 }
 
@@ -800,6 +844,77 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if ((w.kind === 'pipeline' || w.kind === 'floor3d') && w.link) refs.push([w.link.screen, `widget.${w.id}.link`]);
   }
   return refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`);
+}
+
+/* ---------------- kanban boards (ListScreen display 'board') ---------------- */
+
+/** Rows per lane, in lane order; a row whose field matches no lane is dropped. */
+export function boardLanes<T>(board: BoardSpec, rows: T[]): { value: string; label: string; rows: T[]; sum: number }[] {
+  return board.lanes.map((l) => {
+    const inLane = rows.filter((r) => String(get(r, board.field) ?? '') === l.value);
+    const sum = board.sum ? inLane.reduce((t, r) => t + (Number(get(r, board.sum!.key)) || 0), 0) : 0;
+    return { ...l, rows: inLane, sum };
+  });
+}
+
+export interface ResolvedMove { action: Action; from?: string[] }
+const moveId = (m: BoardMove) => (typeof m === 'string' ? m : m.action);
+
+/** The columns a board card shows: `board.card` order, else the list's columns; the lane field is left out. */
+export function boardCardColumns(screen: ListScreen): Column[] {
+  const b = screen.board;
+  const cols = b?.card ? b.card.map((k) => screen.columns.find((c) => c.key === k)!).filter(Boolean) : screen.columns;
+  return cols.filter((c) => c.key !== b?.field);
+}
+
+/** The actions a board's drag moves run, per target lane, resolved from the row detail screen (`rowLink.screen`). */
+export function boardMoves(ui: Pick<ModuleUi, 'screens'>, screen: ListScreen): Record<string, ResolvedMove[]> {
+  const board = screen.board;
+  if (!board?.moves) return {};
+  const detail = screen.rowLink ? ui.screens[screen.rowLink.screen] : undefined;
+  const actions = detail?.kind === 'detail' ? detail.actions ?? [] : [];
+  return Object.fromEntries(Object.entries(board.moves).map(([to, list]) => [to, list.flatMap((m) => {
+    const action = actions.find((a) => a.id === moveId(m));
+    return action ? [{ action, ...(typeof m === 'string' ? {} : { from: m.from }) }] : [];
+  })]));
+}
+
+/** The action that moves this card to lane `to` for a user with `perms`, or null (not allowed / not a move). */
+export function pickMove(moves: Record<string, ResolvedMove[]>, row: unknown, to: string, perms: string[], field: string): Action | null {
+  const at = String(get(row, field) ?? '');
+  if (at === to) return null;
+  return (moves[to] ?? []).find((m) => (!m.from || m.from.includes(at)) && matches(row, m.action.when) && hasPerm(perms, m.action.perm))?.action ?? null;
+}
+
+/** Board mistakes `brokenLinks` reports: unknown lanes in moves, moves that are not detail actions on the lane field, … */
+export function boardProblems(ui: ModuleUi, id: string, screen: ListScreen): string[] {
+  const b = screen.board;
+  const at = `${ui.module}: ${id}.board`;
+  if (screen.display !== 'board') return b ? [`${at} is set but display is not 'board'`] : [];
+  if (!b) return [`${ui.module}: ${id} has display 'board' but no board`];
+  const out: string[] = [];
+  const lanes = b.lanes.map((l) => l.value);
+  if (!lanes.length) out.push(`${at} has no lanes`);
+  if (new Set(lanes).size !== lanes.length) out.push(`${at} declares a lane twice`);
+  for (const c of b.collapsed ?? []) if (!lanes.includes(c)) out.push(`${at}.collapsed "${c}" is not a lane`);
+  for (const k of b.card ?? []) if (!screen.columns.some((c) => c.key === k)) out.push(`${at}.card "${k}" is not a column of the list`);
+  if (b.moves) {
+    const detail = screen.rowLink ? ui.screens[screen.rowLink.screen] : undefined;
+    if (detail?.kind !== 'detail') out.push(`${at}.moves need rowLink to a detail screen (the actions come from there)`);
+    else {
+      for (const [to, ids] of Object.entries(b.moves)) {
+        if (!lanes.includes(to)) out.push(`${at}.moves "${to}" is not a lane`);
+        for (const m of ids) {
+          const aid = moveId(m);
+          if (typeof m !== 'string') for (const f of m.from) if (!lanes.includes(f)) out.push(`${at}.moves.${to}: from "${f}" is not a lane`);
+          const a = detail.actions?.find((x) => x.id === aid);
+          if (!a) out.push(`${at}.moves.${to}: no action "${aid}" on ${screen.rowLink!.screen}`);
+          else if (a.when?.field !== b.field) out.push(`${at}.moves.${to}: action "${aid}" must have when.field "${b.field}" (a board moves only between lanes)`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /* ---------------- CSV export / import (pure; used by web lists and the import dialog) ---------------- */
@@ -1521,6 +1636,11 @@ export interface ScreenPatch {
   filters?: Field[];
   /** list / detail: more buttons */
   actions?: Action[];
+  /** list: turn the vendor list into a kanban (or back to a table) — `board` as in BoardSpec */
+  display?: ListScreen['display'];
+  board?: BoardSpec;
+  /** form: let AI fill it from a photo / PDF (docs/ai.md) */
+  aiFill?: AiFillSpec;
   /** list: more row buttons */
   rowActions?: Action[];
   /**
@@ -1588,6 +1708,11 @@ export function extendUi(base: ModuleUi, ext?: UiExtension | null): ModuleUi {
     if (p.title) next.title = p.title;
     if (p.perm) next.perm = p.perm;
     if (p.mobile !== undefined) next.mobile = p.mobile;
+    if ((p.display || p.board) && s.kind !== 'list') throw new Error(`${at}: display/board apply to list screens only`);
+    if (p.aiFill && s.kind !== 'form') throw new Error(`${at}: aiFill applies to form screens only`);
+    if (p.display) next.display = p.display;
+    if (p.board) next.board = p.board;
+    if (p.aiFill) next.aiFill = p.aiFill;
     if (s.kind === 'list') {
       next.columns = insertAfter(s.columns, [...(p.columns ?? []), ...((p.fields ?? []) as Column[])], p.after, at);
       if (p.filters) next.filters = [...(s.filters ?? []), ...p.filters];
@@ -1598,7 +1723,7 @@ export function extendUi(base: ModuleUi, ext?: UiExtension | null): ModuleUi {
       if (p.actions) next.actions = [...(s.actions ?? []), ...p.actions];
       if (p.filters || p.rowActions) throw new Error(`${at}: a detail screen has no filters/rowActions`);
     } else {
-      if (p.columns || p.filters || p.actions || p.rowActions) throw new Error(`${at}: a form screen takes only "fields"`);
+      if (p.columns || p.filters || p.actions || p.rowActions) throw new Error(`${at}: a form screen takes only "fields" (and "aiFill")`);
       next.fields = insertAfter(s.fields, (p.fields ?? []) as Field[], p.after, at);
     }
     screens[sid] = next as Screen;

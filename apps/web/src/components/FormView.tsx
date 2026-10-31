@@ -8,7 +8,8 @@ import { HOME } from '@/lib/showcase';
 import { screenHref } from '@/lib/nav';
 import { useRegistry } from '@/lib/registry';
 import { toast } from '@/lib/toast';
-import { AiFillButton, AiFillReview, type AiProposal } from './AiFill';
+import { AiFillButton, AiFillReview, DropOverlay, readDocument, useFileDrop, type AiProposal } from './AiFill';
+import { clearQueue, enqueue, readable, remaining, takeNext } from '@/lib/ai-queue';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
 function readBase64(blob: Blob): Promise<string> {
@@ -44,12 +45,54 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
   const [attachAi, setAttachAi] = useState(true);
   const afterScreen = screen.after ? ui(module)?.screens[screen.after.screen] : undefined;
   const attachEntity = afterScreen?.kind === 'detail' && screen.after?.idFrom ? afterScreen.attachments?.entity : undefined;
-  const applyAi = (proposal: AiProposal) => {
-    const merged = mergeAiFill({ values, lines }, proposal, screen.lines ? initialValues(screen.lines.fields) : {});
-    setValues(merged.values);
-    if (screen.lines) setLines(merged.lines);
-    setAi({ proposal, filled: merged.filled });
+  const canAi = !!screen.aiFill && !screen.load && !!screenId;
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
+  /** "เอกสาร 2 จาก 5" while a queue of dropped files is being worked through */
+  const [queuePos, setQueuePos] = useState<{ position: number; total: number } | null>(null);
+  const blankValues = () => ({ ...initialValues(screen.fields), ...prefillFromQuery(new URLSearchParams(firstQs.current).entries()) });
+  const blankLines = () => (screen.lines ? [initialValues(screen.lines.fields)] : []);
+
+  /** read one file and put what it says into the (fresh) form */
+  const readFile = async (file: File, fresh: boolean) => {
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const r = await readDocument(module, screenId!, file);
+      if ('offline' in r) { setAiMessage(r.offline); return; }
+      aiFile.current = r.file;
+      const base = fresh ? { values: blankValues(), lines: blankLines() } : { values, lines };
+      const merged = mergeAiFill(base, r.proposal, screen.lines ? initialValues(screen.lines.fields) : {});
+      setValues(merged.values);
+      if (screen.lines) setLines(merged.lines);
+      setFieldErrors({}); setLineErrors({}); setError('');
+      setAi({ proposal: r.proposal, filled: merged.filled });
+    } catch (e) {
+      setAiMessage(e instanceof Error ? e.message : 'AI อ่านเอกสารไม่ได้');
+    } finally {
+      setAiBusy(false);
+    }
   };
+  /** open the next queued file in an empty form; false when the queue is done */
+  const nextQueued = (fresh: boolean): boolean => {
+    const n = canAi ? takeNext(module, screenId!) : undefined;
+    if (!n) { setQueuePos(null); return false; }
+    setQueuePos({ position: n.position, total: n.total });
+    if (fresh) { setValues(blankValues()); setLines(blankLines()); setAi(null); aiFile.current = null; }
+    readFile(n.file, fresh);
+    return true;
+  };
+  const takeFiles = (picked: File[]) => {
+    const { ok, skipped } = readable(picked);
+    if (!ok.length) { setAiMessage('รองรับรูป JPG / PNG / WEBP หรือ PDF'); return; }
+    if (skipped) toast({ title: `ข้าม ${skipped} ไฟล์ที่ไม่ใช่รูปหรือ PDF`, tone: 'warn' });
+    if (ok.length === 1) { setQueuePos(null); clearQueue(); readFile(ok[0], false); return; }
+    enqueue(module, screenId!, ok);
+    nextQueued(false);
+  };
+  const drop = useFileDrop(canAi && !busy && !aiBusy, takeFiles);
+  // opened from a list's "สร้างจากเอกสาร" (?ai=next): start on the first queued file
+  useEffect(() => { if (canAi && search.get('ai') === 'next') nextQueued(false); }, []);
   useEffect(() => {
     // a new command while this form is open: apply its values (the first render already used them)
     if (qs !== firstQs.current) setValues((v) => ({ ...v, ...prefillFromQuery(new URLSearchParams(qs).entries()) }));
@@ -101,7 +144,16 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
           toast({ title: 'บันทึกแล้ว แต่แนบรูปไม่ได้', body: `${(err as Error).message} — แนบเองได้ที่หน้าเอกสาร`, tone: 'warn' });
         }
       }
-      router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME);
+      const target = after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME;
+      // a queue of documents: stay on the form and open the next one; the saved record is one click away
+      if (canAi && remaining(module, screenId!) > 0) {
+        toast({ title: `บันทึกฉบับที่ ${queuePos?.position ?? ''} แล้ว — เปิดฉบับถัดไป`, ...(target !== HOME ? { href: target } : {}), tone: 'ok' });
+        setBusy(false);
+        nextQueued(true);
+        return;
+      }
+      if (queuePos) { clearQueue(); toast({ title: `บันทึกครบ ${queuePos.total} ฉบับแล้ว`, tone: 'ok' }); }
+      router.push(target);
     } catch (err) {
       setBusy(false);
       if (isShowcaseRefusal(err)) return; // showcase: a toast already explained it, the form stays as typed
@@ -112,13 +164,23 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
 
   if (loading) return <p className="muted">กำลังโหลด…</p>;
   return (
-    <form className="screen form" onSubmit={submit} noValidate>
+    <form className={`screen form${canAi ? ' has-drop' : ''}`} onSubmit={submit} noValidate {...drop.props}>
+      <DropOverlay show={drop.over} label="วางรูปหรือ PDF ให้ AI กรอกฟอร์มนี้ (หลายไฟล์ = ทำทีละฉบับ)" />
       <header className="screen-head">
         <h1>{screen.title}</h1>
-        {screen.aiFill && !screen.load && screenId && (
-          <AiFillButton module={module} screen={screenId} spec={screen.aiFill} onProposal={applyAi} onFile={(f) => { aiFile.current = f; }} />
-        )}
+        {canAi && <AiFillButton spec={screen.aiFill!} busy={aiBusy} message={aiMessage} onFiles={takeFiles} />}
       </header>
+      {queuePos && (
+        <div className="ai-queue" role="status">
+          <b>เอกสาร {queuePos.position} จาก {queuePos.total}</b>
+          <span className="muted">ตรวจแล้วกดบันทึก ฉบับถัดไปจะเปิดให้เอง</span>
+          <span className="ai-queue-actions">
+            <button type="button" className="btn-ghost" disabled={aiBusy} onClick={() => { if (!nextQueued(true)) { setValues(blankValues()); setLines(blankLines()); setAi(null); } }}>ข้ามฉบับนี้</button>
+            <button type="button" className="btn-ghost" onClick={() => { clearQueue(); setQueuePos(null); }}>หยุดคิว</button>
+          </span>
+        </div>
+      )}
+      {aiBusy && <div className="ai-reading" role="status"><span className="ai-reading-bar" aria-hidden />AI กำลังอ่านเอกสาร…</div>}
       {ai && (
         <AiFillReview proposal={ai.proposal} filled={ai.filled} attach={attachEntity ? attachAi : null} onAttach={setAttachAi} onClose={() => setAi(null)} />
       )}

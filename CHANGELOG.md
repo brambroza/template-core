@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — บอร์ดลากวาง + AI สร้างเอกสารจากรูป/PDF
+
+- **Kanban boards** (`ListScreen.display: 'board'` + `BoardSpec`): tasks, opportunities, leads, helpdesk tickets, work orders, production
+  orders and NCRs open as boards. Dragging a card runs the detail screen's own action (same endpoint, same confirm / reason dialog, same
+  server rules); the card moves at once and returns if the server refuses or the person cancels. Mouse, touch (press and hold) and keyboard
+  (Space / arrows), lane totals, collapsed finished lanes, board ↔ table switch remembered per user. Mobile: lane tabs + "ย้ายไป …" buttons.
+  Validated by `boardProblems` in the UI contract test; `ext/ui.ts` can turn any vendor list into a board.
+- **AI create from documents**: `aiFill` now on PO (supplier quotation), supplier bill, sales order (customer PO), lead (business card / chat)
+  and asset (purchase invoice), with a per-form `hint`. Big lookups (thousands of items) are matched by searching what the paper says
+  (exact code/name, code in the text, or the only hit) instead of a 150-record closed list; misses are left for the person with a warning
+  (and kept as the line description where there is one). Up to 100 lines, multi-page PDFs up to 10 MB.
+- **Drop files**: drag photos/PDFs onto a form, or onto a list whose create form reads documents ("สร้างจากใบเสนอราคา" etc.); several files
+  become a queue — each opens filled ("เอกสาร 2 จาก 5"), the person checks and saves, the next one opens; the original file is attached.
+- Fixes: the "แนบรูปนี้กับเอกสาร" checkbox rendered at input size.
+
 ## Unreleased — "ขายฐานที่ถูกต้อง ให้ AI ต่อยอด" (customer extension layer)
 
 The product promise is now enforced in code: GO Along ships a tested base, the customer's AI extends it **without editing it**,

@@ -38,6 +38,12 @@ export default defineUi({
         { key: 'title', label: 'อาการ/งาน' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' },
       ],
       create: 'woNew', createLabel: 'แจ้งซ่อม', rowLink: { screen: 'woDetail' }, empty: 'ไม่มีงานซ่อม',
+      display: 'board',
+      board: {
+        field: 'status', lanes: [{ value: 'open', label: 'รอดำเนินการ' }, { value: 'in_progress', label: 'กำลังซ่อม' }, { value: 'done', label: 'เสร็จแล้ว' }],
+        moves: { in_progress: ['start'], done: ['complete'] },
+        card: ['title', 'machine_code', 'no', 'kind', 'reported_at'],
+      },
     },
     woNew: {
       kind: 'form', title: 'แจ้งซ่อม', method: 'POST', endpoint: '/work-orders', perm: 'maintenance.wo.report', mobile: true,

@@ -28,6 +28,14 @@ export default defineUi({
         { key: 'completed_qty', label: 'ผลิตแล้ว', format: 'qty' }, { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'status', label: 'สถานะ', format: 'status' },
       ],
       create: 'moNew', createLabel: 'สร้างใบสั่งผลิต', rowLink: { screen: 'moDetail' }, empty: 'ยังไม่มีใบสั่งผลิต ต้องมีสูตรการผลิตของสินค้าก่อน',
+      display: 'board',
+      board: {
+        field: 'status',
+        lanes: [{ value: 'planned', label: 'วางแผน' }, { value: 'released', label: 'ปล่อยงาน' }, { value: 'completed', label: 'ผลิตเสร็จ' }, { value: 'cancelled', label: 'ยกเลิก' }],
+        moves: { released: ['release'], completed: ['complete'], cancelled: ['cancel'] },
+        sum: { key: 'qty', label: 'รวม', format: 'qty', unit: 'หน่วย' },
+        collapsed: ['cancelled'],
+      },
     },
     moNew: {
       kind: 'form', title: 'สร้างใบสั่งผลิต', method: 'POST', endpoint: '/orders', perm: 'production.order.write',

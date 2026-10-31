@@ -461,8 +461,9 @@ describe('UAT — full installation (uat-factory)', () => {
     }
     await shot(page, 'UAT-20');
     await page.goto(`${base}/m/maintenance/woList`);
-    await page.getByRole('row').filter({ hasText: 'PM' }).first().waitFor();
-    expect(await page.getByRole('row').filter({ hasText: 'เปลี่ยนน้ำมันไฮดรอลิก' }).count()).toBe(1);
+    // work orders open as a kanban board (display: 'board'): one card per work order
+    await page.locator('.kcard').filter({ hasText: 'PM' }).first().waitFor();
+    expect(await page.locator('.kcard').filter({ hasText: 'เปลี่ยนน้ำมันไฮดรอลิก' }).count()).toBe(1);
     await shot(page, 'UAT-20');
   });
 
@@ -531,7 +532,8 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-27');
     await page.getByRole('button', { name: 'เปิดงานซ่อมที่ค้าง' }).click();
     await page.waitForURL(/\/m\/maintenance\/woList\?status=open/);
-    await page.getByRole('cell', { name: 'สายพานขาด' }).waitFor();
+    await page.locator('.kcard').filter({ hasText: 'สายพานขาด' }).waitFor();
+    expect(await page.locator('.lane', { hasText: 'เสร็จแล้ว' }).locator('.kcard').count()).toBe(0); // the AI's status filter applies to the board
     await shot(page, 'UAT-27');
   });
 

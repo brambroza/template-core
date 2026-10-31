@@ -208,6 +208,13 @@ export default defineUi({
         { key: 'status_th', label: 'สถานะ' }, { key: 'open_actions', label: 'CA ค้าง', format: 'qty' }, { key: 'created_at', label: 'ออกเมื่อ', format: 'datetime' },
       ],
       create: 'ncrNew', createLabel: 'ออก NCR', rowLink: { screen: 'ncrDetail' }, empty: 'ไม่มี NCR',
+      display: 'board',
+      board: {
+        field: 'status', lanes: ncrStatusOptions,
+        moves: { investigating: ['investigate'], action: ['addCa'], closed: ['close'] },
+        card: ['description', 'no', 'severity_th', 'item_code', 'lot_no', 'qty_affected', 'open_actions'],
+        collapsed: ['closed'],
+      },
     },
     ncrNew: {
       kind: 'form', title: 'ออก NCR', method: 'POST', endpoint: '/ncrs', perm: 'quality.ncr.write', mobile: true,

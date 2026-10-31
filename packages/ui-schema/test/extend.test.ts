@@ -38,6 +38,20 @@ describe('extendUi (customer ext/ui.ts)', () => {
     expect((vendor.screens.poList as ListScreen).columns).toHaveLength(3);
   });
 
+  it('can turn a vendor list into a kanban and let AI fill a vendor form', () => {
+    const ui = extendUi(vendor, defineUiExtension({
+      module: 'purchasing',
+      patch: {
+        poList: { display: 'board', board: { field: 'status', lanes: [{ value: 'draft', label: 'ร่าง' }, { value: 'approved', label: 'อนุมัติ' }] } },
+        poNew: { aiFill: { kind: 'document', label: 'สร้างจากใบเสนอราคา' } },
+      },
+    }));
+    expect((ui.screens.poList as ListScreen).display).toBe('board');
+    expect((ui.screens.poNew as FormScreen).aiFill?.label).toBe('สร้างจากใบเสนอราคา');
+    expect(() => extendUi(vendor, { module: 'purchasing', patch: { poDetail: { aiFill: { kind: 'document', label: 'x' } } } })).toThrow(/form screens only/);
+    expect(() => extendUi(vendor, { module: 'purchasing', patch: { poNew: { display: 'board' } } })).toThrow(/list screens only/);
+  });
+
   it('fails loudly when the vendor ui no longer has what the extension points at', () => {
     expect(() => extendUi(vendor, { module: 'sales' })).toThrow(/expected "purchasing"/);
     expect(() => extendUi(vendor, { module: 'purchasing', patch: { poGone: { columns: [] } } })).toThrow(/no such screen/);

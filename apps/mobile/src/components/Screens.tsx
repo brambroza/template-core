@@ -4,7 +4,7 @@ import { useCallback, useContext, useState, type ReactNode } from 'react';
 import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
+  boardLanes, boardMoves, fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, pickMove, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
@@ -77,7 +77,8 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   const load = useCallback(async () => {
     try {
       setError('');
-      setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params))));
+      const query = screen.board ? { limit: String(screen.board.limit ?? 200) } : undefined;
+      setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params), query ? { query } : {})));
     } catch (e) {
       setError((e as Error).message);
       setRows((r) => r ?? []);
@@ -86,7 +87,17 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const { refreshing, onRefresh } = useRefresh(load);
 
-  const shown = filterRows(rows ?? [], screen.columns, query, labels);
+  // kanban (display 'board'): lanes become tabs, and each card offers "ย้ายไป …" for the lanes it may move to
+  const board = screen.display === 'board' ? screen.board : undefined;
+  const [lane, setLane] = useState<string | null>(null);
+  const moves = board ? boardMoves(ui, screen) : {};
+  const searched = filterRows(rows ?? [], screen.columns, query, labels);
+  const lanes = board ? boardLanes(board, searched) : [];
+  const shown = board && lane ? searched.filter((r) => String(get(r, board.field) ?? '') === lane) : searched;
+  const moveTargets = (row: Record<string, unknown>) => (board ? board.lanes.flatMap((l) => {
+    const a = pickMove(moves, row, l.value, perms(), board.field);
+    return a ? [{ lane: l, action: a }] : [];
+  }) : []);
   const titleCol = screen.columns[0];
   const detailCols = screen.columns.slice(1);
   const link = screen.rowLink && isMobile(ui, screen.rowLink.screen) ? screen.rowLink : undefined;
@@ -133,6 +144,19 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
         </View>
       )}
       {!!error && <View style={{ paddingHorizontal: 16 }}><ErrorText text={error} /></View>}
+      {board && !!rows?.length && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.lanes} accessibilityRole="tablist">
+          {[{ value: null as string | null, label: 'ทั้งหมด', count: searched.length }, ...lanes.map((l) => ({ value: l.value as string | null, label: l.label, count: l.rows.length }))].map((t) => {
+            const on = lane === t.value;
+            return (
+              <Pressable key={t.value ?? '*'} accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => setLane(t.value)}
+                style={[st.laneChip, on && { backgroundColor: c.signal, borderColor: c.signal }]}>
+                <Text style={[st.laneText, on && { color: c.onSignal }]}>{t.label} {t.count}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
       <FlatList
         data={shown}
         keyboardShouldPersistTaps="handled"
@@ -159,6 +183,13 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
                 </View>
               );
             })}
+            {moveTargets(item).length > 0 && (
+              <View style={st.rowActions}>
+                {moveTargets(item).map((m) => (
+                  <Button key={m.lane.value} label={`ย้ายไป ${m.lane.label}`} busy={busy === `${m.action.id}:${String(item.id)}`} onPress={() => press(m.action, item)} />
+                ))}
+              </View>
+            )}
             {rowActions.some((a) => matches(item, a.when)) && (
               <View style={st.rowActions}>
                 {rowActions.filter((a) => matches(item, a.when)).map((a) => (
@@ -368,6 +399,9 @@ const useSt = themed((c) => StyleSheet.create({
   row: { padding: 14, gap: 4 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: c.ink },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  lanes: { paddingHorizontal: 16, paddingTop: 10, gap: 8 },
+  laneChip: { paddingHorizontal: 14, minHeight: 36, justifyContent: 'center', borderRadius: 18, borderWidth: 1, borderColor: c.rule, backgroundColor: c.paper },
+  laneText: { fontSize: 14, fontWeight: '600', color: c.ink },
   rowLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   fact: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.ruleSoft, gap: 2 },
 }));

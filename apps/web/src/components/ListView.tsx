@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, SquareKanban, Printer, SlidersHorizontal, Table2 } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
 import {
   columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
@@ -13,6 +13,12 @@ import { api } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
+import { readPref, writePref } from '@/lib/prefs';
+import { useRegistry } from '@/lib/registry';
+import { BoardView } from './BoardView';
+import { DropOverlay, useFileDrop } from './AiFill';
+import { enqueue, readable } from '@/lib/ai-queue';
+import { toast } from '@/lib/toast';
 import { ActionButton } from './ActionButton';
 import { DateRangeInput, FieldInput, type Values } from './Fields';
 import { loadCompany } from './print/company';
@@ -53,12 +59,32 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [moreFilters, setMoreFilters] = useState(false);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
+  // kanban: board by default, the person may switch to the table (remembered per list)
+  const { ui } = useRegistry();
+  const prefKey = `view.${module}.${screen.endpoint}`;
+  const [asTable, setAsTable] = useState(false);
+  useEffect(() => { if (screen.board) setAsTable(readPref<string>(prefKey, 'board') === 'table'); }, [prefKey]);
+  const isBoard = screen.display === 'board' && !!screen.board && !asTable;
+  const switchView = (table: boolean) => { setAsTable(table); writePref(prefKey, table ? 'table' : 'board'); };
+  // "สร้างจากเอกสาร": the create form reads documents with AI → pick or drop files here, the form works through them
+  const createForm = screen.create ? ui(module)?.screens[screen.create] : undefined;
+  const aiCreate = createForm?.kind === 'form' && createForm.aiFill && hasPerm(perms, createForm.perm) ? createForm.aiFill : undefined;
+  const docInput = useRef<HTMLInputElement>(null);
+  const startFromDocs = (picked: File[]) => {
+    const { ok, skipped } = readable(picked);
+    if (!ok.length) { toast({ title: 'รองรับรูป JPG / PNG / WEBP หรือ PDF', tone: 'warn' }); return; }
+    if (skipped) toast({ title: `ข้าม ${skipped} ไฟล์ที่ไม่ใช่รูปหรือ PDF`, tone: 'warn' });
+    enqueue(module, screen.create!, ok);
+    router.push(`${screenHref(module, screen.create!)}?ai=next`);
+  };
+  const drop = useFileDrop(!!aiCreate, startFromDocs);
   useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
 
   const load = useCallback(async () => {
     try {
       setError('');
-      const r = await api(module, fillPath(screen.endpoint, params), { query: filters });
+      const query = screen.board && !filters.limit ? { ...filters, limit: String(screen.board.limit ?? 200) } : filters;
+      const r = await api(module, fillPath(screen.endpoint, params), { query });
       setRes(r);
       setRows(listRows(screen, r));
     } catch (e) {
@@ -128,7 +154,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   );
 
   return (
-    <div className={`screen${report ? ' report print-doc' : ''}${isAiModule(module) ? ' is-ai' : ''}`}>
+    <div className={`screen${report ? ' report print-doc' : ''}${isAiModule(module) ? ' is-ai' : ''}${aiCreate ? ' has-drop' : ''}`} {...drop.props}>
+      {aiCreate && <DropOverlay show={drop.over} label={`วางรูปหรือ PDF เพื่อ${aiCreate.label} — หลายไฟล์ได้`} />}
       {report && <Letterhead company={company} title={screen.title} docNo="" subtitle={subtitle} />}
       <header className="screen-head">
         <div>
@@ -136,6 +163,12 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {subtitle && <p className="report-period">{subtitle}</p>}
         </div>
         <div className="screen-actions no-print">
+          {screen.display === 'board' && screen.board && (
+            <div className="view-switch" role="group" aria-label="มุมมอง">
+              <button type="button" className={isBoard ? 'is-on' : ''} aria-pressed={isBoard} onClick={() => switchView(false)}><SquareKanban size={16} aria-hidden /> บอร์ด</button>
+              <button type="button" className={!isBoard ? 'is-on' : ''} aria-pressed={!isBoard} onClick={() => switchView(true)}><Table2 size={16} aria-hidden /> ตาราง</button>
+            </div>
+          )}
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">
             <Download size={16} aria-hidden /> ส่งออก CSV
           </button>
@@ -148,6 +181,15 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {headActions.map((a) => (
             <ActionButton key={a.id} action={a} module={module} params={params} onDone={() => setTick((t) => t + 1)} />
           ))}
+          {aiCreate && (
+            <>
+              <input ref={docInput} type="file" accept="image/*,application/pdf" multiple hidden aria-hidden tabIndex={-1}
+                onChange={(e) => { const f = [...(e.target.files ?? [])]; e.target.value = ''; if (f.length) startFromDocs(f); }} />
+              <button type="button" className="btn-ai" onClick={() => docInput.current?.click()} title="เลือกหรือลากรูป / PDF มาวางบนหน้านี้ — หลายไฟล์ได้ ระบบเปิดให้ตรวจทีละฉบับ">
+                <AiSpark size={16} /> {aiCreate.label}
+              </button>
+            </>
+          )}
           {screen.create && <Link className="btn-primary" href={screenHref(module, screen.create)}>{screen.createLabel ?? 'สร้างใหม่'}</Link>}
         </div>
       </header>
@@ -180,7 +222,12 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </p>
       )}
 
-      {screen.display === 'cards' ? (
+      {isBoard ? (
+        <div ref={tableRef}>
+          {rows === null && <p className="muted">กำลังโหลด…</p>}
+          {rows !== null && <BoardView module={module} ui={ui(module)} screen={screen} rows={rows} onChanged={() => setTick((t) => t + 1)} />}
+        </div>
+      ) : screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}

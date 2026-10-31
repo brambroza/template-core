@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { defineUi } from '@erp/ui-schema';
 import expenseUi from '../../../services/expense/src/ui.ts';
-import { AiFillError, checkFile, isThaiTaxId, runAiFill } from '../src/lib/ai-fill.ts';
+import purchasingUi from '../../../services/purchasing/src/ui.ts';
+import salesUi from '../../../services/sales/src/ui.ts';
+import { AiFillError, checkFile, isThaiTaxId, pickMatch, runAiFill } from '../src/lib/ai-fill.ts';
 import { BriefingCache, BRIEFING_PROMPT, briefingBullets, findScreen, runBriefing, type Briefing } from '../src/lib/assistant.ts';
 
 /* A fake Anthropic API + gateway: no network. Each model call returns the next scripted message. */
@@ -103,6 +105,86 @@ describe('สแกนใบเสร็จ (aiFill on the expense claim form)',
   it('reports an unreadable document in Thai when the model does not use the tool', async () => {
     const { fetch } = fakes([{ stop_reason: 'end_turn', content: [{ type: 'text', text: 'อ่านไม่ออก' }] }]);
     await expect(runAiFill({ ...env, ui: expenseUi, screenId: 'claimNew', file: PHOTO, permissions: [], fetch })).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe('สร้างเอกสารจากใบเสนอราคา / PO ลูกค้า (big lookups matched by search)', () => {
+  // 400 items: too many for a closed list, so the model writes what the paper says and the server searches
+  const items = Array.from({ length: 400 }, (_, i) => ({ id: `i-${i}`, code: `RM-${String(i).padStart(3, '0')}`, name: `วัตถุดิบ ${i}` }))
+    .concat([{ id: 'i-steel', code: 'RM-SPCC12', name: 'เหล็กแผ่น SPCC 1.2 มม.' }, { id: 'i-bolt', code: 'SP-BOLT-M8', name: 'สลักเกลียว M8' }]);
+  const suppliers = [{ id: 's-1', code: 'SUP-001', name: 'บริษัท สยามสตีล จำกัด' }, { id: 's-2', code: 'SUP-002', name: 'หจก. น็อตไทย' }];
+  const searches: string[] = [];
+  const gateway = (async (url: string, init: any = {}) => {
+    if (url.endsWith('/v1/messages')) return new Response(JSON.stringify(gateway.next.shift()), { status: 200 });
+    const u = new URL(url);
+    expect(init.headers.authorization).toBe('Bearer user-token'); // every lookup read uses the person's own token
+    if (u.pathname === '/api/master-data/partners') return new Response(JSON.stringify(suppliers), { status: 200 });
+    if (u.pathname === '/api/master-data/items') {
+      const q = (u.searchParams.get('q') ?? '').toLowerCase();
+      if (q) searches.push(q);
+      const rows = q ? items.filter((x) => x.code.toLowerCase().includes(q) || x.name.toLowerCase().includes(q)) : items;
+      return new Response(JSON.stringify(rows.slice(0, Number(u.searchParams.get('limit') ?? 100))), { status: 200 });
+    }
+    return new Response('{}', { status: 404 });
+  }) as any;
+  const reply = (input: unknown) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't', name: 'fill_form', input }] });
+
+  it('declares document reading on the forms where paper arrives first', () => {
+    const fill = (ui: any, id: string) => ui.screens[id].aiFill;
+    expect(fill(purchasingUi, 'poNew')).toMatchObject({ kind: 'document', label: 'สร้างจากใบเสนอราคา' });
+    expect(fill(purchasingUi, 'billNew')).toMatchObject({ kind: 'receipt' });
+    expect(fill(salesUi, 'soNew')).toMatchObject({ kind: 'document', label: 'สร้างจาก PO ลูกค้า' });
+  });
+
+  it('offers small lists as choices, finds items in a big list by code or name, and leaves unknown items for the person', async () => {
+    searches.length = 0;
+    gateway.next = [reply({
+      values: { supplierId: 's-1', expectedDate: '15/11/2569', vatMode: 'ยังไม่รวม VAT' },
+      lines: [
+        { itemId: 'RM-SPCC12 เหล็กแผ่น SPCC 1.2mm', qty: '1,200', unitPrice: 32.5 },
+        { itemId: 'สลักเกลียว M8', qty: 500, unitPrice: '1.20 บาท' },
+        { itemId: 'XX-999 สีกันสนิม', qty: 4, unitPrice: 850 },
+      ],
+      facts: { vendor: 'บริษัท สยามสตีล จำกัด', total: 44_032.9 },
+    })];
+    const r = await runAiFill({ ...env, ui: purchasingUi, screenId: 'poNew', file: { mediaType: 'application/pdf', dataBase64: 'JVBERi0=' }, permissions: [], fetch: gateway });
+    expect(r.values).toMatchObject({ supplierId: 's-1', supplierName: 'บริษัท สยามสตีล จำกัด', expectedDate: '2026-11-15', vatMode: 'exclusive' });
+    expect(r.lines).toEqual([
+      { itemId: 'i-steel', itemCode: 'RM-SPCC12', itemName: 'เหล็กแผ่น SPCC 1.2 มม.', 'qty': 1200, unitPrice: 32.5, '__label.itemId': 'RM-SPCC12 เหล็กแผ่น SPCC 1.2 มม.' },
+      { itemId: 'i-bolt', itemCode: 'SP-BOLT-M8', itemName: 'สลักเกลียว M8', qty: 500, unitPrice: 1.2, '__label.itemId': 'SP-BOLT-M8 สลักเกลียว M8' },
+      { qty: 4, unitPrice: 850 },
+    ]);
+    expect(r.warnings[0]).toBe('บรรทัด 3: ไม่พบสินค้า "XX-999 สีกันสนิม" ในระบบ — เลือกเอง หรือเพิ่มในข้อมูลหลักก่อน');
+    expect(r.facts).toContainEqual({ label: 'ผู้ออกเอกสาร', value: 'บริษัท สยามสตีล จำกัด' });
+    expect(searches).toContain('xx-999'); // retried with the first word (the code) after the full text found nothing
+  });
+
+  it('tells the model which lookups are a closed list and which are free text', async () => {
+    const seen: any[] = [];
+    const spy = (async (url: string, init: any) => { if (url.endsWith('/v1/messages')) seen.push(JSON.parse(init.body)); return gateway(url, init); }) as any;
+    gateway.next = [reply({ values: {}, lines: [], facts: {} })];
+    await runAiFill({ ...env, ui: purchasingUi, screenId: 'poNew', file: PHOTO, permissions: [], fetch: spy });
+    const props = seen[0].tools[0].input_schema.properties;
+    expect(props.values.properties.supplierId.enum).toEqual(['s-1', 's-2']);
+    expect(props.lines.items.properties.itemId.enum).toBeUndefined();
+    expect(props.lines.items.properties.itemId.description).toMatch(/ระบบจะค้นหา/);
+    expect(seen[0].system).toMatch(/ใบเสนอราคา/); // the form's hint
+    expect(seen[0].max_tokens).toBeGreaterThanOrEqual(4000);
+  });
+
+  it('a SO line the system cannot find keeps the text as its description', async () => {
+    gateway.next = [reply({ values: {}, lines: [{ itemId: 'ค่าติดตั้งหน้างาน', qty: 1, unitPrice: 3500 }], facts: {} })];
+    const r = await runAiFill({ ...env, ui: salesUi, screenId: 'soNew', file: PHOTO, permissions: [], fetch: gateway });
+    expect(r.lines).toEqual([{ description: 'ค่าติดตั้งหน้างาน', qty: 1, unitPrice: 3500 }]);
+  });
+
+  it('only takes a certain match', () => {
+    const f = (purchasingUi.screens.poNew as any).lines.fields[0];
+    const two = [{ id: 'a', code: 'BOLT-M8', name: 'สลัก M8' }, { id: 'b', code: 'BOLT-M10', name: 'สลัก M10' }];
+    expect(pickMatch(f, 'BOLT-M10 สลัก', two)?.id).toBe('b');
+    expect(pickMatch(f, 'สลัก', two)).toBeNull(); // two candidates, neither exact
+    expect(pickMatch(f, 'สลัก m8', two)?.id).toBe('a'); // exact name, any case/spacing
+    expect(pickMatch(f, 'anything', [two[0]])?.id).toBe('a'); // the only search hit
   });
 });
 

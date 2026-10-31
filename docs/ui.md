@@ -17,7 +17,7 @@ services/inventory/src/ui.ts ─┼─> apps/*/src/modules.generated.ts (pnpm er
 
 | kind | ใช้ทำ | คีย์สำคัญ |
 | --- | --- | --- |
-| `list` | ตารางรายการ + ตัวกรอง | `endpoint`, `columns`, `filters`, `import` (นำเข้า CSV), `create`, `rowLink`, `actions` (ปุ่มบนหน้า), `rowActions` (ปุ่มต่อแถว), `rows` (path ของ array ถ้า response เป็น object เช่น `items`), `display: 'cards'` (แสดงเป็นการ์ด เช่น แกลเลอรีสูตรบอท) |
+| `list` | ตารางรายการ + ตัวกรอง | `endpoint`, `columns`, `filters`, `import` (นำเข้า CSV), `create`, `rowLink`, `actions` (ปุ่มบนหน้า), `rowActions` (ปุ่มต่อแถว), `rows` (path ของ array ถ้า response เป็น object เช่น `items`), `display: 'cards'` (แสดงเป็นการ์ด เช่น แกลเลอรีสูตรบอท), `display: 'board'` + `board` (บอร์ด kanban ลากวาง — ดูหัวข้อถัดไป) |
 | `form` | สร้าง/แก้ไข | `method`, `endpoint`, `fields`, `lines` (ตารางรายการ), `load` (ดึงค่าเดิมมาแก้), `after` |
 | `detail` | ดูเอกสาร + ปุ่มตามสถานะ | `endpoint`, `heading`, `fields`, `lines`, `actions` (`when` = แสดงเฉพาะบางสถานะ), `print` / `printable` (พิมพ์เป็นเอกสารบริษัท — ดูหัวข้อ "เอกสารพิมพ์"), `flow` (แถบขั้นตอนเอกสาร 2D) |
 
@@ -85,6 +85,35 @@ endpoint ต้องรับค่าเป็นข้อความ (แป
 ทุกหน้า `detail` ที่เปิดด้วย id (web) มีส่วน **ประวัติการแก้ไข** (พับไว้, โหลดเมื่อเปิด) แสดงใคร ทำอะไร เมื่อไร กับเรคคอร์ดนี้
 จาก `GET /_audit?ref=<id>` ของโมดูล — เห็นเฉพาะผู้มีสิทธิ์ `<module>.audit.read` (`auditPerm()` ใน ui-schema; `*` และ `<module>.*` รวมอยู่แล้ว)
 หน้า list ทั่วไปของ log ใช้ `endpoint: '/_audit'` ได้ทุกโมดูล (ตัวอย่าง: identity `audit` — ผู้ใช้และสิทธิ์ → ประวัติการแก้ไข, ฟิลด์ `action`, `summary_text`)
+
+### บอร์ด kanban ลากวาง (`display: 'board'`)
+
+หน้ารายการที่มีสถานะเป็นขั้น ๆ (งาน, โอกาสขาย, ลีด, เรื่องแจ้งปัญหา, งานซ่อม, ใบสั่งผลิต, NCR) แสดงเป็นบอร์ดได้ — คอลัมน์ละสถานะ
+ลากการ์ดไปคอลัมน์อื่นเพื่อเปลี่ยนสถานะ ใช้ได้ทั้งเมาส์ นิ้ว (กดค้าง) และคีย์บอร์ด (Space หยิบ ลูกศรเลือกคอลัมน์ Space วาง Esc ยกเลิก)
+ผู้ใช้สลับไปมุมมองตารางได้ (เว็บจำไว้ต่อรายการต่อผู้ใช้) · แอปมือถือ: คอลัมน์เป็นแท็บด้านบน + ปุ่ม "ย้ายไป …" บนการ์ด
+
+```ts
+taskList: {
+  kind: 'list', endpoint: '/tasks', columns: [...], rowLink: { screen: 'taskDetail' },
+  display: 'board',
+  board: {
+    field: 'status',                                   // ฟิลด์ที่เลือกคอลัมน์
+    lanes: [{ value: 'todo', label: 'รอทำ' }, { value: 'doing', label: 'กำลังทำ' }, …],
+    moves: { doing: ['start', 'back'], review: ['review'], done: ['done'], todo: ['reopen'] },
+    card: ['title', 'project_no', 'assignee_name', 'due_date'],   // คอลัมน์บนการ์ด: หัวเรื่อง, บรรทัดรอง, ข้อมูลย่อย
+    sum: { key: 'estimate_hours', label: 'ประมาณ', unit: 'ชม.', format: 'qty' },  // ยอดรวมบนหัวคอลัมน์
+    collapsed: ['done'],                               // คอลัมน์ที่ยุบไว้ (เปิดเองเมื่อลากการ์ดมา)
+  },
+}
+```
+
+**การลากไม่ได้เขียนสถานะตรง ๆ** — `moves` ชี้ไปที่ action ที่มีอยู่แล้วบนหน้า detail (`rowLink.screen`) ระบบเลือก action แรกที่ `when`
+ตรงกับการ์ดและผู้ใช้มี `perm` แล้วเรียก endpoint เดิม พร้อมกล่องยืนยัน/กรอกข้อมูลแบบเดียวกับปุ่ม (เช่น "แก้ไขเสร็จ" ต้องใส่วิธีแก้)
+กฎทุกข้อจึงยังอยู่ที่ server (ผู้สร้างอนุมัติเองไม่ได้, วงเงิน, เหตุผลที่ต้องกรอก) · การ์ดย้ายทันทีและกลับที่เดิมถ้า server ปฏิเสธหรือผู้ใช้กดยกเลิก
+· คอลัมน์ที่ย้ายไปไม่ได้จะจางพร้อมรูปกุญแจระหว่างลาก
+action แบบ "ขั้นถัดไป" ที่ใช้กับหลายคอลัมน์ ให้ระบุว่าย้ายจากคอลัมน์ไหน: `proposal: [{ action: 'advance', from: ['prospect'] }]`
+ตรวจโดย `brokenLinks` → `boardProblems` (คอลัมน์ซ้ำ, move ไปคอลัมน์ที่ไม่มี, action ไม่มีจริงหรือไม่ได้เปลี่ยน `board.field`)
+บอร์ดขอข้อมูล `limit` 200 แถว (`board.limit`, สูงสุด 500)
 
 ### รายงานการเงิน (`report`) และยอดรวม
 
@@ -191,6 +220,7 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 4. `import.endpoint` ต้องเป็น POST route ของโมดูลเอง, `import.perm` ต้องประกาศใน module.json, คอลัมน์ import ห้ามซ้ำ/กำกวม (key หรือ label ชนกัน)
 5. ลิงก์ไปหน้าจอ (`rowLink`, `create`, `after`, `then`, widget `href`/`link`, command/search `screen`) ต้องมีอยู่จริง
 6. หน้าจอที่เปิดด้วย id (`/m/<module>/<screen>/<id>`) จะเอา id ไปเติม `:param` ตัวแรกของ endpoint
+7. `board.moves` ต้องชี้ action ที่มีบนหน้า detail ของ `rowLink` และ action นั้นต้องมี `when.field` เท่ากับ `board.field`
 
 ## เพิ่มความสามารถใหม่ให้ renderer
 
