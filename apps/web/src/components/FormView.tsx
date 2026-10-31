@@ -10,6 +10,7 @@ import { useRegistry } from '@/lib/registry';
 import { toast } from '@/lib/toast';
 import { AiFillButton, AiFillReview, DropOverlay, readDocument, useFileDrop, type AiProposal } from './AiFill';
 import { clearQueue, enqueue, readable, remaining, takeNext } from '@/lib/ai-queue';
+import { aiFilledGlow } from '@/lib/motion';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
 function readBase64(blob: Blob): Promise<string> {
@@ -67,6 +68,12 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
       if (screen.lines) setLines(merged.lines);
       setFieldErrors({}); setLineErrors({}); setError('');
       setAi({ proposal: r.proposal, filled: merged.filled });
+      // what the AI just filled, for the glow that runs down those inputs once they are on screen
+      const typedLines = base.lines.filter((l) => Object.values(l).some((v) => v !== '' && v !== undefined && v !== null)).length;
+      setGlow({
+        fields: Object.keys(r.proposal.values).filter((k) => !k.startsWith('__') && merged.values[k] === r.proposal.values[k] && (base.values[k] === '' || base.values[k] === undefined || base.values[k] === null)),
+        lines: merged.lines.map((_, i) => i).filter((i) => i >= (typedLines ? typedLines : 0) && i < merged.lines.length && r.proposal.lines.length > 0),
+      });
     } catch (e) {
       setAiMessage(e instanceof Error ? e.message : 'AI อ่านเอกสารไม่ได้');
     } finally {
@@ -90,6 +97,18 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
     enqueue(module, screenId!, ok);
     nextQueued(false);
   };
+  const formRef = useRef<HTMLFormElement>(null);
+  const [glow, setGlow] = useState<{ fields: string[]; lines: number[] } | null>(null);
+  useEffect(() => {
+    if (!glow || !formRef.current) return;
+    const root = formRef.current;
+    const inputs = [
+      ...glow.fields.flatMap((f) => [...root.querySelectorAll<HTMLElement>(`[data-field="${CSS.escape(f)}"] :is(input, select, textarea)`)]),
+      ...glow.lines.flatMap((i) => [...root.querySelectorAll<HTMLElement>(`tr[data-line="${i}"] :is(input, select, textarea)`)]),
+    ];
+    aiFilledGlow(inputs);
+    setGlow(null);
+  }, [glow]);
   const drop = useFileDrop(canAi && !busy && !aiBusy, takeFiles);
   // opened from a list's "สร้างจากเอกสาร" (?ai=next): start on the first queued file
   useEffect(() => { if (canAi && search.get('ai') === 'next') nextQueued(false); }, []);
@@ -145,6 +164,8 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         }
       }
       const target = after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME;
+      // a new document opens with the "บันทึกแล้ว" panel (SavedPanel); edits just go back to the document
+      const celebrate = !screen.load && afterScreen?.kind === 'detail' && !!after?.idFrom && target !== HOME;
       // a queue of documents: stay on the form and open the next one; the saved record is one click away
       if (canAi && remaining(module, screenId!) > 0) {
         toast({ title: `บันทึกฉบับที่ ${queuePos?.position ?? ''} แล้ว — เปิดฉบับถัดไป`, ...(target !== HOME ? { href: target } : {}), tone: 'ok' });
@@ -152,8 +173,8 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         nextQueued(true);
         return;
       }
-      if (queuePos) { clearQueue(); toast({ title: `บันทึกครบ ${queuePos.total} ฉบับแล้ว`, tone: 'ok' }); }
-      router.push(target);
+      if (queuePos) { clearQueue(); if (queuePos.total > 1) toast({ title: `บันทึกครบ ${queuePos.total} ฉบับแล้ว`, tone: 'ok' }); }
+      router.push(celebrate ? `${target}?saved=1` : target);
     } catch (err) {
       setBusy(false);
       if (isShowcaseRefusal(err)) return; // showcase: a toast already explained it, the form stays as typed
@@ -164,7 +185,7 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
 
   if (loading) return <p className="muted">กำลังโหลด…</p>;
   return (
-    <form className={`screen form${canAi ? ' has-drop' : ''}`} onSubmit={submit} noValidate {...drop.props}>
+    <form ref={formRef} className={`screen form${canAi ? ' has-drop' : ''}`} onSubmit={submit} noValidate {...drop.props}>
       <DropOverlay show={drop.over} label="วางรูปหรือ PDF ให้ AI กรอกฟอร์มนี้ (หลายไฟล์ = ทำทีละฉบับ)" />
       <header className="screen-head">
         <h1>{screen.title}</h1>

@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, KeyRound, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
+import { motion } from 'motion/react';
+import { SPRING } from '@/lib/motion';
 import { AiGradientDefs, AiSpark, LogoMark, isAiModule } from './Brand';
 import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
 import { readPref, writePref } from '@/lib/prefs';
@@ -116,7 +118,11 @@ export function Shell({ children }: { children: ReactNode }) {
                     const active = path === href || path.startsWith(`${href}/`);
                     return (
                       <li key={i.screen}>
-                        <Link href={href} className={active ? 'is-active' : undefined} aria-current={active ? 'page' : undefined}>{i.label}</Link>
+                        <Link href={href} className={active ? 'is-active' : undefined} aria-current={active ? 'page' : undefined}>
+                          {/* the "you are here" pill slides from the old item to the new one (Motion layoutId) */}
+                          {active && <motion.span layoutId="nav-pill" className="nav-pill" transition={SPRING.snappy} aria-hidden />}
+                          <span className="nav-label">{i.label}</span>
+                        </Link>
                       </li>
                     );
                   })}

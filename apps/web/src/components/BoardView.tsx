@@ -8,10 +8,12 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import { ChevronRight, GripVertical, Lock } from 'lucide-react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   boardCardColumns, boardLanes, boardMoves, formatValue, get, hasPerm, matches, pickMove, statusTone,
   type Action, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
+import { SPRING } from '@/lib/motion';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { ActionButton } from './ActionButton';
@@ -39,6 +41,8 @@ export function BoardView({ module, ui, screen, rows, onChanged }: {
   const [dragging, setDragging] = useState<Row | null>(null);
   const [pending, setPending] = useState<{ row: Row; action: Action; to: string } | null>(null);
   const [opened, setOpened] = useState<string[]>([]);
+  /** the card that just landed: a short green ring says "the server agreed" */
+  const [landed, setLanded] = useState<string | null>(null);
 
   const view = rows.map((r, i) => {
     const id = rowId(r, i);
@@ -81,6 +85,7 @@ export function BoardView({ module, ui, screen, rows, onChanged }: {
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onStart} onDragEnd={onEnd} onDragCancel={() => setDragging(null)}
       accessibility={{ announcements: announce, screenReaderInstructions: { draggable: 'กด Space เพื่อหยิบการ์ด ใช้ลูกศรเลือกคอลัมน์ แล้วกด Space อีกครั้งเพื่อวาง หรือ Esc เพื่อยกเลิก' } }}>
       {anyMoves && <p className="board-hint muted no-print">ลากการ์ดไปคอลัมน์อื่นเพื่อเปลี่ยนสถานะ — ระบบใช้ขั้นตอนเดียวกับปุ่มในหน้าเอกสาร</p>}
+      <LayoutGroup>
       <div className="board" role="list" aria-label={screen.title}>
         {lanes.map((lane) => (
           <Lane key={lane.value} value={lane.value} label={lane.label} count={lane.rows.length}
@@ -88,20 +93,24 @@ export function BoardView({ module, ui, screen, rows, onChanged }: {
             dragging={!!dragging} allowed={canDrop(dragging, lane.value)} home={!!dragging && String(get(dragging, board.field)) === lane.value}
             collapsed={collapsed(lane.value)} onOpen={() => setOpened((o) => [...o, lane.value])}>
             {lane.rows.length === 0 && <p className="board-empty">ไม่มีรายการ</p>}
-            {lane.rows.map((row) => (
-              <Card key={String(row.__id)} id={String(row.__id)} row={row} cols={cardCols} module={module} screen={screen}
-                draggable={anyMoves && Object.keys(moves).some((to) => canDrop(row, to))} busy={moved[String(row.__id)] !== undefined}
-                actions={rowActions.filter((a) => matches(row, a.when))} onAction={onChanged} onOpen={(href) => router.push(href)} />
-            ))}
+            <AnimatePresence initial={false} mode="popLayout">
+              {lane.rows.map((row) => (
+                <Card key={String(row.__id)} id={String(row.__id)} row={row} cols={cardCols} module={module} screen={screen}
+                  draggable={anyMoves && Object.keys(moves).some((to) => canDrop(row, to))} busy={moved[String(row.__id)] !== undefined}
+                  landed={landed === String(row.__id)} dragging={dragging !== null && String(dragging.id ?? '') === String(row.id ?? '')}
+                  actions={rowActions.filter((a) => matches(row, a.when))} onAction={onChanged} onOpen={(href) => router.push(href)} />
+              ))}
+            </AnimatePresence>
           </Lane>
         ))}
       </div>
+      </LayoutGroup>
       <DragOverlay dropAnimation={null}>
         {dragging && <CardBody row={dragging} cols={cardCols} module={module} screen={screen} overlay />}
       </DragOverlay>
       {pending && (
         <ActionButton key={`${String(pending.row.id)}-${pending.to}`} auto action={pending.action} module={module} params={pending.row}
-          onDone={() => { const id = String(pending.row.id); setPending(null); onChanged(); setTimeout(() => settle(id), 600); }}
+          onDone={() => { const id = String(pending.row.id); setPending(null); onChanged(); setLanded(id); setTimeout(() => settle(id), 600); setTimeout(() => setLanded((x) => (x === id ? null : x)), 1600); }}
           onCancel={() => { settle(String(pending.row.id)); setPending(null); }} />
       )}
     </DndContext>
@@ -119,7 +128,11 @@ function Lane({ value, label, count, sum, dragging, allowed, home, collapsed, on
       <header className="lane-head">
         <span className={`lane-dot tone-${statusTone(value)}`} aria-hidden />
         <b>{label}</b>
-        <span className="lane-count">{count.toLocaleString('th-TH')}</span>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={count} className="lane-count" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={SPRING.pop}>
+            {count.toLocaleString('th-TH')}
+          </motion.span>
+        </AnimatePresence>
         {narrow ? (
           <button type="button" className="btn-ghost lane-open" onClick={onOpen} aria-label={`แสดง ${label}`}><ChevronRight size={16} aria-hidden /></button>
         ) : sum && <span className="lane-sum">{sum}</span>}
@@ -130,14 +143,17 @@ function Lane({ value, label, count, sum, dragging, allowed, home, collapsed, on
   );
 }
 
-function Card({ id, row, cols, module, screen, draggable, busy, actions, onAction, onOpen }: {
+function Card({ id, row, cols, module, screen, draggable, busy, landed, dragging, actions, onAction, onOpen }: {
   id: string; row: Row; cols: ListScreen['columns']; module: string; screen: ListScreen; draggable: boolean; busy: boolean;
-  actions: Action[]; onAction: () => void; onOpen: (href: string) => void;
+  landed: boolean; dragging: boolean; actions: Action[]; onAction: () => void; onOpen: (href: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled: !draggable });
   const href = screen.rowLink && row.id !== undefined ? screenHref(module, screen.rowLink.screen, get(row, screen.rowLink.idFrom ?? 'id')) : undefined;
   return (
-    <article ref={setNodeRef} className={`kcard${isDragging ? ' is-dragging' : ''}${busy ? ' is-busy' : ''}${draggable ? ' is-draggable' : ''}`}
+    // `layoutId`: when the card changes lane it glides there (Motion); the drag itself is drawn by DragOverlay
+    <motion.article ref={setNodeRef} layout={!dragging} layoutId={`kcard-${id}`} transition={SPRING.snappy}
+      initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: isDragging ? 0.35 : busy ? 0.6 : 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
+      className={`kcard${isDragging ? ' is-dragging' : ''}${busy ? ' is-busy' : ''}${draggable ? ' is-draggable' : ''}${landed ? ' is-landed' : ''}`}
       onClick={href ? () => onOpen(href) : undefined} {...(draggable ? listeners : {})}>
       {draggable && (
         <button type="button" className="kcard-grip" aria-label="ย้ายการ์ด (Space)" {...attributes} onClick={(e) => e.stopPropagation()}>
@@ -150,7 +166,7 @@ function Card({ id, row, cols, module, screen, draggable, busy, actions, onActio
           {actions.map((a) => <ActionButton key={a.id} action={a} module={module} params={row} onDone={onAction} />)}
         </div>
       )}
-    </article>
+    </motion.article>
   );
 }
 

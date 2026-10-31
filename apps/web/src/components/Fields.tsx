@@ -254,7 +254,7 @@ export function FieldRow({ field, error, ...rest }: FieldProps) {
   const id = useId();
   if (field.type === 'boolean') return <div className="field"><FieldInput field={field} error={error} {...rest} />{error && <p className="field-error">{error}</p>}</div>;
   return (
-    <div className={`field${(field.type === 'textarea' && !isImageData(field, rest.values[field.name])) || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
+    <div data-field={field.name} className={`field${(field.type === 'textarea' && !isImageData(field, rest.values[field.name])) || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
       <label htmlFor={id}>{field.label}{field.required && <span className="req" aria-hidden> *</span>}</label>
       <div id={id}><FieldInput field={field} error={error} {...rest} /></div>
       {field.help && !error && <p className="field-help">{field.help}</p>}
@@ -279,7 +279,7 @@ export function LinesEditor({ spec, module, lines, onChange, errors }: { spec: L
         </thead>
         <tbody>
           {lines.map((line, i) => (
-            <tr key={i}>
+            <tr key={i} data-line={i}>
               <td className="num">{i + 1}</td>
               {spec.fields.map((f) => (
                 <td key={f.name} className={f.type === 'lookup' ? 'cell-lookup' : ''}>

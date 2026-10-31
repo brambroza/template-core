@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Motion และลูกเล่น (React + Motion + GSAP)
+
+- Rule of thumb, written down (`docs/ui.md` → "Motion และลูกเล่น", tokens in `apps/web/src/lib/motion.ts`): CSS for hover/press/dialogs,
+  Motion (`motion/react` 12.43) for React-state animation (enter/exit, layout, shared highlights), GSAP for timelines on existing DOM.
+  `MotionConfig reducedMotion="user"`; only transform/opacity/blur; nothing blocks the user.
+- Board cards glide to their new lane (`layoutId`), lane counts pop, a landed card gets a green ring when the server agrees.
+- Sliding highlight (`layoutId`) on the side menu's current item and the board/table switch.
+- "บันทึกแล้ว" panel on a document just created (`?saved=1`, `SavedPanel`): check mark draws, date tile pops, key facts blur in one
+  by one, "ขั้นต่อไป" lists the actions the document now waits for. Inline, closable, not repeated on reload.
+- AI-filled inputs glow one after another (GSAP `aiFilledGlow`).
+- Dialogs spring in with a staggered blur-in; fields with an error shake once and keep a red ring; buttons press in.
+
 ## Unreleased — บอร์ดลากวาง + AI สร้างเอกสารจากรูป/PDF
 
 - **Kanban boards** (`ListScreen.display: 'board'` + `BoardSpec`): tasks, opportunities, leads, helpdesk tickets, work orders, production

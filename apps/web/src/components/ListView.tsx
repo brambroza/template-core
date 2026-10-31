@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, SquareKanban, Printer, SlidersHorizontal, Table2 } from 'lucide-react';
-import { useReveal } from '@/lib/motion';
+import { motion } from 'motion/react';
+import { SPRING, useReveal } from '@/lib/motion';
 import {
   columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
   type CompanyProfile, type Field, type ListScreen,
@@ -165,8 +166,14 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         <div className="screen-actions no-print">
           {screen.display === 'board' && screen.board && (
             <div className="view-switch" role="group" aria-label="มุมมอง">
-              <button type="button" className={isBoard ? 'is-on' : ''} aria-pressed={isBoard} onClick={() => switchView(false)}><SquareKanban size={16} aria-hidden /> บอร์ด</button>
-              <button type="button" className={!isBoard ? 'is-on' : ''} aria-pressed={!isBoard} onClick={() => switchView(true)}><Table2 size={16} aria-hidden /> ตาราง</button>
+              <button type="button" className={isBoard ? 'is-on' : ''} aria-pressed={isBoard} onClick={() => switchView(false)}>
+                {isBoard && <motion.span layoutId="view-pill" className="view-pill" transition={SPRING.snappy} aria-hidden />}
+                <SquareKanban size={16} aria-hidden /> บอร์ด
+              </button>
+              <button type="button" className={!isBoard ? 'is-on' : ''} aria-pressed={!isBoard} onClick={() => switchView(true)}>
+                {!isBoard && <motion.span layoutId="view-pill" className="view-pill" transition={SPRING.snappy} aria-hidden />}
+                <Table2 size={16} aria-hidden /> ตาราง
+              </button>
             </div>
           )}
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">

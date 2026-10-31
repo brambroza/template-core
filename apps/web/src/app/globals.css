@@ -171,8 +171,10 @@ a { color: inherit; }
   display: block; padding: 6px 10px 6px 32px; border-radius: 8px; color: var(--ink-2); text-decoration: none; font-size: .93rem; position: relative;
 }
 .panel-nav li a:hover { background: var(--surface-2); color: var(--ink); }
-.panel-nav li a.is-active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
-.panel-nav li a.is-active::before { content: ''; position: absolute; left: 14px; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+.panel-nav li a.is-active { color: var(--accent-text); font-weight: 600; }
+.nav-pill { position: absolute; inset: 0; border-radius: 8px; background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+.nav-label { position: relative; }
+.panel-nav li a.is-active::before { z-index: 1; content: ''; position: absolute; left: 14px; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
 .nav-group.is-ai .nav-group-title svg { stroke: url(#ai-stroke); }
 .nav-group.is-ai .nav-group-title { color: var(--ai-text); }
 .panel-foot { border-top: 1px solid var(--line); padding: 12px 16px 16px; display: flex; align-items: center; gap: 10px; }
@@ -1011,8 +1013,10 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 
 /* ---------- kanban board (ListScreen display: 'board') ---------- */
 .view-switch { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-2); border-radius: var(--r-md); }
-.view-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-2); font: inherit; font-size: .875rem; cursor: pointer; }
-.view-switch button.is-on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); font-weight: 600; }
+.view-switch button { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-2); font: inherit; font-size: .875rem; cursor: pointer; }
+.view-switch button.is-on { color: var(--ink); font-weight: 600; }
+.view-switch button > svg { position: relative; }
+.view-pill { position: absolute; inset: 0; z-index: -1; border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 1px 3px rgba(11, 19, 36, .12); }
 .board-hint { margin: 0 0 10px; font-size: .85rem; }
 .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding: 2px 2px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
 .lane { --lane-tint: var(--surface-2); flex: 0 0 300px; max-width: 300px; display: flex; flex-direction: column; background: color-mix(in srgb, var(--lane-tint) 55%, var(--bg)); border: 1px solid var(--line); border-radius: var(--r-lg); scroll-snap-align: start; transition: border-color .15s, background-color .15s, opacity .15s, flex-basis .2s; }
@@ -1034,11 +1038,11 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 .lane-lock { margin-left: auto; color: var(--ink-3); }
 .lane-body { display: flex; flex-direction: column; gap: 10px; padding: 0 10px 12px; min-height: 64px; max-height: calc(100vh - 260px); overflow-y: auto; }
 .board-empty { margin: 4px 4px 0; color: var(--ink-3); font-size: .85rem; }
-.kcard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color .15s, box-shadow .15s, opacity .15s; touch-action: manipulation; }
+.kcard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color .15s, box-shadow .2s; touch-action: manipulation; }
+.kcard.is-landed { border-color: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
 .kcard.is-draggable { cursor: grab; }
 .kcard:hover { border-color: var(--line-strong); box-shadow: 0 4px 14px rgba(11, 19, 36, .08); }
-.kcard.is-dragging { opacity: .35; }
-.kcard.is-busy { opacity: .6; pointer-events: none; }
+.kcard.is-busy { pointer-events: none; }
 .kcard-overlay { cursor: grabbing; width: 276px; transform: rotate(2deg); box-shadow: var(--float); border-color: var(--accent); }
 .kcard-grip { position: absolute; top: 8px; right: 6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-3); cursor: grab; opacity: 0; transition: opacity .15s; }
 .kcard:hover .kcard-grip, .kcard-grip:focus-visible { opacity: 1; }
@@ -1071,3 +1075,57 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 .ai-reading { position: relative; overflow: hidden; margin: 0 0 14px; padding: 10px 14px; border-radius: var(--r-md); background: var(--ai-wash); color: var(--ai-text); font-weight: 500; }
 .ai-reading-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 40%; background: var(--ai-gradient); animation: ai-reading 1.2s ease-in-out infinite; }
 @keyframes ai-reading { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* ---------- "บันทึกแล้ว" panel on a document just created (SavedPanel, Motion) ---------- */
+.saved-panel { margin: 0 0 18px; padding: 18px 20px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid color-mix(in srgb, var(--ok) 30%, var(--line)); box-shadow: 0 10px 30px -12px rgba(18, 161, 107, .35); position: relative; overflow: hidden; }
+.saved-panel::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--ok), #34D399, var(--ai-3)); }
+.saved-body { display: grid; gap: 14px; }
+.saved-head { display: flex; align-items: center; gap: 14px; }
+.saved-head > div { flex: 1; min-width: 0; }
+.saved-head h2 { margin: 0; font-size: 1.15rem; }
+.saved-head p { margin: 2px 0 0; color: var(--ink-2); font-size: .9rem; }
+.saved-check { flex: none; stroke: var(--ok); background: var(--ok-soft); border-radius: 50%; }
+.saved-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; padding: 14px 16px; border-radius: var(--r-md); background: var(--surface-2); }
+.saved-card:not(:has(.saved-date)) { grid-template-columns: minmax(0, 1fr); }
+.saved-date { display: flex; align-items: center; gap: 12px; }
+.saved-date > div:last-child { display: grid; }
+.saved-date small { color: var(--ink-3); font-size: .78rem; }
+.date-tile { display: grid; place-items: center; width: 56px; height: 60px; border-radius: 12px; background: linear-gradient(160deg, var(--accent), var(--accent-deep)); color: var(--accent-ink); box-shadow: 0 8px 18px -8px var(--accent); line-height: 1; }
+.date-tile small { color: inherit; opacity: .85; font-size: .72rem; letter-spacing: .04em; }
+.date-tile b { font-size: 1.45rem; }
+.saved-card dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 18px; margin: 0; }
+.saved-card dt { color: var(--ink-3); font-size: .78rem; }
+.saved-card dd { margin: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.saved-next-title { margin: 0 0 6px; color: var(--ink-3); font-size: .75rem; font-weight: 600; letter-spacing: .06em; }
+.saved-next ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.saved-next li { display: flex; align-items: center; gap: 10px; }
+.saved-next li > span:nth-child(2) { flex: 1; }
+.saved-step { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-size: .78rem; font-weight: 600; }
+.saved-step.is-next { background: var(--accent); color: var(--accent-ink); }
+.saved-next .pill { padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+@media (max-width: 640px) { .saved-card { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- dialogs: spring in like the sheet in the reference (CSS only — native <dialog>) ---------- */
+.dialog[open] { animation: dialog-in .32s cubic-bezier(.22, 1.2, .36, 1); }
+.dialog[open]::backdrop { animation: backdrop-in .25s ease-out; }
+.dialog[open] form > * { animation: blur-in .38s cubic-bezier(.22, 1, .36, 1) backwards; } /* backwards, not both: a finished animation must not leave a stacking context (lookup dropdowns overlap the next block) */
+.dialog[open] form > :nth-child(2) { animation-delay: .04s; }
+.dialog[open] form > :nth-child(3) { animation-delay: .08s; }
+.dialog[open] form > :nth-child(n + 4) { animation-delay: .12s; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes backdrop-in { from { opacity: 0; } }
+@keyframes blur-in { from { opacity: 0; transform: translateY(6px); filter: blur(5px); } }
+
+/* form fields with an error shake once and keep a red ring (the conflict highlight in the reference) */
+.field:has(.field-error) :is(input, select, textarea) { animation: shake .36s cubic-bezier(.36, .07, .19, .97); box-shadow: 0 0 0 4px var(--stop-soft); }
+@keyframes shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+
+/* coloured status chips get a tiny lift on hover; primary buttons a soft glow */
+.status { transition: transform .15s; }
+tr:hover .status, .kcard:hover .status { transform: translateY(-1px); }
+.btn-primary { transition: background-color .15s, box-shadow .2s, transform .1s; }
+.btn-primary:hover { box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.btn-primary:active, .btn:active, .btn-ai:active { transform: translateY(1px) scale(.99); }
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open], .dialog[open]::backdrop, .dialog[open] form > *, .field:has(.field-error) :is(input, select, textarea) { animation: none; }
+}
