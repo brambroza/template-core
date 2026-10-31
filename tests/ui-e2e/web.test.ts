@@ -38,7 +38,11 @@ describe('web app — customer with Core + Inventory + Purchasing + Sales', () =
   it('logs in and shows only the purchased modules in the menu', async () => {
     await login(page, base, 'trading-co');
     const nav = page.getByRole('navigation');
-    for (const label of ['ใบสั่งซื้อ', 'ใบสั่งขาย', 'ยอดคงเหลือ', 'สินค้าและวัตถุดิบ', 'ผู้ใช้']) await expect(nav.getByRole('link', { name: label, exact: true }).count()).resolves.toBe(1);
+    // the menu fills in after the module catalog loads: wait for each item, then make sure it is there exactly once
+    for (const label of ['ใบสั่งซื้อ', 'ใบสั่งขาย', 'ยอดคงเหลือ', 'สินค้าและวัตถุดิบ', 'ผู้ใช้']) {
+      await nav.getByRole('link', { name: label, exact: true }).first().waitFor({ timeout: 15000 });
+      await expect(nav.getByRole('link', { name: label, exact: true }).count()).resolves.toBe(1);
+    }
     expect(await nav.getByRole('link', { name: 'งานซ่อม' }).count()).toBe(0);
     await shot(page, '01-home');
   });
