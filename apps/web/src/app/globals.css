@@ -8,6 +8,7 @@
    Print views override everything to plain black on white (see @media print).
    Motion lives in src/lib/motion.ts (GSAP) and is skipped for prefers-reduced-motion. */
 :root {
+  --gutter: clamp(16px, 2.2vw, 48px); /* page side padding: 28px on a laptop, 42px on 1920, 16px on a phone */
   --bg: #F6F7FB;
   --surface: #FFFFFF;
   --surface-2: #EEF1F7;
@@ -217,7 +218,7 @@ a { color: inherit; }
 .showcase-note { font-size: .85rem; color: var(--ink-2); margin: 0; }
 .showcase-note a { color: var(--accent-text); font-weight: 600; }
 .topbar {
-  position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 12px; padding: 12px 28px;
+  position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 12px; padding: 12px var(--gutter);
   background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .topbar .menu-toggle, .topbar-logo { display: none; }
@@ -233,7 +234,8 @@ a { color: inherit; }
 .cmd-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd-trigger kbd { margin-left: auto; font: inherit; font-size: .75rem; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.content { padding: 12px 28px 72px; max-width: 1320px; width: 100%; }
+/* full width on every screen: the page uses the whole window next to the menu; only the gutter grows with it */
+.content { padding: 12px var(--gutter) 72px; width: 100%; min-width: 0; }
 
 /* ---------- screens ---------- */
 .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 8px 0 20px; }
@@ -533,7 +535,7 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
   .content { padding: 8px 16px 56px; }
   h1 { font-size: 1.4rem; }
   .doc-no { font-size: 1.6rem; }
-  .filter { flex: 1 1 100%; }
+  .filter { flex: 1 1 220px; min-width: 0; }
   .widgets { grid-template-columns: minmax(0, 1fr); }
   .widget.sm, .widget.md, .widget.wide, .widget.lg, .pulse-live .widget.kind-feed, .pulse-live .widget.kind-floor3d { grid-column: auto; }
   .kpi-row .widget { flex-basis: 100%; }
@@ -1019,12 +1021,12 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 .view-pill { position: absolute; inset: 0; z-index: -1; border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 1px 3px rgba(11, 19, 36, .12); }
 .board-hint { margin: 0 0 10px; font-size: .85rem; }
 .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding: 2px 2px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
-.lane { --lane-tint: var(--surface-2); flex: 0 0 300px; max-width: 300px; display: flex; flex-direction: column; background: color-mix(in srgb, var(--lane-tint) 55%, var(--bg)); border: 1px solid var(--line); border-radius: var(--r-lg); scroll-snap-align: start; transition: border-color .15s, background-color .15s, opacity .15s, flex-basis .2s; }
+.lane { --lane-tint: var(--surface-2); flex: 1 0 280px; max-width: 460px; display: flex; flex-direction: column; background: color-mix(in srgb, var(--lane-tint) 55%, var(--bg)); border: 1px solid var(--line); border-radius: var(--r-lg); scroll-snap-align: start; transition: border-color .15s, background-color .15s, opacity .15s, flex-basis .2s; }
 .lane.tone-lane-progress { --lane-tint: var(--info-soft); }
 .lane.tone-lane-ok { --lane-tint: var(--ok-soft); }
 .lane.tone-lane-warn { --lane-tint: var(--warn-soft); }
 .lane.tone-lane-stop { --lane-tint: var(--stop-soft); }
-.lane.is-collapsed { flex-basis: 190px; }
+.lane.is-collapsed { flex: 0 0 190px; }
 .lane.is-collapsed .lane-head b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .lane.can-drop { border-style: dashed; border-color: var(--accent); }
 .lane.is-over { border: 2px solid var(--accent); background: var(--accent-soft); }

@@ -2,6 +2,10 @@
 
 ## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
 
+- **Full-width, responsive pages** (web + the demo, which is the same app): the 1320px content cap is gone — every screen uses the
+  whole window beside the menu with a gutter that grows with the screen (16px phone → 48px wide); kanban lanes share the width (all
+  lanes visible on a 1920 screen, still swipeable on tablet/phone); on tablets the filters sit 2–3 per row instead of one per row.
+
 - **Pagination on every table list** (web, no module change): loads up to 500 rows, shows 25/50/100 a page (remembered), "แสดง 26–50 จาก
   340 รายการ", page buttons with gaps and a sliding current-page highlight; new filter = page 1; totals, CSV and print use all rows;
   reports and boards are not paged; endpoints capped below 500 are retried with their default.
