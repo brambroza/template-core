@@ -7,16 +7,17 @@ import { CheckCircle2, AlertTriangle, Download, SquareKanban, Printer, SlidersHo
 import { motion } from 'motion/react';
 import { SPRING, useReveal } from '@/lib/motion';
 import {
-  columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
+  columnTotals, fillPath, paginate, PAGE_SIZES, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
   type CompanyProfile, type Field, type ListScreen,
 } from '@erp/ui-schema';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
 import { BoardView } from './BoardView';
+import { Pager } from './Pager';
 import { DropOverlay, useFileDrop } from './AiFill';
 import { enqueue, readable } from '@/lib/ai-queue';
 import { toast } from '@/lib/toast';
@@ -27,6 +28,9 @@ import { Letterhead } from './print/PrintParts';
 import { ImportButton } from './ImportButton';
 import { isNumeric, isWideColumn, LabelsContext, Value } from './Value';
 import { AiSpark, isAiModule } from './Brand';
+
+/** Rows a list asks the API for (the API's own maximum); more than this = narrow with filters. */
+const LIST_LIMIT = 500;
 
 /** "ประเภท: วัตถุดิบ · ค้นหา: เหล็ก" — the active filters, printed above the list. */
 function filterSummary(fields: Field[], values: Values): string {
@@ -49,6 +53,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [filters, setFilters] = useState<Values>(() => Object.fromEntries([...search.entries()]));
   /** the query string this list last wrote to the URL, so our own replace() is not read back as a new filter */
   const written = useRef(filtersToQuery(filters));
+  /** the filters of the last load: a new filter starts again at page 1, a refresh keeps the page */
+  const lastQuery = useRef(written.current);
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
   /** the whole response, for a report's period title and balance check */
   const [res, setRes] = useState<unknown>(null);
@@ -79,15 +85,45 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
     router.push(`${screenHref(module, screen.create!)}?ai=next`);
   };
   const drop = useFileDrop(!!aiCreate, startFromDocs);
-  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
+  // pages: the list loads every row the API gives (up to LIST_LIMIT) and shows them a page at a time; reports and boards are never paged
+  const paged = !screen.report && screen.display !== 'board';
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState<number>(PAGE_SIZES[0]);
+  useEffect(() => { const n = readPref<number>('page-size', PAGE_SIZES[0]); if ((PAGE_SIZES as readonly number[]).includes(n)) setSize(n); }, []);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const on = () => setPrinting(true);
+    const off = () => setPrinting(false);
+    window.addEventListener('beforeprint', on);
+    window.addEventListener('afterprint', off);
+    return () => { window.removeEventListener('beforeprint', on); window.removeEventListener('afterprint', off); };
+  }, []);
+  const pg = paginate(rows?.length ?? 0, page, size);
+  /** the rows on screen: one page, or every row when printing / for reports */
+  const shown = rows && paged && !printing ? rows.slice(pg.start, pg.end) : rows;
+  const goPage = (n: number) => {
+    setPage(n);
+    tableRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1, pg.page, size]);
 
   const load = useCallback(async () => {
     try {
       setError('');
-      const query = screen.board && !filters.limit ? { ...filters, limit: String(screen.board.limit ?? 200) } : filters;
-      const r = await api(module, fillPath(screen.endpoint, params), { query });
+      const limit = screen.board ? String(screen.board.limit ?? 200) : screen.report ? undefined : String(LIST_LIMIT);
+      const query = limit && !filters.limit ? { ...filters, limit } : filters;
+      let r: unknown;
+      try {
+        r = await api(module, fillPath(screen.endpoint, params), { query });
+      } catch (e) {
+        // an endpoint with a smaller cap (or none) refuses limit=500: ask with its own default instead
+        if (!(e instanceof ApiError && e.status === 400 && query !== filters)) throw e;
+        r = await api(module, fillPath(screen.endpoint, params), { query: filters });
+      }
       setRes(r);
       setRows(listRows(screen, r));
+      setPage((p) => (written.current === lastQuery.current ? p : 1));
+      lastQuery.current = written.current;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
       setRows([]);
@@ -238,7 +274,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
-          {rows?.map((row, i) => {
+          {shown?.map((row, i) => {
             const href = rowHref(row);
             const [head, body, ...facts] = screen.columns;
             return (
@@ -271,17 +307,17 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           <tbody role="rowgroup">
             {rows === null && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
             {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
-            {rows?.map((row, i) => {
+            {shown?.map((row, i) => {
               const href = rowHref(row);
               const style = reportRowStyle(report, row);
               const level = report ? reportIndent(report, row) : 0;
-              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(rows, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
+              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(shown!, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
               const cls = [href ? 'is-link' : '', style ? `r-${style}` : ''].filter(Boolean).join(' ') || undefined;
               return (
                 <tr role="row" key={report ? i : String(row.id ?? i)} className={cls} onClick={href ? () => router.push(href) : undefined}>
                   {screen.columns.map((c, ci) => {
                     const raw = get(row, c.key);
-                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(rows, i, c.key))
+                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(shown!, i, c.key))
                       || (!!report && (raw === null || raw === undefined || raw === ''));
                     const v = <Value value={get(row, c.key)} format={c.format} max={6} cell />;
                     return (
@@ -306,7 +342,11 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && !report && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
+      {rows !== null && rows.length > 0 && !report && !isBoard && (
+        <Pager total={rows.length} page={pg.page} size={size} capped={rows.length >= LIST_LIMIT}
+          onPage={goPage} onSize={(n) => { setSize(n); setPage(1); writePref('page-size', n); }} />
+      )}
+      {rows !== null && rows.length > 0 && isBoard && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
     </div>
   );
 }

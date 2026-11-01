@@ -784,6 +784,7 @@ describe('UAT — office & service modules (uat-office)', () => {
   it('UAT-46 พนักงานทั่วไปเห็นเฉพาะเมนูบริการตนเอง', async () => {
     await as(page, 'staff');
     await open(page, '/');
+    await page.getByRole('navigation').locator('.nav-group-title').first().waitFor();
     const groups = (await page.getByRole('navigation').locator('.nav-group-title').allInnerTexts()).map((g) => g.trim());
     for (const g of ['อนุมัติออนไลน์', 'เบิกค่าใช้จ่าย', 'บุคคลและลงเวลา', 'จองห้องและรถ', 'แจ้งปัญหา', 'โครงการ']) expect(groups).toContain(g);
     for (const g of ['ควบคุมคุณภาพ', 'ลูกค้าสัมพันธ์', 'ผู้ใช้และสิทธิ์', 'จัดซื้อ', 'ขาย']) expect(groups).not.toContain(g);

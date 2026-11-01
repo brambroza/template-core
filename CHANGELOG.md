@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
+
+- **Pagination on every table list** (web, no module change): loads up to 500 rows, shows 25/50/100 a page (remembered), "แสดง 26–50 จาก
+  340 รายการ", page buttons with gaps and a sliding current-page highlight; new filter = page 1; totals, CSV and print use all rows;
+  reports and boards are not paged; endpoints capped below 500 are retried with their default.
+- **Thai date picker** (`DateInput`) for every date/month field, filter and range: "31 ต.ค. 2569", typed in any common Thai form,
+  Buddhist-era calendar (days → months → years), Today / Clear, range shading, full keyboard support; values stay ISO.
+- Fix: the "บันทึกแล้ว" flag no longer travels in the URL (`?saved=1`) — a link copied, or a script reading the address, right after
+  saving got `…/id?saved=1`. It is handed over in memory now.
+- Tests: `paginate` / Thai date parsing unit tests; browser tests for paging a 40-row list and for picking dates (typed, retyped after
+  select-all, calendar click, keyboard).
+
 ## Unreleased — Motion และลูกเล่น (React + Motion + GSAP)
 
 - Rule of thumb, written down (`docs/ui.md` → "Motion และลูกเล่น", tokens in `apps/web/src/lib/motion.ts`): CSS for hover/press/dialogs,
@@ -7,7 +19,7 @@
   `MotionConfig reducedMotion="user"`; only transform/opacity/blur; nothing blocks the user.
 - Board cards glide to their new lane (`layoutId`), lane counts pop, a landed card gets a green ring when the server agrees.
 - Sliding highlight (`layoutId`) on the side menu's current item and the board/table switch.
-- "บันทึกแล้ว" panel on a document just created (`?saved=1`, `SavedPanel`): check mark draws, date tile pops, key facts blur in one
+- "บันทึกแล้ว" panel on a document just created (`SavedPanel`, flag handed over in memory — the URL stays the document's): check mark draws, date tile pops, key facts blur in one
   by one, "ขั้นต่อไป" lists the actions the document now waits for. Inline, closable, not repeated on reload.
 - AI-filled inputs glow one after another (GSAP `aiFilledGlow`).
 - Dialogs spring in with a staggered blur-in; fields with an error shake once and keep a red ring; buttons press in.

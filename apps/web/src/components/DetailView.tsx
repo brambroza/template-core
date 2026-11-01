@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { buyerInfo, buyerProblems, columnTotals, COPY_LABELS, companyProblems, factSections, fillPath, get, hasPerm, matches, printSpec, printsOnPaper, repeatsAbove, routeParams, signatureBoxes, type CompanyProfile, type CopyLabel, type DetailScreen, type Format } from '@erp/ui-schema';
 import { Copy } from 'lucide-react';
@@ -14,6 +14,7 @@ import { AttachmentsPanel } from './AttachmentsPanel';
 import { AuditTrail } from './AuditTrail';
 import { FlowStepper } from './FlowStepper';
 import { SavedPanel } from './SavedPanel';
+import { clearSaved, wasJustSaved } from '@/lib/saved-flash';
 import { loadCompany } from './print/company';
 import { BuyerBlock, Letterhead, PrintFooter, Signatures } from './print/PrintParts';
 import { isNumeric, Value } from './Value';
@@ -53,10 +54,9 @@ const companyProblemsShown = (problems: string[]) => problems.some((p) => p.star
 export function DetailView({ module, screen, id }: { module: string; screen: DetailScreen; id?: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const search = useSearchParams();
-  // just created by a form (?saved=1): show the "บันทึกแล้ว" panel once, and drop the flag so a reload does not repeat it
-  const [justSaved, setJustSaved] = useState(() => search.get('saved') === '1');
-  useEffect(() => { if (search.get('saved') === '1') router.replace(pathname, { scroll: false }); }, []);
+  // just created by a form: show the "บันทึกแล้ว" panel once (the flag lives in memory, a reload does not repeat it)
+  const [justSaved, setJustSaved] = useState(() => wasJustSaved(pathname));
+  useEffect(() => { if (justSaved) clearSaved(); }, []);
   const perms = loadSession()?.permissions ?? [];
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');

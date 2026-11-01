@@ -11,6 +11,7 @@ import { toast } from '@/lib/toast';
 import { AiFillButton, AiFillReview, DropOverlay, readDocument, useFileDrop, type AiProposal } from './AiFill';
 import { clearQueue, enqueue, readable, remaining, takeNext } from '@/lib/ai-queue';
 import { aiFilledGlow } from '@/lib/motion';
+import { markSaved } from '@/lib/saved-flash';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
 function readBase64(blob: Blob): Promise<string> {
@@ -164,7 +165,7 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         }
       }
       const target = after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME;
-      // a new document opens with the "บันทึกแล้ว" panel (SavedPanel); edits just go back to the document
+      // a new document opens with the "บันทึกแล้ว" panel (SavedPanel, flag handed over in memory); edits just go back to the document
       const celebrate = !screen.load && afterScreen?.kind === 'detail' && !!after?.idFrom && target !== HOME;
       // a queue of documents: stay on the form and open the next one; the saved record is one click away
       if (canAi && remaining(module, screenId!) > 0) {
@@ -174,7 +175,8 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         return;
       }
       if (queuePos) { clearQueue(); if (queuePos.total > 1) toast({ title: `บันทึกครบ ${queuePos.total} ฉบับแล้ว`, tone: 'ok' }); }
-      router.push(celebrate ? `${target}?saved=1` : target);
+      if (celebrate) markSaved(target);
+      router.push(target);
     } catch (err) {
       setBusy(false);
       if (isShowcaseRefusal(err)) return; // showcase: a toast already explained it, the form stays as typed

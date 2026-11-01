@@ -21,13 +21,14 @@ afterAll(async () => { await browser?.close(); });
 
 describe('web app — customer with Core + Inventory + Purchasing + Sales', () => {
   let erp: Installation;
+  let token: string;
   let web: ChildProcess;
   let page: Page;
   const base = 'http://127.0.0.1:3911';
 
   beforeAll(async () => {
     erp = await install([identity, masterData, inventory, purchasing, sales]);
-    const { token } = await erp.provision('trading-co');
+    ({ token } = await erp.provision('trading-co'));
     // this test drives the generic screens with one admin; segregation of duties (wave 8, on by default) is covered by purchasing's sod.test.ts and UAT-07
     await erp.call('PUT', '/api/purchasing/settings', { creatorCannotApprove: false }, token);
     web = await startWeb(erp.url, 3911);
@@ -143,6 +144,58 @@ describe('web app — customer with Core + Inventory + Purchasing + Sales', () =
     await page.getByRole('button', { name: 'บันทึกบทบาท' }).click();
     const row = page.getByRole('row', { name: /พนักงานคลัง/ });
     await expect(row.textContent()).resolves.toContain('inventory.*');
+  });
+
+  it('pages a long list: 25 rows a page, page buttons, rows per page', async () => {
+    for (let i = 1; i <= 40; i++) {
+      const code = `CUS-P${String(i).padStart(3, '0')}`;
+      await erp.call('POST', '/api/master-data/partners', { code, name: `ลูกค้าทดสอบ ${i}`, kind: 'customer' }, token);
+    }
+    await page.goto(`${base}/m/master-data/partners`);
+    await page.getByRole('cell', { name: 'CUS-P001' }).waitFor();
+    const pager = page.getByRole('navigation', { name: 'แบ่งหน้า' });
+    await expect(pager.getByRole('status').textContent()).resolves.toMatch(/แสดง 1–25 จาก 4\d รายการ/);
+    expect(await page.locator('tbody tr').count()).toBe(25);
+    await pager.getByRole('button', { name: 'หน้า 2' }).click();
+    await page.getByRole('cell', { name: 'CUS-P040' }).waitFor();
+    expect(await page.getByRole('cell', { name: 'CUS-P001' }).count()).toBe(0);
+    await expect(pager.getByRole('button', { name: 'หน้า 2' }).getAttribute('aria-current')).resolves.toBe('page');
+    await pager.getByLabel('จำนวนรายการต่อหน้า').selectOption('50');
+    expect(await page.locator('tbody tr').count()).toBeGreaterThan(40);
+    expect(await pager.getByRole('button', { name: 'หน้า 2' }).count()).toBe(0);
+    // a new search starts again on page 1
+    await pager.getByLabel('จำนวนรายการต่อหน้า').selectOption('25');
+    await pager.getByRole('button', { name: 'หน้า 2' }).click();
+    await page.getByLabel('ค้นหารหัสหรือชื่อ').fill('ลูกค้าทดสอบ 3');
+    await page.getByRole('cell', { name: 'CUS-P003' }).waitFor();
+    expect(await pager.getByRole('button', { name: 'หน้า 2' }).count()).toBe(0);
+  });
+
+  it('picks dates in Thai: Buddhist years, typed in any form, calendar, select-all and retype', async () => {
+    await page.goto(`${base}/m/purchasing/poNew`);
+    const due = page.getByLabel('กำหนดส่ง', { exact: true });
+    await due.fill('2026-11-20');
+    await page.getByLabel('หมายเหตุ').click();
+    await expect(due.inputValue()).resolves.toBe('20 พ.ย. 2569');
+    // replace a filled date by selecting it and typing (the regression: text must not change on focus)
+    await due.fill('31/12/2569');
+    await page.getByLabel('หมายเหตุ').click();
+    await expect(due.inputValue()).resolves.toBe('31 ธ.ค. 2569');
+    // the calendar opens on the chosen month, in Buddhist years, and a click picks the day
+    await page.locator('[data-field="expectedDate"]').getByRole('button', { name: 'เปิดปฏิทิน' }).click();
+    const cal = page.getByRole('dialog', { name: 'เลือกวันที่' });
+    await expect(cal.locator('.cal-title').textContent()).resolves.toBe('ธันวาคม 2569');
+    await cal.getByRole('button', { name: '15 ธันวาคม 2569' }).click();
+    await expect(due.inputValue()).resolves.toBe('15 ธ.ค. 2569');
+    await expect(cal.count()).resolves.toBe(0);
+    // keyboard: Alt+↓ opens, → moves a day, Enter picks
+    await due.focus();
+    await due.press('Alt+ArrowDown');
+    await cal.waitFor();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await expect(due.inputValue()).resolves.toBe('16 ธ.ค. 2569');
+    await shot(page, '08-date-picker');
   });
 });
 

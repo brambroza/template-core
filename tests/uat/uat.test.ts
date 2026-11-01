@@ -121,7 +121,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await login(page, base, 'uat-factory');
     const menu = page.getByRole('navigation');
     for (const m of ['ขาย', 'จัดซื้อ', 'คลังสินค้า', 'วางแผนการผลิต', 'ซ่อมบำรุง', 'ต้นทุน', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']) {
-      await expect(menu.locator('.nav-group-title', { hasText: m }).count()).resolves.toBe(1);
+      const group = menu.locator('.nav-group-title', { hasText: m });
+      await group.first().waitFor(); // the menu comes from /api/_catalog after login
+      await expect(group.count()).resolves.toBe(1);
     }
     await shot(page, 'UAT-01');
   });
@@ -150,6 +152,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await logout(page, base);
     await login(page, base, 'uat-factory', 'store@uat.co.th', 'store-pass-1');
     const menu = page.getByRole('navigation');
+    await menu.getByRole('link', { name: 'ยอดคงเหลือ' }).waitFor(); // menu loads after login
     expect(await menu.getByRole('link', { name: 'ยอดคงเหลือ' }).count()).toBe(1);
     expect(await menu.getByRole('link', { name: 'สินค้าและวัตถุดิบ' }).count()).toBe(1);
     expect(await menu.getByRole('link', { name: 'ใบสั่งซื้อ' }).count()).toBe(0);
@@ -570,6 +573,7 @@ describe('UAT — partial installation (small-factory: Core + Maintenance)', () 
 
   it('UAT-21 ลูกค้าที่ซื้อบางโมดูลเห็นเฉพาะที่ซื้อ', async () => {
     await login(p, smallBase, 'small-factory');
+    await p.getByRole('navigation').locator('.nav-group-title').first().waitFor();
     const groups = await p.getByRole('navigation').locator('.nav-group-title').allInnerTexts();
     expect(groups.map((g) => g.trim())).toEqual(['ซ่อมบำรุง', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']);
     await shot(p, 'UAT-21');

@@ -10,7 +10,7 @@ import { Value } from './Value';
 const blank = (v: unknown) => v === undefined || v === null || v === '' || v === false;
 
 /**
- * "บันทึกแล้ว" — shown at the top of a document right after it was created (FormView opens the detail with `?saved=1`).
+ * "บันทึกแล้ว" — shown at the top of a document right after it was created (FormView hands the flag over with `markSaved`).
  * A check draws in, then the date tile, the key facts and "ขั้นต่อไป" (the actions now open on this document) blur in one
  * by one. Inline, never an overlay: it does not block anything and closes with ×.
  */

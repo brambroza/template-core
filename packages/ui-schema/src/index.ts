@@ -1762,3 +1762,121 @@ export function extendUi(base: ModuleUi, ext?: UiExtension | null): ModuleUi {
     ...(ext.statusLabels ? { statusLabels: { ...(base.statusLabels ?? {}), ...ext.statusLabels } } : {}),
   };
 }
+
+/* ---------------- pagination (web list tables) ---------------- */
+
+export const PAGE_SIZES = [25, 50, 100] as const;
+
+/**
+ * Page maths for a list of `total` rows: 1-based `page` (clamped), the slice `[start, end)`, and the page buttons to draw —
+ * numbers with `'…'` gaps, always the first, the last and the pages next to the current one: 1 … 4 5 6 … 12.
+ */
+export function paginate(total: number, page: number, size: number): { page: number; pages: number; start: number; end: number; items: (number | '…')[] } {
+  const pages = Math.max(1, Math.ceil(total / Math.max(1, size)));
+  const p = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  const start = (p - 1) * size;
+  const end = Math.min(total, start + size);
+  const want = new Set([1, pages, p - 1, p, p + 1].filter((n) => n >= 1 && n <= pages));
+  if (p <= 3) [2, 3, 4].forEach((n) => n <= pages && want.add(n));
+  if (p >= pages - 2) [pages - 3, pages - 2, pages - 1].forEach((n) => n >= 1 && want.add(n));
+  const sorted = [...want].sort((a, b) => a - b);
+  const items: (number | '…')[] = [];
+  sorted.forEach((n, i) => {
+    if (i && n - sorted[i - 1] === 2) items.push(n - 1);
+    else if (i && n - sorted[i - 1] > 2) items.push('…');
+    items.push(n);
+  });
+  return { page: p, pages, start, end, items };
+}
+
+/* ---------------- Thai date picker (web forms and filters) ---------------- */
+
+export const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'] as const;
+export const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'] as const;
+/** Sunday first, as Thai wall calendars print it. */
+export const TH_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
+
+const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m)}-${pad2(d)}`;
+
+/** "2026-10-31" -> "31 ต.ค. 2569"; "2026-10" -> "ต.ค. 2569"; anything else -> "". Same text on every machine (no locale). */
+export function thaiDateText(iso: string, kind: 'date' | 'month' = 'date'): string {
+  const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(iso ?? ''));
+  if (!r) return '';
+  const y = Number(r[1]) + 543;
+  const mon = TH_MONTHS_SHORT[Number(r[2]) - 1];
+  if (!mon) return '';
+  return kind === 'month' || !r[3] ? `${mon} ${y}` : `${Number(r[3])} ${mon} ${y}`;
+}
+
+/**
+ * What a person types into a date box -> ISO. Accepts "2026-10-31", "31/10/2569", "31-10-26", "31.10.2026", "31 ต.ค. 69",
+ * "31 ตุลาคม 2569" (Buddhist or Christian years, 2-digit years = 25xx / 20xx as written). Month boxes: "2026-10", "10/2569",
+ * "ต.ค. 2569". Returns "" for empty text, null when the text is not a real date yet.
+ */
+export function parseDateText(text: string, kind: 'date' | 'month' = 'date'): string | null {
+  const s = String(text ?? '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const year = (raw: string) => {
+    let y = Number(raw);
+    if (raw.length === 2) y = y >= 40 ? 2500 + y : 2000 + y; // "69" = 2569, "26" = 2026
+    return y > 2400 ? y - 543 : y;
+  };
+  const monthName = (raw: string) => {
+    const t = raw.replace(/\s/g, '');
+    const i = TH_MONTHS.findIndex((m) => m === t);
+    if (i >= 0) return i + 1;
+    const j = TH_MONTHS_SHORT.findIndex((m) => m.replace(/\./g, '') === t.replace(/\./g, ''));
+    return j >= 0 ? j + 1 : 0;
+  };
+  const valid = (y: number, m: number, d: number) => {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return y >= 1900 && y <= 2200 && dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  };
+  let r: RegExpExecArray | null;
+  if (kind === 'month') {
+    if ((r = /^(\d{4})-(\d{1,2})$/.exec(s))) { const y = year(r[1]); const m = Number(r[2]); return valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    if ((r = /^(\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s))) { const y = year(r[2]); const m = Number(r[1]); return valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    if ((r = /^([^\d\s][^\d]*?)\s?(\d{2}|\d{4})$/.exec(s))) { const m = monthName(r[1]); const y = year(r[2]); return m && valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    return null;
+  }
+  let y = 0, m = 0, d = 0;
+  if ((r = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s))) [y, m, d] = [year(r[1]), Number(r[2]), Number(r[3])];
+  else if ((r = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s))) [y, m, d] = [year(r[3]), Number(r[2]), Number(r[1])];
+  else if ((r = /^(\d{1,2}) ?([^\d\s][^\d]*?) ?(\d{2}|\d{4})$/.exec(s))) [y, m, d] = [year(r[3]), monthName(r[2]), Number(r[1])];
+  else return null;
+  return m && valid(y, m, d) ? isoOf(y, m, d) : null;
+}
+
+/** The weeks of a month for a calendar grid (Sunday first): ISO dates, with `inMonth: false` for the spill-over days. */
+export function calendarWeeks(year: number, month: number): { iso: string; day: number; inMonth: boolean }[][] {
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const start = new Date(first);
+  start.setUTCDate(1 - first.getUTCDay());
+  const weeks: { iso: string; day: number; inMonth: boolean }[][] = [];
+  const cur = new Date(start);
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      week.push({ iso: cur.toISOString().slice(0, 10), day: cur.getUTCDate(), inMonth: cur.getUTCMonth() === month - 1 });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    weeks.push(week);
+    if (cur.getUTCMonth() !== month - 1 && w >= 3) break;
+  }
+  return weeks;
+}
+
+/** ISO day + n days (calendar keyboard navigation). */
+export function shiftIsoDay(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** ISO day moved by n months, clamped to the month's last day (31 ม.ค. + 1 = 28/29 ก.พ.). */
+export function shiftIsoMonth(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  return isoOf(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(d || 1, last));
+}

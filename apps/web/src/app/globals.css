@@ -1129,3 +1129,72 @@ tr:hover .status, .kcard:hover .status { transform: translateY(-1px); }
 @media (prefers-reduced-motion: reduce) {
   .dialog[open], .dialog[open]::backdrop, .dialog[open] form > *, .field:has(.field-error) :is(input, select, textarea) { animation: none; }
 }
+
+/* ---------- Thai date picker (DateInput) ---------- */
+.date-input { position: relative; display: flex; align-items: center; }
+.date-input > input { padding-right: 64px; font-variant-numeric: tabular-nums; }
+.date-input.is-invalid > input { border-color: var(--stop); }
+.date-input.is-open > input { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.date-open, .date-clear { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); cursor: pointer; border-radius: var(--r-sm); }
+.date-open { right: 6px; width: 30px; height: 30px; }
+.date-open:hover, .date-input.is-open .date-open { color: var(--accent-text); background: var(--accent-soft); }
+.date-clear { right: 38px; width: 24px; height: 24px; opacity: 0; transition: opacity .15s; }
+.date-input:hover .date-clear, .date-clear:focus-visible { opacity: 1; }
+.date-clear:hover { color: var(--stop-text); }
+.float-field .date-input > input { padding-top: 17px; padding-bottom: 4px; }
+/* range filter: two borderless boxes inside one frame */
+.range-box .date-input > input { border: 0; background: none; padding: 2px 52px 4px 4px; min-height: 0; width: 10.5em; box-shadow: none; }
+.range-box .date-open { width: 24px; height: 24px; right: 2px; }
+.range-box .date-clear { right: 26px; }
+.range-box .date-input.is-open > input { box-shadow: none; }
+
+.cal-pop { position: fixed; z-index: 1000; width: 300px; padding: 12px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--float); color: var(--ink); }
+.cal-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.cal-title { flex: 1; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink); padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.cal-title:hover:not(:disabled) { background: var(--surface-2); }
+.cal-title:disabled { cursor: default; color: var(--ink); }
+.cal-nav { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-2); cursor: pointer; }
+.cal-nav:hover { background: var(--surface-2); color: var(--ink); }
+.cal-body { overflow: hidden; min-height: 240px; }
+.cal-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.cal-grid th { font-size: .75rem; font-weight: 600; color: var(--ink-3); padding: 4px 0 6px; text-align: center; }
+.cal-grid th.is-sun { color: var(--stop-text); }
+.cal-grid td { padding: 1px 0; text-align: center; }
+.cal-day { position: relative; isolation: isolate; width: 36px; height: 34px; border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: .9rem; font-variant-numeric: tabular-nums; cursor: pointer; }
+.cal-day > span { position: relative; z-index: 1; }
+.cal-day:hover:not(:disabled) { background: var(--surface-2); }
+.cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.cal-day.is-other { color: var(--ink-3); opacity: .55; }
+.cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent-text); font-weight: 600; }
+.cal-day.in-range { background: var(--accent-soft); border-radius: 0; }
+.cal-day.is-edge { font-weight: 600; }
+.cal-day.is-selected { color: var(--accent-ink); font-weight: 600; }
+.cal-day:disabled { color: var(--ink-3); opacity: .35; cursor: not-allowed; text-decoration: line-through; }
+.cal-sel { position: absolute; inset: 0; z-index: 0; border-radius: 10px; background: var(--accent); box-shadow: 0 6px 14px -6px var(--accent); }
+.cal-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 0; }
+.cal-tile { height: 48px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: .92rem; cursor: pointer; }
+.cal-tile:hover { border-color: var(--accent); color: var(--accent-text); }
+.cal-tile.is-today { border-color: var(--accent); }
+.cal-tile.is-selected { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.cal-foot { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+
+/* ---------- table pagination (ListView) ---------- */
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 14px; }
+.pager-info { color: var(--ink-2); font-size: .88rem; font-variant-numeric: tabular-nums; }
+.pager-info b { color: var(--ink); font-weight: 600; }
+.pager-pages { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.pager-btn { position: relative; isolation: isolate; min-width: 36px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink-2); font: inherit; font-size: .9rem; font-variant-numeric: tabular-nums; cursor: pointer; display: inline-grid; place-items: center; }
+.pager-btn:hover:not(:disabled):not([aria-current]) { border-color: var(--line-strong); color: var(--ink); }
+.pager-btn:disabled { opacity: .4; cursor: default; }
+.pager-btn[aria-current='page'] { color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.pager-btn > span { position: relative; z-index: 1; }
+.pager-pill { position: absolute; inset: -1px; z-index: 0; border-radius: var(--r-md); background: var(--accent); box-shadow: 0 6px 14px -8px var(--accent); }
+.pager-gap { color: var(--ink-3); padding: 0 2px; }
+.pager-size { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: .88rem; }
+.pager-size select { width: auto; min-height: 36px; padding: 4px 28px 4px 10px; }
+.pager-more { color: var(--warn-text); font-size: .85rem; }
+@media (max-width: 640px) {
+  .pager-pages { margin-left: 0; width: 100%; justify-content: center; }
+  .pager-pages .pager-num:not([aria-current]) { display: none; }
+}
+@media print { .pager { display: none; } }
