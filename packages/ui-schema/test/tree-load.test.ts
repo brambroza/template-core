@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { brokenLinks, recordLines, recordValues, treeAddQuery, treeHasChildren, treeHidden, treeParents, type Field, type LinesSpec } from '../src/index.ts';
+import { autofillReady, autofillValues, brokenLinks, recordLines, recordValues, treeAddQuery, treeHasChildren, treeHidden, treeParents, type Field, type LinesSpec } from '../src/index.ts';
 
 const rows = [
   { level: 1, code: 'SA-DOOR' },   // 0  ▾
@@ -57,5 +57,18 @@ describe('form attachments', () => {
     });
     expect(brokenLinks(ui({ screen: 'woDetail', idFrom: 'id' }))).toEqual([]);
     expect(brokenLinks(ui({ screen: 'woDetail' }))).toEqual(['maintenance: woNew.attach needs after.idFrom (the id of the record the files belong to)']);
+  });
+});
+
+describe('autofill from a register', () => {
+  it('searches a full tax ID at once and names from 3 letters', () => {
+    expect(autofillReady('0105-54712-345-4')).toBe('tin');
+    expect(autofillReady('010554')).toBeNull();
+    expect(autofillReady('สย')).toBeNull();
+    expect(autofillReady('สยาม')).toBe('name');
+  });
+  it('fills only what the result has', () => {
+    const spec = { endpoint: '/partners/lookup', label: 'ค้นหา', title: ['name'], fill: { name: 'name', taxId: 'taxId', address: 'address' } };
+    expect(autofillValues(spec, { name: 'บริษัท ก', taxId: '0105547123454', address: '' })).toEqual({ name: 'บริษัท ก', taxId: '0105547123454' });
   });
 });

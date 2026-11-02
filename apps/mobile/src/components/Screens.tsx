@@ -10,6 +10,7 @@ import {
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
 import { themed, useIsDark, usePalette } from '../lib/theme';
+import { AutofillBox } from './Autofill';
 import { AttachmentsList, PendingAttachments, sendFiles, type Pending } from './Attachments';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 import { Button, Card, EmptyState, ErrorText, LabelsContext, useS, ValueText } from './ui';
@@ -265,6 +266,7 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
         <Button label={screen.submitLabel} tone="primary" size="large" busy={busy} onPress={submit} />
       </>}
     >
+      {screen.autofill && <AutofillBox module={ui.module} spec={screen.autofill} onPick={(v) => { setValues((cur) => ({ ...cur, ...v })); setErrors({}); }} />}
       {screen.fields.map((f) => <FieldRow key={f.name} field={f} module={ui.module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
       {screen.lines && <LinesEditor spec={screen.lines} module={ui.module} lines={lines} onChange={setLines} />}
       {screen.attach && <PendingAttachments spec={screen.attach} files={pending} onChange={setPending} disabled={busy} />}

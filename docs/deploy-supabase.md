@@ -63,6 +63,8 @@ gateway: `PORT=8080`, `INTERNAL_TOKEN=…`, `MODULES=identity=http://identity:30
 4. Functions region: **Singapore (sin1)** ให้ใกล้ Supabase และ gateway
 5. แอปมือถือ: ช่อง "ที่อยู่เซิร์ฟเวอร์" ใส่ URL ของ gateway (ไม่ผ่าน Vercel)
 
+การค้นหาลูกค้า/ผู้ขายจากกรมสรรพากร: service master-data ต้องออกอินเทอร์เน็ตไป `https://rdws.rd.go.th` ได้ (ตรวจด้วย `pnpm erp rd-check <เลขผู้เสียภาษี>`)
+
 ## ข้อจำกัดที่รู้แล้ว
 
 - **ไฟล์แนบผ่านเว็บบน Vercel ได้ไม่เกินประมาณ 3 MB** — Vercel Functions รับ request ได้สูงสุด 4.5 MB และไฟล์ถูกส่งเป็น base64 (ใหญ่ขึ้น ~33%)

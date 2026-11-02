@@ -2,6 +2,12 @@
 
 ## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
 
+- **New customer / supplier filled from the Revenue Department** (master-data "เพิ่มคู่ค้า"): type a 13-digit tax ID (searches at once) or a
+  company name → every branch from the public VAT registrant service (กรมสรรพากร, free, no sign-up) → pick one → name, tax ID, branch and a
+  Thai-format address are filled; branches the company already has are marked. `GET /partners/lookup`, cached a day; Thai errors when
+  the tax ID is wrong or the service is unreachable. Generic form option `autofill` (web + mobile). `pnpm erp rd-check` tests the service
+  from a server; `RD_LOOKUP=off` hides it. Only VAT-registered businesses are listed.
+
 - **Photos and files on the repair request** (maintenance "แจ้งซ่อม", web + mobile): take a photo (phones open the camera), pick photos or
   PDFs/Excel/Word, see thumbnails, remove; they are attached to the work order right after it is saved. Generic form option `attach`
   (any module can turn it on). Big photos are shrunk in the browser (≤ 2000 px JPEG) so phone shots never hit the 5 MB limit — also on

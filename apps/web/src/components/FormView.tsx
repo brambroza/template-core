@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { AutofillBox } from './AutofillBox';
 import { FormAttachments, uploadPending, type PendingFile } from './FormAttachments';
 import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, recordLines, recordValues, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
@@ -219,6 +220,13 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
       {aiBusy && <div className="ai-reading" role="status"><span className="ai-reading-bar" aria-hidden />AI กำลังอ่านเอกสาร…</div>}
       {ai && (
         <AiFillReview proposal={ai.proposal} filled={ai.filled} attach={attachEntity ? attachAi : null} onAttach={setAttachAi} onClose={() => setAi(null)} />
+      )}
+      {screen.autofill && !screen.load && (
+        <AutofillBox module={module} spec={screen.autofill} onPick={(v) => {
+          setValues((cur) => ({ ...cur, ...v }));
+          setFieldErrors({});
+          setGlow({ fields: Object.keys(v), lines: [] });
+        }} />
       )}
       <div className="form-grid">
         {screen.fields.map((f) => (

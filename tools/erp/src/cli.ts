@@ -19,6 +19,8 @@
  *   upgrade <release-folder> [--apply]        installation: move to a newer pack; replaces untouched vendor files, never touches ext/ or own modules
  *   showcase-capture [--gateway URL] [--tenant demo] [--password demo1234] [--rows 5] [--out apps/web/showcase/snapshot.json]
  *                                             record a running demo's answers for the public showcase (SHOWCASE=1, docs/deploy-vercel.md)
+ *   rd-check <tax-id | name> [--url URL]       ask the Revenue Department VAT Service directly from this machine (the lookup behind
+ *                                             "เพิ่มคู่ค้า → ค้นหาจากกรมสรรพากร"): proves the server can reach it and shows what it answers
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
  */
@@ -193,6 +195,21 @@ function main() {
       for (const e of r.errors) console.log(`ERROR ${e}`);
       console.log(r.errors.length ? `\n${r.errors.length} error(s)` : `\nOK: ${manifests.length} modules follow the rules`);
       if (r.errors.length) process.exitCode = 1;
+      return;
+    }
+    case 'rd-check': {
+      const q = args.join(' ');
+      pending = import('../../../services/master-data/src/rd-lookup.ts').then(async ({ lookupRd, readQuery, RD_VAT_SERVICE_URL }) => {
+        const query = readQuery(q);
+        if (!query) throw new Error('usage: pnpm erp rd-check <13-digit tax id | company name (3+ letters)>');
+        if ('invalidTin' in query) throw new Error(`${query.invalidTin} is not a valid Thai tax ID (check digit)`);
+        const url = flags.url ?? process.env.RD_VAT_SERVICE_URL ?? RD_VAT_SERVICE_URL;
+        console.log(`Asking ${url} for ${'tin' in query ? `tax ID ${query.tin}` : `name "${query.name}"`}…`);
+        const t0 = Date.now();
+        const rows = await lookupRd(query, { url, timeoutMs: 20_000 });
+        console.log(`${rows.length} result(s) in ${Date.now() - t0} ms`);
+        for (const r of rows.slice(0, 20)) console.log(`- ${r.taxId} ${r.branch} ${r.name} (${r.branchLabel})\n  ${r.address}`);
+      });
       return;
     }
     case 'showcase-capture': {

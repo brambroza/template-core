@@ -259,6 +259,29 @@ export interface FormScreen extends ScreenBase {
    * ServiceDefinition `attachments.entities` declares — the same one its detail screen shows.
    */
   attach?: FormAttach;
+  /**
+   * A search box above the fields that fills them from an outside register ("พิมพ์ชื่อหรือเลขผู้เสียภาษี แล้วระบบกรอกให้"):
+   * GET `endpoint?q=` of the module itself → `{ results: [...], source? }`; the user picks one and `fill` copies its values.
+   */
+  autofill?: FormAutofill;
+}
+
+export interface FormAutofill {
+  /** GET route of the module, called with `?q=<what the user typed>` */
+  endpoint: string;
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  /** shortest name worth searching (default 3); a 13-digit number is searched as soon as it is complete */
+  minLength?: number;
+  /** result keys shown as the title / second line / right-hand tag of each row */
+  title: string[];
+  subtitle?: string[];
+  tag?: string;
+  /** form field -> result key */
+  fill: Record<string, string>;
+  /** result key holding the code of a record the company already has (shown as "มีในระบบแล้ว: CODE") */
+  existing?: string;
 }
 
 export interface FormAttach {
@@ -823,6 +846,7 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
     } else if (s.kind === 'form') {
       out.push({ module: ui.module, method: s.method, path: s.endpoint, where });
       if (s.load) out.push({ module: ui.module, method: 'GET', path: s.load, where: `${where}.load` });
+      if (s.autofill) out.push({ module: ui.module, method: 'GET', path: s.autofill.endpoint, where: `${where}.autofill` });
       lookups(s.fields, where);
       lookups(s.lines?.fields, `${where}.lines`);
     } else {
@@ -1998,4 +2022,25 @@ export function recordValues(fields: Field[], rec: Record<string, unknown>): Rec
 export function recordLines(spec: LinesSpec, rec: Record<string, unknown>): Record<string, unknown>[] {
   const rows = get(rec, spec.name) ?? get(rec, snakeCase(spec.name));
   return Array.isArray(rows) ? rows.map((r) => recordValues(spec.fields, r as Record<string, unknown>)) : [];
+}
+
+
+/* ---------- form autofill from a register ---------- */
+
+/** Should the box search now? A complete 13-digit number at once; a name from `minLength` letters (default 3). */
+export function autofillReady(text: string, minLength = 3): 'tin' | 'name' | null {
+  const t = text.trim();
+  const digits = t.replace(/[\s-]/g, '');
+  if (/^\d+$/.test(digits)) return digits.length === 13 ? 'tin' : null;
+  return t.length >= minLength ? 'name' : null;
+}
+
+/** Values a picked result puts into the form (`fill`: form field -> result key); empty results leave the field alone. */
+export function autofillValues(spec: FormAutofill, row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, key] of Object.entries(spec.fill)) {
+    const v = get(row, key);
+    if (v !== undefined && v !== null && v !== '') out[field] = v;
+  }
+  return out;
 }

@@ -1,5 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { definition as identity } from '@erp/svc-identity';
@@ -346,5 +348,60 @@ describe('web app — multi-level BOM (production)', () => {
     await page.getByRole('heading', { name: 'SA-DOOR' }).waitFor();
     const door = (await erp.call('GET', `/api/production/boms/${ids['SA-DOOR']}`, undefined, token)).body;
     expect(door.lines.map((l: any) => [l.item_code, l.qty])).toEqual([['SA-PANEL', 1], ['SP-SCREW', 8]]);
+  });
+});
+
+describe('web app — new customer filled from the Revenue Department (กรมสรรพากร)', () => {
+  let erp: Installation;
+  let token: string;
+  let web: ChildProcess;
+  let page: Page;
+  let rd: Server;
+  const base = 'http://127.0.0.1:3915';
+  const TIN = '0105547123454';
+  const col = (n: string, v: string[]) => `<${n}>${v.map((x) => `<anyType>${x}</anyType>`).join('')}</${n}>`;
+  const ANSWER = `<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><ServiceResponse><ServiceResult>
+${col('vNID', [TIN, TIN])}${col('vtitleName', ['บริษัท', 'บริษัท'])}${col('vName', ['ไทยสแตนเลส ซัพพลาย จำกัด', 'ไทยสแตนเลส ซัพพลาย จำกัด'])}${col('vSurname', ['-', '-'])}
+${col('vBranchNumber', ['0', '2'])}${col('vBranchName', ['-', 'ระยอง'])}${col('vHouseNumber', ['55', '7/1'])}${col('vMooNumber', ['-', '3'])}${col('vSoiName', ['-', '-'])}
+${col('vStreetName', ['พระราม 2', 'สุขุมวิท'])}${col('vThambol', ['แสมดำ', 'มาบตาพุด'])}${col('vAmphur', ['บางขุนเทียน', 'เมืองระยอง'])}${col('vProvince', ['กรุงเทพมหานคร', 'ระยอง'])}
+${col('vPostCode', ['10150', '21150'])}</ServiceResult></ServiceResponse></soap:Body></soap:Envelope>`;
+
+  beforeAll(async () => {
+    rd = createServer((req, res) => { req.resume(); req.on('end', () => { res.writeHead(200, { 'content-type': 'application/soap+xml' }); res.end(ANSWER); }); });
+    await new Promise<void>((r) => rd.listen(0, '127.0.0.1', r));
+    erp = await install([identity, masterData], { RD_VAT_SERVICE_URL: `http://127.0.0.1:${(rd.address() as AddressInfo).port}/vat` });
+    ({ token } = await erp.provision('rd-co'));
+    web = await startWeb(erp.url, 3915);
+    page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    await login(page, base, 'rd-co');
+  });
+  afterAll(async () => { await page?.close(); stopWeb(web); await erp?.close(); rd?.close(); });
+
+  it('types a tax ID, picks the branch, the form fills itself and saves', async () => {
+    await page.goto(`${base}/m/master-data/partnerNew`);
+    const box = page.getByRole('combobox', { name: 'ค้นหาจากกรมสรรพากร' });
+    await box.fill('0105-54712-345-4');
+    const list = page.getByRole('listbox', { name: 'ผลการค้นหา' });
+    await list.getByRole('option').nth(1).waitFor();
+    await expect(list.getByRole('option').count()).resolves.toBe(2);
+    await shot(page, '30-rd-results');
+    await list.getByRole('option', { name: /สาขาที่ 00002/ }).click();
+    await page.getByText(/กรอกข้อมูลจาก/).waitFor();
+    await expect(page.getByLabel('ชื่อ', { exact: true }).inputValue()).resolves.toBe('บริษัท ไทยสแตนเลส ซัพพลาย จำกัด');
+    await expect(page.getByLabel('เลขประจำตัวผู้เสียภาษี').inputValue()).resolves.toBe(TIN);
+    await expect(page.getByLabel('สาขา', { exact: true }).inputValue()).resolves.toBe('00002');
+    await expect(page.getByLabel('ที่อยู่').inputValue()).resolves.toBe('เลขที่ 7/1 หมู่ 3 ถนนสุขุมวิท ตำบลมาบตาพุด อำเภอเมืองระยอง จังหวัดระยอง 21150');
+    await page.getByLabel('รหัส', { exact: true }).fill('SUP-TSS-RY');
+    await page.getByLabel('เป็น').selectOption('supplier');
+    await shot(page, '31-rd-filled');
+    await page.getByRole('button', { name: 'บันทึกคู่ค้า' }).click();
+    await page.getByRole('cell', { name: 'SUP-TSS-RY' }).waitFor();
+    const saved = (await erp.call('GET', '/api/master-data/partners?q=SUP-TSS-RY', undefined, token)).body[0];
+    expect(saved).toMatchObject({ tax_id: TIN, branch: '00002', name: 'บริษัท ไทยสแตนเลส ซัพพลาย จำกัด' });
+
+    // the same company again: the branch already saved is marked
+    await page.goto(`${base}/m/master-data/partnerNew`);
+    await page.getByRole('combobox', { name: 'ค้นหาจากกรมสรรพากร' }).fill('ไทยสแตนเลส');
+    await page.getByRole('listbox', { name: 'ผลการค้นหา' }).getByText('มีในระบบแล้ว: SUP-TSS-RY').waitFor();
   });
 });
