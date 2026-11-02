@@ -80,4 +80,24 @@ describe('maintenance — parts warehouse (wave 4)', () => {
     // per tenant
     expect((await t.api('GET', '/settings', undefined, { token: t.token(['*'], t.otherTenantId) })).body).toEqual({ defaultPartsWarehouse: 'SPARE' });
   });
+
+  it('a breakdown report carries its photos: the reporter attaches to the work order just created', async () => {
+    const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.alloc(32, 1)]).toString('base64');
+    const PDF = Buffer.from('%PDF-1.4\n% test\n').toString('base64');
+    const operator = t.token(['maintenance.wo.report']);
+    const shear = (await t.api('POST', '/machines', { code: 'SHEAR-09', name: 'เครื่องตัด' })).body;
+    const wo = (await t.api('POST', '/work-orders', { machineId: shear.id, title: 'ใบมีดบิ่น' }, { token: operator })).body;
+    const ref = `work-order:${wo.id}`;
+    // what the "แจ้งซ่อม" form does right after the save (web FormAttachments / mobile PendingAttachments)
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'จุดที่เสีย.png', contentType: 'image/png', dataBase64: PNG }, { token: operator })).status).toBe(201);
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'คู่มือ.pdf', contentType: 'application/pdf', dataBase64: PDF }, { token: operator })).status).toBe(201);
+    // the technician sees both on the work order
+    const tech = t.token(['maintenance.machine.read', 'maintenance.wo.work']);
+    const files = (await t.api('GET', `/_attachments?ref=${encodeURIComponent(ref)}`, undefined, { token: tech })).body;
+    expect(files.map((f: any) => f.file_name).sort()).toEqual(['คู่มือ.pdf', 'จุดที่เสีย.png']);
+    // no write permission, or another company's work order: refused
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'x.png', contentType: 'image/png', dataBase64: PNG }, { token: t.token(['maintenance.machine.read']) })).status).toBe(403);
+    const other = t.token(['maintenance.wo.report'], t.otherTenantId);
+    expect((await t.api('POST', '/_attachments', { ref, fileName: 'x.png', contentType: 'image/png', dataBase64: PNG }, { token: other })).status).toBe(404);
+  });
 });

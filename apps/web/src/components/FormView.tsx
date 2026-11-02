@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { FormAttachments, uploadPending, type PendingFile } from './FormAttachments';
 import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, recordLines, recordValues, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
 import { HOME } from '@/lib/showcase';
@@ -44,6 +45,8 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
   const [ai, setAi] = useState<{ proposal: AiProposal; filled: number } | null>(null);
   const aiFile = useRef<File | null>(null);
   const [attachAi, setAttachAi] = useState(true);
+  const [pending, setPending] = useState<PendingFile[]>([]);
+  const [uploading, setUploading] = useState<string | null>(null);
   const afterScreen = screen.after ? ui(module)?.screens[screen.after.screen] : undefined;
   const attachEntity = afterScreen?.kind === 'detail' && screen.after?.idFrom ? afterScreen.attachments?.entity : undefined;
   const canAi = !!screen.aiFill && !screen.load && !!screenId;
@@ -159,6 +162,12 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
       setTimeout(() => window.dispatchEvent(new CustomEvent('erp:notifications')), 1500);
       const after = screen.after;
       const savedId = after?.idFrom ? get(result, after.idFrom) : undefined;
+      // photos / files picked on the form go to the record it just created; a failed file never undoes the save
+      if (screen.attach && !screen.load && pending.length && savedId !== undefined && savedId !== null) {
+        const failed = await uploadPending(module, screen.attach.entity, String(savedId), pending, setUploading);
+        setUploading(null);
+        if (failed.length) toast({ title: `บันทึกแล้ว แต่แนบไม่ได้ ${failed.length} ไฟล์`, body: `${failed.join('\n')}\nแนบเพิ่มได้ที่หน้าเอกสาร`, tone: 'warn' });
+      }
       if (ai && aiFile.current && attachEntity && attachAi && savedId) {
         const f = aiFile.current;
         try {
@@ -174,6 +183,7 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
       if (canAi && remaining(module, screenId!) > 0) {
         toast({ title: `บันทึกฉบับที่ ${queuePos?.position ?? ''} แล้ว — เปิดฉบับถัดไป`, ...(target !== HOME ? { href: target } : {}), tone: 'ok' });
         setBusy(false);
+        setPending([]);
         nextQueued(true);
         return;
       }
@@ -216,10 +226,11 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         ))}
       </div>
       {screen.lines && <LinesEditor spec={screen.lines} module={module} lines={lines} onChange={setLines} errors={lineErrors} />}
+      {screen.attach && !screen.load && <FormAttachments spec={screen.attach} files={pending} onChange={setPending} disabled={busy} />}
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions">
         <button type="button" className="btn" onClick={() => router.back()}>ยกเลิก</button>
-        <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : screen.submitLabel}</button>
+        <button type="submit" className="btn-primary" disabled={busy}>{busy ? (uploading ?? 'กำลังบันทึก…') : screen.submitLabel}</button>
       </div>
     </form>
   );

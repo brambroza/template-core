@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recordLines, recordValues, treeAddQuery, treeHasChildren, treeHidden, treeParents, type Field, type LinesSpec } from '../src/index.ts';
+import { brokenLinks, recordLines, recordValues, treeAddQuery, treeHasChildren, treeHidden, treeParents, type Field, type LinesSpec } from '../src/index.ts';
 
 const rows = [
   { level: 1, code: 'SA-DOOR' },   // 0  ▾
@@ -43,5 +43,19 @@ describe('edit forms load the record', () => {
       { itemId: 'u2', itemCode: 'RM-1', '__label.itemId': 'RM-1', qty: 1.5, scrapPct: 25 },
     ]);
     expect(recordLines(spec, {})).toEqual([]);
+  });
+});
+
+describe('form attachments', () => {
+  it('need the id of the record the files belong to', () => {
+    const ui = (after?: { screen: string; idFrom?: string }) => ({
+      module: 'maintenance', label: 'ซ่อม', glyph: 'ซ', menu: [],
+      screens: {
+        woNew: { kind: 'form' as const, title: 'แจ้งซ่อม', method: 'POST' as const, endpoint: '/work-orders', fields: [], submitLabel: 'แจ้งซ่อม', attach: { entity: 'work-order' }, after },
+        woDetail: { kind: 'detail' as const, title: 'งานซ่อม', endpoint: '/work-orders/:id', heading: 'no', fields: [] },
+      },
+    });
+    expect(brokenLinks(ui({ screen: 'woDetail', idFrom: 'id' }))).toEqual([]);
+    expect(brokenLinks(ui({ screen: 'woDetail' }))).toEqual(['maintenance: woNew.attach needs after.idFrom (the id of the record the files belong to)']);
   });
 });

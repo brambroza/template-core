@@ -202,13 +202,14 @@ describe('web app — customer with Core + Inventory + Purchasing + Sales', () =
 
 describe('web app — customer with Core + Maintenance only', () => {
   let erp: Installation;
+  let token: string;
   let web: ChildProcess;
   let page: Page;
   const base = 'http://127.0.0.1:3912';
 
   beforeAll(async () => {
     erp = await install([identity, masterData, maintenance]);
-    await erp.provision('factory-a');
+    ({ token } = await erp.provision('factory-a'));
     web = await startWeb(erp.url, 3912);
     page = await browser.newPage({ viewport: { width: 390, height: 844 } }); // phone
   });
@@ -234,8 +235,34 @@ describe('web app — customer with Core + Maintenance only', () => {
     await page.goto(`${base}/m/maintenance/woNew`);
     await pick(page, page, 'เครื่องจักร', 'PRESS-01');
     await page.getByLabel('อาการ', { exact: true }).fill('น้ำมันไฮดรอลิกรั่ว');
+    // photos on the report: a phone-sized photo (noise, ~17 MB as PNG) is shrunk in the browser before it is sent; a small PNG goes as is
+    const bigPhoto = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 2400; c.height = 1800;
+      const ctx = c.getContext('2d')!; const img = ctx.createImageData(c.width, c.height);
+      for (let i = 0; i < img.data.length; i++) img.data[i] = (i * 2654435761) >>> 24;
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    expect(Buffer.from(bigPhoto, 'base64').length).toBeGreaterThan(5 * 1024 * 1024);
+    const small = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.alloc(32, 1)]);
+    await page.getByTestId('form-attach-input').setInputFiles([
+      { name: 'รอยรั่ว.png', mimeType: 'image/png', buffer: Buffer.from(bigPhoto, 'base64') },
+      { name: 'ป้ายเครื่อง.png', mimeType: 'image/png', buffer: small },
+    ]);
+    const attach = page.getByRole('region', { name: 'รูปถ่าย / ไฟล์แนบ' });
+    await attach.getByText('รอยรั่ว.jpg').waitFor({ timeout: 15000 });
+    await attach.getByText('ป้ายเครื่อง.png').waitFor();
+    await shot(page, '05a-wo-photos');
     await page.getByRole('button', { name: 'แจ้งซ่อม' }).click();
     await page.getByRole('heading', { name: /^WO-/ }).waitFor();
+    // both files are on the work order the form created
+    const woId = page.url().split('/').pop()!;
+    const files = (await erp.call('GET', `/api/maintenance/_attachments?ref=${encodeURIComponent(`work-order:${woId}`)}`, undefined, token)).body;
+    expect(files.map((f: any) => f.file_name).sort()).toEqual(['ป้ายเครื่อง.png', 'รอยรั่ว.jpg']);
+    const jpg = files.find((f: any) => f.file_name === 'รอยรั่ว.jpg');
+    expect(jpg).toMatchObject({ content_type: 'image/jpeg' });
+    expect(jpg.size).toBeLessThan(5 * 1024 * 1024);
+    await page.getByText('รอยรั่ว.jpg').first().waitFor();
     await shot(page, '05-mobile-wo');
     await page.getByRole('button', { name: 'รับงาน' }).click();
     await page.locator('.status', { hasText: 'กำลังซ่อม' }).waitFor();

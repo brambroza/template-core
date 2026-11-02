@@ -48,6 +48,8 @@ export default defineUi({
     woNew: {
       kind: 'form', title: 'แจ้งซ่อม', method: 'POST', endpoint: '/work-orders', perm: 'maintenance.wo.report', mobile: true,
       fields: [machine, { name: 'title', label: 'อาการ', type: 'text', required: true }, { name: 'description', label: 'รายละเอียด', type: 'textarea' }],
+      // photo of the breakdown taken on the spot (or a video still, an error screen, a manual page) goes in with the report
+      attach: { entity: 'work-order', label: 'รูปถ่าย / ไฟล์แนบ', hint: 'ถ่ายรูปจุดที่เสีย หน้าจอ error หรือป้ายเครื่อง แนบ PDF/คู่มือก็ได้ — ช่างเห็นก่อนไปหน้างาน', photos: true },
       submitLabel: 'แจ้งซ่อม', after: { screen: 'woDetail', idFrom: 'id' },
     },
     woDetail: {

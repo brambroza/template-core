@@ -26,8 +26,13 @@ Machines, preventive maintenance plans, work orders. Mobile-first: operators sca
 - publishes `maintenance.parts_used` when parts are recorded → Inventory issues spare parts
 - publishes `maintenance.breakdown_reported` (report) and `maintenance.work_completed` (complete) → Automation alerts
 
+## Attachments
+Kernel attachments (`ServiceDefinition.attachments`): `work-order` (write: report / work / machine.write) and `machine`. The "แจ้งซ่อม" form
+(`woNew.attach`) keeps photos/files picked on the spot (camera on phones) and uploads them to the work order right after it is created;
+the work-order and machine pages show them with "ถ่ายรูป" / "แนบไฟล์". The reporter only needs `maintenance.wo.report` to attach.
+
 ## Extension ideas
-Photos (store URLs), meter-based PM, MTBF/MTTR report from history.
+Meter-based PM, MTBF/MTTR report from history, before/after photo pairs on completion.
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.

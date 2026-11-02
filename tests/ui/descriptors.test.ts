@@ -73,6 +73,8 @@ describe.each(ids)('%s screens', (id) => {
     if (!ui) return;
     const entities = Object.keys(defs.get(id)!.attachments?.entities ?? {});
     const bad = Object.entries(ui.screens).flatMap(([sid, s]) => {
+      // a form that keeps photos/files for the record it creates
+      if (s.kind === 'form' && s.attach) return entities.includes(s.attach.entity) ? [] : [`${id}.${sid}.attach: entity "${s.attach.entity}" is not in the service's attachments.entities [${entities.join(', ')}]`];
       if (s.kind !== 'detail' || !s.attachments) return [];
       if (!entities.includes(s.attachments.entity)) return [`${id}.${sid}: entity "${s.attachments.entity}" is not in the service's attachments.entities [${entities.join(', ')}]`];
       // the record id comes from the screen's id, which fills the endpoint's first :param

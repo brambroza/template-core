@@ -1,16 +1,16 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useContext, useState, type ReactNode } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  boardLanes, boardMoves, fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, pickMove, routeParams, toBody,
+  attachmentRef, boardLanes, boardMoves, fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, pickMove, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
 import { themed, useIsDark, usePalette } from '../lib/theme';
-import { AttachmentsList } from './Attachments';
+import { AttachmentsList, PendingAttachments, sendFiles, type Pending } from './Attachments';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 import { Button, Card, EmptyState, ErrorText, LabelsContext, useS, ValueText } from './ui';
 
@@ -225,6 +225,8 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [progress, setProgress] = useState<string | null>(null);
   const params = routeParams(screen.endpoint, id);
 
   const submit = async () => {
@@ -239,6 +241,13 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
     try {
       const res = await api<Record<string, unknown>>(ui.module, fillPath(screen.endpoint, values, params), { method: screen.method, body: toBody(screen.fields, values, screen.lines, used) });
       const after = screen.after;
+      // photos / files picked on the form go to the record it just created; a failed file never undoes the save
+      const savedId = after?.idFrom ? get(res, after.idFrom) : undefined;
+      if (screen.attach && pending.length && savedId !== undefined && savedId !== null) {
+        const { problems } = await sendFiles(ui.module, attachmentRef(screen.attach.entity, String(savedId)), pending, setProgress);
+        setProgress(null);
+        if (problems.length) Alert.alert(`บันทึกแล้ว แต่แนบไม่ได้ ${problems.length} ไฟล์`, `${problems.join('\n')}\n\nแนบเพิ่มได้ที่หน้าเอกสาร`);
+      }
       if (after && isMobile(ui, after.screen)) router.replace(screenPath(ui.module, after.screen, after.idFrom ? get(res, after.idFrom) : undefined));
       else router.back();
     } catch (e) {
@@ -252,11 +261,13 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
     <FormFrame
       footer={<>
         <ErrorText text={error} />
+        {!!progress && <Text style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">{progress}</Text>}
         <Button label={screen.submitLabel} tone="primary" size="large" busy={busy} onPress={submit} />
       </>}
     >
       {screen.fields.map((f) => <FieldRow key={f.name} field={f} module={ui.module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
       {screen.lines && <LinesEditor spec={screen.lines} module={ui.module} lines={lines} onChange={setLines} />}
+      {screen.attach && <PendingAttachments spec={screen.attach} files={pending} onChange={setPending} disabled={busy} />}
     </FormFrame>
   );
 }

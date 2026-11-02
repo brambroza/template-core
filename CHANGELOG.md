@@ -2,6 +2,11 @@
 
 ## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
 
+- **Photos and files on the repair request** (maintenance "แจ้งซ่อม", web + mobile): take a photo (phones open the camera), pick photos or
+  PDFs/Excel/Word, see thumbnails, remove; they are attached to the work order right after it is saved. Generic form option `attach`
+  (any module can turn it on). Big photos are shrunk in the browser (≤ 2000 px JPEG) so phone shots never hit the 5 MB limit — also on
+  every document's attachments panel, which gains a "ถ่ายรูป" button.
+
 - **Multi-level BOM** (production): the BOM detail shows the whole structure as an indented tree (fold/unfold each sub-assembly, open its
   own BOM, "+ สร้างสูตรย่อย" on a bought part opens the BOM form with that part chosen), bought materials summed over every level, and
   where-used up through every level; the BOM list shows type (สินค้าหลัก / ชิ้นส่วนประกอบย่อย), depth and search; editing a BOM loads its

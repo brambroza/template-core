@@ -253,7 +253,28 @@ export interface FormScreen extends ScreenBase {
    * empty fields and lines; the user reviews and presses save. Ignored when AI is not configured. See docs/ai.md.
    */
   aiFill?: AiFillSpec;
+  /**
+   * Photos / files picked on the form itself ("แจ้งซ่อม" with a photo of the breakdown): kept in the browser, then uploaded to the
+   * record the form creates (`after.idFrom`) through the module's kernel `/_attachments`. `entity` must be one the module's
+   * ServiceDefinition `attachments.entities` declares — the same one its detail screen shows.
+   */
+  attach?: FormAttach;
 }
+
+export interface FormAttach {
+  entity: string;
+  /** section title, default "รูปถ่าย / ไฟล์แนบ" */
+  label?: string;
+  /** one line under the title, e.g. "ถ่ายรูปจุดที่เสีย ป้ายเครื่อง หรือแนบคู่มือ" */
+  hint?: string;
+  /** most files will be photos: on phones the first button opens the camera */
+  photos?: boolean;
+  /** at most this many files (default 10) */
+  max?: number;
+}
+
+/** Files a form keeps before its record exists: at most this many by default. */
+export const FORM_ATTACH_MAX = 10;
 
 /** `receipt` = Thai receipt / tax invoice (amount before VAT + VAT); `document` = any other paper the form describes. */
 export interface AiFillSpec {
@@ -835,6 +856,9 @@ export function brokenLinks(ui: ModuleUi): string[] {
     }
   }
   for (const [id, s] of Object.entries(ui.screens)) if (s.kind === 'list') problems.push(...boardProblems(ui, id, s));
+  for (const [id, s] of Object.entries(ui.screens)) {
+    if (s.kind === 'form' && s.attach && !s.after?.idFrom) problems.push(`${ui.module}: ${id}.attach needs after.idFrom (the id of the record the files belong to)`);
+  }
   return [...problems, ...brokenScreenLinks(ui)];
 }
 
