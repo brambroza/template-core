@@ -308,7 +308,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await lines.locator('tbody tr').nth(1).getByLabel('ใช้ต่อสูตร').fill('4');
     await page.getByRole('button', { name: 'บันทึกสูตร' }).click();
     await page.getByRole('heading', { name: 'FG-BRACKET' }).waitFor();
-    expect(await page.locator('.detail-lines tbody tr').count()).toBe(2);
+    // the structure (tree, every level) and the bought materials summed over all levels: both list steel + bolts here (one level)
+    expect(await page.locator('.tree-lines').first().locator('tbody tr').count()).toBe(2);
+    await expect(page.getByText('1 ระดับ · 2 รายการ').count()).resolves.toBe(1);
     await shot(page, 'UAT-11');
   });
 
