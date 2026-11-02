@@ -61,7 +61,10 @@ export async function startStack(defs: ServiceDefinition[], opts: { prefix?: str
   for (const def of defs) {
     const env = {
       DATABASE_URL: dbs[def.manifest.id], JWT_SECRET: jwtSecret, INTERNAL_TOKEN: internalToken, NODE_ENV: 'development',
-      EVENT_ROUTER_URL: `http://127.0.0.1:${gatewayPort}/_events/publish`, EVENT_DISPATCH_MS: '400', PROMPTPAY_ID: '0105536000313', ...opts.env,
+      EVENT_ROUTER_URL: `http://127.0.0.1:${gatewayPort}/_events/publish`, EVENT_DISPATCH_MS: '400', PROMPTPAY_ID: '0105536000313',
+      // Revenue Department lookup settings from the shell (RD_LOOKUP=off, RD_VAT_SERVICE_URL=… for a test double, RD_TIMEOUT_MS)
+      ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith('RD_') && v !== undefined)) as Record<string, string>,
+      ...opts.env,
     };
     const svc = createService(def, env);
     urls[def.manifest.id] = await svc.start({ port: port++, host: '127.0.0.1' });
