@@ -150,6 +150,14 @@ export function toBusinesses(cols: Record<string, string[]>): RdBusiness[] {
 
 export class RdLookupError extends Error {}
 
+/** The reason text of a SOAP 1.1/1.2 fault, or null when the answer is not a fault. */
+export function soapFault(xml: string): string | null {
+  if (!/<(?:\w+:)?Fault\b/.test(xml)) return null;
+  const reason = xml.match(/<(?:\w+:)?Text\b[^>]*>([\s\S]*?)<\/(?:\w+:)?Text>/)?.[1]
+    ?? xml.match(/<faultstring\b[^>]*>([\s\S]*?)<\/faultstring>/)?.[1] ?? 'SOAP fault';
+  return unescapeXml(reason).replace(/^Server was unable to process request\.\s*-*>\s*/i, '').trim() || 'SOAP fault';
+}
+
 /** What the user typed → a 13-digit tax ID (spaces/dashes allowed) or a name; null when it is neither yet. */
 export function readQuery(q: string): { tin: string } | { name: string } | { invalidTin: string } | null {
   const t = q.trim();
@@ -173,13 +181,17 @@ export async function lookupRd(q: { tin: string } | { name: string }, opts: { ur
       redirect: 'error',
     });
     text = await res.text();
-    if (!res.ok && !/ServiceResult/.test(text)) throw new RdLookupError(`กรมสรรพากรตอบกลับผิดพลาด (HTTP ${res.status}) — ลองใหม่อีกครั้ง หรือกรอกเอง`);
+    if (!res.ok && !/ServiceResult|Fault>/.test(text)) throw new RdLookupError(`กรมสรรพากรตอบกลับผิดพลาด (HTTP ${res.status}) — ลองใหม่อีกครั้ง หรือกรอกเอง`);
   } catch (e) {
     if (e instanceof RdLookupError) throw e;
     throw new RdLookupError((e as Error).name === 'AbortError' ? 'กรมสรรพากรตอบช้าเกินไป — ลองใหม่อีกครั้ง หรือกรอกเอง' : 'ติดต่อระบบกรมสรรพากรไม่ได้ — ตรวจอินเทอร์เน็ตของเซิร์ฟเวอร์ หรือกรอกเอง');
   } finally {
     clearTimeout(timer);
   }
+  // a SOAP fault (the service's own error, e.g. "Server was unable to process request. ---> Incorrect syntax near 'a'.") is a failure,
+  // never "not found"
+  const fault = soapFault(text);
+  if (fault) throw new RdLookupError(`ระบบกรมสรรพากรค้นหาไม่ได้ (${fault}) — ลองค้นด้วยเลขผู้เสียภาษี 13 หลัก หรือกรอกเอง`);
   const { cols, error } = parseColumns(text);
   const rows = toBusinesses(cols);
   // "not found" comes back as an error text with no rows: that is an empty answer, not a failure

@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootTestService, type TestService } from '@erp/kernel/testing';
-import { buildRequest, parseColumns, readQuery, thaiAddress, toBusinesses } from '../src/rd-lookup.ts';
+import { buildRequest, lookupRd, parseColumns, readQuery, soapFault, thaiAddress, toBusinesses } from '../src/rd-lookup.ts';
 import { definition } from '../src/service.ts';
 
 // A valid tax ID (mod-11 check digit) and the answer shape of the Revenue Department VAT Service: one array per field.
@@ -51,6 +51,14 @@ describe('Revenue Department VAT Service: request and answer', () => {
     expect(toBusinesses(parseColumns(odd).cols)[0]).toMatchObject({ name: 'บริษัท สยามพาร์ท เมทัลเวิร์ค จำกัด', subdistrict: 'พระโขนงเหนือ' });
     expect(thaiAddress({ house: 'เลขที่ 5', subdistrict: 'ตำบลบางพลีใหญ่', district: 'อำเภอบางพลี', province: 'จังหวัดสมุทรปราการ', postcode: '10540' }))
       .toBe('เลขที่ 5 ตำบลบางพลีใหญ่ อำเภอบางพลี จังหวัดสมุทรปราการ 10540');
+  });
+
+  it('treats a SOAP fault as a failure, not as "not found" (the real answer to a name search on 2026-11-02)', async () => {
+    const REAL = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code><soap:Reason><soap:Text xml:lang="en">Server was unable to process request. ---&gt; Incorrect syntax near 'a'.</soap:Text></soap:Reason><soap:Detail /></soap:Fault></soap:Body></soap:Envelope>`;
+    expect(soapFault(REAL)).toBe("Incorrect syntax near 'a'.");
+    expect(soapFault(answer(SIAM))).toBeNull();
+    const fake = (async () => new Response(REAL, { status: 500 })) as unknown as typeof fetch;
+    await expect(lookupRd({ name: 'ซีพี ออลล์' }, { fetchImpl: fake })).rejects.toThrow(/ระบบกรมสรรพากรค้นหาไม่ได้ \(Incorrect syntax near 'a'\.\)/);
   });
 
   it('reads what people type', () => {
