@@ -97,11 +97,28 @@ ${selection.includes('automation') ? '# Automation: LINE Messaging API (personal
    docker compose exec identity node -e "fetch('http://localhost:3000/tenants',{method:'POST',headers:{'content-type':'application/json','x-internal-token':process.env.INTERNAL_TOKEN},body:JSON.stringify({code:'mycompany',name:'My Company',admin:{email:'admin@mycompany.co.th',name:'Admin',password:'change-me-now'}})}).then(r=>r.text()).then(console.log)"
    \`\`\`
 4. Open http://localhost:3000 and log in with company code \`mycompany\`, \`admin@mycompany.co.th\`, \`change-me-now\`
-   — use your own strong password in step 3 instead of \`change-me-now\` (there is no "change password" screen yet).
+   — use your own strong password in step 3 instead of \`change-me-now\`, or change it after logging in (key icon "เปลี่ยนรหัสผ่าน" in the top bar).
    (API directly: \`POST http://localhost:8080/api/identity/auth/login\`; installed modules: \`GET http://localhost:8080/api/_catalog\`)
 5. Mobile app: point it at \`http://<server-ip>:8080\` (field "ที่อยู่เซิร์ฟเวอร์" on the login screen)
+
+Managed database instead of the Postgres container (Supabase, Neon, RDS…): run \`single-database.sql\` there and give each module
+its own DATABASE_URL — see docs/deploy-supabase.md (web on Vercel, modules + gateway on a container host).
 `;
-  const files = { 'docker-compose.yml': yml, 'init-db.sh': init, '.env.example': env, 'README.md': readme };
+  // managed Postgres with a single database (Supabase, Neon, RDS…): a schema + login role per module — docs/deploy-supabase.md
+  const single = `-- Run once in the SQL editor of a managed Postgres that gives you ONE database (Supabase, Neon, RDS…).
+-- Every module gets its own schema and its own login role whose search_path is that schema, so a module still
+-- cannot read another module's tables. Replace every CHANGE-ME password (openssl rand -hex 24), one per module.
+-- Each module's DATABASE_URL then logs in as its own role, e.g.
+--   postgres://erp_${dbName(mods[0].id).slice(4)}.<project-ref>:<password>@<pooler-host>:5432/postgres   (Supabase session pooler)
+revoke create on schema public from public;
+${mods.map((m) => {
+    const sch = m.id.replace(/-/g, '_');
+    return `create role erp_${sch} login password 'CHANGE-ME-${sch}';
+create schema ${sch} authorization erp_${sch};
+alter role erp_${sch} set search_path = ${sch};`;
+  }).join('\n')}
+`;
+  const files = { 'docker-compose.yml': yml, 'init-db.sh': init, '.env.example': env, 'README.md': readme, 'single-database.sql': single };
   for (const [name, content] of Object.entries(files)) writeFileSync(join(outDir, name), content, { mode: name.endsWith('.sh') ? 0o755 : 0o644 });
   return Object.keys(files).map((f) => join(outDir, f));
 }

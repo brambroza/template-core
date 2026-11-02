@@ -20,6 +20,9 @@ pnpm erp pack maintenance,inventory --customer "บริษัท เอ จำ
 # ส่ง dist/<slug>/ ให้ลูกค้า (เช่น push เข้า private repo ของลูกค้า)
 ```
 
+ติดตั้งบนเซิร์ฟเวอร์ของลูกค้าด้วย Docker (`deploy/README.md`) หรือแยกส่วน: ฐานข้อมูล Supabase + เว็บ Vercel + backend บน container host
+([deploy-supabase.md](deploy-supabase.md))
+
 ## 3. ลูกค้าซื้อเพิ่มทีหลัง
 
 1. ออก license ใหม่ที่รวมโมดูลเดิม + ใหม่

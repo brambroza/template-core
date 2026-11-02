@@ -2,6 +2,12 @@
 
 ## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
 
+- **Managed-database deployment (Supabase + Vercel)** — `docs/deploy-supabase.md`: all modules in ONE Postgres database, a schema and a
+  login role per module (role `search_path` = its schema), so no code change and a module still cannot read another's tables; web on
+  Vercel (`GATEWAY_URL`), gateway + modules on a container host. `pnpm erp compose`/`pack` now writes `deploy/single-database.sql`.
+  New `tests/e2e/single-database.test.ts`; `E2E_SHARED_DB=1` runs every e2e test in this layout (28/28).
+- deploy README no longer says there is no change-password screen.
+
 - **Full-width, responsive pages** (web + the demo, which is the same app): the 1320px content cap is gone — every screen uses the
   whole window beside the menu with a gutter that grows with the screen (16px phone → 48px wide); kanban lanes share the width (all
   lanes visible on a 1920 screen, still swipeable on tablet/phone); on tablets the filters sit 2–3 per row instead of one per row.
