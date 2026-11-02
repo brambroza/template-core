@@ -13657,5 +13657,113 @@
   "priority": "P1",
   "status": "done",
   "effort": "M"
+ },
+ {
+  "id": "F1061",
+  "module": "platform",
+  "area": "ต่อยอดด้วย AI",
+  "name": "ต่อยอดโมดูลใน ext/ (route, ตาราง/ช่องข้อมูล, รับ event) โดยไม่แก้โค้ดหลัก",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "L"
+ },
+ {
+  "id": "F1062",
+  "module": "platform",
+  "area": "ต่อยอดด้วย AI",
+  "name": "กฎของบริษัทบนการทำงานเดิม (guard) ปฏิเสธพร้อมข้อความไทยโดยไม่แก้โค้ดหลัก",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1063",
+  "module": "platform",
+  "area": "ต่อยอดด้วย AI",
+  "name": "เพิ่มคอลัมน์/ช่อง/ปุ่ม/หน้าจอ หรือซ่อนของเดิม จาก ext/ui.ts ทั้งเว็บและมือถือ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1064",
+  "module": "tools",
+  "area": "ส่งมอบและอัปเดต",
+  "name": "ตรวจว่าโค้ดหลักยังตรงกับที่ส่งมอบ และสรุปสิ่งที่ลูกค้าต่อยอด (pnpm erp doctor)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1065",
+  "module": "tools",
+  "area": "ส่งมอบและอัปเดต",
+  "name": "อัปเดตรุ่นใหม่โดยไม่ทับส่วนต่อยอดของลูกค้า (pnpm erp upgrade)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1066",
+  "module": "platform",
+  "area": "หน้าจอและการใช้งาน",
+  "name": "บอร์ด kanban ลากการ์ดเปลี่ยนสถานะ (งาน โอกาสขาย ลีด เรื่องแจ้งปัญหา งานซ่อม ใบสั่งผลิต NCR) บนเว็บและมือถือ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1067",
+  "module": "ai",
+  "area": "อ่านเอกสาร",
+  "name": "สร้างใบสั่งซื้อ/ใบสั่งขาย/บิลผู้ขาย/ลีด/ทรัพย์สิน จากรูปหรือ PDF ด้วย AI (คนตรวจแล้วบันทึก)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P1",
+  "status": "done",
+  "effort": "M"
+ },
+ {
+  "id": "F1068",
+  "module": "ai",
+  "area": "อ่านเอกสาร",
+  "name": "จับคู่สินค้าและคู่ค้าในเอกสารกับข้อมูลหลักที่มีหลายพันรายการ (ค้นหาอัตโนมัติ เตือนรายการที่ไม่พบ)",
+  "industries": [
+   "all"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "S"
+ },
+ {
+  "id": "F1069",
+  "module": "ai",
+  "area": "อ่านเอกสาร",
+  "name": "ลากหลายไฟล์มาวางบนหน้ารายการ แล้วตรวจและบันทึกทีละฉบับ",
+  "industries": [
+   "all"
+  ],
+  "priority": "P2",
+  "status": "done",
+  "effort": "S"
  }
 ]

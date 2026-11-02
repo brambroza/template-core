@@ -6,8 +6,12 @@ import { safeEqual, secretProblems, verifyToken, type AuthContext } from './auth
 import { createDb, migrate, type Client, type Db } from './db.ts';
 import { toErrorBody, unauthorized } from './errors.ts';
 import { dispatchOutbox, emit, receiveEvent, type EventHandlers } from './events.ts';
+import { extensionDirOf, loadExtensionManifest, mergeExtensionManifest, parseGuardKey, type Extension, type Guard } from './extension.ts';
 import { checkLicense } from './license.ts';
 import type { ModuleManifest } from './manifest.ts';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { applyRevocation, DEFAULT_REVOCATION_RELOAD_MS, isKernelSubscription, RevocationList } from './revocation.ts';
 
 declare module 'fastify' {
@@ -45,6 +49,11 @@ export interface ServiceDefinition {
    * Every permission named here, and `<module>.attachment.delete`, must be declared in module.json.
    */
   attachments?: AttachmentsSpec;
+  /**
+   * The customer extension folder (see extension.ts). Default: `ext/` next to `migrationsDir`, so every module picks up
+   * `services/<module>/ext/` without changing its code. `false` turns extensions off (used by tests of the vendor base).
+   */
+  extDir?: string | false;
 }
 
 /** Permission prefix of a module ("master" for master-data) — the prefix kernel-provided permissions use. */
@@ -83,8 +92,13 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = process.env): Service {
-  const own = new Set(def.manifest.permissions.map((p) => p.key));
-  const manifest: ModuleManifest = { ...def.manifest, permissions: [...def.manifest.permissions, ...kernelPermissions(def.manifest.id).filter((p) => !own.has(p.key))] };
+  // customer extension (ext/): its permissions and events join the served manifest; vendor wiring is checked on its own below
+  const extDir = def.extDir === false ? null : (def.extDir ?? extensionDirOf(def.migrationsDir));
+  const extManifest = extDir ? loadExtensionManifest(extDir, def.manifest) : null;
+  const extEntry = extDir && ['index.ts', 'index.js'].map((f) => join(extDir, f)).find((f) => existsSync(f));
+  const merged = mergeExtensionManifest(def.manifest, extManifest);
+  const own = new Set(merged.permissions.map((p) => p.key));
+  const manifest: ModuleManifest = { ...merged, permissions: [...merged.permissions, ...kernelPermissions(def.manifest.id).filter((p) => !own.has(p.key))] };
   const prefix = permPrefix(manifest.id);
   if (def.attachments) {
     const missing = attachmentPerms(def.attachments, `${prefix}.attachment.delete`).filter((p) => !own.has(p));
@@ -93,15 +107,25 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   const ownHandlers = def.handlers ?? {};
   // kernel subscriptions (identity.tokens_revoked) are handled by the kernel itself and need not be listed in module.json
   const handled = Object.keys(ownHandlers).filter((x) => !isKernelSubscription(x)).sort().join(',');
-  const declared = manifest.subscribes.filter((x) => !isKernelSubscription(x)).sort().join(',');
+  const declared = def.manifest.subscribes.filter((x) => !isKernelSubscription(x)).sort().join(',');
   if (handled !== declared) throw new Error(`${manifest.id}: module.json "subscribes" [${declared}] must match handlers [${handled}]`);
   const revocations = new RevocationList();
+  // extension handlers are loaded with ext/index.ts (async, before the app is ready); they run after the vendor handler, same transaction
+  const extHandlers: EventHandlers = {};
+  const vendorHandlers: EventHandlers = { ...ownHandlers };
+  for (const t of extManifest?.subscribes ?? []) {
+    const vendor = ownHandlers[t] as ((d: unknown, ctx: Parameters<NonNullable<EventHandlers[typeof t]>>[1]) => Promise<void>) | undefined;
+    (vendorHandlers as Record<string, unknown>)[t] = async (d: unknown, ctx: Parameters<NonNullable<EventHandlers[typeof t]>>[1]) => {
+      await vendor?.(d, ctx);
+      await (extHandlers[t] as ((d: unknown, c: typeof ctx) => Promise<void>) | undefined)?.(d, ctx);
+    };
+  }
   const handlers: EventHandlers = {
-    ...ownHandlers,
+    ...vendorHandlers,
     // built-in: store the cutoff, then run the module's own handler if it has one
     'identity.tokens_revoked': async (data, ctx) => {
       await applyRevocation(ctx.client, revocations, data);
-      await ownHandlers['identity.tokens_revoked']?.(data, ctx);
+      await vendorHandlers['identity.tokens_revoked']?.(data, ctx);
     },
   };
 
@@ -158,7 +182,42 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   mountAudit(app, { db, permPrefix: prefix });
   if (def.attachments) mountAttachments(app, { db, moduleId: manifest.id, permPrefix: prefix, jwtSecret, spec: def.attachments, revokedBefore: revocations.before });
 
+  // guards (extension business rules on existing routes) — added before any route; the map is filled when ext/index.ts loads
+  const guards = new Map<string, Guard>();
+  if (extEntry) {
+    app.addHook('preHandler', async (req) => {
+      const g = guards.get(`${req.method} ${req.routeOptions.url}`);
+      if (g) await g(req, { k: kernel, auth: req.authCtx });
+    });
+  }
+
   const ready = Promise.resolve(def.routes(app, kernel));
+
+  if (extEntry) {
+    app.register(async (scope) => {
+      const mod = (await import(pathToFileURL(extEntry).href)) as { default?: Extension };
+      const ext = mod.default ?? {};
+      const declared = (extManifest?.subscribes ?? []).slice().sort().join(',');
+      const given = Object.keys(ext.handlers ?? {}).sort().join(',');
+      if (declared !== given) throw new Error(`${manifest.id}: ext/ext.json "subscribes" [${declared}] must match ext handlers [${given}]`);
+      Object.assign(extHandlers, ext.handlers ?? {});
+      for (const [key, g] of Object.entries(ext.guards ?? {})) {
+        const { method, url } = parseGuardKey(key);
+        guards.set(`${method} ${url}`, g);
+      }
+      await ext.routes?.(scope, kernel);
+    });
+    // a guard on a route that does not exist (renamed by an update, typo) must fail loudly, never silently stop guarding
+    app.addHook('onReady', async () => {
+      for (const key of guards.keys()) {
+        const [method, url] = key.split(' ');
+        if (!app.hasRoute({ method: method as 'GET', url })) throw new Error(`${manifest.id}: ext guard "${key}" matches no route of this module`);
+      }
+    });
+  } else if (extManifest?.subscribes?.length) {
+    throw new Error(`${manifest.id}: ext/ext.json subscribes to events but there is no ext/index.ts with handlers`);
+  }
+  const extMigrations = extDir ? join(extDir, 'migrations') : undefined;
 
   let timer: NodeJS.Timeout | undefined;
   let reloadTimer: NodeJS.Timeout | undefined;
@@ -171,7 +230,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 
   return {
     app, db, kernel, manifest,
-    migrate: () => migrate(db, def.migrationsDir),
+    migrate: () => migrate(db, def.migrationsDir, extMigrations),
     dispatch,
     reloadRevocations,
     async start(opts = {}) {
@@ -180,7 +239,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
       const lic = checkLicense(manifest.id, manifest.tier, env);
       if (!lic.ok) throw new Error(`[${manifest.id}] license check failed: ${lic.reason}`);
       await ready;
-      await migrate(db, def.migrationsDir);
+      await migrate(db, def.migrationsDir, extMigrations);
       const address = await app.listen({ port: opts.port ?? Number(env.PORT ?? 3000), host: opts.host ?? env.HOST ?? '0.0.0.0' });
       if (env.EVENT_ROUTER_URL) {
         timer = setInterval(async () => {

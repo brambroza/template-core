@@ -116,6 +116,13 @@ export default defineUi({
         { key: 'source_label', label: 'มาจาก' }, { key: 'interest', label: 'สนใจ' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'created_at', label: 'เข้ามาเมื่อ', format: 'date' },
       ],
       create: 'leadNew', createLabel: 'เพิ่มลีด', rowLink: { screen: 'lead' }, empty: 'ยังไม่มีลีด',
+      display: 'board',
+      board: {
+        field: 'status', lanes: leadStatuses,
+        moves: { contacted: ['contact'], qualified: ['qualify'], converted: ['convert'], lost: ['lose'] },
+        card: ['company', 'contact_name', 'phone', 'interest', 'source_label', 'created_at'],
+        collapsed: ['converted', 'lost'],
+      },
       rowActions: [
         { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true },
       ],
@@ -123,6 +130,10 @@ export default defineUi({
     leadNew: {
       kind: 'form', title: 'เพิ่มลีด', method: 'POST', endpoint: '/leads', perm: 'crm.lead.write', mobile: true,
       fields: leadFields, submitLabel: 'บันทึกลีด', after: { screen: 'lead', idFrom: 'id' },
+      aiFill: {
+        kind: 'document', label: 'อ่านนามบัตร / แชท',
+        hint: 'นามบัตร, ภาพหน้าจอแชท LINE/อีเมล หรือใบขอราคา (RFQ) จากผู้สนใจ: บริษัท/ร้าน, ชื่อผู้ติดต่อ, เบอร์โทร, อีเมล, LINE ID และสิ่งที่สนใจ; ช่องทาง "มาจาก" เลือกตามชนิดเอกสาร (แชท LINE = LINE) ถ้าไม่ชัดเว้นไว้',
+      },
     },
     leadEdit: {
       kind: 'form', title: 'แก้ไขลีด', method: 'PUT', endpoint: '/leads/:id', load: '/leads/:id', perm: 'crm.lead.write',
@@ -169,6 +180,17 @@ export default defineUi({
         { key: 'expected_close', label: 'คาดปิด', format: 'date' }, { key: 'owner_name', label: 'ผู้รับผิดชอบ' },
       ],
       create: 'opportunityNew', createLabel: 'เพิ่มโอกาสขาย', rowLink: { screen: 'opportunity' }, empty: 'ยังไม่มีโอกาสขาย',
+      display: 'board',
+      board: {
+        field: 'stage', lanes: stages,
+        moves: {
+          proposal: [{ action: 'advance', from: ['prospect'] }], negotiation: [{ action: 'advance', from: ['proposal'] }],
+          won: ['win'], lost: ['lose'],
+        },
+        card: ['name', 'customer_name', 'value', 'probability', 'expected_close', 'owner_name'],
+        sum: { key: 'value', format: 'money', unit: 'บาท' },
+        collapsed: ['won', 'lost'],
+      },
     },
     opportunityNew: {
       kind: 'form', title: 'เพิ่มโอกาสขาย', method: 'POST', endpoint: '/opportunities', perm: 'crm.lead.write',

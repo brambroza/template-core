@@ -1,6 +1,7 @@
-import { auth, badRequest, loadManifest, one, parse, requirePerm, s, z, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, HttpError, loadManifest, one, parse, requirePerm, s, z, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
+import { lookupRd, RdLookupError, readQuery, type RdBusiness } from './rd-lookup.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -218,6 +219,46 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => (await c.query(
         `select (select count(*)::int from items where active) as items, (select count(*)::int from partners where active and kind in ('customer', 'both')) as customers,
                 (select count(*)::int from partners where active and kind in ('supplier', 'both')) as suppliers`)).rows[0]);
+    });
+
+    // "พิมพ์ชื่อหรือเลขผู้เสียภาษี แล้วระบบกรอกให้": the Revenue Department's public VAT registrant service (rd-lookup.ts).
+    // Answers are cached a day per query (the register changes slowly; the service is a shared public resource).
+    const cache = new Map<string, { at: number; rows: RdBusiness[] }>();
+    const DAY = 24 * 3600_000;
+    app.get('/partners/lookup', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'master.partner.write');
+      const { q } = parse(z.object({ q: z.string().trim().min(1).max(120) }), req.query);
+      if (k.env.RD_LOOKUP === 'off') throw new HttpError(503, 'lookup_off', 'ปิดการค้นหาจากกรมสรรพากรไว้ (RD_LOOKUP=off) — กรอกข้อมูลเอง');
+      const query = readQuery(q);
+      if (!query) throw badRequest('พิมพ์เลขผู้เสียภาษี 13 หลัก หรือชื่อบริษัทอย่างน้อย 3 ตัวอักษร');
+      if ('invalidTin' in query) throw badRequest(`เลขผู้เสียภาษี ${query.invalidTin} ไม่ถูกต้อง (หลักตรวจสอบไม่ตรง) — ตรวจเลขอีกครั้ง`);
+      const key = 'tin' in query ? `t:${query.tin}` : `n:${query.name.toLowerCase()}`;
+      let hit = cache.get(key);
+      if (!hit || Date.now() - hit.at > DAY) {
+        try {
+          const rows = await lookupRd(query, { url: k.env.RD_VAT_SERVICE_URL, username: k.env.RD_USERNAME, password: k.env.RD_PASSWORD, timeoutMs: Number(k.env.RD_TIMEOUT_MS ?? 10_000) });
+          hit = { at: Date.now(), rows };
+          if (cache.size > 500) cache.delete(cache.keys().next().value!);
+          cache.set(key, hit);
+        } catch (e) {
+          if (e instanceof RdLookupError) throw new HttpError(502, 'lookup_failed', e.message);
+          throw e;
+        }
+      }
+      const rows = hit.rows.slice(0, 30);
+      // which of these the company already has (same tax ID + branch): the screen says so instead of creating a duplicate
+      const existing = rows.length ? await k.db.tx(a.tenantId, async (c) => (await c.query(
+        'select id, code, tax_id, branch from partners where tax_id = any($1::text[])', [[...new Set(rows.map((r) => r.taxId))]])).rows) : [];
+      return {
+        source: 'กรมสรรพากร — ผู้ประกอบการจดทะเบียนภาษีมูลค่าเพิ่ม',
+        query: 'tin' in query ? { taxId: query.tin } : { name: query.name },
+        results: rows.map((r) => {
+          const ex = existing.find((e) => e.tax_id === r.taxId && e.branch === r.branch);
+          return { ...r, existing_id: ex?.id ?? null, existing_code: ex?.code ?? null };
+        }),
+        more: hit.rows.length > rows.length,
+      };
     });
 
     crud(app, k, { path: '/items', table: 'items', perm: 'master.item', label: 'Item', input: ItemInput, map: ITEM_COLS, filter: (q) => (q.type ? ['type', q.type] : null), publish: emitItem, normalize: normalizeItem });

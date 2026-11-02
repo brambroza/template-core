@@ -1,5 +1,93 @@
 # Changelog
 
+## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
+
+- **New customer / supplier filled from the Revenue Department** (master-data "เพิ่มคู่ค้า"): type a 13-digit tax ID (searches at once) or a
+  company name → every branch from the public VAT registrant service (กรมสรรพากร, free, no sign-up) → pick one → name, tax ID, branch and a
+  Thai-format address are filled; branches the company already has are marked. `GET /partners/lookup`, cached a day; Thai errors when
+  the tax ID is wrong or the service is unreachable. Generic form option `autofill` (web + mobile). `pnpm erp rd-check` tests the service
+  from a server; `RD_LOOKUP=off` hides it. Only VAT-registered businesses are listed.
+
+- **Photos and files on the repair request** (maintenance "แจ้งซ่อม", web + mobile): take a photo (phones open the camera), pick photos or
+  PDFs/Excel/Word, see thumbnails, remove; they are attached to the work order right after it is saved. Generic form option `attach`
+  (any module can turn it on). Big photos are shrunk in the browser (≤ 2000 px JPEG) so phone shots never hit the 5 MB limit — also on
+  every document's attachments panel, which gains a "ถ่ายรูป" button.
+
+- **Multi-level BOM** (production): the BOM detail shows the whole structure as an indented tree (fold/unfold each sub-assembly, open its
+  own BOM, "+ สร้างสูตรย่อย" on a bought part opens the BOM form with that part chosen), bought materials summed over every level, and
+  where-used up through every level; the BOM list shows type (สินค้าหลัก / ชิ้นส่วนประกอบย่อย), depth and search; editing a BOM loads its
+  lines. New `GET /boms/:itemId/tree?qty=`, `GET /boms/:itemId/where-used`. Fix: a circular BOM was reported with item UUIDs — it now
+  names the item codes (`SA-PANEL → FG-CABINET → SA-DOOR → SA-PANEL`). Demo: RACK-08 is a 3-level BOM.
+- Renderer: detail `lines[].tree` (indented, foldable, row links and prefilled "+" links, web + mobile); edit forms with `lines` load the
+  record's lines and show lookup choices (`recordValues`, `recordLines`).
+
+- **Managed-database deployment (Supabase + Vercel)** — `docs/deploy-supabase.md`: all modules in ONE Postgres database, a schema and a
+  login role per module (role `search_path` = its schema), so no code change and a module still cannot read another's tables; web on
+  Vercel (`GATEWAY_URL`), gateway + modules on a container host. `pnpm erp compose`/`pack` now writes `deploy/single-database.sql`.
+  New `tests/e2e/single-database.test.ts`; `E2E_SHARED_DB=1` runs every e2e test in this layout (28/28).
+- deploy README no longer says there is no change-password screen.
+
+- **Full-width, responsive pages** (web + the demo, which is the same app): the 1320px content cap is gone — every screen uses the
+  whole window beside the menu with a gutter that grows with the screen (16px phone → 48px wide); kanban lanes share the width (all
+  lanes visible on a 1920 screen, still swipeable on tablet/phone); on tablets the filters sit 2–3 per row instead of one per row.
+
+- **Pagination on every table list** (web, no module change): loads up to 500 rows, shows 25/50/100 a page (remembered), "แสดง 26–50 จาก
+  340 รายการ", page buttons with gaps and a sliding current-page highlight; new filter = page 1; totals, CSV and print use all rows;
+  reports and boards are not paged; endpoints capped below 500 are retried with their default.
+- **Thai date picker** (`DateInput`) for every date/month field, filter and range: "31 ต.ค. 2569", typed in any common Thai form,
+  Buddhist-era calendar (days → months → years), Today / Clear, range shading, full keyboard support; values stay ISO.
+- Fix: the "บันทึกแล้ว" flag no longer travels in the URL (`?saved=1`) — a link copied, or a script reading the address, right after
+  saving got `…/id?saved=1`. It is handed over in memory now.
+- Tests: `paginate` / Thai date parsing unit tests; browser tests for paging a 40-row list and for picking dates (typed, retyped after
+  select-all, calendar click, keyboard).
+
+## Unreleased — Motion และลูกเล่น (React + Motion + GSAP)
+
+- Rule of thumb, written down (`docs/ui.md` → "Motion และลูกเล่น", tokens in `apps/web/src/lib/motion.ts`): CSS for hover/press/dialogs,
+  Motion (`motion/react` 12.43) for React-state animation (enter/exit, layout, shared highlights), GSAP for timelines on existing DOM.
+  `MotionConfig reducedMotion="user"`; only transform/opacity/blur; nothing blocks the user.
+- Board cards glide to their new lane (`layoutId`), lane counts pop, a landed card gets a green ring when the server agrees.
+- Sliding highlight (`layoutId`) on the side menu's current item and the board/table switch.
+- "บันทึกแล้ว" panel on a document just created (`SavedPanel`, flag handed over in memory — the URL stays the document's): check mark draws, date tile pops, key facts blur in one
+  by one, "ขั้นต่อไป" lists the actions the document now waits for. Inline, closable, not repeated on reload.
+- AI-filled inputs glow one after another (GSAP `aiFilledGlow`).
+- Dialogs spring in with a staggered blur-in; fields with an error shake once and keep a red ring; buttons press in.
+
+## Unreleased — บอร์ดลากวาง + AI สร้างเอกสารจากรูป/PDF
+
+- **Kanban boards** (`ListScreen.display: 'board'` + `BoardSpec`): tasks, opportunities, leads, helpdesk tickets, work orders, production
+  orders and NCRs open as boards. Dragging a card runs the detail screen's own action (same endpoint, same confirm / reason dialog, same
+  server rules); the card moves at once and returns if the server refuses or the person cancels. Mouse, touch (press and hold) and keyboard
+  (Space / arrows), lane totals, collapsed finished lanes, board ↔ table switch remembered per user. Mobile: lane tabs + "ย้ายไป …" buttons.
+  Validated by `boardProblems` in the UI contract test; `ext/ui.ts` can turn any vendor list into a board.
+- **AI create from documents**: `aiFill` now on PO (supplier quotation), supplier bill, sales order (customer PO), lead (business card / chat)
+  and asset (purchase invoice), with a per-form `hint`. Big lookups (thousands of items) are matched by searching what the paper says
+  (exact code/name, code in the text, or the only hit) instead of a 150-record closed list; misses are left for the person with a warning
+  (and kept as the line description where there is one). Up to 100 lines, multi-page PDFs up to 10 MB.
+- **Drop files**: drag photos/PDFs onto a form, or onto a list whose create form reads documents ("สร้างจากใบเสนอราคา" etc.); several files
+  become a queue — each opens filled ("เอกสาร 2 จาก 5"), the person checks and saves, the next one opens; the original file is attached.
+- Fixes: the "แนบรูปนี้กับเอกสาร" checkbox rendered at input size.
+
+## Unreleased — "ขายฐานที่ถูกต้อง ให้ AI ต่อยอด" (customer extension layer)
+
+The product promise is now enforced in code: GO Along ships a tested base, the customer's AI extends it **without editing it**,
+and both sides can prove which is which.
+
+- **Extension layer `services/<module>/ext/`** (kernel `extension.ts`, loaded automatically — no module code changed):
+  `ext.json` (permissions, events), `index.ts` → `defineExtension({ routes, guards, handlers })`, `migrations/` (tracked as `ext/<file>`),
+  `ui.ts` → `defineUiExtension({ patch, hide, screens, menu })`, `test/`. **Guards** are company rules on existing routes ("PO over 50,000 needs a budget")
+  that refuse with a Thai message before the vendor code runs. Every mistake fails loudly at startup/test time (guard on a missing route,
+  patch on a renamed screen/column, route overriding a vendor route, handlers ≠ ext.json).
+- **UI**: `extendUi` in `@erp/ui-schema`; `pnpm erp ui-sync` merges `ext/ui.ts` into the web and mobile registries (output unchanged when there is none);
+  the UI↔API contract test checks merged screens against vendor + ext routes.
+- **Vendor lock** `.erp/vendor-lock.json` written by `pnpm erp pack`; `pnpm erp doctor` (base intact? what did this company add?);
+  `pnpm erp verify` warns on edited vendor files (`--strict` fails) and on ext names that could clash with future releases (`/x/`, `x_`);
+  `pnpm erp upgrade <release> [--apply]` replaces untouched vendor files, keeps customer edits, puts real conflicts in `.erp/upgrade/`.
+- **Pack**: CLAUDE.md tailored to the installed modules, `CUSTOM.md` for the company's conventions, GO Along-internal documents
+  (roadmap, UAT, UX reviews, licensing/showcase how-tos) no longer shipped.
+- **For AI tools**: CLAUDE.md "Where a change goes" table + extension reference, new `/extend` command, `/upgrade` rewritten around the tool,
+  `docs/extending-with-ai.md` rewritten, a complete tested example `docs/examples/purchasing-budget/` (run by `pnpm check`).
+
 ## 0.3.1 — 2026-10-03 · ภาษีไทยครบรอบเดือน + ยกเลิกเซสชัน
 
 **In numbers:** 22 modules (new: `etax`) · 931 automated tests · **77 UAT cases (UAT-01..77)** all passing in Chromium · roadmap 553 of 1,060 functions done.

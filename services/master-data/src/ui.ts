@@ -74,7 +74,16 @@ export default defineUi({
       import: { endpoint: '/partners/import', perm: 'master.partner.write', columns: partnerImport, template: 'แบบฟอร์มนำเข้าคู่ค้า.csv' },
       empty: 'ยังไม่มีลูกค้าหรือผู้ขาย',
     },
-    partnerNew: { kind: 'form', title: 'เพิ่มคู่ค้า', method: 'POST', endpoint: '/partners', perm: 'master.partner.write', fields: partnerFields, submitLabel: 'บันทึกคู่ค้า', after: { screen: 'partners' } },
+    partnerNew: {
+      kind: 'form', title: 'เพิ่มคู่ค้า', method: 'POST', endpoint: '/partners', perm: 'master.partner.write', fields: partnerFields, submitLabel: 'บันทึกคู่ค้า', after: { screen: 'partners' },
+      // type a 13-digit tax ID or a company name → the Revenue Department's VAT register fills name, tax ID, branch and address
+      autofill: {
+        endpoint: '/partners/lookup', label: 'ค้นหาจากกรมสรรพากร', placeholder: 'เลขผู้เสียภาษี 13 หลัก หรือชื่อบริษัท',
+        hint: 'พิมพ์เลข 13 หลัก ระบบค้นหาทันที หรือพิมพ์ชื่อบริษัทแล้วรอสักครู่ — เลือกสาขาที่ถูกต้อง ระบบกรอกชื่อ เลขผู้เสียภาษี สาขา และที่อยู่ให้ (เฉพาะกิจการที่จด VAT)',
+        title: ['name'], subtitle: ['taxId', 'address'], tag: 'branchLabel', existing: 'existing_code',
+        fill: { name: 'name', taxId: 'taxId', branch: 'branch', address: 'address' },
+      },
+    },
     partnerEdit: { kind: 'form', title: 'แก้ไขคู่ค้า', method: 'PATCH', endpoint: '/partners/:id', load: '/partners/:id', perm: 'master.partner.write', fields: partnerFields, submitLabel: 'บันทึกการแก้ไข', after: { screen: 'partners' } },
   },
 });

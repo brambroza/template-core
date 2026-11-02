@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { datePresets, get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
+import { DateInput } from './DateInput';
 import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
 
@@ -227,13 +228,12 @@ export function FieldInput(props: FieldProps) {
       );
     case 'date':
     case 'month':
-      // a date box shows its own mm/dd/yyyy text, so a compact (filter) one carries its label above the value
+      // Thai calendar box (DateInput): shows "31 ต.ค. 2569", keeps ISO; a compact (filter) one carries its label above the value
       return (
-        <label className={compact ? 'float-field' : 'date-field'}>
-          {compact && <span className="float-label">{field.label}</span>}
-          <input {...common} type={field.type} placeholder={field.type === 'month' ? 'YYYY-MM' : undefined} value={String(v ?? '')}
-            onChange={(e) => onChange({ [field.name]: e.target.value })} />
-        </label>
+        <div className={compact ? 'float-field' : 'date-field'}>
+          {compact && <span className="float-label" aria-hidden>{field.label}</span>}
+          <DateInput kind={field.type} label={field.label} invalid={!!error} value={String(v ?? '')} onChange={(iso) => onChange({ [field.name]: iso })} />
+        </div>
       );
     default:
       return (
@@ -254,7 +254,7 @@ export function FieldRow({ field, error, ...rest }: FieldProps) {
   const id = useId();
   if (field.type === 'boolean') return <div className="field"><FieldInput field={field} error={error} {...rest} />{error && <p className="field-error">{error}</p>}</div>;
   return (
-    <div className={`field${(field.type === 'textarea' && !isImageData(field, rest.values[field.name])) || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
+    <div data-field={field.name} className={`field${(field.type === 'textarea' && !isImageData(field, rest.values[field.name])) || field.type === 'permissions' || field.type === 'multilookup' ? ' field-wide' : ''}`}>
       <label htmlFor={id}>{field.label}{field.required && <span className="req" aria-hidden> *</span>}</label>
       <div id={id}><FieldInput field={field} error={error} {...rest} /></div>
       {field.help && !error && <p className="field-help">{field.help}</p>}
@@ -279,7 +279,7 @@ export function LinesEditor({ spec, module, lines, onChange, errors }: { spec: L
         </thead>
         <tbody>
           {lines.map((line, i) => (
-            <tr key={i}>
+            <tr key={i} data-line={i}>
               <td className="num">{i + 1}</td>
               {spec.fields.map((f) => (
                 <td key={f.name} className={f.type === 'lookup' ? 'cell-lookup' : ''}>
@@ -313,9 +313,9 @@ export function DateRangeInput({ from, to, values, onChange }: { from: Field; to
       <div className="float-field range-box">
         <span className="float-label">{from.label} – {to.label}</span>
         <span className="range-inputs">
-          <input type="date" aria-label={from.label} value={a} max={b || undefined} onChange={(e) => onChange({ [from.name]: e.target.value })} />
+          <DateInput label={from.label} value={a} max={b || undefined} range={{ from: a, to: b }} placeholder="ตั้งแต่" onChange={(iso) => onChange({ [from.name]: iso })} />
           <span aria-hidden className="range-dash">–</span>
-          <input type="date" aria-label={to.label} value={b} min={a || undefined} onChange={(e) => onChange({ [to.name]: e.target.value })} />
+          <DateInput label={to.label} value={b} min={a || undefined} range={{ from: a, to: b }} placeholder="ถึง" onChange={(iso) => onChange({ [to.name]: iso })} />
         </span>
       </div>
       <div className="range-presets">

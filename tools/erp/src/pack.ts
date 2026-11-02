@@ -1,8 +1,9 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { ModuleManifest } from '@erp/kernel';
 import { compose } from './compose.ts';
 import { syncUi } from './ui-sync.ts';
+import { writeVendorLock } from './vendor.ts';
 
 export interface PackOptions {
   customer: string;
@@ -12,8 +13,51 @@ export interface PackOptions {
 const ROOT_FILES = ['pnpm-workspace.yaml', 'tsconfig.json', 'vitest.config.ts', '.gitignore', '.dockerignore', 'Dockerfile', 'CLAUDE.md', 'AGENTS.md'];
 const ROOT_DIRS = ['packages', 'apps', 'docs', '.claude', 'scripts', '.github', 'tools'];
 const skipNodeModules = (src: string) => !src.split(/[\\/]/).some((p) => p === 'node_modules' || p === '.next' || p === '.expo');
-/** internal-only: pricing tests and the license public key are GO Along's, not the customer's */
-const shipped = (src: string) => skipNodeModules(src) && !/tools[\\/]erp[\\/]test/.test(src);
+/**
+ * GO Along-internal material that never goes to a customer: pricing tests, and the planning / sales / review documents
+ * under docs/ (roadmap with prices and dates, UAT evidence, UX reviews, licensing and showcase how-tos).
+ */
+export const INTERNAL_DOCS = ['docs/roadmap', 'docs/uat', 'docs/ux', 'docs/selling-and-licensing.md', 'docs/license-keys.md', 'docs/deploy-vercel.md'];
+const norm = (p: string) => p.split(/[\\/]/).join('/');
+const shipped = (root: string) => (src: string) => {
+  if (!skipNodeModules(src) || /tools[\\/]erp[\\/]test/.test(src)) return false;
+  const rel = norm(relative(root, src));
+  return !INTERNAL_DOCS.some((d) => rel === d || rel.startsWith(`${d}/`));
+};
+
+/** CLAUDE.md for one installation: only its modules, no GO Along-internal tooling. */
+export function installationClaudeMd(src: string, selection: string[], manifests: ModuleManifest[]): string {
+  const mods = manifests.filter((m) => selection.includes(m.id));
+  const list = (tier: string) => mods.filter((m) => m.tier === tier).map((m) => `\`${m.id}\``).join(', ');
+  const modules = `Modules in THIS installation: ${list('core')} (core) · ${list('feature') || 'none'} (features). Other GO Along modules exist but are not installed here —\n`
+    + 'never reference their code, tables or screens; integrate with them only through events in `packages/contracts`.';
+  return src
+    .replace(/<!-- erp:internal:start -->[\s\S]*?<!-- erp:internal:end -->\n?/g, '')
+    .replace(/<!-- erp:modules:start -->[\s\S]*?<!-- erp:modules:end -->/, modules);
+}
+
+/** GO Along's company contact for the customer README (read from site/site.config.json, which itself is never shipped). */
+export function vendorContact(root: string): string {
+  try {
+    const site = JSON.parse(readFileSync(join(root, 'site', 'site.config.json'), 'utf8'));
+    const c = site.contact ?? {};
+    const lines = [c.phone && `- โทร: ${c.phone}`, c.email && `- อีเมล: ${c.email}`, c.address && `- ที่อยู่: ${c.address}`].filter(Boolean);
+    if (!lines.length) return '';
+    return `\n## ติดต่อ GO Along (ซัพพอร์ต, แจ้งปัญหาในโค้ดหลัก, ซื้อโมดูลเพิ่ม)\n\n${site.company ? `${site.company}\n\n` : ''}${lines.join('\n')}\n`;
+  } catch {
+    return '';
+  }
+}
+
+const CUSTOM_MD = (customer: string) => `# CUSTOM.md — ${customer}
+
+This file belongs to ${customer}, not to GO Along: updates never overwrite it. AI coding tools read it after CLAUDE.md.
+Write your company's own conventions here, for example:
+
+- Document numbers, approval limits and who approves what
+- Words your team uses (and the Thai labels screens should show)
+- Which modules have extensions (\`services/<module>/ext/\`) and why
+`;
 
 /**
  * Build the deliverable for one customer: ONLY the modules they bought (+ core), the shared packages,
@@ -23,8 +67,12 @@ export function pack(root: string, selection: string[], manifests: ModuleManifes
   if (existsSync(outDir)) rmSync(outDir, { recursive: true });
   mkdirSync(outDir, { recursive: true });
   for (const f of ROOT_FILES) if (existsSync(join(root, f))) cpSync(join(root, f), join(outDir, f));
-  for (const d of ROOT_DIRS) if (existsSync(join(root, d))) cpSync(join(root, d), join(outDir, d), { recursive: true, filter: shipped });
-  for (const id of selection) cpSync(join(root, 'services', id), join(outDir, 'services', id), { recursive: true, filter: skipNodeModules });
+  for (const d of ROOT_DIRS) if (existsSync(join(root, d))) cpSync(join(root, d), join(outDir, d), { recursive: true, filter: shipped(root) });
+  // the vendor repo never has ext/ folders; if one exists (a GO Along test or demo), it is not part of the product
+  const noExt = (src: string) => skipNodeModules(src) && !/[\\/]services[\\/][^\\/]+[\\/]ext([\\/]|$)/.test(src);
+  for (const id of selection) cpSync(join(root, 'services', id), join(outDir, 'services', id), { recursive: true, filter: noExt });
+  if (existsSync(join(root, 'CLAUDE.md'))) writeFileSync(join(outDir, 'CLAUDE.md'), installationClaudeMd(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), selection, manifests));
+  writeFileSync(join(outDir, 'CUSTOM.md'), CUSTOM_MD(opts.customer));
 
   // root package.json: drop services the customer did not buy
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -81,8 +129,13 @@ it('boots every purchased module behind the gateway', async () => {
 Purchased modules: ${selection.map((id) => `\`${id}\``).join(', ')}
 
 - Develop: \`pnpm install && pnpm db:dev && pnpm check\` (see CLAUDE.md — written so AI coding tools can extend this safely)
+- Extend: your changes go in \`services/<module>/ext/\` or new modules — see \`docs/extending-with-ai.md\` (AI command: \`/extend\`)
+- Check the base: \`pnpm erp doctor\` — GO Along's code is fingerprinted in \`.erp/vendor-lock.json\`
 - Deploy: see \`deploy/README.md\`
-- Add more modules later: ask GO Along for the module folder + an updated license; drop it into \`services/\` and add it to \`deploy/\`.
-`);
+- Updates: \`pnpm erp upgrade <release-folder>\` replaces GO Along's files and keeps everything in \`ext/\` and your own modules
+- Add more modules later: ask GO Along for an updated release + license, then \`pnpm erp upgrade <release-folder> --apply\`.
+${vendorContact(root)}`);
+  // last: fingerprint exactly what was shipped
+  writeVendorLock(outDir, { customer: opts.customer, modules: [...selection].sort(), versions: installed.versions, packedAt: installed.packedAt });
   return outDir;
 }

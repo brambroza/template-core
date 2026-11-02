@@ -111,6 +111,10 @@ export default defineUi({
         ],
       },
       submitLabel: 'สร้างใบสั่งซื้อ', after: { screen: 'poDetail', idFrom: 'id' },
+      aiFill: {
+        kind: 'document', label: 'สร้างจากใบเสนอราคา',
+        hint: 'ใบเสนอราคา/ใบแจ้งราคาจากผู้ขาย: ผู้ขาย = บริษัทที่ออกเอกสาร (หัวกระดาษ ไม่ใช่ "เรียน/ลูกค้า"), รายการ = สินค้าที่เสนอ พร้อมจำนวนและราคาต่อหน่วยก่อน VAT ถ้าเอกสารแยก VAT; ราคาที่รวม VAT แล้วให้เลือก "รวม VAT แล้ว"; กำหนดส่ง = วันที่ส่งของ/ยืนราคา ถ้ามี',
+      },
     },
     poDetail: {
       kind: 'detail', title: 'ใบสั่งซื้อ', endpoint: '/purchase-orders/:id', perm: 'purchasing.po.read', heading: 'no', attachments: { entity: 'po', label: 'ใบเสนอราคา / ใบส่งของ' }, mobile: true,
@@ -277,6 +281,10 @@ export default defineUi({
         ],
       },
       submitLabel: 'ตั้งหนี้', after: { screen: 'billDetail', idFrom: 'id' },
+      aiFill: {
+        kind: 'receipt', label: 'อ่านใบกำกับ / ใบแจ้งหนี้',
+        hint: 'ใบกำกับภาษี/ใบแจ้งหนี้ค่าบริการหรือค่าใช้จ่ายจากผู้ขาย: เลขที่และวันที่ใบกำกับของผู้ขาย, รายการค่าบริการพร้อมจำนวนและราคาต่อหน่วย; ค่าจ้าง/ค่าบริการ/ค่าเช่า/ค่าขนส่ง/ค่าโฆษณา เลือกประเภทหัก ณ ที่จ่ายที่ตรงกันถ้าชัดเจน',
+      },
     },
     billDetail: {
       kind: 'detail', title: 'บิลผู้ขาย (ใบตั้งหนี้)', endpoint: '/bills/:id', perm: 'purchasing.bill.read', heading: 'no', attachments: { entity: 'bill', label: 'ใบกำกับภาษี / ใบแจ้งหนี้ผู้ขาย' },

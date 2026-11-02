@@ -15,6 +15,13 @@ Items and business partners. Other modules keep only snapshots (`itemId`, `itemC
   (`row` 1-based in `rows`, Thai messages). A real run writes all rows in one transaction or, if any row is invalid, nothing (400, `details.errors`).
   An existing record only changes in the columns the file filled. Permission `master.item.write` / `master.partner.write`; publishes the usual upsert event per row.
 - `GET /summary` (counts of items, customers, suppliers)
+- `GET /partners/lookup?q=<13-digit tax ID | name ≥ 3 letters>` (perm `master.partner.write`) — the Revenue Department's public VAT registrant
+  service (`src/rd-lookup.ts`, SOAP, user/password `anonymous`): `{ source, query, results: [{ taxId, branch, branchLabel, name, address,
+  subdistrict, district, province, postcode, vatSince, existing_id, existing_code }], more }`. Every branch of a tax ID; Thai address
+  (แขวง/เขต in Bangkok, ตำบล/อำเภอ/จังหวัด elsewhere); `existing_*` = this company already has that tax ID + branch. Answers cached a day
+  per query. Errors: 400 bad tax ID (check digit) / too short, 502 service unreachable or failed (Thai message), 503 when `RD_LOOKUP=off`.
+  Env: `RD_LOOKUP` (`off` hides it), `RD_VAT_SERVICE_URL` (tests point it at a fake server), `RD_USERNAME`/`RD_PASSWORD`, `RD_TIMEOUT_MS` (10000).
+  Only VAT-registered businesses are listed. `pnpm erp rd-check <tax id | name>` asks the service from the command line.
 
 ## Events
 - publishes `master.item_upserted`, `master.partner_upserted` on every create/update (and per imported row)
@@ -24,6 +31,7 @@ Item categories, units-of-measure conversion, price lists, barcodes: add columns
 
 ## Screens
 `src/ui.ts` — list/form/detail definitions rendered by apps/web and apps/mobile (see docs/ui.md). Keep endpoints identical to the routes above.
+`partnerNew` declares `autofill` (the search box "ค้นหาจากกรมสรรพากร" that fills name, tax ID, branch and address).
 The `items` and `partners` lists declare `import` (CSV columns = create-body keys with Thai labels) — add a column there when you add a field.
 
 Dashboard widgets, ⌘K commands and search for this module are declared in `src/ui.ts` (`widgets`, `commands`, `search`) — see docs/ui.md.

@@ -110,7 +110,11 @@ export const KERNEL_TENANT_TABLES = ['_attachments', '_audit', '_lock_date', '_r
  * Apply `migrations/*.sql` in name order, once each.
  * A line `-- @tenant <table>` makes that table tenant-isolated (tenant_id default + RLS policy).
  */
-export async function migrate(db: Db, dir: string): Promise<string[]> {
+/**
+ * Apply pending migrations: the module's own `dir`, then the customer extension's `extDir` (recorded as `ext/<file>`,
+ * so an extension's 001 never collides with a vendor 001). Both are append-only.
+ */
+export async function migrate(db: Db, dir: string, extDir?: string): Promise<string[]> {
   const applied: string[] = [];
   await db.rawTx(async (c) => {
     await c.query(`select pg_advisory_xact_lock(424242)`);
@@ -121,15 +125,18 @@ export async function migrate(db: Db, dir: string): Promise<string[]> {
     }
     const load = await c.query(`select 1 from pg_policies where schemaname = current_schema() and tablename = '_revoked_tokens' and policyname = 'kernel_revocation_load'`);
     if (!load.rowCount) await c.query(REVOKED_LOAD_POLICY);
-    if (!existsSync(dir)) return;
     const done = new Set((await c.query<{ name: string }>('select name from _migrations')).rows.map((r) => r.name));
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-      if (done.has(file)) continue;
-      const sql = readFileSync(join(dir, file), 'utf8');
-      await c.query(sql);
-      for (const m of sql.matchAll(/^--\s*@tenant\s+([a-z_][a-z0-9_]*)\s*$/gim)) await c.query(tenantTableSql(m[1]));
-      await c.query('insert into _migrations(name) values ($1)', [file]);
-      applied.push(file);
+    for (const [folder, prefix] of [[dir, ''], [extDir, 'ext/']] as const) {
+      if (!folder || !existsSync(folder)) continue;
+      for (const file of readdirSync(folder).filter((f) => f.endsWith('.sql')).sort()) {
+        const name = prefix + file;
+        if (done.has(name)) continue;
+        const sql = readFileSync(join(folder, file), 'utf8');
+        await c.query(sql);
+        for (const m of sql.matchAll(/^--\s*@tenant\s+([a-z_][a-z0-9_]*)\s*$/gim)) await c.query(tenantTableSql(m[1]));
+        await c.query('insert into _migrations(name) values ($1)', [name]);
+        applied.push(name);
+      }
     }
   });
   return applied;

@@ -20,6 +20,11 @@ export interface ModuleManifest {
   publishes: EventType[];
   subscribes: EventType[];
   permissions: { key: string; label: string }[];
+  /**
+   * Set only on the manifest a running service serves when the installation has a customer extension (`ext/`):
+   * which permissions and events came from it. Never written in module.json.
+   */
+  extension?: { description: string; permissions: string[]; publishes: EventType[]; subscribes: EventType[] };
 }
 
 export function loadManifest(path: string | URL): ModuleManifest {

@@ -606,7 +606,7 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await as(page, 'staff');
     await open(page, `/m/expense/claimDetail/${claim.id}`);
     const panel = page.getByRole('region', { name: 'ใบเสร็จ / หลักฐาน' });
-    await panel.locator('input[type=file]').setInputFiles({ name: 'ใบเสร็จน้ำมัน.png', mimeType: 'image/png', buffer: PNG });
+    await panel.getByTestId('attach-input').setInputFiles({ name: 'ใบเสร็จน้ำมัน.png', mimeType: 'image/png', buffer: PNG });
     const item = panel.locator('.att-item', { hasText: 'ใบเสร็จน้ำมัน.png' });
     await item.waitFor();
     expect(await item.innerText()).toContain(users.staff.name);

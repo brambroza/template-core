@@ -128,6 +128,12 @@ export default defineUi({
       columns: [...ticketColumns.slice(0, 2), { key: 'customer_name', label: 'ลูกค้า' }, { key: 'requester_name', label: 'ผู้แจ้ง' }, { key: 'channel_label', label: 'ช่องทาง' }, ...ticketColumns.slice(2)],
       create: 'ticketNew', createLabel: 'แจ้งปัญหา', rowLink: { screen: 'ticket' }, empty: 'ยังไม่มีเรื่องแจ้งปัญหา',
       rowActions: [{ id: 'start', label: 'รับเรื่อง', method: 'POST', endpoint: '/tickets/:id/start', perm: 'helpdesk.ticket.work', when: { field: 'status', in: ['open'] } }],
+      display: 'board',
+      board: {
+        field: 'status', lanes: statuses,
+        moves: { in_progress: ['start'], waiting: ['wait'], resolved: ['resolve'], closed: ['close'] },
+        collapsed: ['closed'],
+      },
     },
     overdueTickets: {
       kind: 'list', title: 'เรื่องที่เกิน SLA', endpoint: '/tickets/overdue', perm: 'helpdesk.ticket.read', mobile: true,

@@ -121,7 +121,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await login(page, base, 'uat-factory');
     const menu = page.getByRole('navigation');
     for (const m of ['ขาย', 'จัดซื้อ', 'คลังสินค้า', 'วางแผนการผลิต', 'ซ่อมบำรุง', 'ต้นทุน', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']) {
-      await expect(menu.locator('.nav-group-title', { hasText: m }).count()).resolves.toBe(1);
+      const group = menu.locator('.nav-group-title', { hasText: m });
+      await group.first().waitFor(); // the menu comes from /api/_catalog after login
+      await expect(group.count()).resolves.toBe(1);
     }
     await shot(page, 'UAT-01');
   });
@@ -150,6 +152,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await logout(page, base);
     await login(page, base, 'uat-factory', 'store@uat.co.th', 'store-pass-1');
     const menu = page.getByRole('navigation');
+    await menu.getByRole('link', { name: 'ยอดคงเหลือ' }).waitFor(); // menu loads after login
     expect(await menu.getByRole('link', { name: 'ยอดคงเหลือ' }).count()).toBe(1);
     expect(await menu.getByRole('link', { name: 'สินค้าและวัตถุดิบ' }).count()).toBe(1);
     expect(await menu.getByRole('link', { name: 'ใบสั่งซื้อ' }).count()).toBe(0);
@@ -305,7 +308,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await lines.locator('tbody tr').nth(1).getByLabel('ใช้ต่อสูตร').fill('4');
     await page.getByRole('button', { name: 'บันทึกสูตร' }).click();
     await page.getByRole('heading', { name: 'FG-BRACKET' }).waitFor();
-    expect(await page.locator('.detail-lines tbody tr').count()).toBe(2);
+    // the structure (tree, every level) and the bought materials summed over all levels: both list steel + bolts here (one level)
+    expect(await page.locator('.tree-lines').first().locator('tbody tr').count()).toBe(2);
+    await expect(page.getByText('1 ระดับ · 2 รายการ').count()).resolves.toBe(1);
     await shot(page, 'UAT-11');
   });
 
@@ -461,8 +466,9 @@ describe('UAT — full installation (uat-factory)', () => {
     }
     await shot(page, 'UAT-20');
     await page.goto(`${base}/m/maintenance/woList`);
-    await page.getByRole('row').filter({ hasText: 'PM' }).first().waitFor();
-    expect(await page.getByRole('row').filter({ hasText: 'เปลี่ยนน้ำมันไฮดรอลิก' }).count()).toBe(1);
+    // work orders open as a kanban board (display: 'board'): one card per work order
+    await page.locator('.kcard').filter({ hasText: 'PM' }).first().waitFor();
+    expect(await page.locator('.kcard').filter({ hasText: 'เปลี่ยนน้ำมันไฮดรอลิก' }).count()).toBe(1);
     await shot(page, 'UAT-20');
   });
 
@@ -531,7 +537,8 @@ describe('UAT — full installation (uat-factory)', () => {
     await shot(page, 'UAT-27');
     await page.getByRole('button', { name: 'เปิดงานซ่อมที่ค้าง' }).click();
     await page.waitForURL(/\/m\/maintenance\/woList\?status=open/);
-    await page.getByRole('cell', { name: 'สายพานขาด' }).waitFor();
+    await page.locator('.kcard').filter({ hasText: 'สายพานขาด' }).waitFor();
+    expect(await page.locator('.lane', { hasText: 'เสร็จแล้ว' }).locator('.kcard').count()).toBe(0); // the AI's status filter applies to the board
     await shot(page, 'UAT-27');
   });
 
@@ -568,6 +575,7 @@ describe('UAT — partial installation (small-factory: Core + Maintenance)', () 
 
   it('UAT-21 ลูกค้าที่ซื้อบางโมดูลเห็นเฉพาะที่ซื้อ', async () => {
     await login(p, smallBase, 'small-factory');
+    await p.getByRole('navigation').locator('.nav-group-title').first().waitFor();
     const groups = await p.getByRole('navigation').locator('.nav-group-title').allInnerTexts();
     expect(groups.map((g) => g.trim())).toEqual(['ซ่อมบำรุง', 'ข้อมูลหลัก', 'ผู้ใช้และสิทธิ์']);
     await shot(p, 'UAT-21');

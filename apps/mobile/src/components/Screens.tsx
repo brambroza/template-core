@@ -1,16 +1,17 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useContext, useState, type ReactNode } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
+  attachmentRef, boardLanes, boardMoves, fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, pickMove, routeParams, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
 import { getSession } from '../lib/session';
 import { themed, useIsDark, usePalette } from '../lib/theme';
-import { AttachmentsList } from './Attachments';
+import { AutofillBox } from './Autofill';
+import { AttachmentsList, PendingAttachments, sendFiles, type Pending } from './Attachments';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 import { Button, Card, EmptyState, ErrorText, LabelsContext, useS, ValueText } from './ui';
 
@@ -77,7 +78,8 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   const load = useCallback(async () => {
     try {
       setError('');
-      setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params))));
+      const query = screen.board ? { limit: String(screen.board.limit ?? 200) } : undefined;
+      setRows(listRows(screen, await api(ui.module, fillPath(screen.endpoint, params), query ? { query } : {})));
     } catch (e) {
       setError((e as Error).message);
       setRows((r) => r ?? []);
@@ -86,7 +88,17 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const { refreshing, onRefresh } = useRefresh(load);
 
-  const shown = filterRows(rows ?? [], screen.columns, query, labels);
+  // kanban (display 'board'): lanes become tabs, and each card offers "ย้ายไป …" for the lanes it may move to
+  const board = screen.display === 'board' ? screen.board : undefined;
+  const [lane, setLane] = useState<string | null>(null);
+  const moves = board ? boardMoves(ui, screen) : {};
+  const searched = filterRows(rows ?? [], screen.columns, query, labels);
+  const lanes = board ? boardLanes(board, searched) : [];
+  const shown = board && lane ? searched.filter((r) => String(get(r, board.field) ?? '') === lane) : searched;
+  const moveTargets = (row: Record<string, unknown>) => (board ? board.lanes.flatMap((l) => {
+    const a = pickMove(moves, row, l.value, perms(), board.field);
+    return a ? [{ lane: l, action: a }] : [];
+  }) : []);
   const titleCol = screen.columns[0];
   const detailCols = screen.columns.slice(1);
   const link = screen.rowLink && isMobile(ui, screen.rowLink.screen) ? screen.rowLink : undefined;
@@ -133,6 +145,19 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
         </View>
       )}
       {!!error && <View style={{ paddingHorizontal: 16 }}><ErrorText text={error} /></View>}
+      {board && !!rows?.length && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.lanes} accessibilityRole="tablist">
+          {[{ value: null as string | null, label: 'ทั้งหมด', count: searched.length }, ...lanes.map((l) => ({ value: l.value as string | null, label: l.label, count: l.rows.length }))].map((t) => {
+            const on = lane === t.value;
+            return (
+              <Pressable key={t.value ?? '*'} accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => setLane(t.value)}
+                style={[st.laneChip, on && { backgroundColor: c.signal, borderColor: c.signal }]}>
+                <Text style={[st.laneText, on && { color: c.onSignal }]}>{t.label} {t.count}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
       <FlatList
         data={shown}
         keyboardShouldPersistTaps="handled"
@@ -159,6 +184,13 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
                 </View>
               );
             })}
+            {moveTargets(item).length > 0 && (
+              <View style={st.rowActions}>
+                {moveTargets(item).map((m) => (
+                  <Button key={m.lane.value} label={`ย้ายไป ${m.lane.label}`} busy={busy === `${m.action.id}:${String(item.id)}`} onPress={() => press(m.action, item)} />
+                ))}
+              </View>
+            )}
             {rowActions.some((a) => matches(item, a.when)) && (
               <View style={st.rowActions}>
                 {rowActions.filter((a) => matches(item, a.when)).map((a) => (
@@ -194,6 +226,8 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [progress, setProgress] = useState<string | null>(null);
   const params = routeParams(screen.endpoint, id);
 
   const submit = async () => {
@@ -208,6 +242,13 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
     try {
       const res = await api<Record<string, unknown>>(ui.module, fillPath(screen.endpoint, values, params), { method: screen.method, body: toBody(screen.fields, values, screen.lines, used) });
       const after = screen.after;
+      // photos / files picked on the form go to the record it just created; a failed file never undoes the save
+      const savedId = after?.idFrom ? get(res, after.idFrom) : undefined;
+      if (screen.attach && pending.length && savedId !== undefined && savedId !== null) {
+        const { problems } = await sendFiles(ui.module, attachmentRef(screen.attach.entity, String(savedId)), pending, setProgress);
+        setProgress(null);
+        if (problems.length) Alert.alert(`บันทึกแล้ว แต่แนบไม่ได้ ${problems.length} ไฟล์`, `${problems.join('\n')}\n\nแนบเพิ่มได้ที่หน้าเอกสาร`);
+      }
       if (after && isMobile(ui, after.screen)) router.replace(screenPath(ui.module, after.screen, after.idFrom ? get(res, after.idFrom) : undefined));
       else router.back();
     } catch (e) {
@@ -221,11 +262,14 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
     <FormFrame
       footer={<>
         <ErrorText text={error} />
+        {!!progress && <Text style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">{progress}</Text>}
         <Button label={screen.submitLabel} tone="primary" size="large" busy={busy} onPress={submit} />
       </>}
     >
+      {screen.autofill && <AutofillBox module={ui.module} spec={screen.autofill} onPick={(v) => { setValues((cur) => ({ ...cur, ...v })); setErrors({}); }} />}
       {screen.fields.map((f) => <FieldRow key={f.name} field={f} module={ui.module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
       {screen.lines && <LinesEditor spec={screen.lines} module={ui.module} lines={lines} onChange={setLines} />}
+      {screen.attach && <PendingAttachments spec={screen.attach} files={pending} onChange={setPending} disabled={busy} />}
     </FormFrame>
   );
 }
@@ -348,7 +392,8 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
             <Text accessibilityRole="header" style={[s.label, { fontSize: 16 }]}>{ls.label}{rows.length ? ` (${rows.length})` : ''}</Text>
             {rows.length === 0 && <Card><EmptyState title={`ไม่มี${ls.label}`} /></Card>}
             {rows.map((r, i) => (
-              <Card key={String(r.id ?? i)} style={{ padding: 12, gap: 4 }}>
+              // tree lines (multi-level BOM): each level sits further in, rows arrive depth first
+              <Card key={String(r.id ?? i)} style={{ padding: 12, gap: 4, marginLeft: ls.tree ? Math.min((Number(get(r, ls.tree.level)) || 1) - 1, 4) * 14 : 0 }}>
                 {ls.columns.map((col) => (
                   <View key={col.key} style={st.rowLine}><Text style={s.muted}>{col.label}</Text><ValueText value={get(r, col.key)} format={col.format} /></View>
                 ))}
@@ -368,6 +413,9 @@ const useSt = themed((c) => StyleSheet.create({
   row: { padding: 14, gap: 4 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: c.ink },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  lanes: { paddingHorizontal: 16, paddingTop: 10, gap: 8 },
+  laneChip: { paddingHorizontal: 14, minHeight: 36, justifyContent: 'center', borderRadius: 18, borderWidth: 1, borderColor: c.rule, backgroundColor: c.paper },
+  laneText: { fontSize: 14, fontWeight: '600', color: c.ink },
   rowLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   fact: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.ruleSoft, gap: 2 },
 }));

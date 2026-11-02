@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { buyerInfo, buyerProblems, columnTotals, COPY_LABELS, companyProblems, factSections, fillPath, get, hasPerm, matches, printSpec, printsOnPaper, repeatsAbove, routeParams, signatureBoxes, type CompanyProfile, type CopyLabel, type DetailScreen, type Format } from '@erp/ui-schema';
-import { Copy } from 'lucide-react';
+import { buyerInfo, buyerProblems, columnTotals, COPY_LABELS, companyProblems, factSections, fillPath, get, hasPerm, matches, printSpec, printsOnPaper, repeatsAbove, routeParams, signatureBoxes, treeAddQuery, treeHasChildren, treeHidden, treeParents, type CompanyProfile, type CopyLabel, type DetailScreen, type Format } from '@erp/ui-schema';
+import { ChevronRight, Copy, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { screenHref } from '@/lib/nav';
@@ -13,6 +13,8 @@ import { ActionButton } from './ActionButton';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { AuditTrail } from './AuditTrail';
 import { FlowStepper } from './FlowStepper';
+import { SavedPanel } from './SavedPanel';
+import { clearSaved, wasJustSaved } from '@/lib/saved-flash';
 import { loadCompany } from './print/company';
 import { BuyerBlock, Letterhead, PrintFooter, Signatures } from './print/PrintParts';
 import { isNumeric, Value } from './Value';
@@ -49,8 +51,72 @@ function pairLines(lines: LinesDef[]): LinesDef[][] {
 /** The company-settings link belongs under company problems only, not under a buyer warning. */
 const companyProblemsShown = (problems: string[]) => problems.some((p) => p.startsWith('ข้อมูลบริษัท') || p.startsWith('ยังไม่ได้ตั้งค่าข้อมูลบริษัท'));
 
+/**
+ * Detail lines as an indented tree (multi-level BOM): ▸ folds a row's deeper rows, a sub-assembly opens its own record,
+ * "+ label" opens a form prefilled from the row. Paper always prints every row unfolded.
+ */
+function TreeLines({ module, ls, rows, perms, paperClass }: { module: string; ls: LinesDef; rows: Record<string, unknown>[]; perms: string[]; paperClass: (f: { print?: boolean; format?: Format }) => string }) {
+  const tree = ls.tree!;
+  const [folded, setFolded] = useState<Set<number>>(() => new Set());
+  const hidden = treeHidden(rows, tree.level, folded);
+  const parents = treeParents(rows, tree.level);
+  const indentAt = Math.max(0, ls.columns.findIndex((c) => c.indent));
+  const canAdd = !!tree.add && (!tree.add.perm || hasPerm(perms, tree.add.perm));
+  const toggle = (i: number) => setFolded((f) => { const n = new Set(f); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const depth = rows.reduce((m, r) => Math.max(m, Number(get(r, tree.level)) || 1), 1);
+  return (
+    <section className={'detail-lines tree-lines' + paperClass(ls)}>
+      <div className="tree-head">
+        <h2>{ls.label}</h2>
+        <span className="muted">{depth} ระดับ · {rows.length} รายการ</span>
+        {parents.length > 0 && (
+          <span className="tree-tools no-print">
+            <button type="button" className="btn-ghost" onClick={() => setFolded(new Set())} disabled={folded.size === 0}>ขยายทั้งหมด</button>
+            <button type="button" className="btn-ghost" onClick={() => setFolded(new Set(parents))}>ย่อทั้งหมด</button>
+          </span>
+        )}
+      </div>
+      <div className="table-wrap stack">
+        <table className="data stack tree" role="table">
+          <thead role="rowgroup"><tr role="row">{ls.columns.map((c) => <th role="columnheader" key={c.key} className={(isNumeric(c.format) ? 'num' : '') + paperClass(c) || undefined}>{c.label}</th>)}</tr></thead>
+          <tbody role="rowgroup">
+            {rows.map((r, i) => {
+              const level = Number(get(r, tree.level)) || 1;
+              const kids = treeHasChildren(rows, tree.level, i);
+              const open = !folded.has(i);
+              const link = tree.link && (!tree.link.when || get(r, tree.link.when)) ? screenHref(module, tree.link.screen, get(r, tree.link.idFrom)) : undefined;
+              const add = canAdd && !(tree.add!.unless && get(r, tree.add!.unless)) ? `${screenHref(module, tree.add!.screen)}?${treeAddQuery(tree.add!, r)}` : undefined;
+              return (
+                <tr role="row" key={String(r.id ?? i)} className={`tree-row lv-${Math.min(level, 6)}${hidden.has(i) ? ' is-folded' : ''}${kids ? ' has-kids' : ''}`} data-level={level}>
+                  {ls.columns.map((c, ci) => (
+                    <td role="cell" key={c.key} className={(isNumeric(c.format) ? 'num' : '') + paperClass(c) || undefined} data-label={c.label}>
+                      {ci === indentAt ? (
+                        <span className="tree-cell" style={{ ['--lv' as string]: level - 1 }}>
+                          {kids
+                            ? <button type="button" className="tree-toggle no-print" aria-expanded={open} aria-label={`${open ? 'ย่อ' : 'ขยาย'} ${String(get(r, c.key) ?? '')}`} onClick={() => toggle(i)}><ChevronRight size={14} aria-hidden /></button>
+                            : <span className="tree-leaf" aria-hidden />}
+                          {link ? <Link href={link}><Value value={get(r, c.key)} format={c.format} cell /></Link> : <Value value={get(r, c.key)} format={c.format} cell />}
+                          {add && <Link href={add} className="tree-add no-print" title={`${tree.add!.label}: ${String(get(r, c.key) ?? '')}`}><Plus size={12} aria-hidden />{tree.add!.label}</Link>}
+                        </span>
+                      ) : <Value value={get(r, c.key)} format={c.format} cell />}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function DetailView({ module, screen, id }: { module: string; screen: DetailScreen; id?: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // just created by a form: show the "บันทึกแล้ว" panel once (the flag lives in memory, a reload does not repeat it)
+  const [justSaved, setJustSaved] = useState(() => wasJustSaved(pathname));
+  useEffect(() => { if (justSaved) clearSaved(); }, []);
   const perms = loadSession()?.permissions ?? [];
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
@@ -111,6 +177,8 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
         </div>
       </header>
 
+      {justSaved && <SavedPanel screen={screen} record={record} docNo={docNo} next={actions.filter((a) => a.tone !== 'danger')} onClose={() => setJustSaved(false)} />}
+
       {problems.length > 0 && (
         <div className="print-warning no-print" role="status">
           {problems.map((p) => <p key={p}>{p}</p>)}
@@ -151,6 +219,7 @@ export function DetailView({ module, screen, id }: { module: string; screen: Det
             return <section key={ls.path} className={'detail-lines lines-empty' + paperClass(ls)}><h2>{ls.label}</h2><p className="muted">ไม่มีรายการ</p></section>;
           }
           return (
+            ls.tree ? <TreeLines key={ls.path} module={module} ls={ls} rows={rows} perms={perms} paperClass={paperClass} /> :
             <section key={ls.path} className={'detail-lines' + paperClass(ls)}>
               <h2>{ls.label}</h2>
               <div className="table-wrap stack">

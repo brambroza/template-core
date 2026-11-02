@@ -196,6 +196,13 @@ export default defineUi({
       ],
       create: 'taskNew', createLabel: 'สร้างงาน', rowLink: { screen: 'taskDetail' }, empty: 'ยังไม่มีงาน',
       rowActions: taskActions(false),
+      display: 'board',
+      board: {
+        field: 'status', lanes: taskStatuses,
+        moves: { doing: ['start', 'back'], review: ['review'], done: ['done'], todo: ['reopen'] },
+        card: ['title', 'project_no', 'assignee_name', 'priority', 'due_date', 'overdue', 'hours_logged'],
+        sum: { key: 'estimate_hours', label: 'ประมาณ', format: 'qty', unit: 'ชม.' },
+      },
     },
     taskNew: {
       kind: 'form', title: 'สร้างงาน', method: 'POST', endpoint: '/tasks', perm: 'projects.task.write', mobile: true,

@@ -5,6 +5,13 @@ const item = (label: string): Field => ({
   lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } },
 });
 
+const bomHeader: Field[] = [item('สินค้าที่ผลิต'), { name: 'outputQty', label: 'ผลิตได้ต่อสูตร', type: 'number', default: 1 }];
+// a component that has its own BOM is a sub-assembly: the detail screen shows its levels underneath (no limit on depth)
+const bomLines = {
+  name: 'lines', label: 'ส่วนประกอบ (ชิ้นส่วนย่อยที่มีสูตรของตัวเองจะแตกระดับให้อัตโนมัติ)', min: 1,
+  fields: [item('ส่วนประกอบ'), { name: 'qty', label: 'ใช้ต่อสูตร', type: 'number', required: true, step: 0.000001 }, { name: 'scrapPct', label: 'เผื่อเสีย %', type: 'number', default: 0 }] as Field[],
+};
+
 export default defineUi({
   module: 'production',
   label: 'วางแผนการผลิต',
@@ -28,6 +35,14 @@ export default defineUi({
         { key: 'completed_qty', label: 'ผลิตแล้ว', format: 'qty' }, { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'status', label: 'สถานะ', format: 'status' },
       ],
       create: 'moNew', createLabel: 'สร้างใบสั่งผลิต', rowLink: { screen: 'moDetail' }, empty: 'ยังไม่มีใบสั่งผลิต ต้องมีสูตรการผลิตของสินค้าก่อน',
+      display: 'board',
+      board: {
+        field: 'status',
+        lanes: [{ value: 'planned', label: 'วางแผน' }, { value: 'released', label: 'ปล่อยงาน' }, { value: 'completed', label: 'ผลิตเสร็จ' }, { value: 'cancelled', label: 'ยกเลิก' }],
+        moves: { released: ['release'], completed: ['complete'], cancelled: ['cancel'] },
+        sum: { key: 'qty', label: 'รวม', format: 'qty', unit: 'หน่วย' },
+        collapsed: ['cancelled'],
+      },
     },
     moNew: {
       kind: 'form', title: 'สร้างใบสั่งผลิต', method: 'POST', endpoint: '/orders', perm: 'production.order.write',
@@ -57,22 +72,51 @@ export default defineUi({
     },
     bomList: {
       kind: 'list', title: 'สูตรการผลิต (BOM)', endpoint: '/boms', perm: 'production.bom.read',
-      columns: [{ key: 'item_code', label: 'สินค้า' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'output_qty', label: 'ผลิตได้ต่อสูตร', format: 'qty' }, { key: 'updated_at', label: 'แก้ไขล่าสุด', format: 'datetime' }],
-      create: 'bomEdit', createLabel: 'สร้าง/แก้ไขสูตร', rowLink: { screen: 'bomDetail', idFrom: 'item_id' }, empty: 'ยังไม่มีสูตรการผลิต',
+      filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อสินค้า', type: 'text' }],
+      columns: [
+        { key: 'item_code', label: 'สินค้า' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'role_label', label: 'ประเภท' },
+        { key: 'levels', label: 'จำนวนระดับ', format: 'qty' }, { key: 'components', label: 'ส่วนประกอบตรง', format: 'qty' },
+        { key: 'output_qty', label: 'ผลิตได้ต่อสูตร', format: 'qty' }, { key: 'updated_at', label: 'แก้ไขล่าสุด', format: 'datetime', phone: false },
+      ],
+      create: 'bomEdit', createLabel: 'สร้างสูตร', rowLink: { screen: 'bomDetail', idFrom: 'item_id' }, empty: 'ยังไม่มีสูตรการผลิต',
     },
     bomDetail: {
-      kind: 'detail', title: 'สูตรการผลิต', endpoint: '/boms/:itemId', perm: 'production.bom.read', heading: 'item_code',
-      fields: [{ key: 'item_name', label: 'สินค้า' }, { key: 'output_qty', label: 'ผลิตได้ต่อสูตร', format: 'qty' }],
-      lines: [{ path: 'lines', label: 'ส่วนประกอบ', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'ใช้', format: 'qty' }, { key: 'scrap_pct', label: 'เผื่อเสีย', format: 'percent' }] }],
+      kind: 'detail', title: 'สูตรการผลิต', endpoint: '/boms/:itemId', perm: 'production.bom.read', heading: 'item_code', edit: 'bomChange', printable: true,
+      fields: [{ key: 'item_name', label: 'สินค้า' }, { key: 'output_qty', label: 'ผลิตได้ต่อสูตร', format: 'qty' }, { key: 'levels', label: 'จำนวนระดับ', format: 'qty' }],
+      lines: [
+        {
+          path: 'tree', label: 'โครงสร้างสินค้า (ทุกระดับ)',
+          tree: {
+            level: 'level',
+            link: { screen: 'bomDetail', idFrom: 'item_id', when: 'has_bom' },
+            add: { screen: 'bomEdit', label: 'สร้างสูตรย่อย', unless: 'has_bom', perm: 'production.bom.write',
+              prefill: { itemId: 'item_id', itemCode: 'item_code', itemName: 'item_name' }, labels: { itemId: ['item_code', 'item_name'] } },
+          },
+          columns: [
+            { key: 'item_code', label: 'รหัส', indent: true }, { key: 'item_name', label: 'ชื่อ' }, { key: 'source_label', label: 'ที่มา' },
+            { key: 'qty_per', label: 'ใช้ต่อสูตรแม่', format: 'qty' }, { key: 'scrap_pct', label: 'เผื่อเสีย', format: 'percent' },
+            { key: 'qty', label: 'ใช้รวมต่อ 1 สูตร', format: 'qty' },
+          ],
+        },
+        { path: 'requirements', label: 'วัตถุดิบรวมทุกระดับ (ต่อ 1 สูตร)', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'จำนวนรวม', format: 'qty' }] },
+        {
+          path: 'used_in', label: 'ใช้เป็นส่วนประกอบใน', print: false,
+          tree: { level: 'level', link: { screen: 'bomDetail', idFrom: 'item_id' } },
+          columns: [{ key: 'item_code', label: 'สินค้า', indent: true }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty_per', label: 'ใช้ต่อสูตร', format: 'qty' }],
+        },
+      ],
     },
     bomEdit: {
-      kind: 'form', title: 'สร้างหรือแก้ไขสูตรการผลิต', method: 'PUT', endpoint: '/boms', perm: 'production.bom.write',
-      fields: [item('สินค้าที่ผลิต'), { name: 'outputQty', label: 'ผลิตได้ต่อสูตร', type: 'number', default: 1 }],
-      lines: {
-        name: 'lines', label: 'ส่วนประกอบ', min: 1,
-        fields: [item('ส่วนประกอบ'), { name: 'qty', label: 'ใช้ต่อสูตร', type: 'number', required: true, step: 0.000001 }, { name: 'scrapPct', label: 'เผื่อเสีย %', type: 'number', default: 0 }],
-      },
+      kind: 'form', title: 'สร้างสูตรการผลิต', method: 'PUT', endpoint: '/boms', perm: 'production.bom.write',
+      fields: bomHeader,
+      lines: bomLines,
       submitLabel: 'บันทึกสูตร', after: { screen: 'bomDetail', idFrom: 'item_id' },
+    },
+    bomChange: {
+      kind: 'form', title: 'แก้ไขสูตรการผลิต', method: 'PUT', endpoint: '/boms', load: '/boms/:itemId', perm: 'production.bom.write',
+      fields: bomHeader,
+      lines: bomLines,
+      submitLabel: 'บันทึกการแก้ไข', after: { screen: 'bomDetail', idFrom: 'item_id' },
     },
   },
   widgets: [

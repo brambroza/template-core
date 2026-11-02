@@ -2,7 +2,16 @@
 
 /**
  * Motion — every animation in the app goes through here so it is consistent and can be turned off.
- * GSAP runs only in the browser; with prefers-reduced-motion everything snaps to its end state.
+ * With prefers-reduced-motion everything snaps to its end state (GSAP helpers check `reducedMotion()`,
+ * Motion components get `<MotionConfig reducedMotion="user">` from the app layout).
+ *
+ * Who animates what (docs/ui.md → "Motion และลูกเล่น"):
+ *   CSS     hover / press / focus, colour and shadow changes — no JavaScript
+ *   Motion  anything tied to React state: enter / exit (AnimatePresence), cards moving between lanes (`layout`),
+ *           a highlight that slides to the selected item (`layoutId`), dialogs and sheets — springs from `SPRING`
+ *   GSAP    choreography on existing DOM: page entrance, list stagger, count-up numbers, bars, the flow stepper,
+ *           "AI filled these fields" — timelines from the helpers below
+ * Only transform and opacity (and filter: blur for entrances) are animated; nothing runs longer than ~0.9 s.
  */
 import gsap from 'gsap';
 import { useLayoutEffect, useEffect, type RefObject } from 'react';
@@ -45,3 +54,39 @@ export function enterPage(el: HTMLElement) {
 }
 
 export { gsap };
+
+/** Motion springs and transitions shared by every component (import these, don't invent new curves). */
+export const SPRING = {
+  /** cards, highlights, panels — quick with a little settle */
+  snappy: { type: 'spring', stiffness: 520, damping: 38, mass: 0.8 },
+  /** sheets and dialogs coming in */
+  soft: { type: 'spring', stiffness: 300, damping: 30 },
+  /** a check mark or a badge popping in */
+  pop: { type: 'spring', stiffness: 600, damping: 20 },
+} as const;
+
+/**
+ * Motion variants for a staggered "blur in" of a panel's children (the success panel, detail facts):
+ * parent `variants={STAGGER.parent}` initial="hidden" animate="show", each child `variants={STAGGER.item}`.
+ */
+export const STAGGER = {
+  parent: { hidden: {}, show: { transition: { staggerChildren: 0.05, delayChildren: 0.08 } } },
+  item: {
+    hidden: { opacity: 0, y: 8, filter: 'blur(6px)' },
+    show: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] } },
+  },
+} as const;
+
+/**
+ * "AI filled these": a soft violet glow runs down the inputs the AI just filled, one after another, then fades.
+ * Pass the inputs in reading order (FormView finds them by `[data-field]` / `tr[data-line]`).
+ */
+export function aiFilledGlow(inputs: HTMLElement[]) {
+  if (!inputs.length || reducedMotion()) return;
+  gsap.fromTo(inputs,
+    { boxShadow: '0 0 0 0 rgba(139, 92, 246, 0)', backgroundColor: 'rgba(139, 92, 246, 0)' },
+    { keyframes: [
+      { boxShadow: '0 0 0 4px rgba(139, 92, 246, .30)', backgroundColor: 'rgba(139, 92, 246, .09)', duration: 0.28, ease: 'power2.out' },
+      { boxShadow: '0 0 0 0 rgba(139, 92, 246, 0)', backgroundColor: 'rgba(139, 92, 246, 0)', duration: 1, ease: 'power2.inOut' },
+    ], stagger: 0.07, clearProps: 'boxShadow,backgroundColor' });
+}

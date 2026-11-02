@@ -1,6 +1,6 @@
 'use client';
 
-import { FileImage, FileSpreadsheet, FileText, File as FileIcon, Paperclip, Trash2, Download, ExternalLink, Upload } from 'lucide-react';
+import { Camera, FileImage, FileSpreadsheet, FileText, File as FileIcon, Paperclip, Trash2, Download, ExternalLink, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, attachmentRef, fileKind, formatBytes, formatDate, hasPerm,
@@ -23,7 +23,7 @@ async function fetchBlob(module: string, id: string): Promise<Blob> {
   return res.blob();
 }
 
-function readBase64(file: File): Promise<string> {
+export function readBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
@@ -32,8 +32,31 @@ function readBase64(file: File): Promise<string> {
   });
 }
 
+/**
+ * Phone photos are 3–8 MB: shrink big images to ≤ 2000 px on the long side as JPEG (≈ 0.3–0.8 MB) before they are sent, so a
+ * photo never trips the 5 MB limit (or Vercel's 4.5 MB request cap). Small images, PDFs and anything the browser cannot decode
+ * (HEIC on some browsers) go as they are.
+ */
+export async function shrinkImage(file: File, maxSide = 2000, quality = 0.82): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1_200_000) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.(png|webp|jpe?g)$/i, '') + '.jpg', { type: 'image/jpeg', lastModified: file.lastModified });
+  } catch {
+    return file;
+  }
+}
+
 /** Problem with a file before it is sent (the server re-checks size, type and content). */
-function precheck(file: File): string | null {
+export function precheck(file: File): string | null {
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase() : '';
   if (!ALLOWED_EXT.has(ext)) return `${file.name}: ไม่รองรับไฟล์ประเภทนี้ (รองรับ ${[...ALLOWED_EXT].join(', ')})`;
   if (file.size > ATTACHMENT_MAX_BYTES) return `${file.name}: ใหญ่เกิน ${formatBytes(ATTACHMENT_MAX_BYTES)} (${formatBytes(file.size)})`;
@@ -67,6 +90,7 @@ export function AttachmentsPanel({ module, spec, recordId }: { module: string; s
   const [denied, setDenied] = useState(false);
   const allowed = hasPerm(perms, spec.perm);
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     api<AttachmentInfo[]>(module, '/_attachments', { query: { ref } }).then((r) => { setFiles(r); setError(''); })
@@ -78,7 +102,10 @@ export function AttachmentsPanel({ module, spec, recordId }: { module: string; s
   if (!allowed || denied) return null;
 
   const upload = async (list: FileList | File[]) => {
-    const all = Array.from(list);
+    setBusy('กำลังเตรียมไฟล์…');
+    // big phone photos are shrunk first, so a 7 MB shot is not refused by the 5 MB check
+    const all = await Promise.all(Array.from(list).map((f) => shrinkImage(f)));
+    setBusy(null);
     const problems = all.map(precheck).filter(Boolean) as string[];
     if (problems.length) toast({ title: 'แนบไฟล์ไม่ได้', body: problems.join('\n'), tone: 'stop' });
     const ok = all.filter((f) => !precheck(f));
@@ -133,10 +160,17 @@ export function AttachmentsPanel({ module, spec, recordId }: { module: string; s
     <section className="detail-lines attachments no-print" aria-label={spec.label ?? 'ไฟล์แนบ'}>
       <div className="att-head">
         <h2><Paperclip size={16} aria-hidden /> {spec.label ?? 'ไฟล์แนบ'}{files && files.length > 0 && <span className="att-count">{files.length}</span>}</h2>
-        <button type="button" className="btn" onClick={() => input.current?.click()} disabled={!!busy}>
-          <Upload size={16} aria-hidden /> แนบไฟล์
-        </button>
-        <input ref={input} type="file" multiple hidden accept={ATTACHMENT_ACCEPT} onChange={(e) => { if (e.target.files?.length) upload(e.target.files); e.target.value = ''; }} />
+        <span className="att-buttons">
+          <button type="button" className="btn" onClick={() => camera.current?.click()} disabled={!!busy}>
+            <Camera size={16} aria-hidden /> ถ่ายรูป
+          </button>
+          <button type="button" className="btn" onClick={() => input.current?.click()} disabled={!!busy}>
+            <Upload size={16} aria-hidden /> แนบไฟล์
+          </button>
+        </span>
+        <input ref={input} type="file" multiple hidden accept={ATTACHMENT_ACCEPT} data-testid="attach-input" onChange={(e) => { if (e.target.files?.length) upload(e.target.files); e.target.value = ''; }} />
+        {/* phones: straight to the camera (photo after the repair, a damaged delivery…); desktops get an image chooser */}
+        <input ref={camera} type="file" hidden accept="image/*" capture="environment" data-testid="attach-camera" onChange={(e) => { if (e.target.files?.length) upload(e.target.files); e.target.value = ''; }} />
       </div>
       <div
         className={`att-drop${over ? ' over' : ''}`}

@@ -105,6 +105,10 @@ export default defineUi({
         { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
       ],
       submitLabel: 'บันทึกทรัพย์สิน', after: { screen: 'assetDetail', idFrom: 'id' },
+      aiFill: {
+        kind: 'receipt', label: 'อ่านใบกำกับที่ซื้อ',
+        hint: 'ใบกำกับภาษี/ใบเสร็จที่ซื้อทรัพย์สิน (คอมพิวเตอร์ เครื่องจักร เฟอร์นิเจอร์ ยานพาหนะ): ชื่อทรัพย์สิน, ยี่ห้อ, รุ่น, Serial No. ถ้ามี, วันที่ซื้อ = วันที่เอกสาร, ราคาทุน = ราคาก่อน VAT ถ้าแยก VAT ไว้, ผู้ขาย = ร้านที่ออกเอกสาร, ประกันถึง ถ้าระบุ; หมวดเลือกจากรายการเท่านั้น',
+      },
     },
     assetEdit: {
       kind: 'form', title: 'แก้ไขทรัพย์สิน', method: 'PATCH', endpoint: '/assets/:id', load: '/assets/:id', perm: 'assets.asset.write',

@@ -174,6 +174,10 @@ export default defineUi({
         ],
       },
       submitLabel: 'สร้างใบสั่งขาย', after: { screen: 'soDetail', idFrom: 'id' },
+      aiFill: {
+        kind: 'document', label: 'สร้างจาก PO ลูกค้า',
+        hint: 'ใบสั่งซื้อ (PO) ที่ลูกค้าส่งมา: ลูกค้า = บริษัทที่ออก PO (ผู้ซื้อ ไม่ใช่เรา), เลขอ้างอิง = เลขที่ PO ของลูกค้า, รายการ = สินค้าที่สั่งพร้อมจำนวนและราคาต่อหน่วย; รหัสสินค้าของลูกค้าอาจไม่ตรงกับของเรา ให้เขียนรหัสและชื่อตามเอกสาร',
+      },
     },
     soDetail: {
       kind: 'detail', title: 'ใบสั่งขาย', endpoint: '/orders/:id', perm: 'sales.order.read', heading: 'no', mobile: true,

@@ -3,16 +3,24 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
-import { useReveal } from '@/lib/motion';
+import { CheckCircle2, AlertTriangle, Download, SquareKanban, Printer, SlidersHorizontal, Table2 } from 'lucide-react';
+import { motion } from 'motion/react';
+import { SPRING, useReveal } from '@/lib/motion';
 import {
-  columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
+  columnTotals, fillPath, paginate, PAGE_SIZES, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
   type CompanyProfile, type Field, type ListScreen,
 } from '@erp/ui-schema';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
+import { readPref, writePref } from '@/lib/prefs';
+import { useRegistry } from '@/lib/registry';
+import { BoardView } from './BoardView';
+import { Pager } from './Pager';
+import { DropOverlay, useFileDrop } from './AiFill';
+import { enqueue, readable } from '@/lib/ai-queue';
+import { toast } from '@/lib/toast';
 import { ActionButton } from './ActionButton';
 import { DateRangeInput, FieldInput, type Values } from './Fields';
 import { loadCompany } from './print/company';
@@ -20,6 +28,9 @@ import { Letterhead } from './print/PrintParts';
 import { ImportButton } from './ImportButton';
 import { isNumeric, isWideColumn, LabelsContext, Value } from './Value';
 import { AiSpark, isAiModule } from './Brand';
+
+/** Rows a list asks the API for (the API's own maximum); more than this = narrow with filters. */
+const LIST_LIMIT = 500;
 
 /** "ประเภท: วัตถุดิบ · ค้นหา: เหล็ก" — the active filters, printed above the list. */
 function filterSummary(fields: Field[], values: Values): string {
@@ -42,6 +53,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [filters, setFilters] = useState<Values>(() => Object.fromEntries([...search.entries()]));
   /** the query string this list last wrote to the URL, so our own replace() is not read back as a new filter */
   const written = useRef(filtersToQuery(filters));
+  /** the filters of the last load: a new filter starts again at page 1, a refresh keeps the page */
+  const lastQuery = useRef(written.current);
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
   /** the whole response, for a report's period title and balance check */
   const [res, setRes] = useState<unknown>(null);
@@ -53,14 +66,64 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [moreFilters, setMoreFilters] = useState(false);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
-  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
+  // kanban: board by default, the person may switch to the table (remembered per list)
+  const { ui } = useRegistry();
+  const prefKey = `view.${module}.${screen.endpoint}`;
+  const [asTable, setAsTable] = useState(false);
+  useEffect(() => { if (screen.board) setAsTable(readPref<string>(prefKey, 'board') === 'table'); }, [prefKey]);
+  const isBoard = screen.display === 'board' && !!screen.board && !asTable;
+  const switchView = (table: boolean) => { setAsTable(table); writePref(prefKey, table ? 'table' : 'board'); };
+  // "สร้างจากเอกสาร": the create form reads documents with AI → pick or drop files here, the form works through them
+  const createForm = screen.create ? ui(module)?.screens[screen.create] : undefined;
+  const aiCreate = createForm?.kind === 'form' && createForm.aiFill && hasPerm(perms, createForm.perm) ? createForm.aiFill : undefined;
+  const docInput = useRef<HTMLInputElement>(null);
+  const startFromDocs = (picked: File[]) => {
+    const { ok, skipped } = readable(picked);
+    if (!ok.length) { toast({ title: 'รองรับรูป JPG / PNG / WEBP หรือ PDF', tone: 'warn' }); return; }
+    if (skipped) toast({ title: `ข้าม ${skipped} ไฟล์ที่ไม่ใช่รูปหรือ PDF`, tone: 'warn' });
+    enqueue(module, screen.create!, ok);
+    router.push(`${screenHref(module, screen.create!)}?ai=next`);
+  };
+  const drop = useFileDrop(!!aiCreate, startFromDocs);
+  // pages: the list loads every row the API gives (up to LIST_LIMIT) and shows them a page at a time; reports and boards are never paged
+  const paged = !screen.report && screen.display !== 'board';
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState<number>(PAGE_SIZES[0]);
+  useEffect(() => { const n = readPref<number>('page-size', PAGE_SIZES[0]); if ((PAGE_SIZES as readonly number[]).includes(n)) setSize(n); }, []);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const on = () => setPrinting(true);
+    const off = () => setPrinting(false);
+    window.addEventListener('beforeprint', on);
+    window.addEventListener('afterprint', off);
+    return () => { window.removeEventListener('beforeprint', on); window.removeEventListener('afterprint', off); };
+  }, []);
+  const pg = paginate(rows?.length ?? 0, page, size);
+  /** the rows on screen: one page, or every row when printing / for reports */
+  const shown = rows && paged && !printing ? rows.slice(pg.start, pg.end) : rows;
+  const goPage = (n: number) => {
+    setPage(n);
+    tableRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1, pg.page, size]);
 
   const load = useCallback(async () => {
     try {
       setError('');
-      const r = await api(module, fillPath(screen.endpoint, params), { query: filters });
+      const limit = screen.board ? String(screen.board.limit ?? 200) : screen.report ? undefined : String(LIST_LIMIT);
+      const query = limit && !filters.limit ? { ...filters, limit } : filters;
+      let r: unknown;
+      try {
+        r = await api(module, fillPath(screen.endpoint, params), { query });
+      } catch (e) {
+        // an endpoint with a smaller cap (or none) refuses limit=500: ask with its own default instead
+        if (!(e instanceof ApiError && e.status === 400 && query !== filters)) throw e;
+        r = await api(module, fillPath(screen.endpoint, params), { query: filters });
+      }
       setRes(r);
       setRows(listRows(screen, r));
+      setPage((p) => (written.current === lastQuery.current ? p : 1));
+      lastQuery.current = written.current;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
       setRows([]);
@@ -128,7 +191,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   );
 
   return (
-    <div className={`screen${report ? ' report print-doc' : ''}${isAiModule(module) ? ' is-ai' : ''}`}>
+    <div className={`screen${report ? ' report print-doc' : ''}${isAiModule(module) ? ' is-ai' : ''}${aiCreate ? ' has-drop' : ''}`} {...drop.props}>
+      {aiCreate && <DropOverlay show={drop.over} label={`วางรูปหรือ PDF เพื่อ${aiCreate.label} — หลายไฟล์ได้`} />}
       {report && <Letterhead company={company} title={screen.title} docNo="" subtitle={subtitle} />}
       <header className="screen-head">
         <div>
@@ -136,6 +200,18 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {subtitle && <p className="report-period">{subtitle}</p>}
         </div>
         <div className="screen-actions no-print">
+          {screen.display === 'board' && screen.board && (
+            <div className="view-switch" role="group" aria-label="มุมมอง">
+              <button type="button" className={isBoard ? 'is-on' : ''} aria-pressed={isBoard} onClick={() => switchView(false)}>
+                {isBoard && <motion.span layoutId="view-pill" className="view-pill" transition={SPRING.snappy} aria-hidden />}
+                <SquareKanban size={16} aria-hidden /> บอร์ด
+              </button>
+              <button type="button" className={!isBoard ? 'is-on' : ''} aria-pressed={!isBoard} onClick={() => switchView(true)}>
+                {!isBoard && <motion.span layoutId="view-pill" className="view-pill" transition={SPRING.snappy} aria-hidden />}
+                <Table2 size={16} aria-hidden /> ตาราง
+              </button>
+            </div>
+          )}
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">
             <Download size={16} aria-hidden /> ส่งออก CSV
           </button>
@@ -148,6 +224,15 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {headActions.map((a) => (
             <ActionButton key={a.id} action={a} module={module} params={params} onDone={() => setTick((t) => t + 1)} />
           ))}
+          {aiCreate && (
+            <>
+              <input ref={docInput} type="file" accept="image/*,application/pdf" multiple hidden aria-hidden tabIndex={-1}
+                onChange={(e) => { const f = [...(e.target.files ?? [])]; e.target.value = ''; if (f.length) startFromDocs(f); }} />
+              <button type="button" className="btn-ai" onClick={() => docInput.current?.click()} title="เลือกหรือลากรูป / PDF มาวางบนหน้านี้ — หลายไฟล์ได้ ระบบเปิดให้ตรวจทีละฉบับ">
+                <AiSpark size={16} /> {aiCreate.label}
+              </button>
+            </>
+          )}
           {screen.create && <Link className="btn-primary" href={screenHref(module, screen.create)}>{screen.createLabel ?? 'สร้างใหม่'}</Link>}
         </div>
       </header>
@@ -180,11 +265,16 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </p>
       )}
 
-      {screen.display === 'cards' ? (
+      {isBoard ? (
+        <div ref={tableRef}>
+          {rows === null && <p className="muted">กำลังโหลด…</p>}
+          {rows !== null && <BoardView module={module} ui={ui(module)} screen={screen} rows={rows} onChanged={() => setTick((t) => t + 1)} />}
+        </div>
+      ) : screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
-          {rows?.map((row, i) => {
+          {shown?.map((row, i) => {
             const href = rowHref(row);
             const [head, body, ...facts] = screen.columns;
             return (
@@ -217,17 +307,17 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           <tbody role="rowgroup">
             {rows === null && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
             {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
-            {rows?.map((row, i) => {
+            {shown?.map((row, i) => {
               const href = rowHref(row);
               const style = reportRowStyle(report, row);
               const level = report ? reportIndent(report, row) : 0;
-              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(rows, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
+              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(shown!, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
               const cls = [href ? 'is-link' : '', style ? `r-${style}` : ''].filter(Boolean).join(' ') || undefined;
               return (
                 <tr role="row" key={report ? i : String(row.id ?? i)} className={cls} onClick={href ? () => router.push(href) : undefined}>
                   {screen.columns.map((c, ci) => {
                     const raw = get(row, c.key);
-                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(rows, i, c.key))
+                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(shown!, i, c.key))
                       || (!!report && (raw === null || raw === undefined || raw === ''));
                     const v = <Value value={get(row, c.key)} format={c.format} max={6} cell />;
                     return (
@@ -252,7 +342,11 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && !report && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
+      {rows !== null && rows.length > 0 && !report && !isBoard && (
+        <Pager total={rows.length} page={pg.page} size={size} capped={rows.length >= LIST_LIMIT}
+          onPage={goPage} onSize={(n) => { setSize(n); setPage(1); writePref('page-size', n); }} />
+      )}
+      {rows !== null && rows.length > 0 && isBoard && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
     </div>
   );
 }

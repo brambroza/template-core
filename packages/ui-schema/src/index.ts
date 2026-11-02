@@ -142,8 +142,14 @@ export interface ListScreen extends ScreenBase {
   endpoint: string;
   /** path of the array inside the response when it is not the response itself, e.g. "items" */
   rows?: string;
-  /** 'cards': a grid of cards (first column = title, second = text, the rest as small facts) — for galleries */
-  display?: 'table' | 'cards';
+  /**
+   * 'cards': a grid of cards (first column = title, second = text, the rest as small facts) — for galleries.
+   * 'board': a kanban board (needs `board`): one lane per status, cards dragged between lanes run the module's own actions.
+   * The person can still switch a board to the table (web remembers the choice).
+   */
+  display?: 'table' | 'cards' | 'board';
+  /** kanban lanes and drag moves when `display: 'board'` — see BoardSpec */
+  board?: BoardSpec;
   columns: Column[];
   filters?: Field[];
   /** screen id of the create form */
@@ -161,6 +167,38 @@ export interface ListScreen extends ScreenBase {
   report?: ReportSpec;
   empty?: string;
 }
+
+/**
+ * A list drawn as a kanban board. Cards are grouped by the record field `field` into `lanes` (in order; records whose
+ * value is in no lane are not shown). Card = the list's columns: the first is the title (links to `rowLink`), the second
+ * a subtitle, the rest small facts; the lane field itself is left out.
+ *
+ * Dragging a card to another lane does NOT write the status: it runs an action that already exists on the row's detail
+ * screen (`rowLink.screen`), named in `moves` — e.g. `moves: { in_progress: ['start'], resolved: ['resolve'] }`. The first
+ * listed action whose `when` matches the card and whose `perm` the user has is run, with its confirmation / input dialog,
+ * so every business rule (segregation of duties, required reasons, stock checks) stays on the server. Lanes no move
+ * can reach for that card are shown as closed while it is dragged.
+ */
+export interface BoardSpec {
+  /** record field that picks the lane, usually `status` or `stage` */
+  field: string;
+  lanes: { value: string; label: string }[];
+  /**
+   * lane value -> actions on the detail screen of `rowLink.screen` that move a card into that lane: an action id, or
+   * `{ action, from }` when the action only lands in this lane from some lanes (a "next stage" action used for several lanes).
+   */
+  moves?: Record<string, BoardMove[]>;
+  /** column keys a card shows, in order: title, subtitle, then small facts (default: all columns in list order) */
+  card?: string[];
+  /** a numeric field summed in each lane header, e.g. the expected value of opportunities */
+  sum?: { key: string; label?: string; format?: Format; /** printed after the number, e.g. "ชม." */ unit?: string };
+  /** lanes shown narrow until a card is dragged over them (finished / lost) */
+  collapsed?: string[];
+  /** rows requested for the board (default 200; the list API caps at 500) */
+  limit?: number;
+}
+
+export type BoardMove = string | { action: string; from: string[] };
 
 /**
  * CSV bulk import on a list screen. `endpoint` is a POST route of this module that accepts
@@ -215,13 +253,62 @@ export interface FormScreen extends ScreenBase {
    * empty fields and lines; the user reviews and presses save. Ignored when AI is not configured. See docs/ai.md.
    */
   aiFill?: AiFillSpec;
+  /**
+   * Photos / files picked on the form itself ("แจ้งซ่อม" with a photo of the breakdown): kept in the browser, then uploaded to the
+   * record the form creates (`after.idFrom`) through the module's kernel `/_attachments`. `entity` must be one the module's
+   * ServiceDefinition `attachments.entities` declares — the same one its detail screen shows.
+   */
+  attach?: FormAttach;
+  /**
+   * A search box above the fields that fills them from an outside register ("พิมพ์ชื่อหรือเลขผู้เสียภาษี แล้วระบบกรอกให้"):
+   * GET `endpoint?q=` of the module itself → `{ results: [...], source? }`; the user picks one and `fill` copies its values.
+   */
+  autofill?: FormAutofill;
 }
+
+export interface FormAutofill {
+  /** GET route of the module, called with `?q=<what the user typed>` */
+  endpoint: string;
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  /** shortest name worth searching (default 3); a 13-digit number is searched as soon as it is complete */
+  minLength?: number;
+  /** result keys shown as the title / second line / right-hand tag of each row */
+  title: string[];
+  subtitle?: string[];
+  tag?: string;
+  /** form field -> result key */
+  fill: Record<string, string>;
+  /** result key holding the code of a record the company already has (shown as "มีในระบบแล้ว: CODE") */
+  existing?: string;
+}
+
+export interface FormAttach {
+  entity: string;
+  /** section title, default "รูปถ่าย / ไฟล์แนบ" */
+  label?: string;
+  /** one line under the title, e.g. "ถ่ายรูปจุดที่เสีย ป้ายเครื่อง หรือแนบคู่มือ" */
+  hint?: string;
+  /** most files will be photos: on phones the first button opens the camera */
+  photos?: boolean;
+  /** at most this many files (default 10) */
+  max?: number;
+}
+
+/** Files a form keeps before its record exists: at most this many by default. */
+export const FORM_ATTACH_MAX = 10;
 
 /** `receipt` = Thai receipt / tax invoice (amount before VAT + VAT); `document` = any other paper the form describes. */
 export interface AiFillSpec {
   kind: 'receipt' | 'document';
   /** button text, e.g. "สแกนใบเสร็จ" */
   label: string;
+  /**
+   * what the paper usually is and how to read it, for the AI (Thai), e.g.
+   * "ใบเสนอราคา/ใบแจ้งราคาจากผู้ขาย: ผู้ขาย = บริษัทที่ออกเอกสาร, รายการ = สินค้าที่เสนอพร้อมจำนวนและราคาต่อหน่วย"
+   */
+  hint?: string;
 }
 
 /** The happy path of a document's status, drawn as a 2D stepper on its detail screen. */
@@ -232,6 +319,22 @@ export interface StatusFlow {
   exits?: { value: string; label: string }[];
 }
 
+/**
+ * Detail lines drawn as a tree: rows arrive depth first with a level (1 = directly under the record). Columns with `indent: true`
+ * are indented by level; a row with deeper rows below it folds/unfolds them. Used by the multi-level BOM.
+ */
+export interface LinesTree {
+  /** row field holding the depth, 1 = top */
+  level: string;
+  /** open the row's own record (e.g. a sub-assembly's BOM) — only when the row's `when` field is truthy */
+  link?: { screen: string; idFrom: string; when?: string };
+  /**
+   * a quiet "+ label" link on rows whose `unless` field is falsy: opens `screen` (a form) prefilled from the row.
+   * `prefill`: form field -> row key · `labels`: lookup field -> row keys shown as its chosen text
+   */
+  add?: { screen: string; label: string; unless?: string; perm?: string; prefill: Record<string, string>; labels?: Record<string, string[]> };
+}
+
 export interface DetailScreen extends ScreenBase {
   kind: 'detail';
   endpoint: string;
@@ -240,7 +343,7 @@ export interface DetailScreen extends ScreenBase {
   flow?: StatusFlow;
   fields: Column[];
   /** `half: true` sections sit side by side in pairs on wide screens and paper (earnings | deductions on a payslip) */
-  lines?: { path: string; label: string; columns: Column[]; half?: boolean; /** `false`: screen only (payments received on an invoice) */ print?: boolean }[];
+  lines?: { path: string; label: string; columns: Column[]; half?: boolean; /** `false`: screen only (payments received on an invoice) */ print?: boolean; /** draw as an indented, foldable tree (multi-level BOM) */ tree?: LinesTree }[];
   actions?: Action[];
   edit?: string;
   /** shorthand for `print: {}` — printable with the default layout */
@@ -743,6 +846,7 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
     } else if (s.kind === 'form') {
       out.push({ module: ui.module, method: s.method, path: s.endpoint, where });
       if (s.load) out.push({ module: ui.module, method: 'GET', path: s.load, where: `${where}.load` });
+      if (s.autofill) out.push({ module: ui.module, method: 'GET', path: s.autofill.endpoint, where: `${where}.autofill` });
       lookups(s.fields, where);
       lookups(s.lines?.fields, `${where}.lines`);
     } else {
@@ -775,6 +879,10 @@ export function brokenLinks(ui: ModuleUi): string[] {
       }
     }
   }
+  for (const [id, s] of Object.entries(ui.screens)) if (s.kind === 'list') problems.push(...boardProblems(ui, id, s));
+  for (const [id, s] of Object.entries(ui.screens)) {
+    if (s.kind === 'form' && s.attach && !s.after?.idFrom) problems.push(`${ui.module}: ${id}.attach needs after.idFrom (the id of the record the files belong to)`);
+  }
   return [...problems, ...brokenScreenLinks(ui)];
 }
 
@@ -790,6 +898,10 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if (s.kind === 'form' && s.after) refs.push([s.after.screen, `${id}.after`]);
     if (s.kind === 'detail') {
       if (s.edit) refs.push([s.edit, `${id}.edit`]);
+      for (const ls of s.lines ?? []) {
+        if (ls.tree?.link) refs.push([ls.tree.link.screen, `${id}.lines.${ls.path}.tree.link`]);
+        if (ls.tree?.add) refs.push([ls.tree.add.screen, `${id}.lines.${ls.path}.tree.add`]);
+      }
       s.actions?.forEach((a) => a.then && refs.push([a.then.screen, `${id}.${a.id}.then`]));
     }
   }
@@ -800,6 +912,77 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if ((w.kind === 'pipeline' || w.kind === 'floor3d') && w.link) refs.push([w.link.screen, `widget.${w.id}.link`]);
   }
   return refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`);
+}
+
+/* ---------------- kanban boards (ListScreen display 'board') ---------------- */
+
+/** Rows per lane, in lane order; a row whose field matches no lane is dropped. */
+export function boardLanes<T>(board: BoardSpec, rows: T[]): { value: string; label: string; rows: T[]; sum: number }[] {
+  return board.lanes.map((l) => {
+    const inLane = rows.filter((r) => String(get(r, board.field) ?? '') === l.value);
+    const sum = board.sum ? inLane.reduce((t, r) => t + (Number(get(r, board.sum!.key)) || 0), 0) : 0;
+    return { ...l, rows: inLane, sum };
+  });
+}
+
+export interface ResolvedMove { action: Action; from?: string[] }
+const moveId = (m: BoardMove) => (typeof m === 'string' ? m : m.action);
+
+/** The columns a board card shows: `board.card` order, else the list's columns; the lane field is left out. */
+export function boardCardColumns(screen: ListScreen): Column[] {
+  const b = screen.board;
+  const cols = b?.card ? b.card.map((k) => screen.columns.find((c) => c.key === k)!).filter(Boolean) : screen.columns;
+  return cols.filter((c) => c.key !== b?.field);
+}
+
+/** The actions a board's drag moves run, per target lane, resolved from the row detail screen (`rowLink.screen`). */
+export function boardMoves(ui: Pick<ModuleUi, 'screens'>, screen: ListScreen): Record<string, ResolvedMove[]> {
+  const board = screen.board;
+  if (!board?.moves) return {};
+  const detail = screen.rowLink ? ui.screens[screen.rowLink.screen] : undefined;
+  const actions = detail?.kind === 'detail' ? detail.actions ?? [] : [];
+  return Object.fromEntries(Object.entries(board.moves).map(([to, list]) => [to, list.flatMap((m) => {
+    const action = actions.find((a) => a.id === moveId(m));
+    return action ? [{ action, ...(typeof m === 'string' ? {} : { from: m.from }) }] : [];
+  })]));
+}
+
+/** The action that moves this card to lane `to` for a user with `perms`, or null (not allowed / not a move). */
+export function pickMove(moves: Record<string, ResolvedMove[]>, row: unknown, to: string, perms: string[], field: string): Action | null {
+  const at = String(get(row, field) ?? '');
+  if (at === to) return null;
+  return (moves[to] ?? []).find((m) => (!m.from || m.from.includes(at)) && matches(row, m.action.when) && hasPerm(perms, m.action.perm))?.action ?? null;
+}
+
+/** Board mistakes `brokenLinks` reports: unknown lanes in moves, moves that are not detail actions on the lane field, … */
+export function boardProblems(ui: ModuleUi, id: string, screen: ListScreen): string[] {
+  const b = screen.board;
+  const at = `${ui.module}: ${id}.board`;
+  if (screen.display !== 'board') return b ? [`${at} is set but display is not 'board'`] : [];
+  if (!b) return [`${ui.module}: ${id} has display 'board' but no board`];
+  const out: string[] = [];
+  const lanes = b.lanes.map((l) => l.value);
+  if (!lanes.length) out.push(`${at} has no lanes`);
+  if (new Set(lanes).size !== lanes.length) out.push(`${at} declares a lane twice`);
+  for (const c of b.collapsed ?? []) if (!lanes.includes(c)) out.push(`${at}.collapsed "${c}" is not a lane`);
+  for (const k of b.card ?? []) if (!screen.columns.some((c) => c.key === k)) out.push(`${at}.card "${k}" is not a column of the list`);
+  if (b.moves) {
+    const detail = screen.rowLink ? ui.screens[screen.rowLink.screen] : undefined;
+    if (detail?.kind !== 'detail') out.push(`${at}.moves need rowLink to a detail screen (the actions come from there)`);
+    else {
+      for (const [to, ids] of Object.entries(b.moves)) {
+        if (!lanes.includes(to)) out.push(`${at}.moves "${to}" is not a lane`);
+        for (const m of ids) {
+          const aid = moveId(m);
+          if (typeof m !== 'string') for (const f of m.from) if (!lanes.includes(f)) out.push(`${at}.moves.${to}: from "${f}" is not a lane`);
+          const a = detail.actions?.find((x) => x.id === aid);
+          if (!a) out.push(`${at}.moves.${to}: no action "${aid}" on ${screen.rowLink!.screen}`);
+          else if (a.when?.field !== b.field) out.push(`${at}.moves.${to}: action "${aid}" must have when.field "${b.field}" (a board moves only between lanes)`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /* ---------------- CSV export / import (pure; used by web lists and the import dialog) ---------------- */
@@ -1488,4 +1671,376 @@ export function mergeAiFill(
   filled += added.length;
   const lines = added.length ? [...kept, ...added] : current.lines;
   return { values, lines, filled };
+}
+
+/* ---------------- customer extensions (services/<module>/ext/ui.ts) ---------------- */
+
+/**
+ * Screen changes a customer makes in `services/<module>/ext/ui.ts` — without editing the vendor `src/ui.ts`.
+ * `pnpm erp ui-sync` wires `extendUi(vendorUi, extension)` into the web and mobile apps, so the vendor file can be
+ * replaced by an update and the customer's columns, fields, buttons and screens stay.
+ *
+ * ```ts
+ * export default defineUiExtension({
+ *   module: 'purchasing',
+ *   patch: {
+ *     poList:   { columns: [{ key: 'x_budget_code', label: 'รหัสงบ' }], after: 'supplier_name' },
+ *     poDetail: { fields: [{ key: 'x_budget_code', label: 'รหัสงบ' }],
+ *                 actions: [{ id: 'x-budget', label: 'ตั้งรหัสงบ', method: 'POST', endpoint: '/x/purchase-orders/:id/budget', perm: 'purchasing.x_budget.write',
+ *                             fields: [{ name: 'code', label: 'รหัสงบ', type: 'text', required: true }] }] },
+ *   },
+ *   hide: { poList: ['currency'] },
+ * });
+ * ```
+ */
+export interface ScreenPatch {
+  title?: string;
+  perm?: string;
+  mobile?: boolean;
+  /** list: more columns · detail: more facts (Column) · form: more input fields (Field) */
+  columns?: Column[];
+  fields?: (Field | Column)[];
+  /** list: more filters */
+  filters?: Field[];
+  /** list / detail: more buttons */
+  actions?: Action[];
+  /** list: turn the vendor list into a kanban (or back to a table) — `board` as in BoardSpec */
+  display?: ListScreen['display'];
+  board?: BoardSpec;
+  /** form: let AI fill it from a photo / PDF (docs/ai.md) */
+  aiFill?: AiFillSpec;
+  /** list: more row buttons */
+  rowActions?: Action[];
+  /**
+   * where new columns / fields go: after the column `key` / field `name` given here (default: at the end).
+   * Unknown keys are an error — an update that renamed the column must not silently move customer fields.
+   */
+  after?: string;
+}
+
+export interface UiExtension {
+  /** the module this extends — must equal the vendor ui's `module` */
+  module: string;
+  /** new menu entries (appended) */
+  menu?: MenuItem[];
+  /** new screens; ids must not exist in the vendor ui (prefix them, e.g. `xBudgetList`) */
+  screens?: Record<string, Screen>;
+  /** additions to existing screens */
+  patch?: Record<string, ScreenPatch>;
+  /** remove vendor columns / fields / filters / actions from a screen, by column key, field name or action id */
+  hide?: Record<string, string[]>;
+  widgets?: Widget[];
+  commands?: CommandSpec[];
+  search?: SearchSpec[];
+  statusLabels?: Record<string, string>;
+}
+
+export function defineUiExtension(ext: UiExtension): UiExtension {
+  return ext;
+}
+
+const idOf = (x: { key?: string; name?: string; id?: string }) => x.key ?? x.name ?? x.id ?? '';
+
+function insertAfter<T extends { key?: string; name?: string }>(list: T[], items: T[], after: string | undefined, where: string): T[] {
+  if (!items.length) return list;
+  if (after === undefined) return [...list, ...items];
+  const i = list.findIndex((x) => idOf(x) === after);
+  if (i < 0) throw new Error(`${where}: "after: ${after}" — no such column/field on the vendor screen`);
+  return [...list.slice(0, i + 1), ...items, ...list.slice(i + 1)];
+}
+
+function without<T extends { key?: string; name?: string; id?: string }>(list: T[] | undefined, ids: Set<string>, used: Set<string>): T[] | undefined {
+  if (!list) return list;
+  return list.filter((x) => {
+    const hit = ids.has(idOf(x));
+    if (hit) used.add(idOf(x));
+    return !hit;
+  });
+}
+
+/**
+ * Vendor ui + customer extension = the ui the apps render. Throws (at `ui-sync` / test time, never silently) when the
+ * extension points at screens, columns or ids the vendor ui no longer has, or reuses a vendor screen id.
+ */
+export function extendUi(base: ModuleUi, ext?: UiExtension | null): ModuleUi {
+  if (!ext) return base;
+  const where = `${base.module} ext/ui.ts`;
+  if (ext.module !== base.module) throw new Error(`${where}: module is "${ext.module}", expected "${base.module}"`);
+  const screens: Record<string, Screen> = { ...base.screens };
+
+  for (const [sid, p] of Object.entries(ext.patch ?? {})) {
+    const s = screens[sid];
+    if (!s) throw new Error(`${where}: patch "${sid}" — the vendor ui has no such screen`);
+    const at = `${where} patch.${sid}`;
+    const next: any = { ...s };
+    if (p.title) next.title = p.title;
+    if (p.perm) next.perm = p.perm;
+    if (p.mobile !== undefined) next.mobile = p.mobile;
+    if ((p.display || p.board) && s.kind !== 'list') throw new Error(`${at}: display/board apply to list screens only`);
+    if (p.aiFill && s.kind !== 'form') throw new Error(`${at}: aiFill applies to form screens only`);
+    if (p.display) next.display = p.display;
+    if (p.board) next.board = p.board;
+    if (p.aiFill) next.aiFill = p.aiFill;
+    if (s.kind === 'list') {
+      next.columns = insertAfter(s.columns, [...(p.columns ?? []), ...((p.fields ?? []) as Column[])], p.after, at);
+      if (p.filters) next.filters = [...(s.filters ?? []), ...p.filters];
+      if (p.actions) next.actions = [...(s.actions ?? []), ...p.actions];
+      if (p.rowActions) next.rowActions = [...(s.rowActions ?? []), ...p.rowActions];
+    } else if (s.kind === 'detail') {
+      next.fields = insertAfter(s.fields, [...(p.columns ?? []), ...((p.fields ?? []) as Column[])], p.after, at);
+      if (p.actions) next.actions = [...(s.actions ?? []), ...p.actions];
+      if (p.filters || p.rowActions) throw new Error(`${at}: a detail screen has no filters/rowActions`);
+    } else {
+      if (p.columns || p.filters || p.actions || p.rowActions) throw new Error(`${at}: a form screen takes only "fields" (and "aiFill")`);
+      next.fields = insertAfter(s.fields, (p.fields ?? []) as Field[], p.after, at);
+    }
+    screens[sid] = next as Screen;
+  }
+
+  for (const [sid, ids] of Object.entries(ext.hide ?? {})) {
+    const s = screens[sid];
+    if (!s) throw new Error(`${where}: hide "${sid}" — the vendor ui has no such screen`);
+    const want = new Set(ids);
+    const used = new Set<string>();
+    const next: any = { ...s };
+    for (const k of ['columns', 'fields', 'filters', 'actions', 'rowActions'] as const) if (k in next) next[k] = without(next[k], want, used);
+    const missing = ids.filter((x) => !used.has(x));
+    if (missing.length) throw new Error(`${where}: hide.${sid} — nothing named ${missing.map((x) => `"${x}"`).join(', ')} on that screen`);
+    screens[sid] = next as Screen;
+  }
+
+  for (const [sid, s] of Object.entries(ext.screens ?? {})) {
+    if (base.screens[sid]) throw new Error(`${where}: screen "${sid}" already exists in the vendor ui — patch it, or give the new screen another id`);
+    screens[sid] = s;
+  }
+
+  const dup = <T>(a: T[] | undefined, b: T[] | undefined, key: (x: T) => string, what: string) => {
+    const seen = new Set((a ?? []).map(key));
+    for (const x of b ?? []) if (seen.has(key(x))) throw new Error(`${where}: ${what} "${key(x)}" already exists in the vendor ui`);
+    return b?.length ? [...(a ?? []), ...b] : a;
+  };
+
+  return {
+    ...base,
+    menu: [...base.menu, ...(ext.menu ?? [])],
+    screens,
+    widgets: dup(base.widgets, ext.widgets, (w) => w.id, 'widget'),
+    commands: dup(base.commands, ext.commands, (c) => c.id, 'command'),
+    search: dup(base.search, ext.search, (x) => x.id, 'search'),
+    ...(ext.statusLabels ? { statusLabels: { ...(base.statusLabels ?? {}), ...ext.statusLabels } } : {}),
+  };
+}
+
+/* ---------------- pagination (web list tables) ---------------- */
+
+export const PAGE_SIZES = [25, 50, 100] as const;
+
+/**
+ * Page maths for a list of `total` rows: 1-based `page` (clamped), the slice `[start, end)`, and the page buttons to draw —
+ * numbers with `'…'` gaps, always the first, the last and the pages next to the current one: 1 … 4 5 6 … 12.
+ */
+export function paginate(total: number, page: number, size: number): { page: number; pages: number; start: number; end: number; items: (number | '…')[] } {
+  const pages = Math.max(1, Math.ceil(total / Math.max(1, size)));
+  const p = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  const start = (p - 1) * size;
+  const end = Math.min(total, start + size);
+  const want = new Set([1, pages, p - 1, p, p + 1].filter((n) => n >= 1 && n <= pages));
+  if (p <= 3) [2, 3, 4].forEach((n) => n <= pages && want.add(n));
+  if (p >= pages - 2) [pages - 3, pages - 2, pages - 1].forEach((n) => n >= 1 && want.add(n));
+  const sorted = [...want].sort((a, b) => a - b);
+  const items: (number | '…')[] = [];
+  sorted.forEach((n, i) => {
+    if (i && n - sorted[i - 1] === 2) items.push(n - 1);
+    else if (i && n - sorted[i - 1] > 2) items.push('…');
+    items.push(n);
+  });
+  return { page: p, pages, start, end, items };
+}
+
+/* ---------------- Thai date picker (web forms and filters) ---------------- */
+
+export const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'] as const;
+export const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'] as const;
+/** Sunday first, as Thai wall calendars print it. */
+export const TH_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
+
+const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m)}-${pad2(d)}`;
+
+/** "2026-10-31" -> "31 ต.ค. 2569"; "2026-10" -> "ต.ค. 2569"; anything else -> "". Same text on every machine (no locale). */
+export function thaiDateText(iso: string, kind: 'date' | 'month' = 'date'): string {
+  const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(iso ?? ''));
+  if (!r) return '';
+  const y = Number(r[1]) + 543;
+  const mon = TH_MONTHS_SHORT[Number(r[2]) - 1];
+  if (!mon) return '';
+  return kind === 'month' || !r[3] ? `${mon} ${y}` : `${Number(r[3])} ${mon} ${y}`;
+}
+
+/**
+ * What a person types into a date box -> ISO. Accepts "2026-10-31", "31/10/2569", "31-10-26", "31.10.2026", "31 ต.ค. 69",
+ * "31 ตุลาคม 2569" (Buddhist or Christian years, 2-digit years = 25xx / 20xx as written). Month boxes: "2026-10", "10/2569",
+ * "ต.ค. 2569". Returns "" for empty text, null when the text is not a real date yet.
+ */
+export function parseDateText(text: string, kind: 'date' | 'month' = 'date'): string | null {
+  const s = String(text ?? '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const year = (raw: string) => {
+    let y = Number(raw);
+    if (raw.length === 2) y = y >= 40 ? 2500 + y : 2000 + y; // "69" = 2569, "26" = 2026
+    return y > 2400 ? y - 543 : y;
+  };
+  const monthName = (raw: string) => {
+    const t = raw.replace(/\s/g, '');
+    const i = TH_MONTHS.findIndex((m) => m === t);
+    if (i >= 0) return i + 1;
+    const j = TH_MONTHS_SHORT.findIndex((m) => m.replace(/\./g, '') === t.replace(/\./g, ''));
+    return j >= 0 ? j + 1 : 0;
+  };
+  const valid = (y: number, m: number, d: number) => {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return y >= 1900 && y <= 2200 && dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  };
+  let r: RegExpExecArray | null;
+  if (kind === 'month') {
+    if ((r = /^(\d{4})-(\d{1,2})$/.exec(s))) { const y = year(r[1]); const m = Number(r[2]); return valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    if ((r = /^(\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s))) { const y = year(r[2]); const m = Number(r[1]); return valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    if ((r = /^([^\d\s][^\d]*?)\s?(\d{2}|\d{4})$/.exec(s))) { const m = monthName(r[1]); const y = year(r[2]); return m && valid(y, m, 1) ? isoOf(y, m, 1).slice(0, 7) : null; }
+    return null;
+  }
+  let y = 0, m = 0, d = 0;
+  if ((r = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s))) [y, m, d] = [year(r[1]), Number(r[2]), Number(r[3])];
+  else if ((r = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s))) [y, m, d] = [year(r[3]), Number(r[2]), Number(r[1])];
+  else if ((r = /^(\d{1,2}) ?([^\d\s][^\d]*?) ?(\d{2}|\d{4})$/.exec(s))) [y, m, d] = [year(r[3]), monthName(r[2]), Number(r[1])];
+  else return null;
+  return m && valid(y, m, d) ? isoOf(y, m, d) : null;
+}
+
+/** The weeks of a month for a calendar grid (Sunday first): ISO dates, with `inMonth: false` for the spill-over days. */
+export function calendarWeeks(year: number, month: number): { iso: string; day: number; inMonth: boolean }[][] {
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const start = new Date(first);
+  start.setUTCDate(1 - first.getUTCDay());
+  const weeks: { iso: string; day: number; inMonth: boolean }[][] = [];
+  const cur = new Date(start);
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      week.push({ iso: cur.toISOString().slice(0, 10), day: cur.getUTCDate(), inMonth: cur.getUTCMonth() === month - 1 });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    weeks.push(week);
+    if (cur.getUTCMonth() !== month - 1 && w >= 3) break;
+  }
+  return weeks;
+}
+
+/** ISO day + n days (calendar keyboard navigation). */
+export function shiftIsoDay(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** ISO day moved by n months, clamped to the month's last day (31 ม.ค. + 1 = 28/29 ก.พ.). */
+export function shiftIsoMonth(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  return isoOf(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(d || 1, last));
+}
+
+
+/* ---------- trees in detail lines (multi-level BOM) ---------- */
+
+const levelOf = (row: Record<string, unknown>, key: string) => Number(get(row, key)) || 1;
+
+/** Does row `i` have deeper rows directly below it (rows are depth first)? */
+export function treeHasChildren(rows: Record<string, unknown>[], levelKey: string, i: number): boolean {
+  return i + 1 < rows.length && levelOf(rows[i + 1], levelKey) > levelOf(rows[i], levelKey);
+}
+
+/** Indexes hidden because an ancestor is folded. */
+export function treeHidden(rows: Record<string, unknown>[], levelKey: string, folded: ReadonlySet<number>): Set<number> {
+  const hidden = new Set<number>();
+  let foldAt = Infinity; // level of the folded ancestor we are inside
+  rows.forEach((r, i) => {
+    const lv = levelOf(r, levelKey);
+    if (lv <= foldAt) foldAt = Infinity;
+    if (foldAt !== Infinity) { hidden.add(i); return; }
+    if (folded.has(i) && treeHasChildren(rows, levelKey, i)) foldAt = lv;
+  });
+  return hidden;
+}
+
+/** Every row index that can fold (has children) — "fold all". */
+export function treeParents(rows: Record<string, unknown>[], levelKey: string): number[] {
+  return rows.map((_, i) => i).filter((i) => treeHasChildren(rows, levelKey, i));
+}
+
+/** Query string that prefills a form from a tree row (`?f.itemId=…&l.itemId=…`), see `prefillFromQuery`. */
+export function treeAddQuery(add: NonNullable<LinesTree['add']>, row: Record<string, unknown>): string {
+  const q = new URLSearchParams();
+  for (const [field, key] of Object.entries(add.prefill)) {
+    const v = get(row, key);
+    if (v !== undefined && v !== null && v !== '') q.set(`f.${field}`, String(v));
+  }
+  for (const [field, keys] of Object.entries(add.labels ?? {})) {
+    const text = keys.map((k) => get(row, k)).filter((v) => v !== undefined && v !== null && v !== '').join('  ');
+    if (text) q.set(`l.${field}`, text);
+  }
+  return q.toString();
+}
+
+/* ---------- edit forms: record -> form values ---------- */
+
+const snakeCase = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/**
+ * Form values from a loaded record (edit forms): each field by its name or snake_case name; a lookup also gets the values its
+ * `assign` copies (itemCode, itemName…) and its chosen text (`__label.<field>`) built from them, so the form shows
+ * "RM-STEEL  เหล็กแผ่น" instead of an empty box.
+ */
+export function recordValues(fields: Field[], rec: Record<string, unknown>): Record<string, unknown> {
+  const pick = (name: string) => get(rec, name) ?? get(rec, snakeCase(name));
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    out[f.name] = pick(f.name) ?? '';
+    if (f.type !== 'lookup' || !f.lookup) continue;
+    for (const target of Object.keys(f.lookup.assign)) {
+      if (target === f.name) continue;
+      const v = pick(target);
+      if (v !== undefined && v !== null) out[target] = v;
+    }
+    const bySource = new Map(Object.entries(f.lookup.assign).map(([target, source]) => [source, target]));
+    const label = f.lookup.label.map((k) => { const t = bySource.get(k); return t ? pick(t) : undefined; }).filter((v) => v !== undefined && v !== null && v !== '').join('  ');
+    if (label) out[`__label.${f.name}`] = label;
+  }
+  return out;
+}
+
+/** Line values of an edit form from the loaded record (`lines.name` or its snake_case). Empty when the record has none. */
+export function recordLines(spec: LinesSpec, rec: Record<string, unknown>): Record<string, unknown>[] {
+  const rows = get(rec, spec.name) ?? get(rec, snakeCase(spec.name));
+  return Array.isArray(rows) ? rows.map((r) => recordValues(spec.fields, r as Record<string, unknown>)) : [];
+}
+
+
+/* ---------- form autofill from a register ---------- */
+
+/** Should the box search now? A complete 13-digit number at once; a name from `minLength` letters (default 3). */
+export function autofillReady(text: string, minLength = 3): 'tin' | 'name' | null {
+  const t = text.trim();
+  const digits = t.replace(/[\s-]/g, '');
+  if (/^\d+$/.test(digits)) return digits.length === 13 ? 'tin' : null;
+  return t.length >= minLength ? 'name' : null;
+}
+
+/** Values a picked result puts into the form (`fill`: form field -> result key); empty results leave the field alone. */
+export function autofillValues(spec: FormAutofill, row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, key] of Object.entries(spec.fill)) {
+    const v = get(row, key);
+    if (v !== undefined && v !== null && v !== '') out[field] = v;
+  }
+  return out;
 }

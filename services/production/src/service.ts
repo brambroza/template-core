@@ -1,6 +1,6 @@
 import { auth, conflict, loadManifest, nextDocNo, notFound, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
-import { directComponents, explode, loadBom } from './bom.ts';
+import { bomTree, depthOf, directComponents, explode, leafTotals, loadAllBoms, loadBom, whereUsed } from './bom.ts';
 import { statusTh } from '@erp/ui-schema';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -51,14 +51,58 @@ export const definition: ServiceDefinition = {
     app.get('/boms', async (req) => {
       const a = auth(req);
       requirePerm(a, 'production.bom.read');
-      return k.db.tx(a.tenantId, async (c) => (await c.query('select * from boms order by item_code')).rows);
+      return k.db.tx(a.tenantId, async (c) => {
+        const all = await loadAllBoms(c);
+        const used = new Set([...all.values()].flatMap((bm) => bm.lines.map((l) => l.item_id)));
+        const { q } = parse(z.object({ q: z.string().trim().max(100).optional() }), req.query);
+        const rows = (await c.query(`select * from boms where ($1::text is null or item_code ilike '%' || $1 || '%' or item_name ilike '%' || $1 || '%') order by item_code`, [q || null])).rows;
+        return rows.map((r) => ({
+          ...r,
+          components: all.get(r.item_id)?.lines.length ?? 0,
+          levels: depthOf(all, r.item_id),
+          // a sub-assembly is listed on another BOM; a top item is what gets sold or shipped
+          role: used.has(r.item_id) ? 'sub' : 'top',
+          role_label: used.has(r.item_id) ? 'ชิ้นส่วนประกอบย่อย' : 'สินค้าหลัก',
+        }));
+      });
     });
 
     app.get('/boms/:itemId', async (req) => {
       const a = auth(req);
       requirePerm(a, 'production.bom.read');
       const { itemId } = parse(z.object({ itemId: s.uuid }), req.params);
-      return k.db.tx(a.tenantId, async (c) => (await loadBom(c, itemId)) ?? Promise.reject(notFound('BOM')));
+      return k.db.tx(a.tenantId, async (c) => {
+        const bom = await loadBom(c, itemId);
+        if (!bom) throw notFound('BOM');
+        const all = await loadAllBoms(c);
+        const tree = bomTree(all, itemId);
+        return {
+          ...bom,
+          // the whole structure for one recipe (output_qty), depth first, with level / has_bom for the indented view
+          tree,
+          levels: tree.reduce((m, r) => Math.max(m, r.level), 0),
+          // bought materials across every level for one recipe (sub-assemblies replaced by their own components)
+          requirements: leafTotals(tree).map((r) => ({ item_id: r.itemId, item_code: r.itemCode, item_name: r.itemName ?? null, qty: r.qty })),
+          used_in: whereUsed(all, itemId),
+        };
+      });
+    });
+
+    /** Indented multi-level BOM for `qty` units (default one recipe). */
+    app.get('/boms/:itemId/tree', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'production.bom.read');
+      const { itemId } = parse(z.object({ itemId: s.uuid }), req.params);
+      const { qty } = parse(z.object({ qty: z.coerce.number().positive().optional() }), req.query);
+      return k.db.tx(a.tenantId, async (c) => bomTree(await loadAllBoms(c), itemId, qty));
+    });
+
+    /** Which BOMs use this item, directly (level 1) and further up. Works for any item, with or without its own BOM. */
+    app.get('/boms/:itemId/where-used', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'production.bom.read');
+      const { itemId } = parse(z.object({ itemId: s.uuid }), req.params);
+      return k.db.tx(a.tenantId, async (c) => whereUsed(await loadAllBoms(c), itemId));
     });
 
     app.get('/boms/:itemId/explode', async (req) => {

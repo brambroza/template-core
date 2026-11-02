@@ -72,6 +72,17 @@ pnpm erp pack sales,inventory --customer "ACME" --license <token>   # ได้�
 ```
 
 ลูกค้าได้: source code เฉพาะโมดูลที่ซื้อ + kernel/contracts/thai + gateway + เอกสารสำหรับ AI + `deploy/` (docker compose) + smoke test
++ `.erp/vendor-lock.json` (ลายนิ้วมือของทุกไฟล์ที่ส่งมอบ)
+
+## ขายฐานที่ถูกต้อง ให้ AI ของลูกค้าต่อยอด
+
+ลูกค้าไม่ต้องแก้โค้ดหลักเลย: ช่องข้อมูลใหม่, กฎของบริษัท (guard), ปฏิกิริยาต่อ event, รายงานและหน้าจอใหม่ อยู่ใน `services/<โมดูล>/ext/`
+ซึ่ง kernel และแอปโหลดเอง — สั่ง AI ด้วย `/extend <โมดูล> <สิ่งที่ต้องการ>` (ตัวอย่างครบชุด: `docs/examples/purchasing-budget/`)
+
+```bash
+pnpm erp doctor                          # ฐานยังตรงกับที่ GO Along ทดสอบไหม + บริษัทนี้ต่อยอดอะไรไปบ้าง
+pnpm erp upgrade <release> --apply       # รับรุ่นใหม่: แทนที่โค้ดหลัก ไม่แตะ ext/ และโมดูลของลูกค้า
+```
 
 รายละเอียด: [docs/selling-and-licensing.md](docs/selling-and-licensing.md) · สถาปัตยกรรม: [docs/architecture.md](docs/architecture.md) · event: [docs/events.md](docs/events.md) · ต่อยอดด้วย AI: [docs/extending-with-ai.md](docs/extending-with-ai.md)
 

@@ -3,7 +3,8 @@ on: [push, pull_request]
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # pinned: Playwright 1.56 ships Chromium (and --with-deps packages) for Ubuntu 24.04, not for 26.04 that ubuntu-latest now is
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -28,7 +29,7 @@ jobs:
         run: |
           pnpm exec playwright-core install --with-deps chromium
           pnpm test:ui
-      - name: automated UAT run (all 22 cases, screenshots)
+      - name: automated UAT run (all 77 cases, screenshots)
         run: pnpm exec vitest run --config vitest.uat.config.ts
       - uses: actions/upload-artifact@v4
         if: always()

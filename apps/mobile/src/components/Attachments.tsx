@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ATTACHMENT_MAX_BYTES, attachmentRef, fileKind, formatBytes, hasPerm, type AttachmentInfo, type AttachmentsPanel,
+  ATTACHMENT_MAX_BYTES, FORM_ATTACH_MAX, attachmentRef, fileKind, formatBytes, hasPerm, type AttachmentInfo, type AttachmentsPanel, type FormAttach,
 } from '@erp/ui-schema';
 import { api } from '../lib/api';
 import { thaiDate } from '../lib/dates';
@@ -19,7 +19,121 @@ const KIND_TH: Record<string, string> = { image: 'รูป', pdf: 'PDF', sheet:
 /** JPEG quality for camera/library photos: a 12 MP shot lands around 1–2.5 MB, well under the 5 MB limit. */
 const PHOTO_QUALITY = 0.6;
 
-interface Pending { uri: string; name: string; size?: number | null }
+export interface Pending { uri: string; name: string; size?: number | null }
+
+/** Send picked files to one record (`ref`): checks size before and after reading, one file at a time. */
+export async function sendFiles(module: string, ref: string, list: Pending[], progress: (text: string) => void): Promise<{ sent: number; problems: string[] }> {
+  const problems: string[] = [];
+  let sent = 0;
+  for (const [i, p] of list.entries()) {
+    const label = list.length > 1 ? `${p.name} (${i + 1}/${list.length})` : p.name;
+    let size = p.size;
+    if (size === null || size === undefined) {
+      try { size = new File(p.uri).size; } catch { size = undefined; }
+    }
+    const pre = precheckUpload(p.name, size);
+    if (pre) { problems.push(pre); continue; }
+    progress(`กำลังแนบ ${label}…`);
+    try {
+      const dataBase64 = await new File(p.uri).base64();
+      const after = precheckUpload(p.name, base64Bytes(dataBase64));
+      if (after) { problems.push(after); continue; }
+      await api(module, '/_attachments', { method: 'POST', body: { ref, fileName: p.name, dataBase64 } });
+      sent++;
+    } catch (e) {
+      problems.push(`${p.name}: ${(e as Error).message || 'อ่านไฟล์ไม่ได้'}`);
+    }
+  }
+  return { sent, problems };
+}
+
+/** "ถ่ายรูป" / "เลือกรูป" / "แนบไฟล์": hands the picked files to `onPicked`, explains a refused camera permission. */
+export function useFilePickers(onPicked: (list: Pending[]) => void, onError: (text: string) => void) {
+  const takePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        onError('ต้องอนุญาตให้แอปใช้กล้องก่อน จึงจะถ่ายรูปแนบได้');
+        if (!perm.canAskAgain) Alert.alert('ยังไม่ได้อนุญาตใช้กล้อง', 'เปิดสิทธิ์กล้องให้แอปนี้ในการตั้งค่าของเครื่อง', [{ text: 'ปิด', style: 'cancel' }, { text: 'ไปที่การตั้งค่า', onPress: () => Linking.openSettings() }]);
+        return;
+      }
+      const r = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: PHOTO_QUALITY, exif: false });
+      if (r.canceled) return;
+      const now = new Date();
+      onPicked(r.assets.map((a) => ({ uri: a.uri, name: photoFileName({ uri: a.uri, mimeType: a.mimeType }, now), size: a.fileSize })));
+    } catch (e) {
+      onError(`เปิดกล้องไม่ได้: ${(e as Error).message}`);
+    }
+  };
+  const pickPhotos = async () => {
+    try {
+      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: PHOTO_QUALITY, allowsMultipleSelection: true, selectionLimit: 10, exif: false });
+      if (r.canceled) return;
+      const now = new Date();
+      onPicked(r.assets.map((a) => ({ uri: a.uri, name: photoFileName(a, now), size: a.fileSize })));
+    } catch (e) {
+      onError(`เปิดคลังรูปไม่ได้: ${(e as Error).message}`);
+    }
+  };
+  const pickDocuments = async () => {
+    try {
+      const r = await DocumentPicker.getDocumentAsync({ type: DOCUMENT_TYPES, multiple: true, copyToCacheDirectory: true });
+      if (r.canceled) return;
+      onPicked(r.assets.map((a) => ({ uri: a.uri, name: documentFileName(a), size: a.size })));
+    } catch (e) {
+      onError(`เลือกไฟล์ไม่ได้: ${(e as Error).message}`);
+    }
+  };
+  return { takePhoto, pickPhotos, pickDocuments };
+}
+
+const isPhoto = (name: string) => /\.(jpe?g|png|webp)$/i.test(name);
+
+/**
+ * Photos / files picked on a form before its record exists (`FormScreen.attach`) — the phone version of the web FormAttachments:
+ * camera / library / documents, thumbnails, remove. The form sends them with `sendFiles` once the record is saved.
+ */
+export function PendingAttachments({ spec, files, onChange, disabled }: { spec: FormAttach; files: Pending[]; onChange: (f: Pending[]) => void; disabled?: boolean }) {
+  const s = useS();
+  const st = useSt();
+  const c = usePalette();
+  const [error, setError] = useState('');
+  const max = spec.max ?? FORM_ATTACH_MAX;
+  const pickers = useFilePickers((list) => {
+    setError(list.length > max - files.length ? `แนบได้สูงสุด ${max} ไฟล์` : '');
+    onChange([...files, ...list].slice(0, max));
+  }, setError);
+  const label = spec.label ?? 'รูปถ่าย / ไฟล์แนบ';
+  const full = files.length >= max;
+  return (
+    <View style={{ gap: 10 }} accessibilityLabel={label}>
+      <Text accessibilityRole="header" style={[s.label, { fontSize: 16 }]}>{label}{files.length ? ` (${files.length}/${max})` : ' (ไม่บังคับ)'}</Text>
+      {!!spec.hint && <Text style={s.muted}>{spec.hint}</Text>}
+      <View style={st.pickers}>
+        <PickerButton label="ถ่ายรูป" mark="◉" onPress={pickers.takePhoto} disabled={disabled || full} />
+        <PickerButton label="เลือกรูป" mark="▦" onPress={pickers.pickPhotos} disabled={disabled || full} />
+        <PickerButton label="แนบไฟล์" mark="⎙" onPress={pickers.pickDocuments} disabled={disabled || full} />
+      </View>
+      <ErrorText text={error} />
+      {files.length > 0 && (
+        <View style={st.pendingGrid}>
+          {files.map((f, i) => (
+            <View key={`${f.uri}-${i}`} style={st.pendingTile}>
+              {isPhoto(f.name)
+                ? <Image source={{ uri: f.uri }} style={st.pendingImage} accessibilityIgnoresInvertColors />
+                : <View style={[st.pendingImage, st.icon]}><Text style={st.iconText}>{KIND_TH[fileKind(f.name.endsWith('.pdf') ? 'application/pdf' : '')]}</Text></View>}
+              <Text style={s.muted} numberOfLines={1}>{f.name}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`เอา ${f.name} ออก`} disabled={disabled}
+                onPress={() => onChange(files.filter((_, j) => j !== i))} style={st.pendingRemove} hitSlop={8}>
+                <Text style={{ color: c.ink, fontWeight: '700' }}>×</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
 
 /**
  * Files attached to a record (`DetailScreen.attachments`) — mirrors the web AttachmentsPanel:
@@ -90,28 +204,7 @@ export function AttachmentsList({ module, spec, recordId, reloadKey }: { module:
   const upload = async (list: Pending[]) => {
     setError('');
     setNotice('');
-    const problems: string[] = [];
-    let sent = 0;
-    for (const [i, p] of list.entries()) {
-      const label = list.length > 1 ? `${p.name} (${i + 1}/${list.length})` : p.name;
-      let size = p.size;
-      if (size === null || size === undefined) {
-        try { size = new File(p.uri).size; } catch { size = undefined; }
-      }
-      const pre = precheckUpload(p.name, size);
-      if (pre) { problems.push(pre); continue; }
-      setBusy(`กำลังแนบ ${label}…`);
-      try {
-        const dataBase64 = await new File(p.uri).base64();
-        const real = base64Bytes(dataBase64);
-        const after = precheckUpload(p.name, real);
-        if (after) { problems.push(after); continue; }
-        await api(module, '/_attachments', { method: 'POST', body: { ref, fileName: p.name, dataBase64 } });
-        sent++;
-      } catch (e) {
-        problems.push(`${p.name}: ${(e as Error).message || 'อ่านไฟล์ไม่ได้'}`);
-      }
-    }
+    const { sent, problems } = await sendFiles(module, ref, list, setBusy);
     setBusy(null);
     if (problems.length) setError(`แนบไฟล์ไม่ได้\n${problems.join('\n')}`);
     if (sent) {
@@ -119,44 +212,7 @@ export function AttachmentsList({ module, spec, recordId, reloadKey }: { module:
       load();
     }
   };
-
-  const takePhoto = async () => {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        setError('ต้องอนุญาตให้แอปใช้กล้องก่อน จึงจะถ่ายรูปแนบได้');
-        if (!perm.canAskAgain) Alert.alert('ยังไม่ได้อนุญาตใช้กล้อง', 'เปิดสิทธิ์กล้องให้แอปนี้ในการตั้งค่าของเครื่อง', [{ text: 'ปิด', style: 'cancel' }, { text: 'ไปที่การตั้งค่า', onPress: () => Linking.openSettings() }]);
-        return;
-      }
-      const r = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: PHOTO_QUALITY, exif: false });
-      if (r.canceled) return;
-      const now = new Date();
-      await upload(r.assets.map((a) => ({ uri: a.uri, name: photoFileName({ uri: a.uri, mimeType: a.mimeType }, now), size: a.fileSize })));
-    } catch (e) {
-      setError(`เปิดกล้องไม่ได้: ${(e as Error).message}`);
-    }
-  };
-
-  const pickPhotos = async () => {
-    try {
-      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: PHOTO_QUALITY, allowsMultipleSelection: true, selectionLimit: 10, exif: false });
-      if (r.canceled) return;
-      const now = new Date();
-      await upload(r.assets.map((a) => ({ uri: a.uri, name: photoFileName(a, now), size: a.fileSize })));
-    } catch (e) {
-      setError(`เปิดคลังรูปไม่ได้: ${(e as Error).message}`);
-    }
-  };
-
-  const pickDocuments = async () => {
-    try {
-      const r = await DocumentPicker.getDocumentAsync({ type: DOCUMENT_TYPES, multiple: true, copyToCacheDirectory: true });
-      if (r.canceled) return;
-      await upload(r.assets.map((a) => ({ uri: a.uri, name: documentFileName(a), size: a.size })));
-    } catch (e) {
-      setError(`เลือกไฟล์ไม่ได้: ${(e as Error).message}`);
-    }
-  };
+  const { takePhoto, pickPhotos, pickDocuments } = useFilePickers((list) => { upload(list); }, setError);
 
   return (
     <View style={{ gap: 10 }} accessibilityLabel={spec.label ?? 'ไฟล์แนบ'}>
@@ -287,6 +343,10 @@ function PhotoViewer({ file, uri, token, onClose, onOpenExternal, onDelete }: {
 
 const useSt = themed((c) => StyleSheet.create({
   pickers: { flexDirection: 'row', gap: 8 },
+  pendingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pendingTile: { width: '31%', gap: 4 },
+  pendingImage: { width: '100%', aspectRatio: 1, borderRadius: 8, backgroundColor: c.ruleSoft },
+  pendingRemove: { position: 'absolute', top: 4, right: 4, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: c.paper, borderWidth: 1, borderColor: c.rule },
   pick: {
     flex: 1, minHeight: 72, borderRadius: radius, borderWidth: 1, borderColor: c.rule, backgroundColor: c.paper,
     alignItems: 'center', justifyContent: 'center', gap: 2, paddingVertical: 8,

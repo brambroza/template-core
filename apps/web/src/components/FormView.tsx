@@ -2,13 +2,18 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
+import { AutofillBox } from './AutofillBox';
+import { FormAttachments, uploadPending, type PendingFile } from './FormAttachments';
+import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, recordLines, recordValues, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
 import { HOME } from '@/lib/showcase';
 import { screenHref } from '@/lib/nav';
 import { useRegistry } from '@/lib/registry';
 import { toast } from '@/lib/toast';
-import { AiFillButton, AiFillReview, type AiProposal } from './AiFill';
+import { AiFillButton, AiFillReview, DropOverlay, readDocument, useFileDrop, type AiProposal } from './AiFill';
+import { clearQueue, enqueue, readable, remaining, takeNext } from '@/lib/ai-queue';
+import { aiFilledGlow } from '@/lib/motion';
+import { markSaved } from '@/lib/saved-flash';
 import { FieldRow, LinesEditor, type Values } from './Fields';
 
 function readBase64(blob: Blob): Promise<string> {
@@ -20,7 +25,6 @@ function readBase64(blob: Blob): Promise<string> {
   });
 }
 
-const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 /** `screenId`: the screen's name in its module's ui.ts (needed by the "สแกนใบเสร็จ" AI route). */
 export function FormView({ module, screen, id, screenId }: { module: string; screen: FormScreen; id?: string; screenId?: string }) {
@@ -42,14 +46,76 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
   const [ai, setAi] = useState<{ proposal: AiProposal; filled: number } | null>(null);
   const aiFile = useRef<File | null>(null);
   const [attachAi, setAttachAi] = useState(true);
+  const [pending, setPending] = useState<PendingFile[]>([]);
+  const [uploading, setUploading] = useState<string | null>(null);
   const afterScreen = screen.after ? ui(module)?.screens[screen.after.screen] : undefined;
   const attachEntity = afterScreen?.kind === 'detail' && screen.after?.idFrom ? afterScreen.attachments?.entity : undefined;
-  const applyAi = (proposal: AiProposal) => {
-    const merged = mergeAiFill({ values, lines }, proposal, screen.lines ? initialValues(screen.lines.fields) : {});
-    setValues(merged.values);
-    if (screen.lines) setLines(merged.lines);
-    setAi({ proposal, filled: merged.filled });
+  const canAi = !!screen.aiFill && !screen.load && !!screenId;
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
+  /** "เอกสาร 2 จาก 5" while a queue of dropped files is being worked through */
+  const [queuePos, setQueuePos] = useState<{ position: number; total: number } | null>(null);
+  const blankValues = () => ({ ...initialValues(screen.fields), ...prefillFromQuery(new URLSearchParams(firstQs.current).entries()) });
+  const blankLines = () => (screen.lines ? [initialValues(screen.lines.fields)] : []);
+
+  /** read one file and put what it says into the (fresh) form */
+  const readFile = async (file: File, fresh: boolean) => {
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const r = await readDocument(module, screenId!, file);
+      if ('offline' in r) { setAiMessage(r.offline); return; }
+      aiFile.current = r.file;
+      const base = fresh ? { values: blankValues(), lines: blankLines() } : { values, lines };
+      const merged = mergeAiFill(base, r.proposal, screen.lines ? initialValues(screen.lines.fields) : {});
+      setValues(merged.values);
+      if (screen.lines) setLines(merged.lines);
+      setFieldErrors({}); setLineErrors({}); setError('');
+      setAi({ proposal: r.proposal, filled: merged.filled });
+      // what the AI just filled, for the glow that runs down those inputs once they are on screen
+      const typedLines = base.lines.filter((l) => Object.values(l).some((v) => v !== '' && v !== undefined && v !== null)).length;
+      setGlow({
+        fields: Object.keys(r.proposal.values).filter((k) => !k.startsWith('__') && merged.values[k] === r.proposal.values[k] && (base.values[k] === '' || base.values[k] === undefined || base.values[k] === null)),
+        lines: merged.lines.map((_, i) => i).filter((i) => i >= (typedLines ? typedLines : 0) && i < merged.lines.length && r.proposal.lines.length > 0),
+      });
+    } catch (e) {
+      setAiMessage(e instanceof Error ? e.message : 'AI อ่านเอกสารไม่ได้');
+    } finally {
+      setAiBusy(false);
+    }
   };
+  /** open the next queued file in an empty form; false when the queue is done */
+  const nextQueued = (fresh: boolean): boolean => {
+    const n = canAi ? takeNext(module, screenId!) : undefined;
+    if (!n) { setQueuePos(null); return false; }
+    setQueuePos({ position: n.position, total: n.total });
+    if (fresh) { setValues(blankValues()); setLines(blankLines()); setAi(null); aiFile.current = null; }
+    readFile(n.file, fresh);
+    return true;
+  };
+  const takeFiles = (picked: File[]) => {
+    const { ok, skipped } = readable(picked);
+    if (!ok.length) { setAiMessage('รองรับรูป JPG / PNG / WEBP หรือ PDF'); return; }
+    if (skipped) toast({ title: `ข้าม ${skipped} ไฟล์ที่ไม่ใช่รูปหรือ PDF`, tone: 'warn' });
+    if (ok.length === 1) { setQueuePos(null); clearQueue(); readFile(ok[0], false); return; }
+    enqueue(module, screenId!, ok);
+    nextQueued(false);
+  };
+  const formRef = useRef<HTMLFormElement>(null);
+  const [glow, setGlow] = useState<{ fields: string[]; lines: number[] } | null>(null);
+  useEffect(() => {
+    if (!glow || !formRef.current) return;
+    const root = formRef.current;
+    const inputs = [
+      ...glow.fields.flatMap((f) => [...root.querySelectorAll<HTMLElement>(`[data-field="${CSS.escape(f)}"] :is(input, select, textarea)`)]),
+      ...glow.lines.flatMap((i) => [...root.querySelectorAll<HTMLElement>(`tr[data-line="${i}"] :is(input, select, textarea)`)]),
+    ];
+    aiFilledGlow(inputs);
+    setGlow(null);
+  }, [glow]);
+  const drop = useFileDrop(canAi && !busy && !aiBusy, takeFiles);
+  // opened from a list's "สร้างจากเอกสาร" (?ai=next): start on the first queued file
+  useEffect(() => { if (canAi && search.get('ai') === 'next') nextQueued(false); }, []);
   useEffect(() => {
     // a new command while this form is open: apply its values (the first render already used them)
     if (qs !== firstQs.current) setValues((v) => ({ ...v, ...prefillFromQuery(new URLSearchParams(qs).entries()) }));
@@ -58,7 +124,11 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
   useEffect(() => {
     if (!screen.load) return;
     api<Record<string, unknown>>(module, fillPath(screen.load, params))
-      .then((rec) => setValues(Object.fromEntries(screen.fields.map((f) => [f.name, get(rec, f.name) ?? get(rec, snake(f.name)) ?? '']))))
+      .then((rec) => {
+        setValues(recordValues(screen.fields, rec));
+        // an edit form with lines (a BOM, a journal) opens with the record's lines, not one blank row
+        if (screen.lines) { const ls = recordLines(screen.lines, rec); if (ls.length) setLines(ls); }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [module, screen.load, id]);
@@ -93,6 +163,12 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
       setTimeout(() => window.dispatchEvent(new CustomEvent('erp:notifications')), 1500);
       const after = screen.after;
       const savedId = after?.idFrom ? get(result, after.idFrom) : undefined;
+      // photos / files picked on the form go to the record it just created; a failed file never undoes the save
+      if (screen.attach && !screen.load && pending.length && savedId !== undefined && savedId !== null) {
+        const failed = await uploadPending(module, screen.attach.entity, String(savedId), pending, setUploading);
+        setUploading(null);
+        if (failed.length) toast({ title: `บันทึกแล้ว แต่แนบไม่ได้ ${failed.length} ไฟล์`, body: `${failed.join('\n')}\nแนบเพิ่มได้ที่หน้าเอกสาร`, tone: 'warn' });
+      }
       if (ai && aiFile.current && attachEntity && attachAi && savedId) {
         const f = aiFile.current;
         try {
@@ -101,7 +177,20 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
           toast({ title: 'บันทึกแล้ว แต่แนบรูปไม่ได้', body: `${(err as Error).message} — แนบเองได้ที่หน้าเอกสาร`, tone: 'warn' });
         }
       }
-      router.push(after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME);
+      const target = after ? screenHref(module, after.screen, after.idFrom ? get(result, after.idFrom) : undefined) : HOME;
+      // a new document opens with the "บันทึกแล้ว" panel (SavedPanel, flag handed over in memory); edits just go back to the document
+      const celebrate = !screen.load && afterScreen?.kind === 'detail' && !!after?.idFrom && target !== HOME;
+      // a queue of documents: stay on the form and open the next one; the saved record is one click away
+      if (canAi && remaining(module, screenId!) > 0) {
+        toast({ title: `บันทึกฉบับที่ ${queuePos?.position ?? ''} แล้ว — เปิดฉบับถัดไป`, ...(target !== HOME ? { href: target } : {}), tone: 'ok' });
+        setBusy(false);
+        setPending([]);
+        nextQueued(true);
+        return;
+      }
+      if (queuePos) { clearQueue(); if (queuePos.total > 1) toast({ title: `บันทึกครบ ${queuePos.total} ฉบับแล้ว`, tone: 'ok' }); }
+      if (celebrate) markSaved(target);
+      router.push(target);
     } catch (err) {
       setBusy(false);
       if (isShowcaseRefusal(err)) return; // showcase: a toast already explained it, the form stays as typed
@@ -112,15 +201,32 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
 
   if (loading) return <p className="muted">กำลังโหลด…</p>;
   return (
-    <form className="screen form" onSubmit={submit} noValidate>
+    <form ref={formRef} className={`screen form${canAi ? ' has-drop' : ''}`} onSubmit={submit} noValidate {...drop.props}>
+      <DropOverlay show={drop.over} label="วางรูปหรือ PDF ให้ AI กรอกฟอร์มนี้ (หลายไฟล์ = ทำทีละฉบับ)" />
       <header className="screen-head">
         <h1>{screen.title}</h1>
-        {screen.aiFill && !screen.load && screenId && (
-          <AiFillButton module={module} screen={screenId} spec={screen.aiFill} onProposal={applyAi} onFile={(f) => { aiFile.current = f; }} />
-        )}
+        {canAi && <AiFillButton spec={screen.aiFill!} busy={aiBusy} message={aiMessage} onFiles={takeFiles} />}
       </header>
+      {queuePos && (
+        <div className="ai-queue" role="status">
+          <b>เอกสาร {queuePos.position} จาก {queuePos.total}</b>
+          <span className="muted">ตรวจแล้วกดบันทึก ฉบับถัดไปจะเปิดให้เอง</span>
+          <span className="ai-queue-actions">
+            <button type="button" className="btn-ghost" disabled={aiBusy} onClick={() => { if (!nextQueued(true)) { setValues(blankValues()); setLines(blankLines()); setAi(null); } }}>ข้ามฉบับนี้</button>
+            <button type="button" className="btn-ghost" onClick={() => { clearQueue(); setQueuePos(null); }}>หยุดคิว</button>
+          </span>
+        </div>
+      )}
+      {aiBusy && <div className="ai-reading" role="status"><span className="ai-reading-bar" aria-hidden />AI กำลังอ่านเอกสาร…</div>}
       {ai && (
         <AiFillReview proposal={ai.proposal} filled={ai.filled} attach={attachEntity ? attachAi : null} onAttach={setAttachAi} onClose={() => setAi(null)} />
+      )}
+      {screen.autofill && !screen.load && (
+        <AutofillBox module={module} spec={screen.autofill} onPick={(v) => {
+          setValues((cur) => ({ ...cur, ...v }));
+          setFieldErrors({});
+          setGlow({ fields: Object.keys(v), lines: [] });
+        }} />
       )}
       <div className="form-grid">
         {screen.fields.map((f) => (
@@ -128,10 +234,11 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
         ))}
       </div>
       {screen.lines && <LinesEditor spec={screen.lines} module={module} lines={lines} onChange={setLines} errors={lineErrors} />}
+      {screen.attach && !screen.load && <FormAttachments spec={screen.attach} files={pending} onChange={setPending} disabled={busy} />}
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions">
         <button type="button" className="btn" onClick={() => router.back()}>ยกเลิก</button>
-        <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : screen.submitLabel}</button>
+        <button type="submit" className="btn-primary" disabled={busy}>{busy ? (uploading ?? 'กำลังบันทึก…') : screen.submitLabel}</button>
       </div>
     </form>
   );

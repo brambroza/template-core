@@ -38,10 +38,18 @@ export default defineUi({
         { key: 'title', label: 'อาการ/งาน' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' },
       ],
       create: 'woNew', createLabel: 'แจ้งซ่อม', rowLink: { screen: 'woDetail' }, empty: 'ไม่มีงานซ่อม',
+      display: 'board',
+      board: {
+        field: 'status', lanes: [{ value: 'open', label: 'รอดำเนินการ' }, { value: 'in_progress', label: 'กำลังซ่อม' }, { value: 'done', label: 'เสร็จแล้ว' }],
+        moves: { in_progress: ['start'], done: ['complete'] },
+        card: ['title', 'machine_code', 'no', 'kind', 'reported_at'],
+      },
     },
     woNew: {
       kind: 'form', title: 'แจ้งซ่อม', method: 'POST', endpoint: '/work-orders', perm: 'maintenance.wo.report', mobile: true,
       fields: [machine, { name: 'title', label: 'อาการ', type: 'text', required: true }, { name: 'description', label: 'รายละเอียด', type: 'textarea' }],
+      // photo of the breakdown taken on the spot (or a video still, an error screen, a manual page) goes in with the report
+      attach: { entity: 'work-order', label: 'รูปถ่าย / ไฟล์แนบ', hint: 'ถ่ายรูปจุดที่เสีย หน้าจอ error หรือป้ายเครื่อง แนบ PDF/คู่มือก็ได้ — ช่างเห็นก่อนไปหน้างาน', photos: true },
       submitLabel: 'แจ้งซ่อม', after: { screen: 'woDetail', idFrom: 'id' },
     },
     woDetail: {

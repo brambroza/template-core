@@ -1,0 +1,5 @@
+{
+  "description": "fixture: notes get a priority, long notes are refused, items become notes",
+  "permissions": [{ "key": "notes.x_priority.write", "label": "ตั้งความสำคัญของโน้ต" }],
+  "subscribes": ["master.item_upserted", "sales.invoiced"]
+}

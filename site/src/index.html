@@ -869,7 +869,7 @@ footer .fine { display: grid; gap: 2px; text-align: right; }
 <footer>
   <div class="wrap">
     <a class="logo" href="#top" aria-label="Factory OS by GO Along — กลับด้านบน"><svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="15" fill="#0B1324"/><rect x=".75" y=".75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="1.5"/><rect x="17" y="15" width="10" height="35" rx="2.5" fill="#fff"/><rect x="30" y="15" width="12" height="10" rx="2.5" fill="#fff"/><rect x="30" y="28.5" width="11" height="9.5" rx="2.5" fill="#fff" fill-opacity=".82"/><path d="M12 2.5c.5 4.6 2.4 7 7 8.2l2.5.6-2.5.6c-4.6 1.2-6.5 3.6-7 8.2-.5-4.6-2.4-7-7-8.2L2.5 11.3 5 10.7c4.6-1.2 6.5-3.6 7-8.2Z" transform="translate(41 4) scale(.82)" fill="url(#ai-g)"/></svg><span class="wm"><b>Factory OS</b><small>by GO Along</small></span></a>
-    <span class="fine"><span>© <span id="year">2569</span> <span data-bind="company">บริษัท โกอะลอง จำกัด (GO Along Co., Ltd.)</span> · สงวนลิขสิทธิ์</span><span>ราคาไม่รวม VAT · ราคาและเงื่อนไขอาจเปลี่ยนแปลง</span></span>
+    <span class="fine"><span>© <span id="year">2569</span> <span data-bind="company">บริษัท โกอะลอง จำกัด (GO Along Co., Ltd.)</span> · สงวนลิขสิทธิ์</span><span id="footContact"></span><span>ราคาไม่รวม VAT · ราคาและเงื่อนไขอาจเปลี่ยนแปลง</span></span>
   </div>
 </footer>
 
@@ -1382,7 +1382,9 @@ footer .fine { display: grid; gap: 2px; text-align: right; }
   if (c.phone) parts.push(`โทร <a href="tel:${esc(c.phone.replace(/[^0-9+]/g, ''))}">${esc(c.phone)}</a>`);
   if (c.line) parts.push(`LINE <a href="https://line.me/R/ti/p/${encodeURIComponent(c.line)}">${esc(c.line)}</a>`);
   if (c.email) parts.push(`อีเมล <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
-  $('contactLines').innerHTML = (D.site.company ? `<b style="color:var(--ink);font-weight:600">${esc(D.site.company)}</b><br>` : '') + parts.join(' · ');
+  $('contactLines').innerHTML = (D.site.company ? `<b style="color:var(--ink);font-weight:600">${esc(D.site.company)}</b><br>` : '')
+    + (c.address ? `<span>${esc(c.address)}</span><br>` : '') + parts.join(' · ');
+  if ($('footContact')) $('footContact').textContent = [c.phone && `โทร ${c.phone}`, c.email, c.address].filter(Boolean).join(' · ');
   if ($('year')) $('year').textContent = String(new Date().getFullYear() + 543);
   $('lead').addEventListener('submit', async (e) => {
     e.preventDefault();
