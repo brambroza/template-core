@@ -275,6 +275,22 @@ export interface StatusFlow {
   exits?: { value: string; label: string }[];
 }
 
+/**
+ * Detail lines drawn as a tree: rows arrive depth first with a level (1 = directly under the record). Columns with `indent: true`
+ * are indented by level; a row with deeper rows below it folds/unfolds them. Used by the multi-level BOM.
+ */
+export interface LinesTree {
+  /** row field holding the depth, 1 = top */
+  level: string;
+  /** open the row's own record (e.g. a sub-assembly's BOM) — only when the row's `when` field is truthy */
+  link?: { screen: string; idFrom: string; when?: string };
+  /**
+   * a quiet "+ label" link on rows whose `unless` field is falsy: opens `screen` (a form) prefilled from the row.
+   * `prefill`: form field -> row key · `labels`: lookup field -> row keys shown as its chosen text
+   */
+  add?: { screen: string; label: string; unless?: string; perm?: string; prefill: Record<string, string>; labels?: Record<string, string[]> };
+}
+
 export interface DetailScreen extends ScreenBase {
   kind: 'detail';
   endpoint: string;
@@ -283,7 +299,7 @@ export interface DetailScreen extends ScreenBase {
   flow?: StatusFlow;
   fields: Column[];
   /** `half: true` sections sit side by side in pairs on wide screens and paper (earnings | deductions on a payslip) */
-  lines?: { path: string; label: string; columns: Column[]; half?: boolean; /** `false`: screen only (payments received on an invoice) */ print?: boolean }[];
+  lines?: { path: string; label: string; columns: Column[]; half?: boolean; /** `false`: screen only (payments received on an invoice) */ print?: boolean; /** draw as an indented, foldable tree (multi-level BOM) */ tree?: LinesTree }[];
   actions?: Action[];
   edit?: string;
   /** shorthand for `print: {}` — printable with the default layout */
@@ -834,6 +850,10 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if (s.kind === 'form' && s.after) refs.push([s.after.screen, `${id}.after`]);
     if (s.kind === 'detail') {
       if (s.edit) refs.push([s.edit, `${id}.edit`]);
+      for (const ls of s.lines ?? []) {
+        if (ls.tree?.link) refs.push([ls.tree.link.screen, `${id}.lines.${ls.path}.tree.link`]);
+        if (ls.tree?.add) refs.push([ls.tree.add.screen, `${id}.lines.${ls.path}.tree.add`]);
+      }
       s.actions?.forEach((a) => a.then && refs.push([a.then.screen, `${id}.${a.id}.then`]));
     }
   }
@@ -1879,4 +1899,79 @@ export function shiftIsoMonth(iso: string, months: number): string {
   const target = new Date(Date.UTC(y, m - 1 + months, 1));
   const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   return isoOf(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(d || 1, last));
+}
+
+
+/* ---------- trees in detail lines (multi-level BOM) ---------- */
+
+const levelOf = (row: Record<string, unknown>, key: string) => Number(get(row, key)) || 1;
+
+/** Does row `i` have deeper rows directly below it (rows are depth first)? */
+export function treeHasChildren(rows: Record<string, unknown>[], levelKey: string, i: number): boolean {
+  return i + 1 < rows.length && levelOf(rows[i + 1], levelKey) > levelOf(rows[i], levelKey);
+}
+
+/** Indexes hidden because an ancestor is folded. */
+export function treeHidden(rows: Record<string, unknown>[], levelKey: string, folded: ReadonlySet<number>): Set<number> {
+  const hidden = new Set<number>();
+  let foldAt = Infinity; // level of the folded ancestor we are inside
+  rows.forEach((r, i) => {
+    const lv = levelOf(r, levelKey);
+    if (lv <= foldAt) foldAt = Infinity;
+    if (foldAt !== Infinity) { hidden.add(i); return; }
+    if (folded.has(i) && treeHasChildren(rows, levelKey, i)) foldAt = lv;
+  });
+  return hidden;
+}
+
+/** Every row index that can fold (has children) — "fold all". */
+export function treeParents(rows: Record<string, unknown>[], levelKey: string): number[] {
+  return rows.map((_, i) => i).filter((i) => treeHasChildren(rows, levelKey, i));
+}
+
+/** Query string that prefills a form from a tree row (`?f.itemId=…&l.itemId=…`), see `prefillFromQuery`. */
+export function treeAddQuery(add: NonNullable<LinesTree['add']>, row: Record<string, unknown>): string {
+  const q = new URLSearchParams();
+  for (const [field, key] of Object.entries(add.prefill)) {
+    const v = get(row, key);
+    if (v !== undefined && v !== null && v !== '') q.set(`f.${field}`, String(v));
+  }
+  for (const [field, keys] of Object.entries(add.labels ?? {})) {
+    const text = keys.map((k) => get(row, k)).filter((v) => v !== undefined && v !== null && v !== '').join('  ');
+    if (text) q.set(`l.${field}`, text);
+  }
+  return q.toString();
+}
+
+/* ---------- edit forms: record -> form values ---------- */
+
+const snakeCase = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/**
+ * Form values from a loaded record (edit forms): each field by its name or snake_case name; a lookup also gets the values its
+ * `assign` copies (itemCode, itemName…) and its chosen text (`__label.<field>`) built from them, so the form shows
+ * "RM-STEEL  เหล็กแผ่น" instead of an empty box.
+ */
+export function recordValues(fields: Field[], rec: Record<string, unknown>): Record<string, unknown> {
+  const pick = (name: string) => get(rec, name) ?? get(rec, snakeCase(name));
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    out[f.name] = pick(f.name) ?? '';
+    if (f.type !== 'lookup' || !f.lookup) continue;
+    for (const target of Object.keys(f.lookup.assign)) {
+      if (target === f.name) continue;
+      const v = pick(target);
+      if (v !== undefined && v !== null) out[target] = v;
+    }
+    const bySource = new Map(Object.entries(f.lookup.assign).map(([target, source]) => [source, target]));
+    const label = f.lookup.label.map((k) => { const t = bySource.get(k); return t ? pick(t) : undefined; }).filter((v) => v !== undefined && v !== null && v !== '').join('  ');
+    if (label) out[`__label.${f.name}`] = label;
+  }
+  return out;
+}
+
+/** Line values of an edit form from the loaded record (`lines.name` or its snake_case). Empty when the record has none. */
+export function recordLines(spec: LinesSpec, rec: Record<string, unknown>): Record<string, unknown>[] {
+  const rows = get(rec, spec.name) ?? get(rec, snakeCase(spec.name));
+  return Array.isArray(rows) ? rows.map((r) => recordValues(spec.fields, r as Record<string, unknown>)) : [];
 }

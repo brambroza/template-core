@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
+import { attachmentRef, fillPath, get, initialValues, mergeAiFill, missingRequired, prefillFromQuery, recordLines, recordValues, routeParams, toBody, type FormScreen } from '@erp/ui-schema';
 import { api, ApiError, isShowcaseRefusal } from '@/lib/api';
 import { HOME } from '@/lib/showcase';
 import { screenHref } from '@/lib/nav';
@@ -23,7 +23,6 @@ function readBase64(blob: Blob): Promise<string> {
   });
 }
 
-const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 /** `screenId`: the screen's name in its module's ui.ts (needed by the "สแกนใบเสร็จ" AI route). */
 export function FormView({ module, screen, id, screenId }: { module: string; screen: FormScreen; id?: string; screenId?: string }) {
@@ -121,7 +120,11 @@ export function FormView({ module, screen, id, screenId }: { module: string; scr
   useEffect(() => {
     if (!screen.load) return;
     api<Record<string, unknown>>(module, fillPath(screen.load, params))
-      .then((rec) => setValues(Object.fromEntries(screen.fields.map((f) => [f.name, get(rec, f.name) ?? get(rec, snake(f.name)) ?? '']))))
+      .then((rec) => {
+        setValues(recordValues(screen.fields, rec));
+        // an edit form with lines (a BOM, a journal) opens with the record's lines, not one blank row
+        if (screen.lines) { const ls = recordLines(screen.lines, rec); if (ls.length) setLines(ls); }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [module, screen.load, id]);

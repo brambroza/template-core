@@ -8,6 +8,7 @@ import { definition as inventory } from '@erp/svc-inventory';
 import { definition as purchasing } from '@erp/svc-purchasing';
 import { definition as sales } from '@erp/svc-sales';
 import { definition as maintenance } from '@erp/svc-maintenance';
+import { definition as production } from '@erp/svc-production';
 import { install, type Installation } from '../e2e/helpers.ts';
 import { CHROMIUM, login, pick, startWeb, stopWeb } from './browser.ts';
 
@@ -244,5 +245,79 @@ describe('web app — customer with Core + Maintenance only', () => {
     await dlg.getByLabel('เครื่องหยุด (นาที)').fill('45');
     await dlg.getByRole('button', { name: 'ปิดงานซ่อม' }).click();
     await page.locator('.status', { hasText: 'เสร็จแล้ว' }).waitFor();
+  });
+});
+
+describe('web app — multi-level BOM (production)', () => {
+  let erp: Installation;
+  let token: string;
+  let web: ChildProcess;
+  let page: Page;
+  const base = 'http://127.0.0.1:3914';
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    erp = await install([identity, masterData, production]);
+    ({ token } = await erp.provision('bom-co'));
+    for (const [code, name, type] of [['RM-SHEET', 'เหล็กแผ่น', 'raw'], ['SP-SCREW', 'สกรู', 'spare'], ['SA-PANEL', 'แผ่นบาน', 'semi'], ['SA-DOOR', 'บานประตู', 'semi'], ['FG-CAB', 'ตู้เหล็ก', 'finished']]) {
+      ids[code] = (await erp.call('POST', '/api/master-data/items', { code, name, type }, token)).body.id;
+    }
+    const it = (code: string, name: string) => ({ itemId: ids[code], itemCode: code, itemName: name });
+    await erp.call('PUT', '/api/production/boms', { ...it('SA-PANEL', 'แผ่นบาน'), lines: [{ ...it('RM-SHEET', 'เหล็กแผ่น'), qty: 2 }] }, token);
+    await erp.call('PUT', '/api/production/boms', { ...it('SA-DOOR', 'บานประตู'), lines: [{ ...it('SA-PANEL', 'แผ่นบาน'), qty: 1 }, { ...it('SP-SCREW', 'สกรู'), qty: 6 }] }, token);
+    await erp.call('PUT', '/api/production/boms', { ...it('FG-CAB', 'ตู้เหล็ก'), lines: [{ ...it('SA-DOOR', 'บานประตู'), qty: 2 }, { ...it('SP-SCREW', 'สกรู'), qty: 10 }] }, token);
+    web = await startWeb(erp.url, 3914);
+    page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    await login(page, base, 'bom-co');
+  });
+  afterAll(async () => { await page?.close(); stopWeb(web); await erp?.close(); });
+
+  it('shows every level, folds a sub-assembly, opens its own BOM', async () => {
+    await page.goto(`${base}/m/production/bomDetail/${ids['FG-CAB']}`);
+    const tree = page.locator('table.tree').first();
+    await tree.getByRole('cell', { name: /RM-SHEET/ }).waitFor();
+    await expect(tree.locator('tbody tr').evaluateAll((rows) => rows.map((r) => `${r.getAttribute('data-level')} ${r.querySelector('td')!.textContent!.replace(/สร้างสูตรย่อย/, '').trim()}`)))
+      .resolves.toEqual(['1 SA-DOOR', '2 SA-PANEL', '3 RM-SHEET', '2 SP-SCREW', '1 SP-SCREW']);
+    // 2 doors × 1 panel × 2 sheets = 4; screws 2×6 + 10 = 22 in the all-levels total
+    await page.getByText('3 ระดับ · 5 รายการ').waitFor();
+    await page.getByRole('button', { name: 'ย่อ SA-DOOR' }).click();
+    expect(await tree.locator('tbody tr:visible').count()).toBe(2);
+    await page.getByRole('button', { name: 'ขยาย SA-DOOR' }).click();
+    expect(await tree.locator('tbody tr:visible').count()).toBe(5);
+    await shot(page, '20-bom-tree');
+    await tree.getByRole('link', { name: 'SA-PANEL' }).click();
+    await page.getByRole('heading', { name: 'SA-PANEL' }).waitFor();
+    // where-used two levels up
+    const used = page.locator('table.tree').nth(1);
+    await used.getByRole('link', { name: 'FG-CAB' }).waitFor();
+    await expect(used.getByRole('link', { name: 'SA-DOOR' }).count()).resolves.toBe(1);
+  });
+
+  it('adds a level from a bought part and edits a BOM with its lines loaded', async () => {
+    await page.goto(`${base}/m/production/bomDetail/${ids['SA-PANEL']}`);
+    const row = page.locator('table.tree').first().locator('tbody tr').first();
+    await row.hover();
+    await row.getByRole('link', { name: /สร้างสูตรย่อย/ }).click();
+    // the form opens with the part chosen as the product
+    await expect(page.getByLabel('สินค้าที่ผลิต').inputValue()).resolves.toBe('RM-SHEET  เหล็กแผ่น');
+    await pick(page, page, 'ส่วนประกอบ', 'SP-SCREW');
+    await page.getByLabel('ใช้ต่อสูตร').first().fill('0.5');
+    await page.getByRole('button', { name: 'บันทึกสูตร' }).click();
+    await page.getByRole('heading', { name: 'RM-SHEET' }).waitFor();
+    // FG-CAB is now 4 levels deep
+    const cab = (await erp.call('GET', `/api/production/boms/${ids['FG-CAB']}`, undefined, token)).body;
+    expect(cab.levels).toBe(4);
+
+    await page.goto(`${base}/m/production/bomDetail/${ids['SA-DOOR']}`);
+    await page.getByText('แก้ไข', { exact: true }).click();
+    await expect(page.getByLabel('สินค้าที่ผลิต').inputValue()).resolves.toBe('SA-DOOR  บานประตู');
+    const qty = page.getByLabel('ใช้ต่อสูตร');
+    await expect(qty.count()).resolves.toBe(2);
+    await expect(qty.nth(1).inputValue()).resolves.toBe('6');
+    await qty.nth(1).fill('8');
+    await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+    await page.getByRole('heading', { name: 'SA-DOOR' }).waitFor();
+    const door = (await erp.call('GET', `/api/production/boms/${ids['SA-DOOR']}`, undefined, token)).body;
+    expect(door.lines.map((l: any) => [l.item_code, l.qty])).toEqual([['SA-PANEL', 1], ['SP-SCREW', 8]]);
   });
 });

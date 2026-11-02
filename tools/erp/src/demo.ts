@@ -191,6 +191,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     ['SP-OIL-68', 'น้ำมันไฮดรอลิก ISO 68', 'spare', 'ลิตร', 95], ['SA-PLATE-A', 'แผ่นยึดชุบซิงค์ A', 'semi', 'ชิ้น', 0],
     ['FG-BRK-100', 'ขายึดแอร์ BRK-100', 'finished', 'ชิ้น', 48], ['FG-BRK-200', 'ขายึดแอร์ BRK-200 (สแตนเลส)', 'finished', 'ชิ้น', 135],
     ['FG-CASE-01', 'กล่องตู้ควบคุม CASE-01', 'finished', 'ชิ้น', 690], ['FG-RACK-08', 'ชั้นวางเหล็ก RACK-08', 'finished', 'ชุด', 1450],
+    // sub-assemblies of the rack: a 3-level BOM (rack ← painted shelf ← formed shelf ← sheet steel)
+    ['SA-SHELF-08', 'แผ่นชั้น RACK-08 พ่นสีแล้ว', 'semi', 'แผ่น', 0], ['SA-SHELF-08R', 'แผ่นชั้น RACK-08 พับขึ้นรูป', 'semi', 'แผ่น', 0],
+    ['SA-POST-08', 'เสาชั้นวาง RACK-08 พ่นสีแล้ว', 'semi', 'ต้น', 0],
   ] as const) {
     const r = await call('POST', '/api/master-data/items', { code, name, type, uom, stdPrice: price || undefined });
     items[code] = { itemId: r.id, itemCode: code, itemName: name };
@@ -273,6 +276,11 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     await call('PUT', '/api/production/boms', { ...items['SA-PLATE-A'], lines: [{ ...items['RM-SPCC-12'], qty: 0.42, scrapPct: 4 }, { ...items['RM-ZINC'], qty: 0.01 }] });
     await call('PUT', '/api/production/boms', { ...items['FG-BRK-100'], lines: [{ ...items['SA-PLATE-A'], qty: 2 }, { ...items['SP-BOLT-M8'], qty: 4 }, { ...items['RM-PAINT-GR'], qty: 0.03 }] });
     await call('PUT', '/api/production/boms', { ...items['FG-BRK-200'], lines: [{ ...items['RM-SUS304'], qty: 0.65, scrapPct: 5 }, { ...items['SP-BOLT-M8'], qty: 4 }] });
+    // multi-level: RACK-08 = 4 painted shelves + 4 posts + bolts; a painted shelf = a formed shelf + powder coat; a formed shelf = SPCC 1.2
+    await call('PUT', '/api/production/boms', { ...items['SA-SHELF-08R'], lines: [{ ...items['RM-SPCC-12'], qty: 2.6, scrapPct: 5 }] });
+    await call('PUT', '/api/production/boms', { ...items['SA-SHELF-08'], lines: [{ ...items['SA-SHELF-08R'], qty: 1 }, { ...items['RM-PAINT-GR'], qty: 0.08, scrapPct: 10 }] });
+    await call('PUT', '/api/production/boms', { ...items['SA-POST-08'], lines: [{ ...items['RM-SPCC-20'], qty: 1.9, scrapPct: 3 }, { ...items['RM-PAINT-GR'], qty: 0.05, scrapPct: 10 }] });
+    await call('PUT', '/api/production/boms', { ...items['FG-RACK-08'], lines: [{ ...items['SA-SHELF-08'], qty: 4 }, { ...items['SA-POST-08'], qty: 4 }, { ...items['SP-BOLT-M8'], qty: 16 }] });
     await call('PUT', '/api/production/boms', { ...items['FG-CASE-01'], lines: [{ ...items['RM-SPCC-20'], qty: 6.4, scrapPct: 6 }, { ...items['RM-PAINT-GR'], qty: 0.25 }, { ...items['SP-BOLT-M8'], qty: 12 }] });
     const mo = async (code: string, qty: number, due: string, stage: 'planned' | 'released' | 'completed', partial = 0) => {
       const o = await call('POST', '/api/production/orders', { ...items[code], qty, warehouseCode: 'MAIN', dueDate: due });

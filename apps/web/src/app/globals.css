@@ -1200,3 +1200,34 @@ tr:hover .status, .kcard:hover .status { transform: translateY(-1px); }
   .pager-pages .pager-num:not([aria-current]) { display: none; }
 }
 @media print { .pager { display: none; } }
+
+/* ---------- tree lines (multi-level BOM) ---------- */
+.tree-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 10px; }
+.tree-head h2 { margin: 0; }
+.tree-head .muted { font-size: .85rem; }
+.tree-tools { margin-left: auto; display: flex; gap: 4px; }
+.tree-cell { display: inline-flex; align-items: center; gap: 6px; padding-left: calc(var(--lv, 0) * 1.6em); min-width: 0; position: relative; }
+/* a guide line per level so siblings read as one group */
+.tree-cell::before { content: ''; position: absolute; left: calc(var(--lv, 0) * 1.6em - .9em); top: -12px; bottom: -12px; border-left: 1px dashed var(--line-strong); opacity: calc(min(var(--lv, 0), 1)); }
+.tree-toggle { flex: none; width: 24px; height: 24px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-2); cursor: pointer; padding: 0; }
+.tree-toggle svg { transition: transform .15s ease; }
+.tree-toggle[aria-expanded='true'] svg { transform: rotate(90deg); }
+.tree-toggle:hover { border-color: var(--accent); color: var(--accent-text); }
+.tree-leaf { flex: none; width: 24px; height: 24px; display: inline-grid; place-items: center; }
+.tree-leaf::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+table.data.tree tr.has-kids td:first-child { font-weight: 600; }
+table.data.tree tr.lv-1 td { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+table.data.tree tr.is-folded { display: none; }
+.tree-add { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; font-size: .78rem; font-weight: 500 !important; color: var(--ink-3) !important; padding: 1px 8px; border: 1px dashed var(--line-strong); border-radius: 999px; white-space: nowrap; opacity: .75; }
+tr:hover .tree-add, .tree-add:focus-visible { opacity: 1; color: var(--accent-text) !important; border-color: var(--accent); }
+/* mouse screens: "+ สร้างสูตรย่อย" appears on the row under the pointer (or on keyboard focus) so bought parts do not shout */
+@media (hover: hover) { .tree-add { opacity: 0; } tr:hover .tree-add, tr:focus-within .tree-add { opacity: 1; } }
+@media screen and (max-width: 640px) {
+  table.data.stack.tree tr { width: auto; }
+  table.data.stack.tree tr.lv-1 td { background: none; }
+  table.data.stack.tree tr[data-level='2'] { margin-left: 14px; }
+  table.data.stack.tree tr[data-level='3'] { margin-left: 28px; }
+  table.data.stack.tree tr[data-level='4'], table.data.stack.tree tr[data-level='5'], table.data.stack.tree tr[data-level='6'] { margin-left: 42px; }
+  .tree-cell { padding-left: 0; } .tree-cell::before { display: none; }
+}
+@media print { table.data.tree tr.is-folded { display: table-row; } }

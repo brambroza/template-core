@@ -379,7 +379,8 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
             <Text accessibilityRole="header" style={[s.label, { fontSize: 16 }]}>{ls.label}{rows.length ? ` (${rows.length})` : ''}</Text>
             {rows.length === 0 && <Card><EmptyState title={`ไม่มี${ls.label}`} /></Card>}
             {rows.map((r, i) => (
-              <Card key={String(r.id ?? i)} style={{ padding: 12, gap: 4 }}>
+              // tree lines (multi-level BOM): each level sits further in, rows arrive depth first
+              <Card key={String(r.id ?? i)} style={{ padding: 12, gap: 4, marginLeft: ls.tree ? Math.min((Number(get(r, ls.tree.level)) || 1) - 1, 4) * 14 : 0 }}>
                 {ls.columns.map((col) => (
                   <View key={col.key} style={st.rowLine}><Text style={s.muted}>{col.label}</Text><ValueText value={get(r, col.key)} format={col.format} /></View>
                 ))}

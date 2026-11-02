@@ -2,6 +2,14 @@
 
 ## Unreleased — แบ่งหน้าตาราง + ช่องวันที่แบบไทย
 
+- **Multi-level BOM** (production): the BOM detail shows the whole structure as an indented tree (fold/unfold each sub-assembly, open its
+  own BOM, "+ สร้างสูตรย่อย" on a bought part opens the BOM form with that part chosen), bought materials summed over every level, and
+  where-used up through every level; the BOM list shows type (สินค้าหลัก / ชิ้นส่วนประกอบย่อย), depth and search; editing a BOM loads its
+  lines. New `GET /boms/:itemId/tree?qty=`, `GET /boms/:itemId/where-used`. Fix: a circular BOM was reported with item UUIDs — it now
+  names the item codes (`SA-PANEL → FG-CABINET → SA-DOOR → SA-PANEL`). Demo: RACK-08 is a 3-level BOM.
+- Renderer: detail `lines[].tree` (indented, foldable, row links and prefilled "+" links, web + mobile); edit forms with `lines` load the
+  record's lines and show lookup choices (`recordValues`, `recordLines`).
+
 - **Managed-database deployment (Supabase + Vercel)** — `docs/deploy-supabase.md`: all modules in ONE Postgres database, a schema and a
   login role per module (role `search_path` = its schema), so no code change and a module still cannot read another's tables; web on
   Vercel (`GATEWAY_URL`), gateway + modules on a container host. `pnpm erp compose`/`pack` now writes `deploy/single-database.sql`.
