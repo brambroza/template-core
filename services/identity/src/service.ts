@@ -11,6 +11,7 @@ import { buttonMail, createMailer } from './mailer.ts';
 import { attempts, clear as clearAttempts, note as noteAttempts, overLimit, type Queryable } from './throttle.ts';
 import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '@erp/starter';
 import { runStarter, starterOf, starterView } from './starter.ts';
+import { markStep, onboardingOf, ONBOARDING_STEP_IDS } from './onboarding.ts';
 import {
   changeText, daysLeft, entitlementOf, MODULE_NAMES_TH, paymentPeriod, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type PlanId, type SubscriptionRow,
 } from './plans.ts';
@@ -305,6 +306,8 @@ function requireOpen(e: Entitlement | null): void {
 
 export const SIGNUP_LINK_HOURS = 24;
 export const RESET_LINK_MINUTES = 60;
+/** an invitation link (set your password) lasts longer than a reset: the colleague may read the mail days later */
+export const INVITE_LINK_HOURS = 72;
 const HOUR_MS = 60 * 60 * 1000;
 /** per hour: sign-ups per IP / per e-mail, reset requests per e-mail / per IP, bad reset links per IP */
 export const SIGNUP_LIMITS = { ip: 5, email: 3 } as const;
@@ -365,6 +368,7 @@ export const definition: ServiceDefinition = {
         if (p.plan) {
           await c.query(`insert into tenant_subscriptions (plan, status, trial_ends_at) values ($1, 'trial', now() + make_interval(days => $2))`, [p.plan, TRIAL_DAYS]);
           await c.query('insert into tenant_subscription_log (change, by_name) values ($1, $2)', [JSON.stringify({ plan: p.plan, status: 'trial', trialDays: TRIAL_DAYS }), p.by]);
+          await c.query('insert into tenant_onboarding default values'); // cloud companies get the "ตั้งค่าเริ่มต้น" wizard
         }
         return u;
       }).catch(async (e) => {
@@ -1077,6 +1081,79 @@ export const definition: ServiceDefinition = {
         const role = (await c.query('insert into roles (name, permissions) values ($1, $2) returning *', [name, permissions])).rows[0];
         return { ...role, template: tpl.id, skipped, message: `สร้างบทบาท "${name}" แล้ว (${permissions.length} สิทธิ์)` };
       });
+    });
+
+    /* ----- "ตั้งค่าเริ่มต้น" wizard (onboarding.ts) and inviting the team ----- */
+
+    app.get('/onboarding', async (req) => {
+      const a = auth(req);
+      return { onboarding: await k.db.tx(a.tenantId, onboardingOf) };
+    });
+
+    /** a step saved or skipped (`/onboarding/steps/company`) */
+    app.post('/onboarding/steps/:step', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.company.write');
+      const { step } = parse(z.object({ step: z.enum(ONBOARDING_STEP_IDS) }), req.params);
+      return k.db.tx(a.tenantId, async (c) => {
+        await markStep(c, step);
+        return { onboarding: await onboardingOf(c) };
+      });
+    });
+
+    app.post('/onboarding/complete', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.company.write');
+      return k.db.tx(a.tenantId, async (c) => {
+        await c.query('update tenant_onboarding set completed_at = coalesce(completed_at, now())');
+        return { onboarding: await onboardingOf(c) };
+      });
+    });
+
+    /**
+     * Invite a colleague: `{ email, name, template }` → a user with the role of that template (the company's role of the same name,
+     * created from the template the first time) and an e-mail with a link to set their own password (INVITE_LINK_HOURS). The admin
+     * never chooses or sees the password. Counts against the plan's users; nothing is created when the mail cannot be sent.
+     */
+    app.post('/users/invite', async (req, reply) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.user.write');
+      const ids = ROLE_TEMPLATES.map((tpl) => tpl.id) as [string, ...string[]];
+      const b = parse(z.object({ email, name: s.name, template: z.enum(ids), modules: ModuleList.optional() }), req.body);
+      const tpl = ROLE_TEMPLATES.find((x) => x.id === b.template)!;
+      await requireEmailFree(k, b.email);
+      const base = appUrl(k.env, req.headers);
+      const link = newLinkToken();
+      const result = await k.db.tx(a.tenantId, async (c) => {
+        await requireUserSeat(c);
+        let role = (await c.query<{ id: string; permissions: string[] }>('select id, permissions from roles where name = $1', [tpl.name])).rows[0];
+        if (!role) {
+          requirePerm(a, 'identity.role.write');
+          const { permissions } = applyTemplate(tpl, installed(req, b.modules));
+          requireGrantable(a, permissions, 'สร้างบทบาทไม่ได้');
+          role = (await c.query('insert into roles (name, permissions) values ($1, $2) returning id, permissions', [tpl.name, permissions])).rows[0];
+        }
+        requireGrantable(a, role!.permissions, 'ชวนด้วยบทบาทนี้ไม่ได้');
+        // an unusable random password until the colleague sets their own through the link
+        const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [b.email, b.name, hashPassword(randomBytes(24).toString('base64url'))])).rows[0];
+        await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, role!.id]);
+        await c.query(`insert into password_resets (tenant_id, user_id, token_hash, expires_at) values ($1, $2, $3, now() + make_interval(hours => $4))`,
+          [a.tenantId, u.id, link.hash, INVITE_LINK_HOURS]);
+        const company = (await c.query<{ name: string }>('select name from tenants where id = $1', [a.tenantId])).rows[0]?.name ?? '';
+        try {
+          await mailer(buttonMail(b.email, `${a.userName ?? 'ผู้ดูแลระบบ'} ชวนคุณใช้งาน GO Along (${company})`, [
+            `สวัสดีคุณ${b.name}`,
+            `${a.userName ?? 'ผู้ดูแลระบบ'} เพิ่มคุณเป็นผู้ใช้ของ ${company} ในบทบาท "${tpl.name}"`,
+            'กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านของคุณเอง แล้วเข้าสู่ระบบด้วยอีเมลนี้',
+          ], { label: 'ตั้งรหัสผ่านและเริ่มใช้งาน', url: `${base}/reset-password?invite=1&token=${link.token}` }, `ลิงก์ใช้ได้ ${INVITE_LINK_HOURS} ชั่วโมงและครั้งเดียว`));
+        } catch (e) {
+          req.log.error(e);
+          throw new HttpError(503, 'mail_failed', 'ส่งอีเมลเชิญไม่สำเร็จ จึงยังไม่ได้เพิ่มผู้ใช้ — ลองใหม่อีกครั้งในอีกสักครู่');
+        }
+        return { user: u, role: tpl.name };
+      }).catch(emailTakenOnRace);
+      reply.code(201);
+      return { ...result, message: `ส่งอีเมลเชิญไปที่ ${b.email} แล้ว (บทบาท ${result.role}) — ลิงก์ใช้ได้ ${INVITE_LINK_HOURS} ชั่วโมง` };
     });
   },
 };

@@ -1,12 +1,11 @@
 'use client';
-/** The link in the sign-up mail: confirms the e-mail, creates the company and signs the new owner straight in. */
+/** The link in the sign-up mail: confirms the e-mail, creates the company and signs the new owner straight into the setup wizard. */
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { saveSession, type Session } from '@/lib/session';
-import { HOME } from '@/lib/showcase';
 import { AuthLayout } from '@/components/AuthLayout';
 
 export default function VerifySignup() {
@@ -21,7 +20,7 @@ export default function VerifySignup() {
     api<Session & { token: string }>('identity', '/signup/verify', { method: 'POST', body: { token } })
       .then((r) => {
         saveSession({ token: r.token, tenant: r.tenant, user: r.user, permissions: r.permissions });
-        router.replace(HOME);
+        router.replace('/setup'); // the 5-step "ตั้งค่าเริ่มต้น" wizard first
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ'));
   }, [router]);

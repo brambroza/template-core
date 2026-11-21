@@ -6,12 +6,13 @@
  * without sample data, once it is cleared, or in showcase mode.
  */
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
-import { SHOWCASE } from '@/lib/showcase';
+import { HOME, SHOWCASE } from '@/lib/showcase';
 import { toast } from '@/lib/toast';
 
 interface StarterView {
@@ -34,16 +35,21 @@ export function StarterBanner() {
 
   const load = useCallback(() => api<{ starter: StarterView | null }>('identity', '/starter').then((r) => setView(r.starter)).catch(() => setView(null)), []);
   useEffect(() => { if (!SHOWCASE) void load(); }, [load]);
-  // seeding takes a few seconds: look again until it is done, then reload once so every card shows the sample data
+  // seeding takes a few seconds: look again until it is done. On the home page reload once so every card shows the sample data;
+  // anywhere else (the setup wizard, a form) only the bar changes — a reload would throw away what the owner is typing
   const sawSeeding = useRef(false);
+  const path = usePathname();
   useEffect(() => {
     if (view?.state === 'seeding') {
       sawSeeding.current = true;
       const t = setTimeout(load, 3000);
       return () => clearTimeout(t);
     }
-    if (view && sawSeeding.current) window.location.reload();
-  }, [view, load]);
+    if (view && sawSeeding.current) {
+      sawSeeding.current = false;
+      if (path === HOME) window.location.reload();
+    }
+  }, [view, load, path]);
   useEffect(() => { if (open) dialog.current?.showModal?.(); else dialog.current?.close?.(); }, [open]);
 
   if (!view) return null;

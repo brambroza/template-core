@@ -53,6 +53,16 @@
 - Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
+**Setup wizard and team invitations (phase 2, part 2)**
+- After the sign-up link the owner lands on `/setup`, "ตั้งค่าเริ่มต้น" in 5 steps (each can be skipped; a bar "ตั้งค่าเริ่มต้นแล้ว 2/5 — ทำต่อ"
+  stays until it is finished): company profile for the letterhead, who approves purchase orders (works alone = may approve own POs, one tier;
+  or separate approvers = creator cannot approve, above 50,000 บาท needs approve-high), invite the team, starting data (CSV imports, sample
+  data), start. Identity remembers the steps (migration 008 `tenant_onboarding`, cloud companies only): `GET /onboarding`,
+  `POST /onboarding/steps/:step`, `POST /onboarding/complete`.
+- `POST /users/invite { email, name, template }`: a user with the role of that template (the company's role of that name, created from the
+  template the first time) and an e-mail with a 72-hour link to set their own password — the admin never picks or sees it. Counts against
+  the plan's users; nothing is created when the mail cannot be sent. The password page words it as "ตั้งรหัสผ่านเพื่อเริ่มใช้งาน".
+
 **Sample data per industry (phase 2, part 1)**
 - Sign-up asks the type of business: ซื้อมาขายไป/ค้าส่ง, อาหาร/แปรรูป, โรงงานชิ้นส่วนโลหะ/งานกลึง (or none). After the e-mail is confirmed the
   company gets that industry's sample data (`packages/starter`) through the real APIs: items, customers, suppliers, warehouses and opening
