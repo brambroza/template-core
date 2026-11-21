@@ -7,7 +7,7 @@ import { entitlementOf, GRACE_DAYS, MODULE_NAMES_TH, PLANS, tokenTtl, TRIAL_DAYS
 
 /** Cloud plans (identity migration 004): trial, plan modules in the token, user limit, payment by transfer, suspension. */
 let t: TestService;
-beforeAll(async () => { t = await bootTestService(definition); resetLoginThrottle(); });
+beforeAll(async () => { t = await bootTestService(definition); await resetLoginThrottle(); });
 afterAll(async () => { await t?.close(); });
 
 const internal = { 'x-internal-token': TEST_INTERNAL_TOKEN };
@@ -97,7 +97,7 @@ describe('cloud plans', () => {
     expect(list).toEqual([expect.objectContaining({ code: 'trial-co', activeUsers: 1, subscription: expect.objectContaining({ status: 'suspended' }), note: 'ขอระงับชั่วคราว' })]);
     const log = (await t.svc.app.inject({ method: 'GET', url: '/_ops/tenants/trial-co/subscription-log', headers: internal })).json();
     expect(log[0]).toMatchObject({ by_name: 'ทีมบัญชี GO Along', change: { status: 'suspended' } });
-    expect(log.at(-1)).toMatchObject({ by_name: 'สมัครใช้งาน' });
+    expect(log.at(-1)).toMatchObject({ by_name: 'GO Along (provisioning)' });
     // back-office routes need the internal token
     expect((await t.svc.app.inject({ method: 'GET', url: '/_ops/tenants' })).statusCode).toBe(401);
   });

@@ -54,9 +54,12 @@ export function verify(root: string): { errors: string[]; warnings: string[] } {
     for (const file of walk(join(dir, 'migrations')).filter((f) => f.endsWith('.sql'))) {
       const sql = readFileSync(file, 'utf8');
       const tenantTables = new Set([...sql.matchAll(/^--\s*@tenant\s+(\w+)/gim)].map((x) => x[1]));
+      // identity only: tables used before anyone is signed in (sign-up, password reset, login throttle) may be global,
+      // each one named with `-- @global <table>` so it is a visible decision, never an accident
+      const globalTables = m.id === 'identity' ? new Set([...sql.matchAll(/^--\s*@global\s+(\w+)/gim)].map((x) => x[1])) : new Set<string>();
       for (const t of sql.matchAll(/create table (?:if not exists )?(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
         const [, table, body] = t;
-        if (m.id === 'identity' && table === 'tenants') continue;
+        if ((m.id === 'identity' && table === 'tenants') || globalTables.has(table)) continue;
         if (!/\btenant_id\b/.test(body)) errors.push(`${m.id}: table ${table} has no tenant_id`);
         else if (!tenantTables.has(table)) errors.push(`${m.id}: table ${table} is missing "-- @tenant ${table}" (row-level security)`);
       }

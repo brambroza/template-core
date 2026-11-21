@@ -567,6 +567,23 @@ a.decide-title:hover { color: var(--accent-text); text-decoration: underline; }
 .login-card label { display: flex; flex-direction: column; gap: 6px; font-size: .88rem; font-weight: 500; color: var(--ink-2); }
 .login-card .btn-primary { margin-top: 6px; min-height: 46px; }
 .login-note { margin: 0; padding: 10px 12px; background: var(--warn-soft); color: var(--warn-text); border-radius: var(--r-md); font-size: .9rem; }
+/* sign-up / password reset (AuthLayout pages) */
+.login-links { margin: 4px 0 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; font-size: .9rem; color: var(--ink-2); }
+.login-links a, .linklike { color: var(--accent-text); font-weight: 600; text-decoration: none; }
+.login-links a:hover, .linklike:hover { text-decoration: underline; }
+.linklike { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.login-done-icon { color: var(--accent); }
+.signup-card { width: min(440px, 100%); }
+.plan-pick { margin: 4px 0 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+.plan-pick legend { margin-bottom: 6px; font-size: .88rem; font-weight: 500; color: var(--ink-2); }
+.login-card .plan-opt { position: relative; flex-direction: column; gap: 2px; padding: 10px 12px 10px 38px; border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; color: var(--ink); }
+.plan-opt input { position: absolute; left: 12px; top: 13px; accent-color: var(--accent); }
+.plan-opt.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.plan-head { display: flex; justify-content: space-between; gap: 8px; }
+.plan-head span { font-variant-numeric: tabular-nums; color: var(--ink-2); font-weight: 600; }
+.plan-opt small { color: var(--ink-2); font-weight: 400; line-height: 1.45; }
+.plan-note { margin: 0; font-size: .8rem; color: var(--ink-3); }
+.turnstile { min-height: 65px; }
 
 /* ---------- small screens ---------- */
 @media (max-width: 1100px) {

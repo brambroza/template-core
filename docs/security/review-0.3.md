@@ -246,7 +246,7 @@ Status legend: **Fixed** (code + regression test in this change) · **Documented
 ## Open decisions (need product owner)
 
 1. ~~SEC-07 token revocation~~ — done in wave 9 (a shorter TTL + refresh is still an option on top).
-2. SEC-14 HTTPS in the standard bundle, `NODE_ENV=production` in compose, password reset by e-mail (change-password exists since wave 9), optional 2FA for admins.
+2. SEC-14 HTTPS in the standard bundle, `NODE_ENV=production` in compose, optional 2FA for admins. (Password reset by e-mail: done 2026-11, identity `/auth/forgot` + `/auth/reset`.)
 3. SEC-20 whether security docs ship to customers.
 4. SEC-05 nonce-based `script-src` CSP (and/or moving the web token from `localStorage` to an httpOnly cookie).
 

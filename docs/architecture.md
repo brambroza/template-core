@@ -40,7 +40,7 @@
 - permission รูปแบบ `<module>.<thing>.<action>` รองรับ `<module>.*` และ `*`
 - แต่ละโมดูลประกาศ permission ของตัวเองใน `module.json` → UI ดึงจาก `/api/_catalog` ไปสร้างหน้าตั้งค่าบทบาท
 - token ต้องมี `exp` เสมอ, alg ไม่อ่านจาก header (HS256 ตายตัว); service/gateway ไม่ยอม start ถ้า `JWT_SECRET`/`INTERNAL_TOKEN` ยังเป็นค่าตัวอย่าง
-  (และใน `NODE_ENV=production` ต้องยาว ≥ 32 ตัวและไม่ซ้ำกัน) · ให้สิทธิ์ได้เฉพาะสิทธิ์ที่ตัวเองมี · login ผิด 10 ครั้ง/15 นาที ต่ออีเมล + IP (และไม่เกิน 50 ต่ออีเมล, 100 ต่อ IP) → 429 — IP มาจาก header `x-erp-client-ip` ที่ gateway ใส่เอง (หลัง load balancer ตั้ง `TRUST_PROXY` = address ของ proxy)
+  (และใน `NODE_ENV=production` ต้องยาว ≥ 32 ตัวและไม่ซ้ำกัน) · ให้สิทธิ์ได้เฉพาะสิทธิ์ที่ตัวเองมี · login ผิด 10 ครั้ง/15 นาที ต่ออีเมล + IP (และไม่เกิน 50 ต่ออีเมล, 100 ต่อ IP) → 429 (นับใน Postgres ใช้ร่วมกันทุก instance) — IP มาจาก header `x-erp-client-ip` ที่ gateway ใส่เอง (หลัง load balancer ตั้ง `TRUST_PROXY` = address ของ proxy)
   — รายละเอียดและสิ่งที่ยังค้าง: `docs/security/review-0.3.md`
 - **ยกเลิก token ได้** (wave 9, SEC-07): token มี `jti` ไม่ซ้ำ; ออกจากระบบ (= ทุกอุปกรณ์), เปลี่ยนรหัสผ่าน, ปิดบัญชี, เปลี่ยนบทบาท และ "บังคับออกจากระบบ"
   ทำให้ identity ส่ง `identity.tokens_revoked` → gateway ส่งให้ **ทุก**โมดูล → kernel ของแต่ละโมดูลเก็บใน `_revoked_tokens` (RLS) และปฏิเสธ token
@@ -89,6 +89,8 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
 - บริษัทที่สมัครแพ็กเกจมีแถวใน `identity.tenant_subscriptions` (Starter / Factory / Business ใน `services/identity/src/plans.ts`) — ไม่มีแถว = ไม่จำกัด (ติดตั้งเอง)
 - login ใส่รายการโมดูลของแพ็กเกจใน token (`mods`) → kernel ของทุกโมดูลปฏิเสธบริษัทที่แพ็กเกจไม่รวมโมดูลนั้น (403 `module_not_in_plan`)
   และ gateway ซ่อนเมนูของโมดูลนั้นใน `/api/_catalog` (อ่าน claim โดยไม่ตรวจลายเซ็น — ใช้แค่ซ่อนเมนู)
+- สมัครเอง: หน้า `/signup` → อีเมลยืนยัน (Resend/SendGrid) → สร้างบริษัท + ทดลอง 14 วัน · ลืมรหัสผ่าน `/forgot-password` → `/reset-password`
+  · Turnstile CAPTCHA เมื่อตั้ง `TURNSTILE_SECRET` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` · ลิงก์ในอีเมลใช้ `APP_URL` เท่านั้นใน production
 - ทดลอง 14 วัน → ชำระด้วยการโอน แล้วทีม GO Along ยืนยัน (`pnpm erp plan set <code> --status active --paid-through …`) · เลยกำหนด 7 วัน หรือถูกระงับ → login ได้ 402 พร้อมเหตุผล
   token ไม่มีอายุเกินวันที่ใช้ได้ · เปลี่ยนแพ็กเกจ/สถานะ → ยกเลิก token ของทุกคนในบริษัท ให้ login ใหม่พร้อมโมดูลชุดใหม่
 - event ยังส่งถึงทุกโมดูลที่ติดตั้ง (โมดูลนอกแพ็กเกจรับ event ของบริษัทนั้นได้ แต่ผู้ใช้เปิดดูไม่ได้)

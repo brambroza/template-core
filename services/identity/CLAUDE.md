@@ -10,6 +10,8 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - `users.email` is unique across ALL companies (migration 003, index `users_email_global`). Policy `login_lookup` (SELECT only, on while a transaction sets `app.login_lookup = 'on'`) lets login and the e-mail-taken check read users of every company; nothing else sets it.
 - `users`, `roles` (`permissions text[]`), `user_roles` — tenant tables
 - `company_profiles` (one row per tenant, `tenant_id` is the key) — seller details printed on every document
+- Global tables of migration 005 (`-- @global`, used before anyone is signed in; tokens kept as SHA-256 only): `signups` (pending sign-up,
+  24 h link), `password_resets` (one-time, 60 min), `auth_attempts` (throttle rows: key + time).
 - `tenant_subscriptions` (migration 004, one row per cloud company; none = no plan limit, e.g. self-hosted) — `plan starter|factory|business`,
   `status trial|active|suspended|cancelled`, `trial_ends_at`, `paid_through` (Bangkok day), overrides `modules`, `max_users`, `note`.
   `tenant_subscription_log` — every change with `by_name`. Policy `ops_read` (SELECT, on while `app.ops_read = 'on'`) only for `/_ops` lists.
@@ -22,6 +24,17 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
   modules) and never outlives access (`tokenTtl`). Login and `/me` return `subscription` (plan, status, daysLeft, modules, maxUsers, blocked).
   `POST /users` → 409 `user_limit` when the plan's active users are all taken. `GET /subscription` (any signed-in user) → `subscription`,
   `usedUsers`, `plans` + flat fields for the "แพ็กเกจของบริษัท" screen.
+- **Self-serve sign-up (public):** `GET /plans` (plans + Thai module names + trial days) · `POST /signup { companyName, name, email,
+  password, plan? = factory, captchaToken? }` → 202, the same Thai answer whether or not the e-mail has an account: new e-mail → confirmation
+  link `<APP_URL>/signup/verify?token=…`, taken → a mail pointing to "ลืมรหัสผ่าน" (same scrypt work, so timing does not tell). 5/h per IP,
+  3/h per e-mail. `POST /signup/verify { token }` → creates company (code from the e-mail domain, `-2`… when taken, random for free mail),
+  first admin and the trial, and answers like a login (201). Bad/expired links: 400 `link_invalid`, 20 per IP per 15 min.
+- **Password reset (public):** `POST /auth/forgot { email, captchaToken? }` → 202 same answer always; an active user gets
+  `<APP_URL>/reset-password?token=…` (60 min, once). 3/h per e-mail, 10/h per IP. `POST /auth/reset { token, newPassword }` → new password,
+  other links of the user die, every session is revoked (`password_changed`), the login throttle for that e-mail + IP is cleared.
+- **Settings:** `APP_URL` (public web address for mail links — required in production; elsewhere the forwarded host is used), `EMAIL_PROVIDER`
+  `resend|sendgrid|log` (default: resend when `RESEND_API_KEY` is set, else log = print + keep in `sentMail`), `EMAIL_FROM`, `RESEND_API_KEY`,
+  `SENDGRID_API_KEY`, `TURNSTILE_SECRET` (CAPTCHA on sign-up and forgot; unset = no check). Mail failure → 503 `mail_failed`.
 - **Back office (internal token):** `GET /_ops/tenants?q=` (every company + plan + active users), `PUT /_ops/tenants/:code/subscription
   { by, plan?, status?, paidThrough?, trialDays?, modules?, maxUsers?, note? }` (bank transfer confirmed → `status: active, paidThrough`;
   creates the row when missing — `plan` then required; access changes revoke every user's tokens, reason `plan_changed`),
@@ -72,7 +85,8 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - **Login throttling** (SEC-02): 10 wrong passwords per e-mail **+ client IP** in 15 minutes (with or without a company code) → 429 `too_many_attempts`,
   so wrong guesses from one place do not lock the owner out from another. Looser caps: 50 per e-mail from any IP, 100 per IP over any e-mails
   (`loginBuckets`). The IP is `x-erp-client-ip`, set by the gateway from what it saw (`clientIp`; missing → one shared `direct` bucket).
-  In memory, per identity instance; the right password clears the e-mail + IP bucket. Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password ("อีเมลหรือรหัสผ่านไม่ถูกต้อง").
+  Counted in Postgres (`auth_attempts`, shared by every identity instance, kept across restarts — `src/throttle.ts`); the right password
+  clears the e-mail + IP bucket. Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password ("อีเมลหรือรหัสผ่านไม่ถูกต้อง").
 - SVG logos must not contain script, event handlers, `<foreignObject>`, entities or outside links (SEC-11).
 
 ## Screens for sessions

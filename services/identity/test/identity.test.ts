@@ -97,7 +97,7 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
   });
 
   it('logs in without a company code and finds the company from the e-mail', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     await createTenant('solo');
     const r = await loginEmail({ email: 'ADMIN@solo.co', password: 'password123' });
     expect(r.status).toBe(200);
@@ -110,7 +110,7 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
   });
 
   it('answers a wrong password, an unknown e-mail and a deactivated user alike', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     const wrong = await loginEmail({ email: 'admin@solo.co', password: 'nope-nope' });
     const ghost = await loginEmail({ email: 'ghost@nowhere.co', password: 'nope-nope' });
     expect([wrong.status, ghost.status]).toEqual([401, 401]);
@@ -133,17 +133,17 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
   });
 
   it('throttles per e-mail, with or without the company code', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     for (let i = 0; i < LOGIN_MAX_FAILURES; i++) {
       const body = i % 2 ? { email: 'admin@solo.co', password: `bad-${i}` } : { tenant: 'solo', email: 'admin@solo.co', password: `bad-${i}` };
       expect((await loginEmail(body)).status).toBe(401);
     }
     expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' })).status).toBe(429);
-    resetLoginThrottle();
+    await resetLoginThrottle();
   });
 
   it('wrong passwords from one IP do not lock the owner out from another IP; spreading over many IPs still hits a cap', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await loginEmail({ email: 'admin@solo.co', password: `bad-${i}` }, '203.0.113.9')).status).toBe(401);
     expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '203.0.113.9')).status).toBe(429);
     const owner = await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '198.51.100.7');
@@ -152,7 +152,7 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
     // the same e-mail from many addresses: the per-e-mail cap
     for (let i = LOGIN_MAX_FAILURES; i < LOGIN_MAX_FAILURES_PER_EMAIL; i++) await loginEmail({ email: 'admin@solo.co', password: 'bad' }, `203.0.113.${i % 200}`);
     expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '192.0.2.1')).status).toBe(429);
-    resetLoginThrottle();
+    await resetLoginThrottle();
   });
 
   it('client IP header: only short IP-like values are used', () => {
@@ -163,7 +163,7 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
   });
 
   it('e-mails duplicated before 003: the password picks the account, otherwise the company code is asked for', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     // an older database: two companies share an e-mail (the global index could not be created there)
     await t.svc.db.rawTx((c) => c.query('drop index users_email_global'));
     try {
@@ -247,7 +247,7 @@ describe('security review 0.3', () => {
   });
 
   it('SEC-02: throttles repeated wrong passwords per account and does not reveal unknown accounts', async () => {
-    resetLoginThrottle();
+    await resetLoginThrottle();
     await createTenant('brute');
     for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await login('brute', 'admin@brute.co', `wrong-${i}`)).status).toBe(401);
     const locked = await login('brute', 'admin@brute.co', 'password123');
@@ -260,7 +260,7 @@ describe('security review 0.3', () => {
     const b = await login('no-such-co', 'admin@no-such-co.co', 'x');
     expect([a.status, b.status]).toEqual([401, 401]);
     expect(a.body).toEqual(b.body);
-    resetLoginThrottle();
+    await resetLoginThrottle();
     expect((await login('brute', 'admin@brute.co', 'password123')).status).toBe(200);
   });
 });

@@ -6,7 +6,7 @@ import ui from '../src/ui.ts';
 
 /** Logout everywhere, password change, and revocation on disable / role change / admin action (security review 0.3, SEC-07). */
 let t: TestService;
-beforeAll(async () => { t = await bootTestService(definition); resetLoginThrottle(); });
+beforeAll(async () => { t = await bootTestService(definition); await resetLoginThrottle(); });
 afterAll(async () => { await t?.close(); });
 
 async function createTenant(code: string) {

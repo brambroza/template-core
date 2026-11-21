@@ -26,6 +26,15 @@
 - Web: banner "ทดลองใช้แพ็กเกจ Factory เหลือ 5 วัน" / payment reminder; settings screen "แพ็กเกจของบริษัท" with how to pay.
 - Companies without a plan (self-hosted installs, the demo) are unchanged.
 
+**Self-serve sign-up and password reset (phase 1, part 2)**
+- `/signup`: company, name, work e-mail, password, plan → a confirmation e-mail; opening the link creates the company, its admin and the
+  14-day trial and signs the owner in. The answer never tells whether an e-mail already has an account (that owner gets a reset hint by mail).
+- `/forgot-password` → one-time 60-minute link → `/reset-password`; every older session ends.
+- Mail through Resend or SendGrid (`EMAIL_PROVIDER`, `EMAIL_FROM`), printed to the log when not configured. Cloudflare Turnstile on both
+  public forms when its keys are set. Links only from `APP_URL` in production.
+- Login throttle, sign-up and reset limits are counted in Postgres (`auth_attempts`): shared by every identity instance, kept across restarts.
+- Login page links to sign-up and password reset.
+
 **Phase 0 (self-serve blockers found by the new-user test)**
 - Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
   The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.
