@@ -304,8 +304,9 @@ export function companyCodeBase(mail: string): string {
  * Host header could point a reset mail at someone else's site. Outside production the gateway's forwarded host is used.
  */
 function appUrl(env: Record<string, string | undefined>, headers: Record<string, unknown>): string {
-  if (env.APP_URL) return env.APP_URL.replace(/\/$/, '');
-  if (env.NODE_ENV === 'production') throw new HttpError(503, 'not_configured', 'ระบบสมัครใช้งานยังไม่พร้อม (ยังไม่ได้ตั้ง APP_URL) — ติดต่อ GO Along');
+  const configured = env.APP_URL || env.PUBLIC_APP_URL;
+  if (configured) return configured.replace(/\/$/, '');
+  if (env.NODE_ENV === 'production') throw new HttpError(503, 'not_configured', 'ระบบสมัครใช้งานยังไม่พร้อม (ยังไม่ได้ตั้ง APP_URL / PUBLIC_APP_URL) — ติดต่อ GO Along');
   const host = String(headers['x-forwarded-host'] ?? headers.host ?? 'localhost:3000');
   return `${String(headers['x-forwarded-proto'] ?? 'http')}://${host}`;
 }
