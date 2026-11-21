@@ -61,7 +61,15 @@
   errors in a dry run, then one transaction (moves with refType `opening`); an item already given an opening balance in a warehouse is
   refused, so the same file cannot double the stock. Item codes are turned into ids by master-data first (`ImportSpec.resolve`,
   `POST /api/master-data/items/resolve`).
-- Not yet: opening receivables / payables (they touch the VAT registers, e-Tax and the ledger — designed separately).
+- ลูกหนี้ยกมา / เจ้าหนี้ยกมา (sales "ลูกหนี้ยกมา", purchasing "เจ้าหนี้ยกมา", both "นำเข้าจาก Excel"): unpaid documents of the old system
+  as of the start day — customer / supplier code, the old document number, date, due date, amount (incl. VAT). Sales stores them as
+  invoices of kind `opening` (no sales order; migration 006: `order_id` nullable, customer snapshot on the row), purchasing as bills of
+  kind `opening` (vat none). Neither publishes `sales.invoiced` / `purchasing.bill_recorded`, so they never reach output / input VAT,
+  e-Tax, revenue or expense postings — the ledger's AR / AP balance comes from the accounting opening balance. They are collected with
+  normal receipts / paid with payment vouchers (only those post: cash against AR / AP), show in receivables, payables and aging, open
+  on their own screen (never printed as a tax invoice: `RowLink.byField`), refuse credit / debit notes, and cannot be imported twice.
+  Dates accept 15/10/2569, 2026-10-15 or Excel dates. Partner codes are resolved by `POST /api/master-data/partners/resolve`.
+  **To confirm with a partner accountant before customers rely on it.**
 
 **Setup wizard and team invitations (phase 2, part 2)**
 - After the sign-up link the owner lands on `/setup`, "ตั้งค่าเริ่มต้น" in 5 steps (each can be skipped; a bar "ตั้งค่าเริ่มต้นแล้ว 2/5 — ทำต่อ"

@@ -1,4 +1,4 @@
-import { defineUi, STATUS_TH, type Action, type Column, type DetailScreen, type ListScreen } from '@erp/ui-schema';
+import { defineUi, OPENING_PARTNER_RESOLVE, openingDocColumns, STATUS_TH, type Action, type Column, type DetailScreen, type ListScreen } from '@erp/ui-schema';
 import { NOTE_SECTION, NOTE_TITLE, reasonOptions, type NoteKind } from './notes.ts';
 
 const statuses = ['draft', 'confirmed', 'delivered', 'invoiced', 'cancelled'].map((v) => ({ value: v, label: STATUS_TH[v] }));
@@ -105,7 +105,7 @@ export default defineUi({
   menu: [
     { label: 'ใบสั่งขาย', screen: 'soList' }, { label: 'สร้างใบสั่งขาย', screen: 'soNew' },
     { label: 'ใบกำกับ / ค้างชำระ', screen: 'invoices' }, { label: 'ใบเสร็จรับเงิน', screen: 'receipts' }, { label: 'รับมัดจำ', screen: 'depositNew' },
-    { label: 'ลูกหนี้คงค้าง', screen: 'receivables' }, { label: 'อายุลูกหนี้', screen: 'aging' },
+    { label: 'ลูกหนี้คงค้าง', screen: 'receivables' }, { label: 'อายุลูกหนี้', screen: 'aging' }, { label: 'ลูกหนี้ยกมา', screen: 'openingInvoices' },
     { label: 'ใบลดหนี้', screen: 'creditNotes' }, { label: 'ใบเพิ่มหนี้', screen: 'debitNotes' },
     { label: 'วันที่ปิดงวด', screen: 'lockSettings' },
   ],
@@ -121,7 +121,8 @@ export default defineUi({
   ],
   search: [
     { id: 'orders', title: 'ใบสั่งขาย', endpoint: '/orders', label: ['no', 'customer_name', 'ref'], screen: 'soDetail', perm: 'sales.order.read' },
-    { id: 'invoices', title: 'ใบกำกับภาษี', endpoint: '/invoices', label: ['no', 'customer_name'], screen: 'invoice', perm: 'sales.order.read' },
+    { id: 'invoices', title: 'ใบกำกับภาษี', endpoint: '/invoices', query: { kind: 'sale' }, label: ['no', 'customer_name'], screen: 'invoice', perm: 'sales.order.read' },
+    { id: 'openingInvoices', title: 'ลูกหนี้ยกมา', endpoint: '/invoices', query: { kind: 'opening' }, label: ['no', 'customer_name'], screen: 'openingInvoice', perm: 'sales.order.read' },
     { id: 'receipts', title: 'ใบเสร็จรับเงิน', endpoint: '/receipts', label: ['no', 'customer_name'], screen: 'receipt', perm: 'sales.receivable.read' },
     { id: 'creditNotes', title: 'ใบลดหนี้', endpoint: '/credit-notes', label: ['no', 'customer_name', 'invoice_no'], screen: 'creditNote', perm: 'sales.note.read' },
     { id: 'debitNotes', title: 'ใบเพิ่มหนี้', endpoint: '/debit-notes', label: ['no', 'customer_name', 'invoice_no'], screen: 'debitNote', perm: 'sales.note.read' },
@@ -241,6 +242,36 @@ export default defineUi({
           { key: 'net', label: 'ผลต่าง', format: 'money' }, { key: 'vat', label: 'VAT', format: 'money' }, { key: 'gross', label: 'รวม', format: 'money' }],
       }],
     },
+    openingInvoices: {
+      kind: 'list', title: 'ลูกหนี้ยกมา', endpoint: '/opening-receivables', perm: 'sales.receivable.read',
+      filters: [{ name: 'q', label: 'ค้นหาเลขที่หรือลูกค้า', type: 'text' }],
+      columns: [
+        { key: 'no', label: 'เลขที่เดิม' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'issue_date', label: 'วันที่', format: 'date' },
+        { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'qty' },
+        { key: 'gross', label: 'ยอดยกมา', format: 'money' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' }, { key: 'payment_status', label: 'การชำระ', format: 'status' },
+      ],
+      rowLink: { screen: 'openingInvoice' },
+      empty: 'ยังไม่มีลูกหนี้ยกมา — นำเข้าใบแจ้งหนี้ที่ยังค้างจากโปรแกรมเดิมด้วยไฟล์ Excel',
+      import: {
+        endpoint: '/opening-receivables/import', perm: 'sales.invoice.write', template: 'แบบฟอร์มลูกหนี้ยกมา.csv',
+        note: 'ใบแจ้งหนี้ที่ลูกค้ายังค้างในโปรแกรมเดิม ณ วันเริ่มใช้ — ไม่เข้ารายงานภาษีขายและไม่ลงรายได้ซ้ำ (ยอดลูกหนี้ในบัญชีใช้การยกยอดของโมดูลบัญชี) · รับชำระด้วยใบเสร็จได้ตามปกติ · เลขที่ซ้ำกับที่มีอยู่จะไม่นำเข้า',
+        columns: openingDocColumns('customer'), resolve: OPENING_PARTNER_RESOLVE,
+      },
+    },
+    openingInvoice: {
+      kind: 'detail', title: 'ลูกหนี้ยกมา', endpoint: '/invoices/:id', perm: 'sales.order.read', heading: 'no',
+      fields: [
+        { key: 'kind_label', label: 'ประเภท' }, { key: 'customer.code', label: 'รหัสลูกค้า' }, { key: 'customer.name', label: 'ลูกค้า' },
+        { key: 'issueDateTh', label: 'วันที่เอกสารเดิม' }, { key: 'dueDateTh', label: 'ครบกำหนดชำระ' },
+        { key: 'gross', label: 'ยอดยกมา', format: 'money' }, { key: 'paid_amount', label: 'รับชำระแล้ว', format: 'money' },
+        { key: 'outstanding', label: 'ค้างชำระ', format: 'money' }, { key: 'payment_status', label: 'การชำระ', format: 'status' },
+        { key: 'opening_note', label: 'หมายเหตุ' },
+      ],
+      lines: [{
+        path: 'receipts', label: 'รับชำระแล้ว',
+        columns: [{ key: 'no', label: 'ใบเสร็จ' }, { key: 'receipt_date', label: 'วันที่', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' }],
+      }],
+    },
     invoices: {
       kind: 'list', title: 'ใบกำกับภาษี / ค้างชำระ', endpoint: '/invoices', perm: 'sales.order.read', mobile: true,
       filters: [
@@ -253,7 +284,8 @@ export default defineUi({
         { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'qty' },
         { key: 'gross', label: 'ยอดรวม', format: 'money' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' }, { key: 'payment_status', label: 'การชำระ', format: 'status' },
       ],
-      rowLink: { screen: 'invoice' }, empty: 'ยังไม่มีใบกำกับภาษี',
+      // ลูกหนี้ยกมา is not a tax invoice of this system: it opens (and never prints) as one
+      rowLink: { screen: 'invoice', byField: { field: 'kind', screens: { opening: 'openingInvoice' } } }, empty: 'ยังไม่มีใบกำกับภาษี',
     },
     receipts: {
       kind: 'list', title: 'ใบเสร็จรับเงิน / มัดจำ', endpoint: '/receipts', perm: 'sales.receivable.read', mobile: true,

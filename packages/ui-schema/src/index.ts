@@ -155,7 +155,7 @@ export interface ListScreen extends ScreenBase {
   create?: string;
   createLabel?: string;
   /** open this detail screen on row click; `params` maps route params from the row (default id -> 'id') */
-  rowLink?: { screen: string; idFrom?: string };
+  rowLink?: RowLink;
   /** buttons on the list itself (e.g. "generate PM work orders") */
   actions?: Action[];
   /** buttons on each row; endpoint params are filled from the row */
@@ -172,6 +172,22 @@ export interface ListScreen extends ScreenBase {
  * `{ rows: Record<string, unknown>[], dryRun?: boolean }` (values arrive as text from the file) and answers
  * an ImportResult. File headers are matched to `columns` by label or by key (case-insensitive, a trailing "*" ignored).
  */
+/**
+ * Where a row opens. `byField` sends some rows elsewhere by a value in the row, e.g. invoices `{ field: 'kind', screens: { opening:
+ * 'openingInvoice' } }` — a carried-over receivable is not a tax invoice and must not open (or print) as one.
+ */
+export interface RowLink {
+  screen: string;
+  idFrom?: string;
+  byField?: { field: string; screens: Record<string, string> };
+}
+
+/** The screen a row opens (see RowLink.byField). */
+export function rowLinkScreen(link: RowLink, row: Record<string, unknown>): string {
+  const v = link.byField ? row[link.byField.field] : undefined;
+  return (typeof v === 'string' && link.byField?.screens[v]) || link.screen;
+}
+
 export interface ImportSpec {
   endpoint: string;
   perm?: string;
@@ -948,6 +964,7 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if (s.kind === 'list') {
       if (s.create) refs.push([s.create, `${id}.create`]);
       if (s.rowLink) refs.push([s.rowLink.screen, `${id}.rowLink`]);
+      for (const [v, target] of Object.entries(s.rowLink?.byField?.screens ?? {})) refs.push([target, `${id}.rowLink.byField.${v}`]);
       [...(s.actions ?? []), ...(s.rowActions ?? [])].forEach((a) => a.then && refs.push([a.then.screen, `${id}.${a.id}.then`]));
     }
     if (s.kind === 'form' && s.after) refs.push([s.after.screen, `${id}.after`]);
@@ -1770,3 +1787,80 @@ export function planNotice(p: PlanView | null): { text: string; urgent: boolean 
   return null;
 }
 export * from './xlsx.ts';
+
+/* ------------------------------------------------------------------ opening receivables / payables (phase 2) ------------------------------------------------------------------ */
+
+/** One unpaid document carried over from the old system, as read from the import file (codes resolved by master-data). */
+export interface OpeningDocRow {
+  row: number;
+  partnerId: string;
+  partnerCode: string;
+  partnerName: string;
+  taxId: string | null;
+  branch: string | null;
+  address: string | null;
+  docNo: string;
+  docDate: string;
+  dueDate: string;
+  amount: number;
+  note: string | null;
+}
+
+/** Import columns shared by ลูกหนี้ยกมา (side customer) and เจ้าหนี้ยกมา (side supplier). */
+export const openingDocColumns = (side: 'customer' | 'supplier'): ImportColumn[] => [
+  { key: 'partnerCode', label: side === 'customer' ? 'รหัสลูกค้า' : 'รหัสผู้ขาย', required: true },
+  { key: 'docNo', label: side === 'customer' ? 'เลขที่ใบแจ้งหนี้เดิม' : 'เลขที่ใบแจ้งหนี้ของผู้ขาย', required: true },
+  { key: 'docDate', label: 'วันที่เอกสาร', required: true },
+  { key: 'dueDate', label: 'ครบกำหนดชำระ' },
+  { key: 'amount', label: 'ยอดค้าง (รวม VAT)', required: true },
+  { key: 'note', label: 'หมายเหตุ' },
+];
+
+/** `ImportSpec.resolve` for the opening documents: partner codes → partner details from master-data. */
+export const OPENING_PARTNER_RESOLVE = {
+  module: 'master-data', endpoint: '/partners/resolve', column: 'partnerCode',
+  into: { partnerId: 'id', partnerName: 'name', partnerKind: 'kind', taxId: 'tax_id', branch: 'branch', address: 'address' },
+};
+
+/**
+ * Check the rows of an opening receivables / payables file (dates in any form people type: ISO, d/m/yyyy พ.ศ. or ค.ศ., Excel dates).
+ * Duplicates inside the file are reported here; duplicates against documents already in the system are the service's job.
+ */
+export function checkOpeningDocs(rows: Record<string, unknown>[], side: 'customer' | 'supplier', today: string): { valid: OpeningDocRow[]; errors: ImportRowError[] } {
+  const errors: ImportRowError[] = [];
+  const valid: OpeningDocRow[] = [];
+  const seen = new Map<string, number>();
+  const who = side === 'customer' ? 'ลูกค้า' : 'ผู้ขาย';
+  rows.forEach((raw, i) => {
+    const row = i + 1;
+    const str = (k: string) => String(raw[k] ?? '').trim();
+    const before = errors.length;
+    const code = str('partnerCode');
+    const kind = str('partnerKind');
+    if (!code) errors.push({ row, field: 'partnerCode', message: `กรอกรหัส${who}` });
+    else if (!/^[0-9a-f-]{36}$/i.test(str('partnerId'))) errors.push({ row, field: 'partnerCode', message: `ไม่พบรหัส${who} ${code} ในข้อมูลหลัก — นำเข้าคู่ค้าก่อน` });
+    else if (kind && kind !== side && kind !== 'both') errors.push({ row, field: 'partnerCode', message: `${code} ไม่ได้ตั้งเป็น${who} — แก้ "เป็น" ในข้อมูลคู่ค้า` });
+    const docNo = str('docNo');
+    if (!docNo) errors.push({ row, field: 'docNo', message: 'กรอกเลขที่เอกสาร' });
+    else if (docNo.length > 50) errors.push({ row, field: 'docNo', message: 'เลขที่เอกสารยาวเกิน 50 ตัวอักษร' });
+    const docDate = parseDateInput(str('docDate'));
+    if (!docDate) errors.push({ row, field: 'docDate', message: 'วันที่ไม่ถูกต้อง — ใช้ วัน/เดือน/ปี เช่น 15/10/2569' });
+    else if (docDate > today) errors.push({ row, field: 'docDate', message: 'วันที่เอกสารอยู่ในอนาคต' });
+    const dueRaw = str('dueDate');
+    const dueDate = dueRaw ? parseDateInput(dueRaw) : docDate;
+    if (dueRaw && !dueDate) errors.push({ row, field: 'dueDate', message: 'วันครบกำหนดไม่ถูกต้อง' });
+    else if (docDate && dueDate && dueDate < docDate) errors.push({ row, field: 'dueDate', message: 'ครบกำหนดก่อนวันที่เอกสาร' });
+    const amount = Number(str('amount').replace(/,/g, ''));
+    if (!str('amount') || !Number.isFinite(amount) || amount <= 0) errors.push({ row, field: 'amount', message: 'ยอดค้างต้องเป็นตัวเลขมากกว่า 0' });
+    else if (Math.round(amount * 100) !== amount * 100 && Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6) errors.push({ row, field: 'amount', message: 'ยอดเงินมีทศนิยมได้ 2 ตำแหน่ง' });
+    if (errors.length > before) return;
+    const key = side === 'customer' ? docNo.toLowerCase() : `${code.toLowerCase()}|${docNo.toLowerCase()}`;
+    if (seen.has(key)) return void errors.push({ row, field: 'docNo', message: `เลขที่ ${docNo} ซ้ำกับแถวที่ ${seen.get(key)}` });
+    seen.set(key, row);
+    valid.push({
+      row, partnerId: str('partnerId'), partnerCode: code, partnerName: str('partnerName') || code, taxId: str('taxId') || null, branch: str('branch') || null,
+      address: str('address') || null, docNo, docDate: docDate!, dueDate: dueDate!, amount: Math.round(amount * 100) / 100, note: str('note').slice(0, 500) || null,
+    });
+  });
+  return { valid, errors };
+}

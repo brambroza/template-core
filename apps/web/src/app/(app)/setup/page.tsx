@@ -266,6 +266,8 @@ function DataStep({ onDone }: { onDone: () => Promise<void> }) {
         <li><Link href={screenHref('master-data', 'items')}>สินค้าและวัตถุดิบ</Link> — กด “นำเข้าจาก Excel” แล้วดาวน์โหลดแบบฟอร์ม (.xlsx) คัดลอกจาก Excel เดิมมาวาง ระบบบอกแถวที่ผิดก่อนบันทึก</li>
         <li><Link href={screenHref('master-data', 'partners')}>ลูกค้าและผู้ขาย</Link> — นำเข้าแบบเดียวกัน (เลขผู้เสียภาษีตรวจให้)</li>
         {installed('inventory') && <li><Link href={screenHref('inventory', 'balances')}>ยอดสต็อกยกมา</Link> — หลังมีสินค้าและคลังแล้ว นำเข้ายอดที่นับได้ ณ วันเริ่มใช้ (รหัสสินค้า รหัสคลัง จำนวน ต้นทุน)</li>}
+        {installed('sales') && <li><Link href={screenHref('sales', 'openingInvoices')}>ลูกหนี้ยกมา</Link> — ใบแจ้งหนี้ที่ลูกค้ายังค้างจากโปรแกรมเดิม (ไม่เข้ารายงานภาษีขายซ้ำ) แล้วรับชำระในระบบนี้ได้เลย</li>}
+        {installed('purchasing') && <li><Link href={screenHref('purchasing', 'openingBills')}>เจ้าหนี้ยกมา</Link> — ใบแจ้งหนี้ผู้ขายที่ยังค้างจ่ายจากโปรแกรมเดิม แล้วจ่ายด้วยใบสำคัญจ่ายในระบบนี้</li>}
       </ul>
       <div className="form-actions"><button className="btn-primary" type="button" onClick={() => void onDone()}>ไปขั้นถัดไป</button></div>
     </div>

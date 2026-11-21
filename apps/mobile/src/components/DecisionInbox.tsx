@@ -6,7 +6,7 @@
 import { router } from 'expo-router';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { buildTodo, fillPath, formatValue, listRows, todoActions, todoSources, type Action, type ModuleUi, type TodoItem } from '@erp/ui-schema';
+import { buildTodo, fillPath, formatValue, listRows, rowLinkScreen, todoActions, todoSources, type Action, type ModuleUi, type TodoItem } from '@erp/ui-schema';
 import { api } from '../lib/api';
 import { radius, themed, usePalette } from '../lib/theme';
 import { ActionModal, screenPath } from './Screens';
@@ -75,7 +75,7 @@ export const DecisionInbox = forwardRef<DecisionInboxHandle, { modules: ModuleUi
         return (
           <View key={item.key} style={[st.card, { borderLeftColor: bar }]}>
             <Pressable accessibilityRole={link ? 'button' : undefined} disabled={!link}
-              onPress={() => link && router.push(screenPath(item.module, link.screen, item.row[link.idFrom ?? 'id']))}>
+              onPress={() => link && router.push(screenPath(item.module, rowLinkScreen(link, item.row), item.row[link.idFrom ?? 'id']))}>
               <Text style={st.kind}>{item.spec.label}</Text>
               <Text style={st.itemTitle} numberOfLines={2}>{item.title || '—'}</Text>
               {!!item.subtitle && <Text style={s.muted} numberOfLines={1}>{item.subtitle}</Text>}

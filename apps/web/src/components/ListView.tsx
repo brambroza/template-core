@@ -6,7 +6,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
 import {
-  columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, toCsv,
+  columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, rowLinkScreen, toCsv,
   type CompanyProfile, type Field, type ListScreen,
 } from '@erp/ui-schema';
 import { api } from '@/lib/api';
@@ -98,7 +98,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const rowHref = (row: Record<string, unknown>) => {
     if (!screen.rowLink) return undefined;
     const target = get(row, screen.rowLink.idFrom ?? 'id');
-    return target === undefined || target === null || target === '' ? undefined : screenHref(module, screen.rowLink.screen, target);
+    return target === undefined || target === null || target === '' ? undefined : screenHref(module, rowLinkScreen(screen.rowLink, row), target);
   };
   // one solid blue (primary) button per page: the create button when there is one, else the first primary action
   const listActions = (screen.actions ?? []).filter((a) => hasPerm(perms, a.perm));

@@ -17,6 +17,8 @@ import {
   round, thaiSlashDate, toTis620, WHT_FORM_TH, WHT_INCOME_TYPE_CODES, WHT_INCOME_TYPES, whtDueDates, whtFormFor, whtTotals, type WhtForm, type WhtReturnRow,
 } from '@erp/thai';
 
+import { checkOpeningDocs } from '@erp/ui-schema';
+
 type App = Parameters<ServiceDefinition['routes']>[0];
 type Kernel = Parameters<ServiceDefinition['routes']>[1];
 
@@ -105,7 +107,7 @@ const IdParam = z.object({ id: s.uuid });
 const ReturnId = z.object({ id: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])_(PND3|PND53)$/, 'expected YYYY-MM_PND3 or YYYY-MM_PND53') });
 const Period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'งวดต้องเป็น YYYY-MM');
 
-const KIND_TH: Record<string, string> = { goods: 'ค่าสินค้า (ตามใบสั่งซื้อ)', service: 'ค่าบริการ', expense: 'ค่าใช้จ่ายอื่น' };
+const KIND_TH: Record<string, string> = { goods: 'ค่าสินค้า (ตามใบสั่งซื้อ)', service: 'ค่าบริการ', expense: 'ค่าใช้จ่ายอื่น', opening: 'เจ้าหนี้ยกมา (จากระบบเดิม)' };
 const METHOD_TH: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', cheque: 'เช็ค' };
 const BILL_STATUS_TH: Record<string, string> = { open: 'ค้างจ่าย', partially_paid: 'จ่ายบางส่วน', paid: 'จ่ายครบ' };
 const PND_BOXES = ['ภ.ง.ด.1ก', 'ภ.ง.ด.1ก พิเศษ', 'ภ.ง.ด.2', 'ภ.ง.ด.3', 'ภ.ง.ด.2ก', 'ภ.ง.ด.3ก', 'ภ.ง.ด.53'];
@@ -405,13 +407,62 @@ export function payablesRoutes(app: App, k: Kernel) {
   app.get('/bills', async (req) => {
     const a = auth(req);
     requirePerm(a, 'purchasing.bill.read');
-    const q = parse(s.listQuery.extend({ status: z.enum(['open', 'partially_paid', 'paid', 'unpaid']).optional(), supplierId: s.uuid.optional(), kind: z.enum(['goods', 'service', 'expense']).optional() }), req.query);
+    const q = parse(s.listQuery.extend({ status: z.enum(['open', 'partially_paid', 'paid', 'unpaid']).optional(), supplierId: s.uuid.optional(), kind: z.enum(['goods', 'service', 'expense', 'opening']).optional() }), req.query);
     return k.db.tx(a.tenantId, async (c) => (await c.query(
       `select * from supplier_bills
        where ($1::text is null or ($1 = 'unpaid' and status <> 'paid') or status = $1) and ($2::uuid is null or supplier_id = $2) and ($3::text is null or kind = $3)
          and ($4::text is null or no ilike $4 or supplier_name ilike $4 or supplier_invoice_no ilike $4 or po_no ilike $4)
        order by bill_date desc, no desc limit $5 offset $6`,
       [q.status ?? null, q.supplierId ?? null, q.kind ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map(decorateBill));
+  });
+
+  /** เจ้าหนี้ยกมา: supplier invoices carried over from the old system (bills of kind opening). */
+  app.get('/opening-payables', async (req) => {
+    const a = auth(req);
+    requirePerm(a, 'purchasing.bill.read');
+    const q = parse(s.listQuery, req.query);
+    return k.db.tx(a.tenantId, async (c) => (await c.query(
+      `select * from supplier_bills where kind = 'opening' and ($1::text is null or no ilike $1 or supplier_name ilike $1 or supplier_invoice_no ilike $1)
+       order by coalesce(due_date, bill_date), no limit $2 offset $3`, [q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map(decorateBill));
+  });
+
+  /**
+   * เจ้าหนี้ยกมา from Excel: `{ rows: [{ partnerCode, partnerId…(resolved by master-data), docNo, docDate, dueDate, amount, note }], dryRun }`.
+   * Each row becomes a bill of kind "opening" (own AP number, the supplier's invoice number kept); refused when that supplier's invoice
+   * number is already on a bill. No event: no input VAT, no expense or stock posting — the ledger's payable comes from the accounting
+   * opening balance. Paid with normal payment vouchers.
+   */
+  app.post('/opening-payables/import', async (req) => {
+    const a = auth(req);
+    requirePerm(a, 'purchasing.bill.write');
+    const body = parse(z.object({ rows: z.array(z.record(z.string(), z.unknown())).min(1).max(2000), dryRun: z.boolean().default(false) }), req.body);
+    return k.db.tx(a.tenantId, async (c) => {
+      const { valid, errors } = checkOpeningDocs(body.rows, 'supplier', thaiToday());
+      const taken = new Set((await c.query<{ k: string }>(
+        `select supplier_id::text || '|' || lower(supplier_invoice_no) as k from supplier_bills where supplier_id = any($1::uuid[])`,
+        [[...new Set(valid.map((v) => v.partnerId))]])).rows.map((r) => r.k));
+      const ok = valid.filter((v) => {
+        if (!taken.has(`${v.partnerId}|${v.docNo.toLowerCase()}`)) return true;
+        errors.push({ row: v.row, field: 'docNo', message: `ใบแจ้งหนี้ ${v.docNo} ของ ${v.partnerName} ตั้งหนี้ไว้แล้ว` });
+        return false;
+      });
+      errors.sort((x, y) => x.row - y.row);
+      const result = { dryRun: body.dryRun || errors.length > 0, total: body.rows.length, created: ok.length, updated: 0, errors };
+      if (result.dryRun) return result;
+      for (const v of ok) {
+        const no = await nextDocNo(c, 'AP', new Date(v.docDate));
+        const bill = (await c.query(
+          `insert into supplier_bills (no, kind, bill_date, due_date, supplier_id, supplier_code, supplier_name, supplier_tax_id, supplier_branch, supplier_address,
+             supplier_invoice_no, supplier_invoice_date, vat_mode, net, vat, gross, vat_claimable, note, created_by, created_by_name)
+           values ($1, 'opening', $2::date, $3::date, $4, $5, $6, $7, $8, $9, $10, $2::date, 'none', $11, 0, $11, false, $12, $13, $14) returning id`,
+          [no, v.docDate, v.dueDate, v.partnerId, v.partnerCode, v.partnerName, v.taxId, v.branch, v.address, v.docNo, v.amount,
+            v.note ?? 'เจ้าหนี้ยกมาจากระบบเดิม', a.userId, a.userName ?? null])).rows[0];
+        await c.query(
+          `insert into supplier_bill_lines (bill_id, line_no, description, qty, unit_price, amount) values ($1, 1, $2, 1, $3, $3)`,
+          [bill.id, `ยอดยกมา ตามใบแจ้งหนี้ ${v.docNo}`, v.amount]);
+      }
+      return result;
+    });
   });
 
   app.get('/bills/:id', async (req) => {

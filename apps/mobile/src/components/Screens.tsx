@@ -5,7 +5,7 @@ import { useCallback, useContext, useEffect, useState, type ReactNode } from 're
 import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
+  fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, rowLinkScreen, toBody,
   type Action, type DetailScreen, type FormScreen, type ListScreen, type ModuleUi,
 } from '@erp/ui-schema';
 import { api, ApiError } from '../lib/api';
@@ -146,7 +146,7 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
           <Pressable
             accessibilityRole={link ? 'button' : undefined}
             disabled={!link}
-            onPress={() => link && router.push(screenPath(ui.module, link.screen, get(item, link.idFrom ?? 'id')))}
+            onPress={() => link && router.push(screenPath(ui.module, isMobile(ui, rowLinkScreen(link, item)) ? rowLinkScreen(link, item) : link.screen, get(item, link.idFrom ?? 'id')))}
             style={({ pressed }) => [s.card, st.row, pressed && { backgroundColor: c.pressed }]}
           >
             <Text style={st.rowTitle}>{String(get(item, titleCol.key) ?? '')}</Text>

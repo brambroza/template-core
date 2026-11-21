@@ -6,7 +6,7 @@
 import Link from 'next/link';
 import { CheckCircle2, ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { buildTodo, formatValue, listRows, todoActions, todoSources, type ListScreen, type ModuleUi, type TodoItem, type TodoSpec } from '@erp/ui-schema';
+import { buildTodo, formatValue, listRows, rowLinkScreen, todoActions, todoSources, type ListScreen, type ModuleUi, type TodoItem, type TodoSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
 import { ActionButton } from './ActionButton';
@@ -96,7 +96,7 @@ function DecisionCard({ item, modules, perms, onDone }: { item: TodoItem; module
   const m = modules.find((x) => x.module === item.module)!;
   const screen = m.screens[item.spec.screen] as ListScreen;
   const actions = todoActions(item, screen, perms);
-  const link = screen.rowLink ? screenHref(item.module, screen.rowLink.screen, item.row[screen.rowLink.idFrom ?? 'id']) : undefined;
+  const link = screen.rowLink ? screenHref(item.module, rowLinkScreen(screen.rowLink, item.row), item.row[screen.rowLink.idFrom ?? 'id']) : undefined;
   const tone = item.overdue ? 'is-overdue' : item.urgent ? 'is-urgent' : '';
   return (
     <li className={`decide-card ${tone}`}>

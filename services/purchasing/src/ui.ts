@@ -1,4 +1,4 @@
-import { defineUi, STATUS_TH } from '@erp/ui-schema';
+import { defineUi, OPENING_PARTNER_RESOLVE, openingDocColumns, STATUS_TH } from '@erp/ui-schema';
 
 /* wave 9: supplier bills, payments with WHT, 50 ทวิ, ภ.ง.ด.3/53 */
 /** WHT income types — must match @erp/thai WHT_INCOME_TYPES (test/wht-ui.test.ts checks); kept literal so the apps need no @erp/thai */
@@ -72,7 +72,7 @@ export default defineUi({
   ],
   menu: [{ label: 'ใบสั่งซื้อ', screen: 'poList' }, { label: 'สร้างใบสั่งซื้อ', screen: 'poNew' }, { label: 'ใบส่งคืนสินค้า', screen: 'rtList' },
     { label: 'บันทึกการรับของ', screen: 'receipts' }, { label: 'ตั้งค่าการอนุมัติ', screen: 'settings' },
-    { label: 'บิลผู้ขาย (ตั้งหนี้)', screen: 'billList' }, { label: 'เจ้าหนี้ค้างจ่าย', screen: 'payables' }, { label: 'อายุเจ้าหนี้', screen: 'aging' },
+    { label: 'บิลผู้ขาย (ตั้งหนี้)', screen: 'billList' }, { label: 'เจ้าหนี้ค้างจ่าย', screen: 'payables' }, { label: 'อายุเจ้าหนี้', screen: 'aging' }, { label: 'เจ้าหนี้ยกมา', screen: 'openingBills' },
     { label: 'จ่ายชำระหนี้ผู้ขาย', screen: 'payNew' }, { label: 'ใบสำคัญจ่าย', screen: 'paymentList' }, { label: 'หนังสือรับรอง 50 ทวิ', screen: 'whtCerts' },
     { label: 'ภ.ง.ด.3 / ภ.ง.ด.53 รายเดือน', screen: 'whtReturns' }, { label: 'ใบแนบ ภ.ง.ด. (ส่งออก CSV)', screen: 'whtRows' }],
   commands: [
@@ -248,7 +248,7 @@ export default defineUi({
       kind: 'list', title: 'บิลผู้ขาย (ตั้งหนี้)', endpoint: '/bills', perm: 'purchasing.bill.read',
       filters: [{ name: 'q', label: 'ค้นหาเลขที่ ผู้ขาย เลขใบกำกับ หรือ PO', type: 'text' },
         { name: 'status', label: 'สถานะ', type: 'select', options: [{ value: 'unpaid', label: 'ยังไม่จ่ายครบ' }, { value: 'open', label: 'ค้างจ่าย' }, { value: 'partially_paid', label: 'จ่ายบางส่วน' }, { value: 'paid', label: 'จ่ายครบ' }] },
-        { name: 'kind', label: 'ประเภท', type: 'select', options: [{ value: 'goods', label: 'ค่าสินค้า' }, { value: 'service', label: 'ค่าบริการ' }, { value: 'expense', label: 'ค่าใช้จ่ายอื่น' }] }],
+        { name: 'kind', label: 'ประเภท', type: 'select', options: [{ value: 'goods', label: 'ค่าสินค้า' }, { value: 'service', label: 'ค่าบริการ' }, { value: 'expense', label: 'ค่าใช้จ่ายอื่น' }, { value: 'opening', label: 'เจ้าหนี้ยกมา' }] }],
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'bill_date', label: 'วันที่', format: 'date' }, { key: 'supplier_name', label: 'ผู้ขาย' },
         { key: 'supplier_invoice_no', label: 'ใบกำกับผู้ขาย' }, { key: 'kind_label', label: 'ประเภท' }, { key: 'due_date', label: 'ครบกำหนด', format: 'date' },
@@ -256,6 +256,22 @@ export default defineUi({
       ],
       create: 'billNew', createLabel: 'ตั้งหนี้ค่าบริการ/ค่าใช้จ่าย', rowLink: { screen: 'billDetail' },
       empty: 'ยังไม่มีบิลผู้ขาย — ค่าสินค้า: เปิดใบสั่งซื้อที่รับของแล้วกด "ตั้งหนี้" · ค่าบริการ: กด "ตั้งหนี้ค่าบริการ/ค่าใช้จ่าย"',
+    },
+    openingBills: {
+      kind: 'list', title: 'เจ้าหนี้ยกมา', endpoint: '/opening-payables', perm: 'purchasing.bill.read',
+      filters: [{ name: 'q', label: 'ค้นหาเลขที่ ผู้ขาย หรือเลขใบแจ้งหนี้', type: 'text' }],
+      columns: [
+        { key: 'no', label: 'เลขที่ตั้งหนี้' }, { key: 'supplier_invoice_no', label: 'ใบแจ้งหนี้ผู้ขาย' }, { key: 'supplier_name', label: 'ผู้ขาย' },
+        { key: 'bill_date', label: 'วันที่', format: 'date' }, { key: 'due_date', label: 'ครบกำหนด', format: 'date' },
+        { key: 'gross', label: 'ยอดยกมา', format: 'money' }, { key: 'outstanding', label: 'ค้างจ่าย', format: 'money' }, { key: 'status_label', label: 'สถานะ' },
+      ],
+      rowLink: { screen: 'billDetail' },
+      empty: 'ยังไม่มีเจ้าหนี้ยกมา — นำเข้าใบแจ้งหนี้ผู้ขายที่ยังค้างจ่ายจากโปรแกรมเดิมด้วยไฟล์ Excel',
+      import: {
+        endpoint: '/opening-payables/import', perm: 'purchasing.bill.write', template: 'แบบฟอร์มเจ้าหนี้ยกมา.csv',
+        note: 'ใบแจ้งหนี้ผู้ขายที่ยังค้างจ่ายในโปรแกรมเดิม ณ วันเริ่มใช้ — ไม่เข้ารายงานภาษีซื้อและไม่ลงค่าใช้จ่ายซ้ำ (ยอดเจ้าหนี้ในบัญชีใช้การยกยอดของโมดูลบัญชี) · จ่ายด้วยใบสำคัญจ่ายได้ตามปกติ · ใบที่ตั้งหนี้แล้วจะไม่นำเข้าซ้ำ',
+        columns: openingDocColumns('supplier'), resolve: OPENING_PARTNER_RESOLVE,
+      },
     },
     billNew: {
       kind: 'form', title: 'ตั้งหนี้ค่าบริการ / ค่าใช้จ่าย', method: 'POST', endpoint: '/bills', perm: 'purchasing.bill.write',

@@ -2,7 +2,7 @@ import { auth, badRequest, conflict, guardLockDate, type AuthContext, hasPerm, l
 import type { EventData } from '@erp/contracts';
 import { bahtText, calcVat, documentTotals, formatThaiDate, isValidThaiTaxId, promptPayPayload, round, VAT_RATE } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
-import { statusTh } from '@erp/ui-schema';
+import { checkOpeningDocs, statusTh } from '@erp/ui-schema';
 import { NOTE_SECTION, NOTE_TITLE, reasonSentence, reasonsOf, type NoteKind } from './notes.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -137,9 +137,13 @@ const ReceiptInput = z.object({
  */
 const BILLED = (a = 'i') => `(${a}.gross + ${a}.debit_total - ${a}.credit_total)`;
 const PAY_STATUS = `case when ${BILLED()} <= 0 and i.paid_amount = 0 then 'credited' when i.paid_amount >= ${BILLED()} then 'paid' when i.paid_amount > 0 then 'partially_paid' else 'outstanding' end`;
+/** customer of an invoice: its sales order's, or — ลูกหนี้ยกมา (kind opening, no order) — the snapshot on the invoice */
+const INVOICE_CUSTOMER = `coalesce(o.customer_id, i.opening_customer_id) as customer_id, coalesce(o.customer_name, i.opening_customer_name) as customer_name,
+  coalesce(o.customer_tax_id, i.opening_customer_tax_id) as customer_tax_id, coalesce(o.customer_branch, i.opening_customer_branch) as customer_branch,
+  coalesce(o.customer_address, i.opening_customer_address) as customer_address`;
 const INVOICE_SELECT = `select i.*, ${BILLED()} as billed, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status,
-  o.no as order_no, o.ref as order_ref, o.customer_id, o.customer_name, o.customer_tax_id, o.customer_branch, o.customer_address
-  from invoices i join sales_orders o on o.id = i.order_id`;
+  o.no as order_no, o.ref as order_ref, ${INVOICE_CUSTOMER}
+  from invoices i left join sales_orders o on o.id = i.order_id`;
 
 /** Line amounts after discount; VAT via @erp/thai — the same arithmetic as CRM quotations, so totals match to the satang. */
 export function orderTotals(lines: { qty: number; unitPrice: number; discountPct?: number }[], vatMode: 'exclusive' | 'inclusive') {
@@ -220,10 +224,10 @@ const asOfQuery = z.object({ asOf: s.isoDate.optional() });
  * Open invoices AS OF a date ($1): issued on or before it, less only the receipts dated on or before it — a report for the end of
  * last month must not show invoices issued since, nor hide ones paid since (bugs-0.4 SAL-02). Columns: invoice `i` + order `o` + `open_amt`.
  */
-const OPEN_AS_OF = `select i.*, o.customer_id, o.customer_name,
+const OPEN_AS_OF = `select i.*, coalesce(o.customer_id, i.opening_customer_id) as customer_id, coalesce(o.customer_name, i.opening_customer_name) as customer_name,
     i.gross + coalesce((select sum(case n.kind when 'debit' then n.gross else -n.gross end) from sales_notes n where n.invoice_id = i.id and n.issue_date <= $1::date), 0)
     - coalesce((select sum(rl.amount) from receipt_lines rl join receipts p on p.id = rl.receipt_id where rl.invoice_id = i.id and p.receipt_date <= $1::date), 0) as open_amt
-  from invoices i join sales_orders o on o.id = i.order_id where i.issue_date <= $1::date`;
+  from invoices i left join sales_orders o on o.id = i.order_id where i.issue_date <= $1::date`;
 /** deposits received on or before $1 with what remained unapplied on that date (used by receipts dated, or deducted on invoices issued, on/before it) */
 const DEPOSITS_AS_OF = `select d.customer_id, d.customer_name,
     d.total - coalesce((select sum(da.amount) from deposit_applications da left join receipts p on p.id = da.receipt_id left join invoices iv on iv.id = da.invoice_id
@@ -265,7 +269,7 @@ export const definition: ServiceDefinition = {
                   count(*) filter (where status = 'delivered')::int as to_invoice from sales_orders`)).rows[0];
         // wave 9: sales of a month = tax invoices + debit notes − credit notes issued in it (the VAT month of each document)
         const months = (await c.query(
-          `with docs as (select issue_date as d, gross as amt from invoices
+          `with docs as (select issue_date as d, gross as amt from invoices where kind = 'sale'
                          union all select issue_date, case kind when 'debit' then gross else -gross end from sales_notes)
            select to_char(m, 'YYYY-MM') as month, coalesce(sum(docs.amt), 0) as total
            from generate_series(date_trunc('month', $1::date) - interval '5 months', date_trunc('month', $1::date), interval '1 month') m
@@ -401,6 +405,7 @@ export const definition: ServiceDefinition = {
         status: z.enum(['outstanding', 'partially_paid', 'paid', 'credited', 'open']).optional(),
         overdue: z.enum(['0', '1', 'true', 'false']).optional(),
         customerId: s.uuid.optional(),
+        kind: z.enum(['sale', 'opening']).optional(),
       }), req.query);
       const overdue = q.overdue === '1' || q.overdue === 'true';
       return k.db.tx(a.tenantId, async (c) => (await c.query(
@@ -409,8 +414,19 @@ export const definition: ServiceDefinition = {
            and (not $2 or (payment_status not in ('paid', 'credited') and due_date < $7::date))
            and ($3::uuid is null or customer_id = $3)
            and ($4::text is null or no ilike $4 or order_no ilike $4 or customer_name ilike $4 or order_ref ilike $4)
+           and ($8::text is null or kind = $8)
          order by due_date, no limit $5 offset $6`,
-        [q.status ?? null, overdue, q.customerId ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset, bangkokToday()])).rows.map(withDaysOverdue));
+        [q.status ?? null, overdue, q.customerId ?? null, q.q ? `%${q.q}%` : null, q.limit, q.offset, bangkokToday(), q.kind ?? null])).rows.map(withDaysOverdue));
+    });
+
+    /** ลูกหนี้ยกมา: invoices carried over from the old system (kind opening), newest first. */
+    app.get('/opening-receivables', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'sales.receivable.read');
+      const q = parse(s.listQuery, req.query);
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select * from (${INVOICE_SELECT}) x where kind = 'opening' and ($1::text is null or no ilike $1 or customer_name ilike $1)
+         order by due_date, no limit $2 offset $3`, [q.q ? `%${q.q}%` : null, q.limit, q.offset])).rows.map(withDaysOverdue));
     });
 
     app.get('/invoices/:id', async (req) => {
@@ -518,7 +534,8 @@ export const definition: ServiceDefinition = {
           if (amount > outstanding) throw fieldError('lines', `รับชำระ ${amount.toFixed(2)} เกินยอดค้าง ${outstanding.toFixed(2)} ของ ${inv.no}`);
           // C4: WHT is on services (and other income types), not on goods — default base = the service part of the amount paid, before VAT
           const preVat = inv.gross > 0 ? round((amount * inv.net) / inv.gross) : 0;
-          const share = await serviceShare(c, inv.order_id);
+          // ลูกหนี้ยกมา has no order lines to tell services from goods: no WHT unless the cashier enters the base
+          const share = inv.order_id ? await serviceShare(c, inv.order_id) : 0;
           const whtBase = l.whtBase ?? round(preVat * share);
           if (whtBase > preVat + 0.01) throw fieldError('lines', `ฐานภาษีหัก ณ ที่จ่ายของ ${inv.no} (${whtBase.toFixed(2)}) เกินยอดก่อน VAT ของส่วนที่รับชำระ (${preVat.toFixed(2)})`);
           settled.push({ invoiceId: inv.id, invoiceNo: inv.no, amount, whtBase: round(whtBase), outstanding: round(outstanding - amount) });
@@ -614,6 +631,37 @@ export const definition: ServiceDefinition = {
       const b = parse(z.object({ lockDate: z.preprocess((v) => (v === '' || v === undefined ? null : v), s.isoDate.nullable()) }), req.body ?? {});
       if (b.lockDate && b.lockDate > bangkokToday()) throw fieldError('lockDate', 'วันที่ปิดงวดต้องไม่เกินวันนี้');
       return k.db.tx(a.tenantId, async (c) => ({ id: 'lock', ...(await setLockDate(c, b.lockDate, a.userName ?? null)) }));
+    });
+
+    /**
+     * ลูกหนี้ยกมา from Excel: `{ rows: [{ partnerCode, partnerId…(resolved by master-data), docNo, docDate, dueDate, amount, note }], dryRun }`.
+     * Each row becomes an invoice of kind "opening" under the old document number (refused when the number is already used here).
+     * No events: not output VAT, not e-Tax, not revenue — the ledger's receivable comes from the accounting opening balance.
+     */
+    app.post('/opening-receivables/import', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'sales.invoice.write');
+      const body = parse(z.object({ rows: z.array(z.record(z.string(), z.unknown())).min(1).max(2000), dryRun: z.boolean().default(false) }), req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        const { valid, errors } = checkOpeningDocs(body.rows, 'customer', bangkokToday());
+        const taken = new Set((await c.query<{ no: string }>('select lower(no) as no from invoices where lower(no) = any($1::text[])', [valid.map((v) => v.docNo.toLowerCase())])).rows.map((r) => r.no));
+        const ok = valid.filter((v) => {
+          if (!taken.has(v.docNo.toLowerCase())) return true;
+          errors.push({ row: v.row, field: 'docNo', message: `เลขที่ ${v.docNo} มีอยู่ในระบบแล้ว (นำเข้าซ้ำ หรือชนกับเลขใบกำกับของระบบนี้)` });
+          return false;
+        });
+        errors.sort((x, y) => x.row - y.row);
+        const result = { dryRun: body.dryRun || errors.length > 0, total: body.rows.length, created: ok.length, updated: 0, errors };
+        if (result.dryRun) return result;
+        for (const v of ok) {
+          await c.query(
+            `insert into invoices (no, kind, order_id, issue_date, due_date, net, vat, gross, opening_customer_id, opening_customer_code, opening_customer_name,
+               opening_customer_tax_id, opening_customer_branch, opening_customer_address, opening_note)
+             values ($1, 'opening', null, $2::date, $3::date, $4, 0, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [v.docNo, v.docDate, v.dueDate, v.amount, v.partnerId, v.partnerCode, v.partnerName, v.taxId, v.branch, v.address, v.note]);
+        }
+        return result;
+      });
     });
 
     /* ---------------- receivables ---------------- */
@@ -767,6 +815,8 @@ async function issueNote(c: Client, a: AuthContext, emit: Emit, kind: NoteKind, 
   if (issueDate > bangkokToday()) throw fieldError('issueDate', `ลงวันที่${title}ล่วงหน้าไม่ได้`);
 
   const inv = await one(c, 'select * from invoices where id = $1 for update', [invoiceId], 'Invoice');
+  // a credit / debit note adjusts a tax invoice of this system; an invoice carried over from the old system is adjusted there
+  if (inv.kind === 'opening') throw conflict(`${inv.no} เป็นลูกหนี้ยกมาจากระบบเดิม — ออกใบลดหนี้/ใบเพิ่มหนี้ในระบบเดิม หรือรับชำระตามยอดจริง`);
   const o = await loadOrder(c, inv.order_id);
   const invoiceDate = isoDay(inv.issue_date);
   if (issueDate < invoiceDate) throw fieldError('issueDate', `วันที่${title}ต้องไม่ก่อนวันที่ใบกำกับภาษี ${inv.no} (${formatThaiDate(invoiceDate)})`);
@@ -957,9 +1007,25 @@ function withDaysOverdue(r: any) {
   return { ...r, days_overdue: days };
 }
 
+/** ลูกหนี้ยกมา: what is owed and what was received — no order, no lines, never printed as a tax invoice. */
+async function openingInvoiceView(c: Client, inv: any) {
+  const receipts = (await c.query(
+    `select r.id, r.no, r.receipt_date, l.amount from receipt_lines l join receipts r on r.id = l.receipt_id where l.invoice_id = $1 order by r.receipt_date, r.no`, [inv.id])).rows;
+  return {
+    ...inv,
+    kind_label: 'ลูกหนี้ยกมา (จากระบบเดิม)',
+    issueDateTh: formatThaiDate(inv.issue_date),
+    dueDateTh: formatThaiDate(inv.due_date),
+    customer: { id: inv.opening_customer_id, code: inv.opening_customer_code, name: inv.opening_customer_name, taxId: inv.opening_customer_tax_id, branch: inv.opening_customer_branch, address: inv.opening_customer_address },
+    customer_name: inv.opening_customer_name,
+    lines: [], receipts, notes: [],
+  };
+}
+
 /** Everything a Thai tax invoice template needs, already formatted. */
 async function printableInvoice(c: Client, id: string, env: NodeJS.ProcessEnv) {
   const inv = await one(c, `select i.*, ${BILLED()} as billed, ${BILLED()} - i.paid_amount as outstanding, ${PAY_STATUS} as payment_status from invoices i where i.id = $1`, [id], 'Invoice');
+  if (inv.kind === 'opening') return openingInvoiceView(c, inv);
   const order = await loadOrder(c, inv.order_id);
   const receipts = (await c.query(
     `select r.id, r.no, r.receipt_date, l.amount from receipt_lines l join receipts r on r.id = l.receipt_id where l.invoice_id = $1 order by r.receipt_date, r.no`, [id])).rows;

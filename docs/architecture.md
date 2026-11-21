@@ -98,6 +98,12 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
 - ข้อมูลตัวอย่างตามอุตสาหกรรม (`packages/starter`): ใส่ผ่าน API จริงหลังยืนยันอีเมล โดยผู้ช่วยสมมติ 2 คน (ไม่ใช่ผู้ใช้) · "ล้างข้อมูลตัวอย่าง" → event `identity.tenant_data_cleared` → kernel ทุกโมดูลลบทุกแถวของบริษัท (`wipe.ts`) ทำได้ครั้งเดียว
 - event ยังส่งถึงทุกโมดูลที่ติดตั้ง (โมดูลนอกแพ็กเกจรับ event ของบริษัทนั้นได้ แต่ผู้ใช้เปิดดูไม่ได้)
 
+## ยอดยกมา (ระยะ 2)
+
+- สต็อก: `POST /api/inventory/opening/import` (stock moves refType `opening`, นำเข้าซ้ำไม่ได้)
+- ลูกหนี้ / เจ้าหนี้: ใบแจ้งหนี้ชนิด `opening` (sales) / บิลชนิด `opening` (purchasing) — ไม่ส่ง `sales.invoiced` / `purchasing.bill_recorded` จึงไม่เข้า VAT, e-Tax, รายได้/ค่าใช้จ่าย; ยอดในบัญชีแยกประเภทมาจากการยกยอดของโมดูลบัญชี · รับ/จ่ายชำระด้วยเอกสารปกติ (ลงบัญชีเฉพาะเงินสดกับลูกหนี้/เจ้าหนี้)
+- นำเข้าจาก Excel: `packages/ui-schema/src/xlsx.ts` (ไม่มี library) · รหัสของโมดูลอื่นแปลงเป็น id ผ่าน `ImportSpec.resolve`
+
 ## Operations
 
 - backup รายวัน + ซ้อมกู้คืนอัตโนมัติ (container `backup`, `tools/erp/assets/erp-backup.sh`), สำเนาขึ้น Spaces (`backup-offsite`)

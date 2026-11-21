@@ -233,6 +233,16 @@ export const definition: ServiceDefinition = {
         `select id, code, name, uom, type from items where lower(code) = any($1::text[]) order by code`, [codes.map((x) => x.toLowerCase())])).rows);
     });
 
+    /** Partner codes → partner details for another module's import (opening receivables / payables), like /items/resolve. */
+    app.post('/partners/resolve', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'master.partner.read');
+      const { codes } = parse(z.object({ codes: z.array(z.string().trim().min(1).max(100)).max(5000) }), req.body);
+      if (!codes.length) return [];
+      return k.db.tx(a.tenantId, async (c) => (await c.query(
+        `select id, code, name, kind, tax_id, branch, address from partners where lower(code) = any($1::text[]) order by code`, [codes.map((x) => x.toLowerCase())])).rows);
+    });
+
     crud(app, k, { path: '/items', table: 'items', perm: 'master.item', label: 'Item', input: ItemInput, map: ITEM_COLS, filter: (q) => (q.type ? ['type', q.type] : null), publish: emitItem, normalize: normalizeItem });
     crud(app, k, { path: '/partners', table: 'partners', perm: 'master.partner', label: 'Partner', input: PartnerInput, map: PARTNER_COLS, filter: (q) => (q.kind ? ['kind', q.kind] : null), publish: emitPartner, normalize: normalizePartner });
   },
