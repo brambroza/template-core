@@ -10,7 +10,7 @@ import { captchaOk } from './captcha.ts';
 import { buttonMail, createMailer } from './mailer.ts';
 import { attempts, clear as clearAttempts, note as noteAttempts, overLimit, type Queryable } from './throttle.ts';
 import {
-  daysLeft, entitlementOf, MODULE_NAMES_TH, paymentPeriod, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type PlanId, type SubscriptionRow,
+  changeText, daysLeft, entitlementOf, MODULE_NAMES_TH, paymentPeriod, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type PlanId, type SubscriptionRow,
 } from './plans.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -714,8 +714,11 @@ export const definition: ServiceDefinition = {
           legal_name: profile?.legal_name ?? t.name, tax_id: profile?.tax_id ?? null, address: profile?.address ?? null,
           invoice_ready: !!profile?.tax_id,
           payments: (await c.query(
-            `select paid_on, months, amount, period_from, period_to, plan, ref, by_name from tenant_payments order by paid_on desc, created_at desc limit 100`)).rows,
-          log: (await c.query(`select created_at, by_name, change::text as change from tenant_subscription_log order by created_at desc, id desc limit 100`)).rows,
+            `select paid_on, months, amount, period_from, period_to, plan, ref, by_name from tenant_payments order by paid_on desc, created_at desc limit 100`)).rows
+            .map((p) => ({ ...p, plan: PLANS[p.plan as PlanId]?.nameTh ?? p.plan })),
+          log: (await c.query<{ created_at: string; by_name: string; change: Record<string, unknown> }>(
+            `select created_at, by_name, change from tenant_subscription_log order by created_at desc, id desc limit 100`)).rows
+            .map((l) => ({ created_at: l.created_at, by_name: l.by_name, change: changeText(l.change) })),
         };
       });
     });

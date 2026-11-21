@@ -121,6 +121,19 @@ export function paymentPeriod(paidThrough: string | null, today: string, months:
   return { from, to: shiftDayIso(addMonthsIso(from, months), -1) };
 }
 
+/** A plan-log entry in Thai for the back office: "รับโอน … · แพ็กเกจ Factory · สถานะ ใช้งาน · ชำระถึง 2027-02-20". */
+export function changeText(change: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof change.note === 'string' && change.note) parts.push(change.note);
+  if (typeof change.plan === 'string') parts.push(`แพ็กเกจ ${PLANS[change.plan as PlanId]?.nameTh ?? change.plan}`);
+  if (typeof change.status === 'string') parts.push(`สถานะ ${STATUS_TH[change.status as SubscriptionStatus] ?? change.status}`);
+  if (typeof change.paidThrough === 'string') parts.push(`ชำระถึง ${change.paidThrough}`);
+  if (typeof change.trialDays === 'number') parts.push(`ทดลอง ${change.trialDays} วันนับจากวันนั้น`);
+  if (change.maxUsers !== undefined) parts.push(change.maxUsers === null ? 'ผู้ใช้ตามแพ็กเกจ' : `ผู้ใช้สูงสุด ${change.maxUsers} คน`);
+  if (change.modules !== undefined) parts.push(change.modules === null ? 'โมดูลตามแพ็กเกจ' : `โมดูล ${(change.modules as string[]).map((m) => MODULE_NAMES_TH[m] ?? m).join(', ')}`);
+  return parts.join(' · ') || '—';
+}
+
 /** Token lifetime: the normal TTL, cut short so no token outlives the company's access. At least 60 s. */
 export function tokenTtl(ttl: number, e: Entitlement | null, now: Date = new Date()): number {
   if (!e?.usableUntil) return ttl;

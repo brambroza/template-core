@@ -82,9 +82,9 @@ describe('back office', () => {
 
     const detail = (await staff('GET', '/ops/tenants/cust')).body;
     expect(detail).toMatchObject({ legal_name: 'บริษัท ลูกค้า จำกัด', tax_id: '0105536000313', invoice_ready: true, paid_through: r.body.periodTo });
-    expect(detail.payments[0]).toMatchObject({ months: 3, plan: 'factory', ref: 'KBANK-123', by_name: 'Admin goalong' });
+    expect(detail.payments[0]).toMatchObject({ months: 3, plan: 'Factory', ref: 'KBANK-123', by_name: 'Admin goalong' });
     expect(Number(detail.payments[0].amount)).toBe(3 * 3490);
-    expect(detail.log[0].change).toContain('รับโอน 10,470 บาท');
+    expect(detail.log[0].change).toMatch(/^รับโอน 10,470 บาท \(3 เดือน\) .* · แพ็กเกจ Factory · สถานะ ใช้งาน · ชำระถึง \d{4}-\d{2}-\d{2}$/);
 
     const ev = (await t.svc.db.pool.query(`select tenant_id, data from _outbox where type = 'identity.subscription_paid' order by occurred_at desc limit 1`)).rows[0];
     expect(Number((await t.svc.db.pool.query(`select count(*) as n from _outbox where type = 'identity.subscription_paid'`)).rows[0].n)).toBe(before + 1);
