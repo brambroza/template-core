@@ -3,7 +3,8 @@ on: [push, pull_request]
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, where Playwright cannot install Chromium yet (browser tests + UAT); pin until it can
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
