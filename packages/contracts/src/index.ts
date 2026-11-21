@@ -337,6 +337,16 @@ export const events = {
    * Every token issued to `userId` before `before` (epoch seconds) must be refused (logout everywhere, password change,
    * user disabled, roles changed). Every module's kernel subscribes automatically.
    */
+  /**
+   * GO Along's back office confirmed a cloud-plan payment (bank transfer) of `tenantCode`. Published in the OPERATOR company's context
+   * (GO Along's own tenant), so its `sales` module drafts the service order for the tax invoice: `amount` is before VAT for
+   * `months` of `planName`, covering `periodFrom`–`periodTo`. Buyer details come from the customer's company profile (may be empty).
+   */
+  'identity.subscription_paid': z.object({
+    paymentId: id, tenantCode: z.string(), companyName: z.string(), taxId: z.string().nullable(), branch: z.string().nullable(),
+    address: z.string().nullable(), email: z.string().nullable(), plan: z.string(), planName: z.string(), months: z.number().int().positive(),
+    amount: money, paidOn: z.string(), periodFrom: z.string(), periodTo: z.string(), ref: z.string().nullable(),
+  }),
   'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin', 'plan_changed']) }),
 
   /**

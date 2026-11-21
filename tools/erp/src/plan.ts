@@ -6,6 +6,7 @@
  *   plan set <code> --by "ชื่อผู้ทำรายการ" [--plan starter|factory|business] [--status trial|active|suspended|cancelled]
  *            [--paid-through YYYY-MM-DD] [--trial-days N] [--max-users N|default] [--modules a,b|default] [--note "…"]
  *   plan log <code>
+ *   plan grant-ops <email>      give a user of the operator company (OPS_TENANT_CODE) the back-office role
  */
 
 /** Request body for PUT /_ops/tenants/:code/subscription from CLI flags. Throws on unusable input (no request is sent). */
@@ -69,5 +70,10 @@ export async function runPlan(args: string[], flags: Record<string, string>, env
     for (const r of await call('GET', `/_ops/tenants/${encodeURIComponent(code)}/subscription-log`)) log(`${r.created_at}  ${r.by_name ?? ''}  ${JSON.stringify(r.change)}`);
     return;
   }
-  throw new Error('plan list | plan set <code> … | plan log <code>');
+  if (sub === 'grant-ops') {
+    if (!code || !code.includes('@')) throw new Error('plan grant-ops <email of a GO Along staff user>');
+    log((await call('POST', '/_ops/operators', { email: code })).message);
+    return;
+  }
+  throw new Error('plan list | plan set <code> … | plan log <code> | plan grant-ops <email>');
 }

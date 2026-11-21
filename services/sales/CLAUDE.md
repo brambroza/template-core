@@ -66,6 +66,10 @@ Invoice payment status (computed): `outstanding` → `partially_paid` → `paid`
   - The invoice itself never changes on paper; its detail lists `notes` (screen only) and `credit_total`/`debit_total`.
 - Receivables group by `coalesce(customer_id, customer_name)`; aging buckets by days past due as of `asOf` (invoices issued on/before `asOf`, less receipts dated on/before it; deposits likewise) (default today, Asia/Bangkok): `current` (not yet due), `d1_30`, `d31_60`, `d61_90`, `over_90`.
 - Handler `crm.quotation_accepted` (CRM is `enhancedBy`): if the payload has `lines`, drafts an order (warehouse MAIN, credit 0, `ref` = quotation no., `created_by` null) — once per quotation id; old payloads without lines are ignored.
+- Handler `identity.subscription_paid` (`draftSubscriptionOrder`, GO Along's own company only — identity publishes it in the operator tenant):
+  one draft service order per cloud-plan payment (ref `CLOUD <tenantCode> <paymentId 8>`, skipped when it exists), buyer name / tax ID /
+  branch / address / e-mail from the customer's company profile, one line "ค่าบริการ Factory OS Cloud แพ็กเกจ … N เดือน (period)" = `amount`
+  (before VAT, exclusive), order date = transfer date; the note says when the tax ID is missing. Staff confirm → invoice → receipt as usual.
 - Handler `contracts.installment_due` (contracts is `enhancedBy`; `draftInstallmentOrder`): one draft order per installment (`sales_orders.contract_installment_id`, unique — migration 003):
   customer snapshot, VAT exclusive (contract amounts are before VAT), one service line "ค่าบริการบำรุงรักษา (MA) <title> ตามสัญญา <no> งวดที่ n/N ช่วง …" × 1 at `amount`,
   `ref` = `MA-… งวด n/N`, note asks billing staff to confirm, invoice and record the invoice no. in Contracts. Zero amounts are ignored.
@@ -99,7 +103,7 @@ Permissions: `sales.order.read|write`, `sales.order.deliver`, `sales.invoice.wri
   uom null, unitPrice, discount, amount — in the order's price basis, see `vatMode` —, vatRate), `customerAddress`, `customerEmail` (e-Tax) ·
   `sales.note_issued` (wave 9, same transaction as the note: kind, note/invoice no. + dates, buyer, reason, originalNet/correctNet, difference net/vat/gross,
   warehouseCode, lines with `returnToStock` → Inventory receives the goods back; Accounting reverses / adds revenue + output VAT in the note's month)
-- subscribes `crm.quotation_accepted` (draft order from the accepted quotation), `contracts.installment_due` (draft MA service order),
+- subscribes `identity.subscription_paid` (draft cloud-plan service order, operator company), `crm.quotation_accepted` (draft order from the accepted quotation), `contracts.installment_due` (draft MA service order),
   `accounting.period_closed` / `accounting.period_reopened` (lock date; accounting is `enhancedBy`)
 
 ## Extension ideas

@@ -8,7 +8,7 @@
   "requires": ["identity", "master-data"],
   "enhancedBy": ["inventory", "crm", "contracts", "accounting"],
   "publishes": ["sales.order_confirmed", "sales.delivered", "sales.invoiced", "sales.payment_received", "sales.note_issued"],
-  "subscribes": ["crm.quotation_accepted", "contracts.installment_due", "accounting.period_closed", "accounting.period_reopened"],
+  "subscribes": ["crm.quotation_accepted", "contracts.installment_due", "accounting.period_closed", "accounting.period_reopened", "identity.subscription_paid"],
   "permissions": [
     { "key": "sales.order.read", "label": "ดูใบสั่งขาย" },
     { "key": "sales.order.write", "label": "สร้าง/ยืนยัน/ยกเลิกใบสั่งขาย" },

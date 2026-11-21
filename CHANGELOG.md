@@ -35,6 +35,15 @@
 - Login throttle, sign-up and reset limits are counted in Postgres (`auth_attempts`): shared by every identity instance, kept across restarts.
 - Login page links to sign-up and password reset.
 
+**Back office for cloud plans (phase 1, part 3)**
+- GO Along runs its back office in its own company (`OPS_TENANT_CODE`): "หลังบ้าน: บริษัทลูกค้า" lists every company (plan, status, days
+  left, users); a company page shows the buyer details for the tax invoice, payments and plan history.
+- "บันทึกรับโอน": months, transfer date, amount (default plan price × months), plan → the company is active through the new period
+  (continues the paid period, or from today when it lapsed) and GO Along's sales module gets a draft order with the customer's tax
+  details for the tax invoice and receipt. "เปลี่ยนแพ็กเกจ / สถานะ" with a reason.
+- `<module>.ops.*` rights are never granted by `*` — a customer's administrator cannot see or grant them; the API also checks the company.
+  First staff member: `pnpm erp plan grant-ops <email>`.
+
 **Phase 0 (self-serve blockers found by the new-user test)**
 - Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
   The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.

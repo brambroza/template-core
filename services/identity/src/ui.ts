@@ -13,8 +13,70 @@ export default defineUi({
     { label: 'ข้อมูลบริษัท', screen: 'company' },
     { label: 'แพ็กเกจของบริษัท', screen: 'plan' },
     { label: 'ประวัติการแก้ไข', screen: 'audit' },
+    // GO Along staff only (identity.ops.* is never granted by a wildcard; the API also checks the operator company)
+    { label: 'หลังบ้าน: บริษัทลูกค้า', screen: 'opsTenants' },
   ],
   screens: {
+    opsTenants: {
+      kind: 'list', title: 'บริษัทลูกค้า (หลังบ้าน GO Along)', endpoint: '/ops/tenants', perm: 'identity.ops.read',
+      filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อบริษัท', type: 'text' }],
+      columns: [
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'บริษัท' }, { key: 'plan_name', label: 'แพ็กเกจ' },
+        { key: 'status_th', label: 'สถานะ' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
+        { key: 'paidThrough', label: 'ชำระถึง', format: 'date' }, { key: 'activeUsers', label: 'ผู้ใช้', format: 'qty' },
+        { key: 'createdAt', label: 'สมัครเมื่อ', format: 'date' },
+      ],
+      rowLink: { screen: 'opsTenant', idFrom: 'code' },
+      empty: 'ยังไม่มีบริษัท',
+    },
+    opsTenant: {
+      kind: 'detail', title: 'บริษัทลูกค้า', endpoint: '/ops/tenants/:id', heading: 'name', perm: 'identity.ops.read',
+      fields: [
+        { key: 'code', label: 'รหัสบริษัท' },
+        { key: 'plan_text', label: 'แพ็กเกจ' },
+        { key: 'status_text', label: 'สถานะ' },
+        { key: 'paid_through', label: 'ชำระถึง', format: 'date' },
+        { key: 'usable_until', label: 'ใช้งานได้ถึง', format: 'datetime' },
+        { key: 'users_text', label: 'ผู้ใช้' },
+        { key: 'owner_text', label: 'ผู้ดูแลของลูกค้า' },
+        { key: 'legal_name', label: 'ชื่อสำหรับใบกำกับภาษี' },
+        { key: 'tax_id', label: 'เลขผู้เสียภาษี' },
+        { key: 'address', label: 'ที่อยู่' },
+        { key: 'invoice_ready', label: 'ข้อมูลออกใบกำกับครบ', format: 'boolean' },
+      ],
+      lines: [
+        { path: 'payments', label: 'การชำระเงิน', print: false, columns: [
+          { key: 'paid_on', label: 'รับโอน', format: 'date' }, { key: 'plan', label: 'แพ็กเกจ' }, { key: 'months', label: 'เดือน', format: 'qty' },
+          { key: 'amount', label: 'ยอด (ก่อน VAT)', format: 'money' }, { key: 'period_from', label: 'ตั้งแต่', format: 'date' },
+          { key: 'period_to', label: 'ถึง', format: 'date' }, { key: 'ref', label: 'อ้างอิง' }, { key: 'by_name', label: 'ผู้บันทึก' },
+        ] },
+        { path: 'log', label: 'ประวัติแพ็กเกจ', print: false, columns: [
+          { key: 'created_at', label: 'เมื่อ', format: 'datetime' }, { key: 'by_name', label: 'โดย' }, { key: 'change', label: 'การเปลี่ยนแปลง' },
+        ] },
+      ],
+      actions: [
+        { id: 'pay', label: 'บันทึกรับโอน', method: 'POST', endpoint: '/ops/tenants/:id/payments', perm: 'identity.ops.write', tone: 'primary', toast: 'message',
+          fields: [
+            { name: 'months', label: 'จำนวนเดือน', type: 'number', required: true, default: 1 },
+            { name: 'paidOn', label: 'วันที่รับโอน', type: 'date' },
+            { name: 'amount', label: 'ยอดก่อน VAT (เว้นว่าง = ราคาแพ็กเกจ × เดือน)', type: 'number', step: 0.01 },
+            { name: 'plan', label: 'แพ็กเกจ (เว้นว่าง = เดิม)', type: 'select', options: [
+              { value: 'starter', label: 'Starter' }, { value: 'factory', label: 'Factory' }, { value: 'business', label: 'Business' }] },
+            { name: 'ref', label: 'อ้างอิงการโอน / เลขสลิป', type: 'text' },
+            { name: 'note', label: 'หมายเหตุ', type: 'text' },
+          ] },
+        { id: 'plan', label: 'เปลี่ยนแพ็กเกจ / สถานะ', method: 'POST', endpoint: '/ops/tenants/:id/plan', perm: 'identity.ops.write', toast: 'message',
+          fields: [
+            { name: 'plan', label: 'แพ็กเกจ', type: 'select', options: [
+              { value: 'starter', label: 'Starter' }, { value: 'factory', label: 'Factory' }, { value: 'business', label: 'Business' }] },
+            { name: 'status', label: 'สถานะ', type: 'select', options: [
+              { value: 'trial', label: 'ทดลองใช้' }, { value: 'active', label: 'ใช้งาน' }, { value: 'suspended', label: 'ระงับชั่วคราว' }, { value: 'cancelled', label: 'ยกเลิก' }] },
+            { name: 'trialDays', label: 'ทดลองต่ออีก (วัน นับจากวันนี้)', type: 'number' },
+            { name: 'maxUsers', label: 'จำนวนผู้ใช้สูงสุด (เว้นว่าง = ตามแพ็กเกจ)', type: 'number' },
+            { name: 'note', label: 'เหตุผล', type: 'text', required: true },
+          ] },
+      ],
+    },
     plan: {
       // cloud plan (identity migration 004); self-hosted installs show "ไม่จำกัดแพ็กเกจ"
       kind: 'detail', title: 'แพ็กเกจของบริษัท', endpoint: '/subscription', heading: 'plan_text', perm: 'identity.user.read',

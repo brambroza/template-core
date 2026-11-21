@@ -86,8 +86,17 @@ export function inPlan(ctx: Pick<AuthContext, 'modules'>, id: string, tier: 'cor
   return tier === 'core' || !ctx.modules || ctx.modules.includes(id);
 }
 
-/** "*" grants everything, "sales.*" grants every sales permission. */
+/**
+ * Permissions that no wildcard grants: `<module>.ops.<action>` (GO Along's back office). Every customer's administrator holds `*`,
+ * so these must be given by name — and the routes behind them also check that the caller belongs to the operator company.
+ */
+export function isExplicitPerm(perm: string): boolean {
+  return perm.split('.')[1] === 'ops';
+}
+
+/** "*" grants everything, "sales.*" grants every sales permission — except explicit ones (`isExplicitPerm`), which must be listed. */
 export function hasPerm(ctx: AuthContext, perm: string): boolean {
+  if (isExplicitPerm(perm)) return ctx.perms.includes(perm);
   const mod = perm.split('.')[0];
   return ctx.perms.includes('*') || ctx.perms.includes(perm) || ctx.perms.includes(`${mod}.*`);
 }

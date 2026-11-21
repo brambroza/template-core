@@ -696,6 +696,7 @@ export const definition: ServiceDefinition = {
     },
     /** Contracts sent an installment due for invoicing → draft service order for billing staff to confirm and invoice. */
     'contracts.installment_due': async (e, { client }) => draftInstallmentOrder(client, e),
+    'identity.subscription_paid': async (e, { client }) => draftSubscriptionOrder(client, e),
   },
 };
 
@@ -916,6 +917,24 @@ export async function draftInstallmentOrder(c: Client, e: EventData<'contracts.i
     lines: [{ description: `ค่าบริการบำรุงรักษา (MA) ${e.title} ตามสัญญา ${e.contractNo} งวดที่ ${e.seq}/${e.count}${period}`.slice(0, 1000), qty: 1, unitPrice: e.amount, discountPct: 0 }],
   }, null);
   await c.query('update sales_orders set contract_installment_id = $2 where id = $1', [id, e.installmentId]);
+}
+
+/**
+ * GO Along's own sales: a cloud-plan payment confirmed in the back office (identity.subscription_paid, published in the operator
+ * company) → a draft service order with the buyer's tax details, to confirm and issue the tax invoice + receipt. Idempotent per payment.
+ */
+export async function draftSubscriptionOrder(c: Client, e: EventData<'identity.subscription_paid'>) {
+  if (!(e.amount > 0)) return;
+  const ref = `CLOUD ${e.tenantCode} ${e.paymentId.slice(0, 8)}`.slice(0, 100);
+  if ((await c.query('select 1 from sales_orders where ref = $1', [ref])).rowCount) return;
+  const th = (d: string) => formatThaiDate(d);
+  await insertOrder(c, {
+    customerName: e.companyName, customerTaxId: e.taxId, customerBranch: e.branch, customerAddress: e.address, customerEmail: e.email,
+    warehouseCode: 'MAIN', vatMode: 'exclusive', creditDays: 0, orderDate: e.paidOn, ref,
+    note: `รับโอนแล้ว ${th(e.paidOn)}${e.ref ? ` (อ้างอิง ${e.ref})` : ''} — ตรวจข้อมูลผู้ซื้อแล้วยืนยัน ออกใบกำกับภาษีและใบเสร็จ${e.taxId ? '' : ' · ลูกค้ายังไม่ได้กรอกเลขผู้เสียภาษีในข้อมูลบริษัท'}`,
+    lines: [{ description: `ค่าบริการ Factory OS Cloud แพ็กเกจ ${e.planName} ${e.months} เดือน (${th(e.periodFrom)} – ${th(e.periodTo)}) รหัสบริษัท ${e.tenantCode}`.slice(0, 1000),
+      qty: 1, unitPrice: e.amount, discountPct: 0 }], // one line for the whole period: the total is exactly what was paid for
+  }, null);
 }
 
 const isoDay = (d: unknown) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : String(d).slice(0, 10));

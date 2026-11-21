@@ -716,6 +716,8 @@ export function flowPosition(flow: StatusFlow, record: unknown): { index: number
 
 export function hasPerm(perms: string[], perm?: string): boolean {
   if (!perm) return true;
+  // back-office permissions (`<module>.ops.<action>`) are never granted by a wildcard — same rule as the kernel
+  if (perm.split('.')[1] === 'ops') return perms.includes(perm);
   const mod = perm.split('.')[0];
   return perms.includes('*') || perms.includes(perm) || perms.includes(`${mod}.*`);
 }

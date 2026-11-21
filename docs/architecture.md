@@ -93,6 +93,8 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
   · Turnstile CAPTCHA เมื่อตั้ง `TURNSTILE_SECRET` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` · ลิงก์ในอีเมลใช้ `APP_URL` เท่านั้นใน production
 - ทดลอง 14 วัน → ชำระด้วยการโอน แล้วทีม GO Along ยืนยัน (`pnpm erp plan set <code> --status active --paid-through …`) · เลยกำหนด 7 วัน หรือถูกระงับ → login ได้ 402 พร้อมเหตุผล
   token ไม่มีอายุเกินวันที่ใช้ได้ · เปลี่ยนแพ็กเกจ/สถานะ → ยกเลิก token ของทุกคนในบริษัท ให้ login ใหม่พร้อมโมดูลชุดใหม่
+- หลังบ้าน: GO Along ใช้ระบบของตัวเอง — บริษัท `OPS_TENANT_CODE` + สิทธิ์ `identity.ops.*` ที่ต้องให้ตรงชื่อ (`*` ไม่ครอบคลุม `<module>.ops.*`)
+  → เมนู "หลังบ้าน: บริษัทลูกค้า": บันทึกรับโอน (ต่ออายุ + event `identity.subscription_paid` → ใบสั่งขายร่างสำหรับใบกำกับภาษีในบริษัท GO Along), เปลี่ยนแพ็กเกจ/ระงับ
 - event ยังส่งถึงทุกโมดูลที่ติดตั้ง (โมดูลนอกแพ็กเกจรับ event ของบริษัทนั้นได้ แต่ผู้ใช้เปิดดูไม่ได้)
 
 ## License

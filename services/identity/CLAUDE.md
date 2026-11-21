@@ -35,6 +35,15 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - **Settings:** `APP_URL` (public web address for mail links — required in production; elsewhere the forwarded host is used), `EMAIL_PROVIDER`
   `resend|sendgrid|log` (default: resend when `RESEND_API_KEY` is set, else log = print + keep in `sentMail`), `EMAIL_FROM`, `RESEND_API_KEY`,
   `SENDGRID_API_KEY`, `TURNSTILE_SECRET` (CAPTCHA on sign-up and forgot; unset = no check). Mail failure → 503 `mail_failed`.
+- **Back office for GO Along staff (signed in):** the operator company is `OPS_TENANT_CODE`; its staff hold `identity.ops.read` /
+  `identity.ops.write` **by name** — `<module>.ops.*` is never granted by `*` or `identity.*` (kernel `isExplicitPerm`, ui-schema `hasPerm`,
+  `canGrant`), and `requireOps` also refuses any other company. `GET /ops/tenants?q=` (flat list) · `GET /ops/tenants/:code` (plan, company
+  profile for the invoice, users, owner, `payments[]`, `log[]`) · `POST /ops/tenants/:code/payments { months, paidOn?, amount?, plan?, ref?, note? }`
+  (bank transfer: `tenant_payments` row (migration 006), status active, `paid_through` = end of `paymentPeriod` — continues the paid period or
+  starts today when lapsed; publishes `identity.subscription_paid` in the operator company → its sales drafts the tax-invoice order) ·
+  `POST /ops/tenants/:code/plan { plan?, status?, trialDays?, maxUsers?, note }` (reason required). Screens: "หลังบ้าน: บริษัทลูกค้า".
+  Bootstrap: `POST /_ops/operators { email }` (internal; `pnpm erp plan grant-ops <email>`) gives a user of the operator company the role
+  "หลังบ้าน GO Along".
 - **Back office (internal token):** `GET /_ops/tenants?q=` (every company + plan + active users), `PUT /_ops/tenants/:code/subscription
   { by, plan?, status?, paidThrough?, trialDays?, modules?, maxUsers?, note? }` (bank transfer confirmed → `status: active, paidThrough`;
   creates the row when missing — `plan` then required; access changes revoke every user's tokens, reason `plan_changed`),

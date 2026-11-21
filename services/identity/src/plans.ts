@@ -98,6 +98,29 @@ export function entitlementOf(row: SubscriptionRow, now: Date = new Date()): Ent
   return { ...base, usableUntil: until, blocked: over ? `เลยกำหนดชำระค่าบริการ (ชำระถึง ${row.paid_through}) — โอนค่าบริการเพื่อใช้งานต่อ ข้อมูลของคุณยังอยู่ครบ` : null };
 }
 
+/** "2026-01-31" + 1 month → "2026-02-28" (day clipped to the month's end). Plain calendar maths on YYYY-MM-DD. */
+export function addMonthsIso(day: string, months: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
+}
+
+/** One day before/after a YYYY-MM-DD. */
+export function shiftDayIso(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The period a payment of `months` buys: it starts the day after the current paid-through day, or today when nothing is paid
+ * or the paid period has lapsed (a late payer does not pay for the days they were locked out), and ends the day before the
+ * same date `months` later. 2026-11-20 + 1 → 2026-11-20 … 2026-12-19.
+ */
+export function paymentPeriod(paidThrough: string | null, today: string, months: number): { from: string; to: string } {
+  const from = paidThrough && paidThrough >= today ? shiftDayIso(paidThrough, 1) : today;
+  return { from, to: shiftDayIso(addMonthsIso(from, months), -1) };
+}
+
 /** Token lifetime: the normal TTL, cut short so no token outlives the company's access. At least 60 s. */
 export function tokenTtl(ttl: number, e: Entitlement | null, now: Date = new Date()): number {
   if (!e?.usableUntil) return ttl;

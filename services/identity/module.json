@@ -7,12 +7,14 @@
   "description": "Tenants (companies), users, roles and login. Issues the JWT every other module trusts.",
   "requires": [],
   "enhancedBy": [],
-  "publishes": ["identity.tokens_revoked"],
+  "publishes": ["identity.tokens_revoked", "identity.subscription_paid"],
   "subscribes": [],
   "permissions": [
     { "key": "identity.user.read", "label": "ดูผู้ใช้" },
     { "key": "identity.user.write", "label": "จัดการผู้ใช้" },
     { "key": "identity.role.write", "label": "จัดการบทบาทและสิทธิ์" },
-    { "key": "identity.company.write", "label": "แก้ไขข้อมูลบริษัท (หัวเอกสาร)" }
+    { "key": "identity.company.write", "label": "แก้ไขข้อมูลบริษัท (หัวเอกสาร)" },
+    { "key": "identity.ops.read", "label": "หลังบ้าน GO Along: ดูบริษัทลูกค้าและแพ็กเกจ (เฉพาะทีม GO Along)" },
+    { "key": "identity.ops.write", "label": "หลังบ้าน GO Along: บันทึกรับโอนและเปลี่ยนแพ็กเกจ (เฉพาะทีม GO Along)" }
   ]
 }

@@ -18,7 +18,7 @@
  *   showcase-capture [--gateway URL] [--tenant demo] [--password demo1234] [--rows 5] [--out apps/web/showcase/snapshot.json]
  *                                             record a running demo's answers for the public showcase (SHOWCASE=1, docs/deploy-vercel.md)
  *   plan     list [--q text] | set <code> --by NAME [--plan …] [--status …] [--paid-through YYYY-MM-DD] [--trial-days N]
- *            [--max-users N|default] [--modules a,b|default] [--note …] | log <code>
+ *            [--max-users N|default] [--modules a,b|default] [--note …] | log <code> | grant-ops <email>
  *                                             cloud plans (back office; IDENTITY_URL + INTERNAL_TOKEN), see tools/erp/src/plan.ts
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
