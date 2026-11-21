@@ -18,6 +18,7 @@ import { PlanBanner } from './PlanBanner';
 import { StarterBanner } from './StarterBanner';
 import { SetupBanner } from './SetupBanner';
 import { Toaster } from './Toaster';
+import { BottomNav } from './BottomNav';
 
 /** With more modules than this, menu areas start collapsed (except the one being worked in) until the user chooses. */
 const AUTO_COLLAPSE_OVER = 10;
@@ -184,6 +185,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </header>
         <main id="main" className="content">{children}</main>
       </div>
+      <BottomNav visible={visible} activeModule={activeModule} menuOpen={menuOpen} onMenu={() => setMenuOpen((o) => !o)} />
       <CommandPalette />
       <Toaster />
     </div>

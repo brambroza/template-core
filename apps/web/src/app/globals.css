@@ -231,7 +231,7 @@ a { color: inherit; }
 .cmd-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd-trigger kbd { margin-left: auto; font: inherit; font-size: .75rem; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.content { padding: 12px 28px 72px; max-width: 1320px; width: 100%; }
+.content { padding: 12px 28px 72px; width: 100%; }
 
 /* ---------- screens ---------- */
 .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 8px 0 20px; }
@@ -585,6 +585,26 @@ a.decide-title:hover { color: var(--accent-text); text-decoration: underline; }
 .plan-note { margin: 0; font-size: .8rem; color: var(--ink-3); }
 .turnstile { min-height: 65px; }
 
+/* ---------- bottom navigator (phones only; see BottomNav.tsx) ---------- */
+.bottom-nav { display: none; }
+
+/* ---------- wide screens: use the room ---------- */
+@media (min-width: 1600px) {
+  .content { padding-left: 36px; padding-right: 36px; }
+  .cmd-trigger { max-width: 760px; }
+}
+
+/* ---------- tablets (901–1200 px): keep the module rail, the menu panel becomes a drawer beside it ---------- */
+@media (min-width: 901px) and (max-width: 1200px) {
+  .shell { grid-template-columns: 64px minmax(0, 1fr); }
+  .panel-nav { position: fixed; top: 0; bottom: 0; left: 64px; width: 280px; height: auto; z-index: 60; transform: translateX(calc(-100% - 64px)); transition: transform .22s ease; box-shadow: var(--float); }
+  .menu-open .panel-nav { transform: none; }
+  .menu-open .scrim { position: fixed; inset: 0; background: rgba(7, 11, 22, .35); z-index: 55; }
+  .topbar .menu-toggle { display: inline-flex; }
+  .topbar, .content { padding-left: 20px; padding-right: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .panel-nav { transition: none !important; } }
+
 /* ---------- small screens ---------- */
 @media (max-width: 1100px) {
   .widget.sm { grid-column: span 3; }
@@ -658,6 +678,7 @@ a.decide-title:hover { color: var(--accent-text); text-decoration: underline; }
   .icon-btn { width: 44px; height: 44px; }
   .btn, .btn-primary, .btn-danger { min-height: 44px; }
   .pulse-tools { width: 100%; justify-content: space-between; }
+
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
@@ -1174,3 +1195,32 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
   .setup-steps { grid-template-columns: 1fr; }
   .setup-row { grid-template-columns: 1fr; }
 }
+
+/* ---------- phones (≤ 760 px): bottom navigator instead of the top-bar menu button ---------- */
+@media screen and (max-width: 760px) {
+  .bottom-nav {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+    background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(7, 11, 22, .06);
+  }
+  .bottom-nav a, .bottom-nav button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 52px; padding: 4px 2px;
+    border: 0; border-radius: 12px; background: none; color: var(--ink-3); font: inherit; font-size: .7rem; font-weight: 500; text-decoration: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .bottom-nav span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bottom-nav .is-active { color: var(--accent-text); }
+  .bottom-nav .is-active svg { stroke: var(--accent); }
+  .bottom-nav a:focus-visible, .bottom-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .bottom-nav-cmd { color: var(--ink-2) !important; }
+  .bottom-nav-cmd-dot { width: 44px; height: 30px; border-radius: 15px; display: grid; place-items: center; color: #fff; background: var(--ai-gradient); box-shadow: var(--ai-glow-soft); }
+  .bottom-nav-cmd-dot svg { stroke: #fff; }
+  /* the bottom bar replaces the top-bar menu button; content and toasts stay clear of it */
+  .topbar .menu-toggle { display: none; }
+  .content { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .toasts { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .panel-nav { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .decide { scroll-margin-top: 72px; }
+}
+@media print { .bottom-nav { display: none !important; } }
