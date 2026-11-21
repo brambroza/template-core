@@ -34,7 +34,7 @@ ERP สำหรับโรงงาน/SME ไทย ที่แยกเป�
 pnpm install && pnpm db:dev          # Postgres ใน Docker
 pnpm --filter @erp/web build         # (ครั้งแรก) ให้เว็บเร็วแบบ production
 DEMO_RESET=1 pnpm demo               # รันทุกโมดูล + gateway + เว็บ พร้อมข้อมูลโรงงานตัวอย่าง 6 เดือน
-# เปิด http://localhost:3000  บริษัท demo · admin@demo.co.th · demo1234
+# เปิด http://localhost:3000  admin@demo.co.th · demo1234 (ไม่ต้องใส่รหัสบริษัท)
 ```
 
 ในเดโม: ผัง 3 มิติ 9 เครื่องจักร, PO/ใบกำกับย้อนหลัง 6 เดือน, ใบสั่งผลิตทุกสถานะ, บอททุกสูตรเปิดอยู่แล้ว (กระดิ่งมีแจ้งเตือนจริง)

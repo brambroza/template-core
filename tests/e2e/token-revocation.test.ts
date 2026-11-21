@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { definition as identity } from '@erp/svc-identity';
 import { definition as masterData } from '@erp/svc-master-data';
 import { definition as sales } from '@erp/svc-sales';
-import { install, type Installation } from './helpers.ts';
+import { adminEmail, install, type Installation } from './helpers.ts';
 
 /** Security review 0.3 SEC-07: a logout / password change in identity reaches every module through the gateway's event router. */
 let erp: Installation;
@@ -14,7 +14,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await erp?.close(); });
 
-const login = async () => (await erp.call('POST', '/api/identity/auth/login', { tenant: tenantCode, email: 'admin@example.com', password: 'password123' })).body.token as string;
+const login = async () => (await erp.call('POST', '/api/identity/auth/login', { email: adminEmail(tenantCode), password: 'password123' })).body.token as string;
 
 describe('token revocation across modules (through the gateway)', () => {
   it('logout everywhere: identity refuses at once, every other module once the event is delivered; a new login works', async () => {

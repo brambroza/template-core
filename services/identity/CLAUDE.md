@@ -7,12 +7,14 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 
 ## Data
 - `tenants` (global, no RLS — login looks it up before a tenant context exists)
+- `users.email` is unique across ALL companies (migration 003, index `users_email_global`). Policy `login_lookup` (SELECT only, on while a transaction sets `app.login_lookup = 'on'`) lets login and the e-mail-taken check read users of every company; nothing else sets it.
 - `users`, `roles` (`permissions text[]`), `user_roles` — tenant tables
 - `company_profiles` (one row per tenant, `tenant_id` is the key) — seller details printed on every document
 
 ## API
 - `POST /tenants` (internal token) — provision company + Administrator role (`*`) + first admin
-- `POST /auth/login` (public) `{ tenant, email, password }` → `{ token, permissions, … }`
+- `POST /auth/login` (public) `{ email, password, tenant? }` → `{ token, tenant, permissions, … }` — the company comes from the e-mail. `tenant` (company code) is optional; only e-mails that two companies shared before 003 need it: the password picks the account, several fit → 409 `tenant_required` (web/mobile then show the รหัสบริษัท field)
+- `POST /tenants` and `POST /users` answer 409 `email_taken` when any company already has the e-mail (checked before the company row is created)
 - `GET /company` (any signed-in user) — letterhead/seller details: `legal_name, name_en, branch_code, branch_label` (as typed, may be null), `branch_text` (what to print), `address, tax_id, tax_id_text` (0-0000-00000-00-0), phone, email, website, logo, footer_note, signature_labels, configured`. Before setup it answers `configured: false` with the tenant name and empty fields.
 - `PUT /company` (`identity.company.write`) — full replace (missing optional fields become null). `taxId` must pass the 13-digit check (`isValidThaiTaxId`, dashes/spaces stripped), `branchCode` 5 digits (`00000` = สำนักงานใหญ่; `branch_text` = `branchLabel` or "สำนักงานใหญ่" / "สาขาที่ 0000x"), `logo` = base64 data URL of PNG/JPEG/SVG ≤ 300 KB whose bytes match the type, `signatureLabels` = array or comma-separated text (≤ 6).
 - `GET /users/directory?q=` (any signed-in user) — active users' `id, name, email` for people pickers (delegate, technician, assignee…); `/users` stays admin (`identity.user.read`)
@@ -54,8 +56,8 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
   `PUT /users/:id/roles` and `POST /users/:id/deactivate` answer 403 unless the caller holds every permission involved — the new role's,
   the assigned roles', and (for role changes / deactivation) the target user's current ones (`canGrant`: `*` needs `*`, `m.*` needs `m.*`).
   Role ids of another company → 400.
-- **Login throttling** (SEC-02): 10 wrong passwords per company+e-mail in 15 minutes → 429 `too_many_attempts` (in memory, per identity
-  instance; a success clears it). Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password.
+- **Login throttling** (SEC-02): 10 wrong passwords per e-mail in 15 minutes (with or without a company code) → 429 `too_many_attempts` (in memory, per identity
+  instance; a success clears it). Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password ("อีเมลหรือรหัสผ่านไม่ถูกต้อง").
 - SVG logos must not contain script, event handlers, `<foreignObject>`, entities or outside links (SEC-11).
 
 ## Screens for sessions

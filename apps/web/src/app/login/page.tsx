@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { gsap, reducedMotion } from '@/lib/motion';
 import { loadSession, loginNotice, loginReasonFrom, saveSession, type LoginReason, type Session } from '@/lib/session';
 import { HOME, SHOWCASE, SHOWCASE_CONTACT } from '@/lib/showcase';
@@ -88,6 +88,8 @@ function PersonaPicker({ onDone }: { onDone: () => void }) {
 export default function Login() {
   const router = useRouter();
   const [tenant, setTenant] = useState('');
+  // the company code is asked only when the server says this e-mail is in several companies (from before unique e-mails)
+  const [needTenant, setNeedTenant] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -97,7 +99,6 @@ export default function Login() {
   useEffect(() => {
     if (loadSession()) router.replace(HOME);
     setReason(loginReasonFrom(window.location.search));
-    try { setTenant(window.localStorage.getItem('erp.tenant') ?? ''); } catch { /* ignore */ }
   }, [router]);
 
   const submit = async (e: React.FormEvent) => {
@@ -105,12 +106,13 @@ export default function Login() {
     setBusy(true);
     setError('');
     try {
-      const r = await api<Session & { token: string }>('identity', '/auth/login', { method: 'POST', body: { tenant, email, password } });
+      const body = needTenant && tenant.trim() ? { tenant, email, password } : { email, password };
+      const r = await api<Session & { token: string }>('identity', '/auth/login', { method: 'POST', body });
       saveSession({ token: r.token, tenant: r.tenant, user: r.user, permissions: r.permissions });
-      try { window.localStorage.setItem('erp.tenant', tenant); } catch { /* ignore */ }
       router.replace(HOME);
     } catch (err) {
-      setError(err instanceof Error && err.message !== 'Invalid credentials' ? err.message : 'รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง');
+      if (err instanceof ApiError && err.code === 'tenant_required') setNeedTenant(true);
+      setError(err instanceof Error && err.message !== 'Invalid credentials' ? err.message : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
       setBusy(false);
     }
   };
@@ -132,7 +134,7 @@ export default function Login() {
           <LogoMark size={44} className="login-mark" />
           <h1>เข้าสู่ระบบ</h1>
           {reason && <p className="login-note" role="status">{loginNotice(reason)}</p>}
-          <label>รหัสบริษัท<input value={tenant} onChange={(e) => setTenant(e.target.value)} autoComplete="organization" required /></label>
+          {needTenant && <label>รหัสบริษัท<input value={tenant} onChange={(e) => setTenant(e.target.value)} autoComplete="organization" required /></label>}
           <label>อีเมล<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required /></label>
           <label>รหัสผ่าน<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
           {error && <p className="form-error" role="alert">{error}</p>}

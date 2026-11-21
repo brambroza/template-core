@@ -16,7 +16,8 @@ const TenantInput = z.object({
   name: s.name,
   admin: z.object({ email, name: s.name, password }),
 });
-const LoginInput = z.object({ tenant: z.string().trim().toLowerCase(), email, password: z.string() });
+/** `tenant` (company code) is optional: e-mail is unique across companies. It is still accepted (older apps, and e-mails duplicated before 003). */
+const LoginInput = z.object({ tenant: z.string().trim().toLowerCase().optional().transform((v) => v || undefined), email, password: z.string() });
 const UserInput = z.object({ email, name: s.name, password, roleIds: z.array(s.uuid).default([]) });
 const PasswordChangeInput = z.object({
   currentPassword: z.string().min(1, 'กรอกรหัสผ่านปัจจุบัน'),
@@ -162,6 +163,31 @@ function noteLoginFailure(key: string) {
 }
 /** test hook: forget all failed attempts */
 export function resetLoginThrottle() { loginFailures.clear(); }
+/* ---- login by e-mail (migration 003): one e-mail = one user in the whole system ---- */
+interface LoginCandidate { id: string; tenant_id: string; password_hash: string }
+export const EMAIL_TAKEN = 'อีเมลนี้ถูกใช้แล้ว (อีเมลหนึ่งใช้ได้กับผู้ใช้เพียงคนเดียวในระบบ)';
+const BAD_LOGIN = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+
+/** Users with this e-mail in ANY company (the `login_lookup` policy, on only inside this transaction). `activeOnly` for login. */
+async function usersByEmail(k: Kernel, email: string, activeOnly: boolean): Promise<LoginCandidate[]> {
+  return k.db.rawTx(async (c) => {
+    await c.query(`select set_config('app.login_lookup', 'on', true)`);
+    return (await c.query<LoginCandidate>(
+      `select id, tenant_id, password_hash from users where email = $1 ${activeOnly ? 'and active' : ''}`, [email])).rows;
+  });
+}
+
+/** 409 when the e-mail already belongs to a user in any company (active or not). */
+async function requireEmailFree(k: Kernel, email: string): Promise<void> {
+  if ((await usersByEmail(k, email, false)).length) throw new HttpError(409, 'email_taken', EMAIL_TAKEN);
+}
+
+/** The unique index (users_email_global) answers a race between two creates with the same e-mail: same Thai 409. */
+function emailTakenOnRace(e: unknown): never {
+  if ((e as { code?: string; constraint?: string }).code === '23505') throw new HttpError(409, 'email_taken', EMAIL_TAKEN);
+  throw e;
+}
+
 /** compared against when the user does not exist, so a wrong e-mail costs the same time as a wrong password */
 const DUMMY_HASH = hashPassword('not-a-real-password-' + Math.random());
 
@@ -175,37 +201,52 @@ export const definition: ServiceDefinition = {
     /** Create a company + its first admin. Called by GO Along's provisioning (internal token), not by end users. */
     app.post('/tenants', { config: { internal: true } }, async (req, reply) => {
       const body = parse(TenantInput, req.body);
+      await requireEmailFree(k, body.admin.email); // before the company row, so a taken e-mail leaves nothing behind
       const tenant = await k.db.rawTx(async (c) => (await c.query('insert into tenants (code, name) values ($1, $2) returning *', [body.code, body.name])).rows[0]);
       const user = await k.db.tx(tenant.id, async (c) => {
         const role = (await c.query(`insert into roles (name, permissions) values ('Administrator', '{*}') returning id`)).rows[0];
         const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [body.admin.email, body.admin.name, hashPassword(body.admin.password)])).rows[0];
         await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, role.id]);
         return u;
+      }).catch(async (e) => {
+        await k.db.rawTx((c) => c.query('delete from tenants where id = $1', [tenant.id])); // lost a race on the e-mail: no empty company
+        return emailTakenOnRace(e);
       });
       reply.code(201);
       return { tenant, admin: user };
     });
 
+    /**
+     * `{ email, password }` → token. E-mail is unique across companies, so the company is found from the user.
+     * `tenant` (company code) is optional and only needed for e-mails that two companies had before migration 003:
+     * then the password picks the account, and if it fits several → 409 `tenant_required` (the apps then ask for the code).
+     */
     app.post('/auth/login', { config: { public: true } }, async (req) => {
       const body = parse(LoginInput, req.body);
-      // one account (company + e-mail) may fail LOGIN_MAX_FAILURES times per LOGIN_WINDOW_MS, then waits (429)
-      const key = `${body.tenant}|${body.email}`;
+      // one account (e-mail) may fail LOGIN_MAX_FAILURES times per LOGIN_WINDOW_MS, then waits (429) — with or without a company code
+      const key = body.email;
       if (recentFailures(key).length >= LOGIN_MAX_FAILURES) {
         throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
       }
-      const tenant = (await k.db.pool.query('select id, code, name from tenants where code = $1', [body.tenant])).rows[0];
-      if (!tenant) {
-        verifyPassword(body.password, DUMMY_HASH);
-        noteLoginFailure(key);
-        throw unauthorized(`รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง`);
+      const fail = (): never => { noteLoginFailure(key); throw unauthorized(BAD_LOGIN); };
+      let tenantId: string;
+      if (body.tenant) {
+        const t = (await k.db.pool.query<{ id: string }>('select id from tenants where code = $1', [body.tenant])).rows[0];
+        if (!t) { verifyPassword(body.password, DUMMY_HASH); return fail(); }
+        tenantId = t.id;
+      } else {
+        const candidates = await usersByEmail(k, body.email, true);
+        if (!candidates.length) { verifyPassword(body.password, DUMMY_HASH); return fail(); }
+        const fits = candidates.filter((u) => verifyPassword(body.password, u.password_hash));
+        if (!fits.length) return fail();
+        if (fits.length > 1) throw new HttpError(409, 'tenant_required', 'อีเมลนี้อยู่ในหลายบริษัท กรุณาใส่รหัสบริษัท');
+        tenantId = fits[0].tenant_id;
       }
+      const tenant = (await k.db.pool.query('select id, code, name from tenants where id = $1', [tenantId])).rows[0];
       return k.db.tx(tenant.id, async (c) => {
         const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
         const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
-        if (!ok) {
-          noteLoginFailure(key);
-          throw unauthorized(`รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง`);
-        }
+        if (!ok) return fail();
         loginFailures.delete(key);
         const perms = await permissionsOf(c, u.id);
         // signed at or after the user's revocation cutoff, so a login in the same second as a logout is not refused (SEC-07)
@@ -340,12 +381,13 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       requirePerm(a, 'identity.user.write');
       const body = parse(UserInput, req.body);
+      await requireEmailFree(k, body.email);
       const user = await k.db.tx(a.tenantId, async (c) => {
         requireGrantable(a, await permissionsOfRoles(c, body.roleIds), 'กำหนดบทบาทไม่ได้');
         const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [body.email, body.name, hashPassword(body.password)])).rows[0];
         for (const roleId of body.roleIds) await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, roleId]);
         return u;
-      });
+      }).catch(emailTakenOnRace);
       reply.code(201);
       return user;
     });

@@ -12,7 +12,7 @@ afterAll(async () => { await t?.close(); });
 async function createTenant(code: string) {
   const res = await t.svc.app.inject({
     method: 'POST', url: '/tenants', headers: { 'x-internal-token': TEST_INTERNAL_TOKEN },
-    payload: { code, name: `${code} co`, admin: { email: 'admin@x.co', name: 'Admin', password: 'password123' } },
+    payload: { code, name: `${code} co`, admin: { email: `admin@${code}.co`, name: 'Admin', password: 'password123' } },
   });
   expect(res.statusCode).toBe(201);
   return res.json();
@@ -29,17 +29,17 @@ const revocations = async (userId: string) => (await t.published('identity.token
 /** tenant with an admin and a clerk (role with a few permissions) */
 async function setup(code: string) {
   const { tenant } = await createTenant(code);
-  const admin = (await login(code, 'admin@x.co', 'password123')).body;
+  const admin = (await login(code, `admin@${code}.co`, 'password123')).body;
   const role = (await t.api('POST', '/roles', { name: 'Clerk', permissions: ['sales.order.read'] }, { token: admin.token })).body;
-  const clerkUser = (await t.api('POST', '/users', { email: 'clerk@x.co', name: 'สมศรี', password: 'password123', roleIds: [role.id] }, { token: admin.token })).body;
-  const clerk = (await login(code, 'clerk@x.co', 'password123')).body;
+  const clerkUser = (await t.api('POST', '/users', { email: `clerk@${code}.co`, name: 'สมศรี', password: 'password123', roleIds: [role.id] }, { token: admin.token })).body;
+  const clerk = (await login(code, `clerk@${code}.co`, 'password123')).body;
   return { tenant, admin, role, clerkUser, clerk };
 }
 
 describe('logout everywhere', () => {
   it('revokes every token of the user at once (identity itself) and emits identity.tokens_revoked; a new login works right away', async () => {
     const { clerk, clerkUser } = await setup('lo-a');
-    const other = (await login('lo-a', 'clerk@x.co', 'password123')).body; // a second device
+    const other = (await login('lo-a', 'clerk@lo-a.co', 'password123')).body; // a second device
     expect((await me(clerk.token)).status).toBe(200);
     const out = await t.api('POST', '/logout', undefined, { token: clerk.token });
     expect(out.status).toBe(200);
@@ -53,7 +53,7 @@ describe('logout everywhere', () => {
     expect(ev).toEqual([{ userId: clerkUser.id, before: out.body.revokedBefore, reason: 'logout' }]);
     expect(out.body.revokedBefore).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000));
     // logging in again in the same second is not refused: the new token is issued at the cutoff
-    const again = (await login('lo-a', 'clerk@x.co', 'password123')).body;
+    const again = (await login('lo-a', 'clerk@lo-a.co', 'password123')).body;
     expect(verifyToken(TEST_JWT_SECRET, again.token).issuedAt).toBeGreaterThanOrEqual(out.body.revokedBefore);
     expect((await me(again.token)).status).toBe(200);
   });
@@ -74,14 +74,14 @@ describe('logout everywhere', () => {
 
   it('a second revocation in the same second also kills the token issued at the first cutoff', async () => {
     await setup('lo-c');
-    const first = (await login('lo-c', 'clerk@x.co', 'password123')).body;
+    const first = (await login('lo-c', 'clerk@lo-c.co', 'password123')).body;
     const out1 = await t.api('POST', '/logout', undefined, { token: first.token });
-    const second = (await login('lo-c', 'clerk@x.co', 'password123')).body; // iat = first cutoff
+    const second = (await login('lo-c', 'clerk@lo-c.co', 'password123')).body; // iat = first cutoff
     expect((await me(second.token)).status).toBe(200);
     const out2 = await t.api('POST', '/logout', undefined, { token: second.token });
     expect(out2.body.revokedBefore).toBeGreaterThan(out1.body.revokedBefore);
     expect((await me(second.token)).status).toBe(401);
-    const third = (await login('lo-c', 'clerk@x.co', 'password123')).body;
+    const third = (await login('lo-c', 'clerk@lo-c.co', 'password123')).body;
     expect((await me(third.token)).status).toBe(200);
   });
 });
@@ -112,8 +112,8 @@ describe('change own password', () => {
     const fresh = await me(body.token);
     expect(fresh.status).toBe(200);
     expect(fresh.body.permissions).toEqual(['sales.order.read']);
-    expect((await login('pw-b', 'clerk@x.co', 'password123')).status).toBe(401);
-    expect((await login('pw-b', 'clerk@x.co', 'newpassword1')).status).toBe(200);
+    expect((await login('pw-b', 'clerk@pw-b.co', 'password123')).status).toBe(401);
+    expect((await login('pw-b', 'clerk@pw-b.co', 'newpassword1')).status).toBe(200);
     expect((await revocations(clerkUser.id)).map((e) => e.reason)).toEqual(['password_changed']);
     // the new password is never written to the audit log
     const audit = await t.svc.db.tx(body.token ? verifyToken(TEST_JWT_SECRET, body.token).tenantId : '', async (c) =>
@@ -138,7 +138,7 @@ describe('admin actions revoke the user’s sessions', () => {
     expect(r.body.message).toContain('เข้าสู่ระบบใหม่');
     expect((await me(clerk.token)).status).toBe(401);
     expect((await revocations(clerkUser.id)).map((e) => e.reason)).toEqual(['roles_changed']);
-    expect((await login('ad-b', 'clerk@x.co', 'password123')).body.permissions).toEqual(['inventory.balance.read']);
+    expect((await login('ad-b', 'clerk@ad-b.co', 'password123')).body.permissions).toEqual(['inventory.balance.read']);
   });
 
   it('"บังคับออกจากระบบ": needs identity.user.write, cannot target someone with more rights, then revokes', async () => {
@@ -161,7 +161,7 @@ describe('admin actions revoke the user’s sessions', () => {
     expect(detail.body).not.toHaveProperty('password_hash');
     expect(detail.body.sessions_revoked_at).toBeTruthy();
     // a user may still log in again (unlike a disabled one)
-    expect((await login('ad-c', 'clerk@x.co', 'password123')).status).toBe(200);
+    expect((await login('ad-c', 'clerk@ad-c.co', 'password123')).status).toBe(200);
     expect(tenant.id).toBeTruthy();
   });
 

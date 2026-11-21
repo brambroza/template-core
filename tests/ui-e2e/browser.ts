@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Locator, Page } from 'playwright-core';
+import { adminEmail } from '../e2e/helpers.ts';
 
 const WEB_DIR = fileURLToPath(new URL('../../apps/web', import.meta.url));
 const NEXT_BIN = fileURLToPath(new URL('../../apps/web/node_modules/next/dist/bin/next', import.meta.url));
@@ -26,9 +27,9 @@ export function stopWeb(proc?: ChildProcess) {
   if (proc?.pid) try { process.kill(-proc.pid, 'SIGTERM'); } catch { /* already gone */ }
 }
 
-export async function login(page: Page, base: string, tenant: string, email = 'admin@example.com', password = 'password123') {
+/** Log in with e-mail + password (no company code since identity migration 003); `tenant` only picks that company's admin e-mail. */
+export async function login(page: Page, base: string, tenant: string, email = adminEmail(tenant), password = 'password123') {
   await page.goto(`${base}/login`);
-  await page.getByLabel('รหัสบริษัท').fill(tenant);
   await page.getByLabel('อีเมล').fill(email);
   await page.getByLabel('รหัสผ่าน').fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();

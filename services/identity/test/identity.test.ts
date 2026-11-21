@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { verifyToken } from '@erp/kernel';
+import { hashPassword, verifyToken } from '@erp/kernel';
 import { bootTestService, TEST_INTERNAL_TOKEN, TEST_JWT_SECRET, type TestService } from '@erp/kernel/testing';
 import { hasPerm } from '@erp/ui-schema';
 import { canGrant, definition, LOGIN_MAX_FAILURES, resetLoginThrottle } from '../src/service.ts';
@@ -13,7 +13,7 @@ afterAll(async () => { await t?.close(); });
 async function createTenant(code: string) {
   const res = await t.svc.app.inject({
     method: 'POST', url: '/tenants', headers: { 'x-internal-token': TEST_INTERNAL_TOKEN },
-    payload: { code, name: `${code} co`, admin: { email: 'admin@x.co', name: 'Admin', password: 'password123' } },
+    payload: { code, name: `${code} co`, admin: { email: `admin@${code}.co`, name: 'Admin', password: 'password123' } },
   });
   expect(res.statusCode).toBe(201);
   return res.json();
@@ -27,13 +27,13 @@ async function login(tenant: string, email: string, password: string) {
 describe('identity', () => {
   it('provisions a tenant and logs the admin in with full permissions', async () => {
     const { tenant } = await createTenant('acme');
-    const r = await login('acme', 'ADMIN@x.co', 'password123');
+    const r = await login('acme', 'admin@acme.co', 'password123');
     expect(r.status).toBe(200);
     const claims = verifyToken(TEST_JWT_SECRET, r.body.token);
     expect(claims.tenantId).toBe(tenant.id);
     expect(claims.perms).toEqual(['*']);
-    expect((await login('acme', 'admin@x.co', 'wrong-pass')).status).toBe(401);
-    expect((await login('nope', 'admin@x.co', 'password123')).status).toBe(401);
+    expect((await login('acme', 'admin@acme.co', 'wrong-pass')).status).toBe(401);
+    expect((await login('nope', 'admin@nope.co', 'password123')).status).toBe(401);
   });
 
   it('only provisions tenants with the internal token', async () => {
@@ -43,7 +43,7 @@ describe('identity', () => {
 
   it('creates roles and users whose token carries role permissions', async () => {
     await createTenant('beta');
-    const admin = await login('beta', 'admin@x.co', 'password123');
+    const admin = await login('beta', 'admin@beta.co', 'password123');
     const as = { token: admin.body.token };
     const role = await t.api('POST', '/roles', { name: 'Storekeeper', permissions: ['inventory.*', 'master.item.read'] }, as);
     expect(role.status).toBe(201);
@@ -54,7 +54,7 @@ describe('identity', () => {
     const forbidden = await t.api('POST', '/users', { email: 'x@x.co', name: 'X', password: 'password123' }, { token: store.body.token });
     expect(forbidden.status).toBe(403);
     const users = await t.api('GET', '/users', undefined, as);
-    expect(users.body.map((u: any) => u.email)).toEqual(['admin@x.co', 'store@x.co']);
+    expect(users.body.map((u: any) => u.email)).toEqual(['admin@beta.co', 'store@x.co']);
     expect(users.body[0]).not.toHaveProperty('password_hash');
     await t.api('POST', `/users/${user.body.id}/deactivate`, undefined, as);
     expect((await login('beta', 'store@x.co', 'password123')).status).toBe(401);
@@ -62,7 +62,7 @@ describe('identity', () => {
 
   it('ID-04 (bugs-0.4): every signed-in user can pick colleagues from the directory (id, name, e-mail only), not the admin user list', async () => {
     await createTenant('gamma');
-    const admin = { token: (await login('gamma', 'admin@x.co', 'password123')).body.token };
+    const admin = { token: (await login('gamma', 'admin@gamma.co', 'password123')).body.token };
     const role = (await t.api('POST', '/roles', { name: 'หัวหน้างาน', permissions: ['approvals.request.approve'] }, admin)).body;
     await t.api('POST', '/users', { email: 'sup@x.co', name: 'วิชัย หัวหน้า', password: 'password123', roleIds: [role.id] }, admin);
     const gone = (await t.api('POST', '/users', { email: 'old@x.co', name: 'วิชัย ลาออก', password: 'password123' }, admin)).body;
@@ -78,11 +78,98 @@ describe('identity', () => {
   });
 
   it('keeps tenants apart', async () => {
-    const acme = await login('acme', 'admin@x.co', 'password123');
+    const acme = await login('acme', 'admin@acme.co', 'password123');
     const users = await t.api('GET', '/users', undefined, { token: acme.body.token });
-    expect(users.body.map((u: any) => u.email)).toEqual(['admin@x.co']);
-    const dup = await t.api('POST', '/users', { email: 'admin@x.co', name: 'Dup', password: 'password123' }, { token: acme.body.token });
+    expect(users.body.map((u: any) => u.email)).toEqual(['admin@acme.co']);
+    const dup = await t.api('POST', '/users', { email: 'admin@acme.co', name: 'Dup', password: 'password123' }, { token: acme.body.token });
     expect(dup.status).toBe(409);
+  });
+});
+
+describe('login by e-mail only (migration 003: one e-mail = one user in the whole system)', () => {
+  const loginEmail = async (body: object) => {
+    const res = await t.svc.app.inject({ method: 'POST', url: '/auth/login', payload: body });
+    return { status: res.statusCode, body: res.json() };
+  };
+  const provision = (code: string, email: string) => t.svc.app.inject({
+    method: 'POST', url: '/tenants', headers: { 'x-internal-token': TEST_INTERNAL_TOKEN },
+    payload: { code, name: `${code} co`, admin: { email, name: 'Admin', password: 'password123' } },
+  });
+
+  it('logs in without a company code and finds the company from the e-mail', async () => {
+    resetLoginThrottle();
+    await createTenant('solo');
+    const r = await loginEmail({ email: 'ADMIN@solo.co', password: 'password123' });
+    expect(r.status).toBe(200);
+    expect(r.body.tenant.code).toBe('solo');
+    expect(verifyToken(TEST_JWT_SECRET, r.body.token).tenantId).toBe(r.body.tenant.id);
+    // an empty company code counts as none (older apps send "")
+    expect((await loginEmail({ tenant: '', email: 'admin@solo.co', password: 'password123' })).status).toBe(200);
+    // the company code still works
+    expect((await loginEmail({ tenant: 'solo', email: 'admin@solo.co', password: 'password123' })).status).toBe(200);
+  });
+
+  it('answers a wrong password, an unknown e-mail and a deactivated user alike', async () => {
+    resetLoginThrottle();
+    const wrong = await loginEmail({ email: 'admin@solo.co', password: 'nope-nope' });
+    const ghost = await loginEmail({ email: 'ghost@nowhere.co', password: 'nope-nope' });
+    expect([wrong.status, ghost.status]).toEqual([401, 401]);
+    expect(wrong.body).toEqual(ghost.body);
+    expect(wrong.body.error.message).toBe('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+  });
+
+  it('refuses an e-mail that another company already uses (provisioning and new users), leaving no empty company', async () => {
+    const taken = await provision('copycat', 'admin@solo.co');
+    expect(taken.statusCode).toBe(409);
+    expect(taken.json().error.code).toBe('email_taken');
+    expect((await t.svc.db.pool.query('select 1 from tenants where code = $1', ['copycat'])).rowCount).toBe(0);
+
+    await createTenant('other');
+    const admin = { token: (await loginEmail({ email: 'admin@other.co', password: 'password123' })).body.token };
+    const dup = await t.api('POST', '/users', { email: 'Admin@Solo.co', name: 'ซ้ำ', password: 'password123' }, admin);
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('email_taken');
+    expect(dup.body.error.message).toContain('อีเมลนี้ถูกใช้แล้ว');
+  });
+
+  it('throttles per e-mail, with or without the company code', async () => {
+    resetLoginThrottle();
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) {
+      const body = i % 2 ? { email: 'admin@solo.co', password: `bad-${i}` } : { tenant: 'solo', email: 'admin@solo.co', password: `bad-${i}` };
+      expect((await loginEmail(body)).status).toBe(401);
+    }
+    expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' })).status).toBe(429);
+    resetLoginThrottle();
+  });
+
+  it('e-mails duplicated before 003: the password picks the account, otherwise the company code is asked for', async () => {
+    resetLoginThrottle();
+    // an older database: two companies share an e-mail (the global index could not be created there)
+    await t.svc.db.rawTx((c) => c.query('drop index users_email_global'));
+    try {
+      await createTenant('old-a');
+      await createTenant('old-b');
+      for (const [code, pw] of [['old-a', 'password-a1'], ['old-b', 'password-b1']]) {
+        const tid = (await t.svc.db.pool.query('select id from tenants where code = $1', [code])).rows[0].id;
+        await t.svc.db.tx(tid, (c) => c.query('insert into users (email, name, password_hash) values ($1, $2, $3)', ['shared@x.co', code, hashPassword(pw)]));
+      }
+      const a = await loginEmail({ email: 'shared@x.co', password: 'password-b1' });
+      expect(a.status).toBe(200);
+      expect(a.body.tenant.code).toBe('old-b');
+      // same password in both companies → ask for the company
+      const tidA = (await t.svc.db.pool.query('select id from tenants where code = $1', ['old-a'])).rows[0].id;
+      await t.svc.db.tx(tidA, (c) => c.query('update users set password_hash = $1 where email = $2', [hashPassword('password-b1'), 'shared@x.co']));
+      const both = await loginEmail({ email: 'shared@x.co', password: 'password-b1' });
+      expect(both.status).toBe(409);
+      expect(both.body.error.code).toBe('tenant_required');
+      expect((await loginEmail({ tenant: 'old-a', email: 'shared@x.co', password: 'password-b1' })).body.tenant.code).toBe('old-a');
+    } finally {
+      for (const code of ['old-a', 'old-b']) {
+        const tid = (await t.svc.db.pool.query('select id from tenants where code = $1', [code])).rows[0]?.id;
+        if (tid) await t.svc.db.tx(tid, (c) => c.query(`delete from users where email = 'shared@x.co'`));
+      }
+      await t.svc.db.rawTx((c) => c.query('create unique index users_email_global on users (email)'));
+    }
   });
 });
 
@@ -98,7 +185,7 @@ const SVG = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w
 describe('security review 0.3', () => {
   it('SEC-01: user/role admins can only hand out permissions they hold themselves', async () => {
     await createTenant('esc');
-    const admin = { token: (await login('esc', 'admin@x.co', 'password123')).body.token };
+    const admin = { token: (await login('esc', 'admin@esc.co', 'password123')).body.token };
     const adminRole = (await t.api('GET', '/roles', undefined, admin)).body.find((r: any) => r.name === 'Administrator');
     const hrRole = (await t.api('POST', '/roles', { name: 'HR officer', permissions: ['identity.user.read', 'identity.user.write', 'identity.role.write', 'hr.*'] }, admin)).body;
     const hr = (await t.api('POST', '/users', { email: 'hr@x.co', name: 'HR', password: 'password123', roleIds: [hrRole.id] }, admin)).body;
@@ -113,7 +200,7 @@ describe('security review 0.3', () => {
     expect((await t.api('POST', '/roles', { name: 'Payroll all', permissions: ['payroll.*'] }, hrTok)).status).toBe(403);
     expect((await t.api('POST', '/roles/from-template', { template: 'accounting', name: 'acc' }, hrTok)).status).toBe(403);
     // cannot lock out or strip a more powerful user
-    const adminUser = (await t.api('GET', '/users', undefined, admin)).body.find((u: any) => u.email === 'admin@x.co');
+    const adminUser = (await t.api('GET', '/users', undefined, admin)).body.find((u: any) => u.email === 'admin@esc.co');
     expect((await t.api('POST', `/users/${adminUser.id}/deactivate`, undefined, hrTok)).status).toBe(403);
     expect((await t.api('PUT', `/users/${adminUser.id}/roles`, { roleIds: [] }, hrTok)).status).toBe(403);
     // within their own permissions everything still works
@@ -142,19 +229,19 @@ describe('security review 0.3', () => {
   it('SEC-02: throttles repeated wrong passwords per account and does not reveal unknown accounts', async () => {
     resetLoginThrottle();
     await createTenant('brute');
-    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await login('brute', 'admin@x.co', `wrong-${i}`)).status).toBe(401);
-    const locked = await login('brute', 'admin@x.co', 'password123');
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await login('brute', 'admin@brute.co', `wrong-${i}`)).status).toBe(401);
+    const locked = await login('brute', 'admin@brute.co', 'password123');
     expect(locked.status).toBe(429);
     expect(locked.body.error.code).toBe('too_many_attempts');
     // other accounts are not affected
-    expect((await login('acme', 'admin@x.co', 'password123')).status).toBe(200);
+    expect((await login('acme', 'admin@acme.co', 'password123')).status).toBe(200);
     // unknown company / unknown user answer exactly like a wrong password
     const a = await login('brute', 'ghost@x.co', 'x');
-    const b = await login('no-such-co', 'admin@x.co', 'x');
+    const b = await login('no-such-co', 'admin@no-such-co.co', 'x');
     expect([a.status, b.status]).toEqual([401, 401]);
     expect(a.body).toEqual(b.body);
     resetLoginThrottle();
-    expect((await login('brute', 'admin@x.co', 'password123')).status).toBe(200);
+    expect((await login('brute', 'admin@brute.co', 'password123')).status).toBe(200);
   });
 });
 

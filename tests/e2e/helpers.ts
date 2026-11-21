@@ -3,6 +3,9 @@ import { createService, type Service, type ServiceDefinition } from '@erp/kernel
 import { createTestDatabase, TEST_INTERNAL_TOKEN, TEST_JWT_SECRET } from '@erp/kernel/testing';
 import { createGateway, type Gateway } from '@erp/gateway';
 
+/** Each test company's admin e-mail. E-mails are unique across companies (identity migration 003), so the code is in it. */
+export const adminEmail = (code: string) => `admin@${code}.example.com`;
+
 export interface Installation {
   gateway: Gateway;
   url: string;
@@ -61,10 +64,10 @@ export async function install(defs: ServiceDefinition[], extraEnv: Record<string
       const identity = urls.identity;
       const res = await fetch(`${identity}/tenants`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-token': TEST_INTERNAL_TOKEN },
-        body: JSON.stringify({ code, name: code, admin: { email: 'admin@example.com', name: 'Admin', password: 'password123' } }),
+        body: JSON.stringify({ code, name: code, admin: { email: adminEmail(code), name: 'Admin', password: 'password123' } }),
       });
       if (res.status !== 201) throw new Error(`provision failed: ${await res.text()}`);
-      const login = await call('POST', '/api/identity/auth/login', { tenant: code, email: 'admin@example.com', password: 'password123' });
+      const login = await call('POST', '/api/identity/auth/login', { email: adminEmail(code), password: 'password123' });
       return { token: login.body.token, tenantId: login.body.tenant.id };
     },
     async close() {
