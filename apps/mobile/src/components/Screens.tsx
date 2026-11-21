@@ -1,8 +1,8 @@
 import { ImpactPreview } from './ImpactPreview';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useContext, useState, type ReactNode } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   fillPath, filterRows, get, hasPerm, initialValues, listRows, matches, missingRequired, routeParams, toBody,
@@ -239,6 +239,10 @@ export function ActionModal({ action, module, params, onClose, onDone }: { actio
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // red lines in the impact preview must be acknowledged before the button works (same as the web)
+  const [stops, setStops] = useState(0);
+  const [ack, setAck] = useState(false);
+  useEffect(() => setAck(false), [stops]);
   const run = async () => {
     const fe = missingRequired(action.fields ?? [], values);
     setErrors(fe);
@@ -262,7 +266,14 @@ export function ActionModal({ action, module, params, onClose, onDone }: { actio
         modal
         footer={<>
           <ErrorText text={error} />
-          <Button label={action.label} tone={action.tone === 'danger' ? 'danger' : 'primary'} size="large" busy={busy} onPress={run} />
+          {stops > 0 && (
+            <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: ack }} onPress={() => setAck(!ack)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}>
+              <Switch value={ack} onValueChange={setAck} />
+              <Text style={[s.value, { flex: 1, fontWeight: '600' }]}>รับทราบคำเตือนสีแดง{stops > 1 ? ` ${stops} ข้อ` : ''} และยืนยันทำรายการต่อ</Text>
+            </Pressable>
+          )}
+          <Button label={action.label} tone={action.tone === 'danger' ? 'danger' : 'primary'} size="large" busy={busy} disabled={stops > 0 && !ack} onPress={run} />
           <Button label="ยกเลิก" onPress={onClose} disabled={busy} />
         </>}
       >
@@ -270,7 +281,7 @@ export function ActionModal({ action, module, params, onClose, onDone }: { actio
         {action.confirm && <Text style={[s.value, { marginBottom: 16 }]}>{action.confirm}</Text>}
         {(action.fields ?? []).map((f) => <FieldRow key={f.name} field={f} module={module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
         {action.lines && <LinesEditor spec={action.lines} module={module} lines={lines} onChange={setLines} />}
-        {action.impact && <ImpactPreview action={action} module={module} params={params} values={values} lines={lines} />}
+        {action.impact && <ImpactPreview action={action} module={module} params={params} values={values} lines={lines} onStops={setStops} />}
       </FormFrame>
     </Modal>
   );

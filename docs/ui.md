@@ -166,7 +166,7 @@ helper ใน ui-schema: `buildTodo`, `waitingText`, `dueText` (test `packages/u
 `Action.impact: true` — dialog ของปุ่มแสดงว่าระบบจะทำอะไรต่อในโมดูลอื่นก่อนกดยืนยัน (สต็อก ต้นทุนเฉลี่ย สมุดรายวัน งานตรวจ QC …):
 web เรียก endpoint เดิมด้วย `?_dryRun=1` (route ต้องประกาศ `config: { dryRun: true }`, kernel `impact.ts`: ทำจริงแล้ว rollback, เก็บ event ที่จะส่ง)
 แล้ว `POST /api/_impact { events }` — gateway ถามทุกโมดูลที่ subscribe event นั้น (`ServiceDefinition.impact`) ด้วย token ของผู้ใช้
-· ถ้าทำรายการไม่ได้ (409/400) แผงแสดงเหตุผลทันทีก่อนกด · คำนวณใหม่ 0.5 วินาทีหลังแก้ช่อง · ไม่แสดงในโหมด showcase
+· ถ้าทำรายการไม่ได้ (409/400) แผงแสดงเหตุผลทันทีก่อนกด · มีบรรทัดสีแดง (`tone: 'stop'` เช่น สต็อกจะติดลบ) → ปุ่มยืนยันกดไม่ได้จนกว่าจะติ๊ก "รับทราบคำเตือนสีแดง" (เว็บและมือถือ) · คำนวณใหม่ 0.5 วินาทีหลังแก้ช่อง · ไม่แสดงในโหมด showcase
 มีแล้ว: purchasing "รับของที่ค้างทั้งหมด" → inventory, costing, accounting, quality · production "รายงานผลผลิต" → inventory (วัตถุดิบออก/สินค้าเข้า), costing (ต้นทุนงาน + ของที่ยังไม่มีต้นทุน), quality (ตรวจขั้นสุดท้าย) · sales "บันทึกส่งของ" → inventory (ติดลบ = แดง, ถึงจุดสั่งซื้อ = ส้ม)
 · มือถือ (Expo) แสดงแผงเดียวกันใน dialog ของปุ่ม (`components/ImpactPreview.tsx`); หน้าแรกของแอปมี "ต้องตัดสินใจวันนี้" เหมือนเว็บ (`components/DecisionInbox.tsx`, helper `todoSources`/`todoActions` ใน ui-schema)
 

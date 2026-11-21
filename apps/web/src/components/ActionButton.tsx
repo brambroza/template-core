@@ -20,6 +20,10 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
   const [lines, setLines] = useState<Values[]>([]);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // red lines in the impact preview (e.g. stock goes below zero) must be acknowledged before the button works
+  const [stops, setStops] = useState(0);
+  const [ack, setAck] = useState(false);
+  useEffect(() => setAck(false), [stops]);
   const dialog = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -70,11 +74,17 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
               </div>
             )}
             {action.lines && <LinesEditor spec={action.lines} module={module} lines={lines} onChange={setLines} />}
-            {action.impact && open && !SHOWCASE && <ImpactPreview action={action} module={module} params={params} values={values} lines={lines} />}
+            {action.impact && open && !SHOWCASE && <ImpactPreview action={action} module={module} params={params} values={values} lines={lines} onStops={setStops} />}
+            {stops > 0 && (
+              <label className="impact-ack">
+                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                รับทราบคำเตือนสีแดง{stops > 1 ? ` ${stops} ข้อ` : ''} และยืนยันทำรายการต่อ
+              </label>
+            )}
             {error && <p className="form-error" role="alert">{error}</p>}
             <div className="dialog-actions">
               <button type="button" className="btn" onClick={() => setOpen(false)}>ยกเลิก</button>
-              <button type="submit" className={action.tone === 'danger' ? 'btn-danger' : 'btn-primary'} disabled={busy}>{busy ? 'กำลังบันทึก…' : action.label}</button>
+              <button type="submit" className={action.tone === 'danger' ? 'btn-danger' : 'btn-primary'} disabled={busy || (stops > 0 && !ack)}>{busy ? 'กำลังบันทึก…' : action.label}</button>
             </div>
           </form>
         </dialog>
@@ -95,8 +105,11 @@ type Preview = { state: 'loading' } | { state: 'blocked'; message: string } | { 
  * what it would do (stock, cost, accounting, QC…). Re-runs half a second after the inputs change. A refusal shows at once,
  * before the user presses the button.
  */
-function ImpactPreview({ action, module, params, values, lines }: { action: Action; module: string; params: Record<string, unknown>; values: Values; lines: Values[] }) {
+function ImpactPreview({ action, module, params, values, lines, onStops }: {
+  action: Action; module: string; params: Record<string, unknown>; values: Values; lines: Values[]; onStops?: (n: number) => void;
+}) {
   const [p, setP] = useState<Preview>({ state: 'loading' });
+  useEffect(() => { onStops?.(p.state === 'ready' ? p.impacts.flatMap((g) => g.lines).filter((l) => l.tone === 'stop').length : 0); }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = JSON.stringify([values, lines]);
   useEffect(() => {
     let stop = false;

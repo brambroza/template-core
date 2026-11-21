@@ -17,10 +17,14 @@ type Preview = { state: 'loading' } | { state: 'blocked'; message: string } | { 
 const ORDER = ['inventory', 'costing', 'quality', 'production', 'sales', 'purchasing', 'accounting'];
 const rank = (m: string) => (ORDER.includes(m) ? ORDER.indexOf(m) : ORDER.length);
 
-export function ImpactPreview({ action, module, params, values, lines }: { action: Action; module: string; params: Record<string, unknown>; values: Values; lines: Values[] }) {
+/** `onStops` gets the number of red lines (e.g. stock below zero), which the dialog asks the user to acknowledge. */
+export function ImpactPreview({ action, module, params, values, lines, onStops }: {
+  action: Action; module: string; params: Record<string, unknown>; values: Values; lines: Values[]; onStops?: (n: number) => void;
+}) {
   const c = usePalette();
   const st = useSt();
   const [p, setP] = useState<Preview>({ state: 'loading' });
+  useEffect(() => { onStops?.(p.state === 'ready' ? p.impacts.flatMap((g) => g.lines).filter((l) => l.tone === 'stop').length : 0); }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = JSON.stringify([values, lines]);
   useEffect(() => {
     let stop = false;

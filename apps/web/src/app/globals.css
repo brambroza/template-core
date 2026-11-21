@@ -1100,3 +1100,7 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 .wordmark-text { display: flex; flex-direction: column; line-height: 1.15; }
 .wordmark-text b { font-weight: 700; font-size: 1.05rem; letter-spacing: -.01em; }
 .wordmark-text small { font-size: .74rem; color: var(--ink-3); font-weight: 500; }
+
+/* acknowledge red impact lines before confirming */
+.impact-ack { display: flex; gap: .5rem; align-items: flex-start; margin: .25rem 0 .75rem; padding: .6rem .75rem; border: 1px solid var(--stop-text); border-radius: 8px; font-weight: 600; color: var(--stop-text); cursor: pointer; }
+.impact-ack input { margin-top: .2rem; width: 1.05rem; height: 1.05rem; accent-color: var(--stop); }
