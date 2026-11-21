@@ -22,6 +22,7 @@ async function fakeModule(m: ModuleManifest): Promise<string> {
     reply.header('x-rd-prep-layout', 'unverified').header('x-internal-secret', 'nope');
     return 'a|b';
   });
+  app.get('/whoami', async (req) => ({ ip: req.headers['x-erp-client-ip'] }));
   app.post('/_events', async (req) => {
     if (req.headers['x-internal-token'] !== TOKEN) return { status: 'bad token' };
     received[m.id].push((req.body as { type: string }).type);
@@ -85,5 +86,10 @@ describe('proxy', () => {
     expect(res.headers['content-disposition']).toContain('x.txt');
     expect(res.headers['x-internal-secret']).toBeUndefined();
     expect(res.body).toBe('a|b');
+  });
+
+  it('tells modules the client IP it saw itself, never one copied from the request', async () => {
+    const res = await gw.app.inject({ method: 'GET', url: '/api/sales/whoami', remoteAddress: '203.0.113.9', headers: { 'x-erp-client-ip': '1.2.3.4', 'x-forwarded-for': '5.6.7.8' } });
+    expect(res.json()).toEqual({ ip: '203.0.113.9' });
   });
 });

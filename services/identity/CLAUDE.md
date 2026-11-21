@@ -56,8 +56,10 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
   `PUT /users/:id/roles` and `POST /users/:id/deactivate` answer 403 unless the caller holds every permission involved — the new role's,
   the assigned roles', and (for role changes / deactivation) the target user's current ones (`canGrant`: `*` needs `*`, `m.*` needs `m.*`).
   Role ids of another company → 400.
-- **Login throttling** (SEC-02): 10 wrong passwords per e-mail in 15 minutes (with or without a company code) → 429 `too_many_attempts` (in memory, per identity
-  instance; a success clears it). Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password ("อีเมลหรือรหัสผ่านไม่ถูกต้อง").
+- **Login throttling** (SEC-02): 10 wrong passwords per e-mail **+ client IP** in 15 minutes (with or without a company code) → 429 `too_many_attempts`,
+  so wrong guesses from one place do not lock the owner out from another. Looser caps: 50 per e-mail from any IP, 100 per IP over any e-mails
+  (`loginBuckets`). The IP is `x-erp-client-ip`, set by the gateway from what it saw (`clientIp`; missing → one shared `direct` bucket).
+  In memory, per identity instance; the right password clears the e-mail + IP bucket. Unknown company / unknown e-mail run a dummy scrypt so they answer like a wrong password ("อีเมลหรือรหัสผ่านไม่ถูกต้อง").
 - SVG logos must not contain script, event handlers, `<foreignObject>`, entities or outside links (SEC-11).
 
 ## Screens for sessions

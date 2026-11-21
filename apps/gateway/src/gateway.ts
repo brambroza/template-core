@@ -34,6 +34,12 @@ export interface GatewayOptions {
   modules: Record<string, string>;
   internalToken: string;
   logger?: boolean;
+  /**
+   * Fastify `trustProxy`: the proxy addresses to trust when the gateway sits behind a load balancer or reverse proxy
+   * (e.g. "10.0.0.0/8" or "loopback"), so the client IP sent to modules is the visitor's and not the proxy's.
+   * Leave unset when clients connect to the gateway directly.
+   */
+  trustProxy?: boolean | string;
 }
 
 export function parseModules(spec: string): Record<string, string> {
@@ -61,7 +67,7 @@ export interface Gateway {
 
 export function createGateway(opts: GatewayOptions): Gateway {
   // 8 MB: a 5 MB attachment travels as base64 JSON (~6.7 MB); modules enforce their own, smaller limits
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 8 * 1024 * 1024 });
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 8 * 1024 * 1024, trustProxy: opts.trustProxy ?? false });
   let manifests: ModuleManifest[] = [];
 
   async function fetchManifest(id: string, url: string, retries: number, delayMs: number): Promise<ModuleManifest> {
@@ -190,6 +196,8 @@ export function createGateway(opts: GatewayOptions): Gateway {
     // the public address the client used (e.g. automation shows the LINE webhook URL built from it)
     headers['x-forwarded-host'] = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '');
     headers['x-forwarded-proto'] = String(req.headers['x-forwarded-proto'] ?? req.protocol);
+    // the visitor's IP as the gateway saw it (never copied from the request), e.g. identity throttles failed logins per e-mail + IP
+    headers['x-erp-client-ip'] = req.ip;
     const hasBody = !['GET', 'HEAD'].includes(req.method) && req.body !== undefined;
     const res = await fetch(`${base}/${rest}${qs}`, { method: req.method, headers, body: hasBody ? JSON.stringify(req.body) : undefined });
     reply.code(res.status);

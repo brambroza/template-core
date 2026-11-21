@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword, verifyToken } from '@erp/kernel';
 import { bootTestService, TEST_INTERNAL_TOKEN, TEST_JWT_SECRET, type TestService } from '@erp/kernel/testing';
 import { hasPerm } from '@erp/ui-schema';
-import { canGrant, definition, LOGIN_MAX_FAILURES, resetLoginThrottle } from '../src/service.ts';
+import { canGrant, clientIp, definition, LOGIN_MAX_FAILURES, LOGIN_MAX_FAILURES_PER_EMAIL, resetLoginThrottle } from '../src/service.ts';
 import ui from '../src/ui.ts';
 
 let t: TestService;
@@ -87,8 +87,8 @@ describe('identity', () => {
 });
 
 describe('login by e-mail only (migration 003: one e-mail = one user in the whole system)', () => {
-  const loginEmail = async (body: object) => {
-    const res = await t.svc.app.inject({ method: 'POST', url: '/auth/login', payload: body });
+  const loginEmail = async (body: object, ip?: string) => {
+    const res = await t.svc.app.inject({ method: 'POST', url: '/auth/login', payload: body, headers: ip ? { 'x-erp-client-ip': ip } : {} });
     return { status: res.statusCode, body: res.json() };
   };
   const provision = (code: string, email: string) => t.svc.app.inject({
@@ -140,6 +140,26 @@ describe('login by e-mail only (migration 003: one e-mail = one user in the whol
     }
     expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' })).status).toBe(429);
     resetLoginThrottle();
+  });
+
+  it('wrong passwords from one IP do not lock the owner out from another IP; spreading over many IPs still hits a cap', async () => {
+    resetLoginThrottle();
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) expect((await loginEmail({ email: 'admin@solo.co', password: `bad-${i}` }, '203.0.113.9')).status).toBe(401);
+    expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '203.0.113.9')).status).toBe(429);
+    const owner = await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '198.51.100.7');
+    expect(owner.status).toBe(200);
+    expect(owner.body.token).toBeTruthy();
+    // the same e-mail from many addresses: the per-e-mail cap
+    for (let i = LOGIN_MAX_FAILURES; i < LOGIN_MAX_FAILURES_PER_EMAIL; i++) await loginEmail({ email: 'admin@solo.co', password: 'bad' }, `203.0.113.${i % 200}`);
+    expect((await loginEmail({ email: 'admin@solo.co', password: 'password123' }, '192.0.2.1')).status).toBe(429);
+    resetLoginThrottle();
+  });
+
+  it('client IP header: only short IP-like values are used', () => {
+    expect(clientIp({ 'x-erp-client-ip': '203.0.113.9' })).toBe('203.0.113.9');
+    expect(clientIp({ 'x-erp-client-ip': '::ffff:10.0.0.1' })).toBe('::ffff:10.0.0.1');
+    expect(clientIp({ 'x-erp-client-ip': 'a|b' })).toBe('direct');
+    expect(clientIp({})).toBe('direct');
   });
 
   it('e-mails duplicated before 003: the password picks the account, otherwise the company code is asked for', async () => {

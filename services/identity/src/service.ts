@@ -151,9 +151,27 @@ async function cutoffOf(c: Client, userId: string): Promise<number | undefined> 
   return r.rows[0] ? Number(r.rows[0].before) : undefined;
 }
 
-/* ---- login throttling (security review 0.3, SEC-02) ---- */
+/* ---- login throttling (security review 0.3, SEC-02) ----
+ * Failures count per e-mail + client IP (LOGIN_MAX_FAILURES), so someone who only knows the owner's e-mail cannot lock the owner
+ * out from elsewhere. Two looser caps stop the obvious spreads: one e-mail from many IPs (LOGIN_MAX_FAILURES_PER_EMAIL) and one IP
+ * trying many e-mails (LOGIN_MAX_FAILURES_PER_IP). The IP is what the gateway saw (`x-erp-client-ip`); without it ('direct',
+ * e.g. tests or a module called inside the network) the per-IP keys share one bucket. */
 export const LOGIN_MAX_FAILURES = 10;
+export const LOGIN_MAX_FAILURES_PER_EMAIL = 50;
+export const LOGIN_MAX_FAILURES_PER_IP = 100;
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const TOO_MANY = 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่';
+
+/** Client IP forwarded by the gateway (a short, printable value only). */
+export function clientIp(headers: Record<string, unknown>): string {
+  const v = headers['x-erp-client-ip'];
+  return typeof v === 'string' && /^[0-9a-fA-F:.]{2,45}$/.test(v) ? v : 'direct';
+}
+
+/** The throttle buckets one login attempt counts against, with each bucket's limit. */
+export function loginBuckets(email: string, ip: string): Array<[key: string, max: number]> {
+  return [[`login|${email}|${ip}`, LOGIN_MAX_FAILURES], [`login-email|${email}`, LOGIN_MAX_FAILURES_PER_EMAIL], [`login-ip|${ip}`, LOGIN_MAX_FAILURES_PER_IP]];
+}
 const loginFailures = new Map<string, number[]>();
 const recentFailures = (key: string, now = Date.now()) => (loginFailures.get(key) ?? []).filter((at) => now - at < LOGIN_WINDOW_MS);
 function noteLoginFailure(key: string) {
@@ -223,12 +241,10 @@ export const definition: ServiceDefinition = {
      */
     app.post('/auth/login', { config: { public: true } }, async (req) => {
       const body = parse(LoginInput, req.body);
-      // one account (e-mail) may fail LOGIN_MAX_FAILURES times per LOGIN_WINDOW_MS, then waits (429) — with or without a company code
-      const key = body.email;
-      if (recentFailures(key).length >= LOGIN_MAX_FAILURES) {
-        throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
-      }
-      const fail = (): never => { noteLoginFailure(key); throw unauthorized(BAD_LOGIN); };
+      // per e-mail + IP, plus looser per-e-mail and per-IP caps (see loginBuckets), then waits (429) — with or without a company code
+      const buckets = loginBuckets(body.email, clientIp(req.headers));
+      if (buckets.some(([key, max]) => recentFailures(key).length >= max)) throw new HttpError(429, 'too_many_attempts', TOO_MANY);
+      const fail = (): never => { for (const [key] of buckets) noteLoginFailure(key); throw unauthorized(BAD_LOGIN); };
       let tenantId: string;
       if (body.tenant) {
         const t = (await k.db.pool.query<{ id: string }>('select id from tenants where code = $1', [body.tenant])).rows[0];
@@ -247,7 +263,7 @@ export const definition: ServiceDefinition = {
         const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
         const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
         if (!ok) return fail();
-        loginFailures.delete(key);
+        loginFailures.delete(buckets[0][0]); // the right password clears this e-mail + IP; the wider caps age out on their own
         const perms = await permissionsOf(c, u.id);
         // signed at or after the user's revocation cutoff, so a login in the same second as a logout is not refused (SEC-07)
         const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl, { iat: await cutoffOf(c, u.id) });
@@ -281,7 +297,7 @@ export const definition: ServiceDefinition = {
       const b = parse(PasswordChangeInput, req.body);
       const key = `me|${a.tenantId}|${a.userId}`;
       if (recentFailures(key).length >= LOGIN_MAX_FAILURES) {
-        throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
+        throw new HttpError(429, 'too_many_attempts', TOO_MANY);
       }
       const out = await k.db.tx(a.tenantId, async (c) => {
         const u = (await c.query('select id, name, password_hash from users where id = $1 and active', [a.userId])).rows[0];

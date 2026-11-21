@@ -40,7 +40,7 @@
 - permission รูปแบบ `<module>.<thing>.<action>` รองรับ `<module>.*` และ `*`
 - แต่ละโมดูลประกาศ permission ของตัวเองใน `module.json` → UI ดึงจาก `/api/_catalog` ไปสร้างหน้าตั้งค่าบทบาท
 - token ต้องมี `exp` เสมอ, alg ไม่อ่านจาก header (HS256 ตายตัว); service/gateway ไม่ยอม start ถ้า `JWT_SECRET`/`INTERNAL_TOKEN` ยังเป็นค่าตัวอย่าง
-  (และใน `NODE_ENV=production` ต้องยาว ≥ 32 ตัวและไม่ซ้ำกัน) · ให้สิทธิ์ได้เฉพาะสิทธิ์ที่ตัวเองมี · login ผิด 10 ครั้ง/15 นาที/บัญชี → 429
+  (และใน `NODE_ENV=production` ต้องยาว ≥ 32 ตัวและไม่ซ้ำกัน) · ให้สิทธิ์ได้เฉพาะสิทธิ์ที่ตัวเองมี · login ผิด 10 ครั้ง/15 นาที ต่ออีเมล + IP (และไม่เกิน 50 ต่ออีเมล, 100 ต่อ IP) → 429 — IP มาจาก header `x-erp-client-ip` ที่ gateway ใส่เอง (หลัง load balancer ตั้ง `TRUST_PROXY` = address ของ proxy)
   — รายละเอียดและสิ่งที่ยังค้าง: `docs/security/review-0.3.md`
 - **ยกเลิก token ได้** (wave 9, SEC-07): token มี `jti` ไม่ซ้ำ; ออกจากระบบ (= ทุกอุปกรณ์), เปลี่ยนรหัสผ่าน, ปิดบัญชี, เปลี่ยนบทบาท และ "บังคับออกจากระบบ"
   ทำให้ identity ส่ง `identity.tokens_revoked` → gateway ส่งให้ **ทุก**โมดูล → kernel ของแต่ละโมดูลเก็บใน `_revoked_tokens` (RLS) และปฏิเสธ token
