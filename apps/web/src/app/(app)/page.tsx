@@ -12,6 +12,7 @@ import { ModuleIcon } from '@/components/Icon';
 import { AiSpark, isAiModule } from '@/components/Brand';
 import { Bars, Feed, Kpi, Pipeline, Trend, WidgetLink } from '@/components/widgets/Basic';
 import { Floor3D } from '@/components/widgets/Floor3D';
+import { DecisionInbox } from '@/components/DecisionInbox';
 import { useReveal } from '@/lib/motion';
 import { safeHref } from '@/lib/href';
 
@@ -99,6 +100,7 @@ export default function Home() {
         </div>
       </header>
       {briefing && briefing !== 'loading' && <BriefingCard b={briefing} onClose={() => setBriefing(null)} />}
+      {!loading && <DecisionInbox modules={modules} perms={perms} />}
       {loading && <p className="muted">กำลังโหลด…</p>}
       {!loading && !all.length && <p className="muted">ยังไม่มีข้อมูลภาพรวมสำหรับบัญชีนี้ เลือกงานจากเมนูด้านซ้าย</p>}
       {!loading && all.length > 0 && !shown.length && <p className="muted">ซ่อนการ์ดไว้ทั้งหมด — กด “เลือกการ์ดที่แสดง” เพื่อเลือกใหม่</p>}

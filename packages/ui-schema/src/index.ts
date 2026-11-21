@@ -128,6 +128,11 @@ export interface Action {
   then?: { screen: string; idFrom?: string };
   /** show this response field as a toast after success (e.g. a dry-run preview) */
   toast?: string;
+  /**
+   * "ผลกระทบเมื่อกดยืนยัน": the dialog previews what the action would do across the installed modules (stock, cost, accounting, QC…)
+   * before it is saved. The endpoint must opt in to dry runs (`config: { dryRun: true }`, kernel impact.ts).
+   */
+  impact?: boolean;
   mobile?: boolean;
 }
 
@@ -373,6 +378,131 @@ export interface FeedWidget extends WidgetBase {
 
 export type Widget = KpiWidget | BarsWidget | PipelineWidget | TrendWidget | FloorWidget | FeedWidget;
 
+/**
+ * One kind of decision waiting on the signed-in user, read from one of this module's list screens (its endpoint, `rowLink`,
+ * and — unless `actions` is given — its `rowActions`). Home shows the most pressing items of every installed module together,
+ * with the buttons to decide right there. A group shows only to users holding `perm` (default: the perm of the first action).
+ */
+export interface TodoSpec {
+  id: string;
+  /** group label shown on each item, e.g. "ใบสั่งซื้อรออนุมัติ" */
+  label: string;
+  /** a list screen of this module */
+  screen: string;
+  /** extra query for the screen's endpoint, e.g. { status: 'draft' } */
+  query?: Record<string, string>;
+  perm?: string;
+  /** row fields: headline, the line under it (several fields joined by " · "), an amount */
+  title: string;
+  subtitle?: string | string[];
+  amount?: string;
+  /** when it started waiting (date/datetime field) → "รอ 3 วัน" */
+  since?: string;
+  /** deadline (date/datetime field) → "เกินกำหนด 2 วัน" / "ครบกำหนดวันนี้", and overdue items go first */
+  due?: string;
+  /** rows matching this are marked urgent (red) and sorted first */
+  urgent?: Condition;
+  /** quick buttons (default: the screen's rowActions); `when` and `perm` still apply per row */
+  actions?: Action[];
+}
+
+/** The todo groups this user may act on: holds the group perm (default: the first button's perm) and may open the list screen. */
+export function todoSources(modules: ModuleUi[], perms: string[]): { module: ModuleUi; spec: TodoSpec; screen: ListScreen }[] {
+  return modules.flatMap((m) => (m.todo ?? []).flatMap((spec) => {
+    const screen = m.screens[spec.screen];
+    if (!screen || screen.kind !== 'list') return [];
+    const gate = spec.perm ?? (spec.actions ?? screen.rowActions)?.[0]?.perm;
+    return hasPerm(perms, gate) && hasPerm(perms, screen.perm) ? [{ module: m, spec, screen }] : [];
+  }));
+}
+
+/** The buttons of one todo item this user may press now (`perm` and `when` per row). */
+export function todoActions(item: TodoItem, screen: ListScreen, perms: string[]): Action[] {
+  return (item.spec.actions ?? screen.rowActions ?? []).filter((a) => hasPerm(perms, a.perm) && matches(item.row, a.when));
+}
+
+/** One decision on the home page. */
+export interface TodoItem {
+  key: string;
+  module: string;
+  spec: TodoSpec;
+  row: Record<string, unknown>;
+  title: string;
+  subtitle: string;
+  amount?: number;
+  /** "รอ 3 วัน" */
+  waiting?: string;
+  /** "เกินกำหนด 2 วัน" / "ครบกำหนดวันนี้" / "อีก 3 วัน" */
+  dueText?: string;
+  overdue: boolean;
+  urgent: boolean;
+  sinceMs: number;
+}
+
+const DAY_MS = 86_400_000;
+/** Bangkok calendar day number of an ISO date/datetime (dates without time are taken as Bangkok dates). */
+function bangkokDay(v: string): number {
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00+07:00`) : Date.parse(v);
+  return Math.floor((ms + 7 * 3_600_000) / DAY_MS);
+}
+
+/** "รอ 3 วัน" / "รอ 5 ชม." / "รอ 20 นาที" / "เพิ่งส่ง" since an ISO date or datetime. */
+export function waitingText(since: string, now: Date = new Date()): string | undefined {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(since) ? Date.parse(`${since}T00:00:00+07:00`) : Date.parse(since);
+  if (Number.isNaN(t)) return undefined;
+  const min = Math.floor((now.getTime() - t) / 60_000);
+  if (min < 5) return 'เพิ่งส่ง';
+  if (min < 60) return `รอ ${min} นาที`;
+  if (min < 24 * 60) return `รอ ${Math.floor(min / 60)} ชม.`;
+  return `รอ ${Math.floor(min / (24 * 60))} วัน`;
+}
+
+/** Deadline in Bangkok days: "เกินกำหนด 2 วัน" (overdue), "ครบกำหนดวันนี้", "พรุ่งนี้", "อีก 3 วัน". */
+export function dueText(due: string, now: Date = new Date()): { text: string; overdue: boolean } | undefined {
+  if (Number.isNaN(Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(due) ? `${due}T00:00:00+07:00` : due))) return undefined;
+  const diff = bangkokDay(due) - bangkokDay(now.toISOString());
+  if (diff < 0) return { text: `เกินกำหนด ${-diff} วัน`, overdue: true };
+  if (diff === 0) return { text: 'ครบกำหนดวันนี้', overdue: false };
+  if (diff === 1) return { text: 'ครบกำหนดพรุ่งนี้', overdue: false };
+  return { text: `อีก ${diff} วัน`, overdue: false };
+}
+
+/**
+ * Rows of every todo group → one list, most pressing first: overdue, then urgent, then due today, then the longest waiting.
+ * The same record listed by two groups (e.g. HR's leave queue and my team's) shows once.
+ */
+export function buildTodo(groups: { module: string; spec: TodoSpec; rows: Record<string, unknown>[] }[], now: Date = new Date()): TodoItem[] {
+  const seen = new Set<string>();
+  const out: TodoItem[] = [];
+  for (const { module, spec, rows } of groups) {
+    for (const row of rows) {
+      const id = String(row.id ?? '');
+      const key = `${module}:${id || JSON.stringify(row).slice(0, 80)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const sub = (Array.isArray(spec.subtitle) ? spec.subtitle : spec.subtitle ? [spec.subtitle] : [])
+        .map((f) => get(row, f)).filter((v) => v !== null && v !== undefined && v !== '').join(' · ');
+      const since = spec.since ? get(row, spec.since) : undefined;
+      const due = spec.due ? get(row, spec.due) : undefined;
+      const d = typeof due === 'string' && due ? dueText(due, now) : undefined;
+      const amount = spec.amount !== undefined ? Number(get(row, spec.amount)) : NaN;
+      out.push({
+        key, module, spec, row,
+        title: String(get(row, spec.title) ?? ''),
+        subtitle: sub,
+        amount: Number.isFinite(amount) && amount !== 0 ? amount : undefined,
+        waiting: typeof since === 'string' && since ? waitingText(since, now) : undefined,
+        dueText: d?.text,
+        overdue: !!d?.overdue,
+        urgent: !!spec.urgent && matches(row, spec.urgent),
+        sinceMs: typeof since === 'string' && since ? Date.parse(since) || Infinity : Infinity,
+      });
+    }
+  }
+  const rank = (i: TodoItem) => (i.overdue ? 0 : i.urgent ? 1 : i.dueText === 'ครบกำหนดวันนี้' ? 2 : 3);
+  return out.sort((a, b) => rank(a) - rank(b) || a.sinceMs - b.sinceMs);
+}
+
 /** A module that collects notifications for the bell (e.g. automation). */
 export interface NotificationsSpec {
   endpoint: string;
@@ -420,6 +550,8 @@ export interface ModuleUi {
   menu: MenuItem[];
   screens: Record<string, Screen>;
   widgets?: Widget[];
+  /** work that waits on the signed-in user (approve, accept a repair…), shown first on the home page as "ต้องตัดสินใจวันนี้" */
+  todo?: TodoSpec[];
   notifications?: NotificationsSpec;
   /** this module's wording for shared status/label codes, e.g. { in_progress: 'กำลังซ่อม' } */
   statusLabels?: Record<string, string>;
@@ -731,6 +863,7 @@ export function endpointsOf(ui: ModuleUi): { module: string; method: string; pat
     out.push({ module: ui.module, method: 'POST', path: ui.notifications.readAllEndpoint, where: `${ui.module}.notifications.readAll` });
   }
   for (const sr of ui.search ?? []) out.push({ module: ui.module, method: 'GET', path: sr.endpoint, where: `${ui.module}.search.${sr.id}` });
+  for (const t of ui.todo ?? []) t.actions?.forEach((a) => action(a, `${ui.module}.todo.${t.id}`));
   for (const c of ui.commands ?? []) if (c.arg) out.push({ module: c.arg.lookup.module ?? ui.module, method: 'GET', path: c.arg.lookup.path, where: `${ui.module}.command.${c.id}` });
   for (const [id, s] of Object.entries(ui.screens)) {
     const where = `${ui.module}.${id}`;
@@ -781,6 +914,13 @@ export function brokenLinks(ui: ModuleUi): string[] {
 function brokenScreenLinks(ui: ModuleUi): string[] {
   const ids = new Set(Object.keys(ui.screens));
   const refs: [string, string][] = ui.menu.map((m) => [m.screen, `menu "${m.label}"`]);
+  const todoProblems: string[] = [];
+  for (const t of ui.todo ?? []) {
+    const s = ui.screens[t.screen];
+    if (!s) refs.push([t.screen, `todo.${t.id}`]);
+    else if (s.kind !== 'list') todoProblems.push(`${ui.module}: todo.${t.id} must use a list screen, "${t.screen}" is a ${s.kind}`);
+    else if (!(t.actions ?? s.rowActions)?.length && !s.rowLink) todoProblems.push(`${ui.module}: todo.${t.id} has no buttons and no rowLink`);
+  }
   for (const [id, s] of Object.entries(ui.screens)) {
     if (s.kind === 'list') {
       if (s.create) refs.push([s.create, `${id}.create`]);
@@ -799,7 +939,7 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if (w.href) refs.push([w.href, `widget.${w.id}.href`]);
     if ((w.kind === 'pipeline' || w.kind === 'floor3d') && w.link) refs.push([w.link.screen, `widget.${w.id}.link`]);
   }
-  return refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`);
+  return [...todoProblems, ...refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`)];
 }
 
 /* ---------------- CSV export / import (pure; used by web lists and the import dialog) ---------------- */
@@ -1488,4 +1628,100 @@ export function mergeAiFill(
   filled += added.length;
   const lines = added.length ? [...kept, ...added] : current.lines;
   return { values, lines, filled };
+}
+
+/* ---- Thai (Buddhist-era) date entry: the value stays ISO (YYYY-MM-DD / YYYY-MM), people see and type พ.ศ. ---- */
+
+export const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+export const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+/** Sunday first, as Thai wall calendars print it. */
+export const THAI_WEEKDAYS_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+/**
+ * Year as typed → Christian year. 4 digits ≥ 2400 = พ.ศ. (−543); other 4 digits = ค.ศ.;
+ * 2 digits = the last two digits of a พ.ศ. year ("69" → 2569 → 2026), the way Thai forms abbreviate it.
+ */
+function typedYear(text: string): number | null {
+  if (/^\d{4}$/.test(text)) { const y = Number(text); return y >= 2400 ? y - 543 : y; }
+  if (/^\d{2}$/.test(text)) return 2500 + Number(text) - 543;
+  return null;
+}
+
+/** "ตุลาคม" / "ต.ค." / "ต.ค" → 9 (0-based), unknown → -1. */
+function thaiMonthIndex(name: string): number {
+  const full = THAI_MONTHS.indexOf(name);
+  if (full >= 0) return full;
+  const bare = name.replace(/\.$/, '');
+  return THAI_MONTHS_SHORT.findIndex((x) => x.replace(/\.$/, '') === bare);
+}
+
+const validDate = (y: number, m: number, d: number) => {
+  if (y < 1900 || y > 2200 || m < 1 || m > 12 || d < 1) return null;
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return d > last ? null : `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+};
+
+/** "2026-10-03" → "03/10/2569" (what a date box shows). Not an ISO date → "". */
+export function dateInputText(isoDate: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate ?? '');
+  return m ? `${m[3]}/${m[2]}/${Number(m[1]) + 543}` : '';
+}
+
+/**
+ * What someone typed in a date box → ISO "YYYY-MM-DD", or null when it is not a real date.
+ * Accepts d/m/yyyy, d-m-yyyy, d.m.yyyy (พ.ศ. or ค.ศ., or 2-digit พ.ศ.), "3 ต.ค. 2569" / "3 ตุลาคม 69", ISO "2026-10-03", and the 8 digits "03102569".
+ */
+export function parseDateInput(text: string): string | null {
+  const t = text.trim().replace(/\s+/g, ' ');
+  if (!t) return null;
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  if (m) { const y = typedYear(m[1]); return y === null ? null : validDate(y, Number(m[2]), Number(m[3])); }
+  m = /^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2}|\d{4})$/.exec(t) ?? /^(\d{2})(\d{2})(\d{4})$/.exec(t);
+  if (m) { const y = typedYear(m[3]); return y === null ? null : validDate(y, Number(m[2]), Number(m[1])); }
+  m = /^(\d{1,2}) ?([ก-๙.]+) ?(\d{2}|\d{4})$/.exec(t);
+  if (m) {
+    const idx = thaiMonthIndex(m[2]);
+    const y = typedYear(m[3]);
+    return idx < 0 || y === null ? null : validDate(y, idx + 1, Number(m[1]));
+  }
+  return null;
+}
+
+/** "2026-10" → "ตุลาคม 2569" (what a month box shows). Not "YYYY-MM" → "". */
+export function monthInputText(period: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(period ?? '');
+  return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? `${THAI_MONTHS[Number(m[2]) - 1]} ${Number(m[1]) + 543}` : '';
+}
+
+/** Typed month → "YYYY-MM" or null: "10/2569", "10/69", "ต.ค. 2569", "ตุลาคม 2569", "2026-10". */
+export function parseMonthInput(text: string): string | null {
+  const t = text.trim().replace(/\s+/g, ' ');
+  let m = /^(\d{4})-(\d{1,2})$/.exec(t);
+  let month: number, y: number | null;
+  if (m) { y = typedYear(m[1]); month = Number(m[2]); }
+  else if ((m = /^(\d{1,2})[/.\-](\d{2}|\d{4})$/.exec(t))) { y = typedYear(m[2]); month = Number(m[1]); }
+  else if ((m = /^([ก-๙.]+) ?(\d{2}|\d{4})$/.exec(t))) {
+    y = typedYear(m[2]); month = thaiMonthIndex(m[1]) + 1;
+  } else return null;
+  if (y === null || y < 1900 || y > 2200 || month < 1 || month > 12) return null;
+  return `${y}-${String(month).padStart(2, '0')}`;
+}
+
+/**
+ * The days shown for one month of a Sunday-first calendar: 6 weeks × 7 ISO dates (spilling into the months around it),
+ * so the grid never changes height when paging months. `month` is 1–12, `year` is ค.ศ.
+ */
+export function calendarWeeks(year: number, month: number): { iso: string; inMonth: boolean }[][] {
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const start = new Date(first.getTime() - first.getUTCDay() * 86_400_000);
+  const weeks: { iso: string; inMonth: boolean }[][] = [];
+  for (let w = 0; w < 6; w++) {
+    const row: { iso: string; inMonth: boolean }[] = [];
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(start.getTime() + (w * 7 + d) * 86_400_000);
+      row.push({ iso: day.toISOString().slice(0, 10), inMonth: day.getUTCMonth() === month - 1 });
+    }
+    weeks.push(row);
+  }
+  return weeks;
 }

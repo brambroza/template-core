@@ -152,6 +152,24 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 - ข้อมูลโหลดเมื่อหมวดเลื่อนเข้าใกล้จอ (lazy), หมวดพับได้, ปุ่ม "เลือกการ์ดที่แสดง" ให้ผู้ใช้เลือกเอง (เก็บใน localStorage ต่อบริษัท+ผู้ใช้)
 - ค่าเริ่มต้น: แสดงการ์ดที่ผู้ใช้มีสิทธิ์ทั้งหมด ยกเว้นเมื่อมีการ์ดเกิน 12 ใบ จะซ่อน `trend` ไว้ก่อน (เปิดเองได้)
 
+## ต้องตัดสินใจวันนี้ (todo)
+
+`ModuleUi.todo: TodoSpec[]` — งานที่รอผู้ใช้คนนี้ตัดสินใจ อ่านจาก list screen ของโมดูลเอง (`screen`, `query` เช่น `{ status: 'draft' }`) แล้ว
+หน้าแรกรวมทุกโมดูลไว้บนสุด เรียง: เกินกำหนด → ด่วน (`urgent`) → ครบกำหนดวันนี้ → รอนานสุด · ปุ่มบนการ์ด = `actions` (ไม่ใส่ = `rowActions` ของ screen,
+`when`/`perm` ยังใช้ต่อแถว) · คีย์แถว: `title`, `subtitle` (หลายฟิลด์ต่อด้วย " · "), `amount`, `since` ("รอ 3 วัน"), `due` ("เกินกำหนด 2 วัน") ·
+กลุ่มแสดงเมื่อผู้ใช้มี `perm` (ไม่ใส่ = perm ของปุ่มแรก) · เรคคอร์ดเดียวกันจากสองกลุ่มแสดงครั้งเดียว · กดแล้วการ์ดหายทันทีและโหลดใหม่ ·
+helper ใน ui-schema: `buildTodo`, `waitingText`, `dueText` (test `packages/ui-schema/test/todo.test.ts`) · `brokenLinks` ตรวจว่า `screen` เป็น list ที่มีปุ่มหรือ rowLink
+มีแล้ว: approvals (คำขอ), purchasing (PO ร่าง), expense (ใบเบิก, เงินทดรอง), hr (ใบลาลูกทีม/ฝ่ายบุคคล), booking (การจอง), maintenance (งานซ่อมรอรับ)
+
+## ผลกระทบเมื่อกดยืนยัน (impact)
+
+`Action.impact: true` — dialog ของปุ่มแสดงว่าระบบจะทำอะไรต่อในโมดูลอื่นก่อนกดยืนยัน (สต็อก ต้นทุนเฉลี่ย สมุดรายวัน งานตรวจ QC …):
+web เรียก endpoint เดิมด้วย `?_dryRun=1` (route ต้องประกาศ `config: { dryRun: true }`, kernel `impact.ts`: ทำจริงแล้ว rollback, เก็บ event ที่จะส่ง)
+แล้ว `POST /api/_impact { events }` — gateway ถามทุกโมดูลที่ subscribe event นั้น (`ServiceDefinition.impact`) ด้วย token ของผู้ใช้
+· ถ้าทำรายการไม่ได้ (409/400) แผงแสดงเหตุผลทันทีก่อนกด · คำนวณใหม่ 0.5 วินาทีหลังแก้ช่อง · ไม่แสดงในโหมด showcase
+มีแล้ว: purchasing "รับของที่ค้างทั้งหมด" → inventory, costing, accounting, quality · production "รายงานผลผลิต" → inventory (วัตถุดิบออก/สินค้าเข้า), costing (ต้นทุนงาน + ของที่ยังไม่มีต้นทุน), quality (ตรวจขั้นสุดท้าย) · sales "บันทึกส่งของ" → inventory (ติดลบ = แดง, ถึงจุดสั่งซื้อ = ส้ม)
+· มือถือ (Expo) แสดงแผงเดียวกันใน dialog ของปุ่ม (`components/ImpactPreview.tsx`); หน้าแรกของแอปมี "ต้องตัดสินใจวันนี้" เหมือนเว็บ (`components/DecisionInbox.tsx`, helper `todoSources`/`todoActions` ใน ui-schema)
+
 ## หมวดงาน (area) — เมนูและหน้าแรก
 
 `ModuleUi.area?: 'operations' | 'commercial' | 'office' | 'service' | 'settings'` — ไม่ใส่ก็ได้ โมดูลของ GO Along มีค่าเริ่มต้นใน
@@ -173,7 +191,8 @@ Action: `then` = เปิดหน้าอื่นด้วยผลลัพ
 
 ## Field types
 
-`text` `textarea` `number` `date` `month` (เดือน YYYY-MM; มือถือเป็นช่องพิมพ์) `select` `boolean` `email` `password`
+`text` `textarea` `number` `date` `month` `select` `boolean` `email` `password`
+`date` / `month` — ค่ายังเป็น ISO (`2026-10-03` / `2026-10`) แต่ผู้ใช้เห็นและพิมพ์เป็น พ.ศ.: web = ช่องพิมพ์ + ปฏิทินอาทิตย์ขึ้นก่อน (`components/ThaiDate.tsx`, ปุ่มวันนี้, ลูกศร/PageUp/PageDown, Alt+↓ เปิด) · มือถือ = ช่องพิมพ์ + ปุ่ม เมื่อวาน/วันนี้/พรุ่งนี้ · รับ `03/10/2569`, `3/10/69`, `3 ต.ค. 2569`, `2026-10-03`, `03102569` (`parseDateInput` / `parseMonthInput` ใน ui-schema)
 `lookup` — ค้นหาจากโมดูลอื่นแล้วเติมหลายช่อง: `assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }`, `scanField: 'code'` = มือถือสแกน QR/บาร์โค้ดได้
 `multilookup` — เลือกหลายรายการ (เช่น บทบาท) · `permissions` — เลือกสิทธิ์จาก manifest ของโมดูลที่ติดตั้ง
 `image` — รูปเก็บเป็น data URL ในช่องข้อความ (โลโก้บริษัท): web แสดงรูปตัวอย่าง + ปุ่มเลือกไฟล์/ลบรูป (PNG/JPEG/SVG/WebP ≤ 300 KB) · มือถือให้ตั้งค่าจากหน้าเว็บ

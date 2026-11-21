@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ThaiDateInput } from './ThaiDate';
 import { datePresets, get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { useRegistry } from '@/lib/registry';
@@ -227,13 +228,13 @@ export function FieldInput(props: FieldProps) {
       );
     case 'date':
     case 'month':
-      // a date box shows its own mm/dd/yyyy text, so a compact (filter) one carries its label above the value
+      // พ.ศ. box + calendar (value stays ISO); a compact (filter) one carries its label above the value
       return (
-        <label className={compact ? 'float-field' : 'date-field'}>
+        <div className={compact ? 'float-field' : 'date-field'}>
           {compact && <span className="float-label">{field.label}</span>}
-          <input {...common} type={field.type} placeholder={field.type === 'month' ? 'YYYY-MM' : undefined} value={String(v ?? '')}
-            onChange={(e) => onChange({ [field.name]: e.target.value })} />
-        </label>
+          <ThaiDateInput kind={field.type} label={field.label} value={String(v ?? '')} invalid={!!error}
+            onChange={(next) => onChange({ [field.name]: next })} />
+        </div>
       );
     default:
       return (
@@ -313,9 +314,9 @@ export function DateRangeInput({ from, to, values, onChange }: { from: Field; to
       <div className="float-field range-box">
         <span className="float-label">{from.label} – {to.label}</span>
         <span className="range-inputs">
-          <input type="date" aria-label={from.label} value={a} max={b || undefined} onChange={(e) => onChange({ [from.name]: e.target.value })} />
+          <ThaiDateInput kind="date" label={from.label} value={a} max={b || undefined} onChange={(next) => onChange({ [from.name]: next })} />
           <span aria-hidden className="range-dash">–</span>
-          <input type="date" aria-label={to.label} value={b} min={a || undefined} onChange={(e) => onChange({ [to.name]: e.target.value })} />
+          <ThaiDateInput kind="date" label={to.label} value={b} min={a || undefined} onChange={(next) => onChange({ [to.name]: next })} />
         </span>
       </div>
       <div className="range-presets">

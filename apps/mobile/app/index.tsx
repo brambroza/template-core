@@ -1,7 +1,8 @@
 import { router, Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { formatValue, get, groupByArea, hasPerm, type FeedWidget, type KpiWidget, type ModuleUi } from '@erp/ui-schema';
+import { DecisionInbox, type DecisionInboxHandle } from '../src/components/DecisionInbox';
 import { screenPath } from '../src/components/Screens';
 import { Button, EmptyState, ErrorText, useS } from '../src/components/ui';
 import { api } from '../src/lib/api';
@@ -12,8 +13,8 @@ import { radius, themed, toneColor, usePalette } from '../src/lib/theme';
 type Data = Record<string, unknown>;
 
 /**
- * Home: today's numbers (every module's KPI widgets), what the bots just reported (feed widgets),
- * then the shop-floor screens (mobile: true) this user may open.
+ * Home: what waits on my decision (todo), today's numbers (every module's KPI widgets), what the bots just reported
+ * (feed widgets), then the shop-floor screens (mobile: true) this user may open.
  */
 export default function Home() {
   const { modules, loading, error, reload } = useRegistry();
@@ -24,6 +25,7 @@ export default function Home() {
   const c = usePalette();
   const s = useS();
   const st = useSt();
+  const inbox = useRef<DecisionInboxHandle>(null);
 
   const widgets = modules.flatMap((m) => (m.widgets ?? []).filter((w) => (w.kind === 'kpi' || w.kind === 'feed') && hasPerm(perms, w.perm)).map((w) => ({ m, w })));
   const key = widgets.map(({ m, w }) => `${m.module}${w.endpoint}`).join(',');
@@ -34,7 +36,7 @@ export default function Home() {
       try { return [src, await api<Data>(mod, path)] as const; } catch { return [src, null] as const; }
     })).then((entries) => setData(Object.fromEntries(entries.filter(([, d]) => d)) as Record<string, Data>));
   }, [key]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); inbox.current?.reload(); }, [load]));
 
   const kpis = widgets.filter((x): x is { m: ModuleUi; w: KpiWidget } => x.w.kind === 'kpi');
   const feeds = widgets.filter((x): x is { m: ModuleUi; w: FeedWidget } => x.w.kind === 'feed');
@@ -43,7 +45,7 @@ export default function Home() {
     <ScrollView contentContainerStyle={{ paddingVertical: 16, gap: 18 }} refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={async () => { setRefreshing(true); reload(); try { await load(); } finally { setRefreshing(false); } }}
+          onRefresh={async () => { setRefreshing(true); reload(); try { await Promise.all([load(), inbox.current?.reload()]); } finally { setRefreshing(false); } }}
           tintColor={c.inkSoft}
           colors={[c.signalDeep]}
           progressBackgroundColor={c.paper}
@@ -55,6 +57,8 @@ export default function Home() {
         <Text style={s.muted}>ภาพรวมวันนี้ — ดึงลงเพื่ออัปเดต</Text>
         <ErrorText text={error} />
       </View>
+
+      <DecisionInbox ref={inbox} modules={modules} perms={perms} />
 
       {kpis.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>

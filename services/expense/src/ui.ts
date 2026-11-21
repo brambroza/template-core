@@ -57,6 +57,20 @@ export default defineUi({
   label: 'เบิกค่าใช้จ่าย',
   glyph: 'บ',
   icon: 'wallet',
+  todo: [
+    { id: 'claims', label: 'ใบเบิกรออนุมัติ', screen: 'claims', query: { status: 'submitted' }, perm: 'expense.claim.approve', title: 'purpose', subtitle: ['claimant_name', 'no'],
+      amount: 'total', since: 'submitted_at', urgent: { field: 'over_limit', in: [true] },
+      actions: [
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/claims/:id/approve', perm: 'expense.claim.approve', when: { field: 'status', in: ['submitted'] }, tone: 'primary', confirm: 'อนุมัติใบเบิกนี้?', mobile: true },
+        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/claims/:id/reject', perm: 'expense.claim.approve', when: { field: 'status', in: ['submitted'] }, tone: 'danger', fields: [note('เหตุผลที่ไม่อนุมัติ')], mobile: true },
+      ] },
+    { id: 'advances', label: 'เงินทดรองรออนุมัติ', screen: 'advances', query: { status: 'requested' }, perm: 'expense.claim.approve', title: 'purpose', subtitle: ['requester_name', 'no'],
+      amount: 'amount', since: 'created_at', due: 'needed_by',
+      actions: [
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/advances/:id/approve', perm: 'expense.claim.approve', when: { field: 'status', in: ['requested'] }, tone: 'primary', confirm: 'อนุมัติเงินทดรองนี้?', mobile: true },
+        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/advances/:id/reject', perm: 'expense.claim.approve', when: { field: 'status', in: ['requested'] }, tone: 'danger', fields: [note('เหตุผล')], mobile: true },
+      ] },
+  ],
   menu: [
     { label: 'ใบเบิกของฉัน', screen: 'myClaims' },
     { label: 'เบิกค่าใช้จ่าย', screen: 'claimNew' },

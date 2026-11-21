@@ -1,3 +1,4 @@
+import { ImpactPreview } from './ImpactPreview';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useContext, useState, type ReactNode } from 'react';
@@ -101,7 +102,7 @@ export function ListView({ ui, screen, id }: { ui: ModuleUi; screen: ListScreen;
     else load();
   };
   const press = async (a: Action, row: Record<string, unknown>) => {
-    if (a.fields?.length || a.lines || a.confirm) return setActive({ a, row });
+    if (a.fields?.length || a.lines || a.confirm || a.impact) return setActive({ a, row });
     setBusy(`${a.id}:${String(row.id)}`);
     try { done(a, await api(ui.module, fillPath(a.endpoint, row), { method: a.method })); } catch (e) { setError((e as Error).message); setBusy(null); }
   };
@@ -230,7 +231,7 @@ export function FormView({ ui, screen, id }: { ui: ModuleUi; screen: FormScreen;
   );
 }
 
-function ActionModal({ action, module, params, onClose, onDone }: { action: Action; module: string; params: Record<string, unknown>; onClose: () => void; onDone: (res: any) => void }) {
+export function ActionModal({ action, module, params, onClose, onDone }: { action: Action; module: string; params: Record<string, unknown>; onClose: () => void; onDone: (res: any) => void }) {
   const s = useS();
   const dark = useIsDark();
   const [values, setValues] = useState<Values>(() => initialValues(action.fields ?? []));
@@ -269,6 +270,7 @@ function ActionModal({ action, module, params, onClose, onDone }: { action: Acti
         {action.confirm && <Text style={[s.value, { marginBottom: 16 }]}>{action.confirm}</Text>}
         {(action.fields ?? []).map((f) => <FieldRow key={f.name} field={f} module={module} values={values} error={errors[f.name]} onChange={(p) => setValues((v) => ({ ...v, ...p }))} />)}
         {action.lines && <LinesEditor spec={action.lines} module={module} lines={lines} onChange={setLines} />}
+        {action.impact && <ImpactPreview action={action} module={module} params={params} values={values} lines={lines} />}
       </FormFrame>
     </Modal>
   );
@@ -313,7 +315,7 @@ export function DetailView({ ui, screen, id }: { ui: ModuleUi; screen: DetailScr
     else load();
   };
   const press = async (a: Action) => {
-    if (a.fields?.length || a.lines || a.confirm) return setActive(a);
+    if (a.fields?.length || a.lines || a.confirm || a.impact) return setActive(a);
     setBusy(a.id);
     setError('');
     try { done(a, await api(ui.module, fillPath(a.endpoint, params, record), { method: a.method })); } catch (e) { setError((e as Error).message); setBusy(null); }

@@ -72,6 +72,11 @@ export default defineUi({
   label: 'บุคคลและลงเวลา',
   glyph: 'บค',
   icon: 'id-card',
+  todo: [
+    // my team first; HR's company-wide queue repeats some of them (shown once)
+    { id: 'team-leave', label: 'ใบลาลูกทีม', screen: 'teamLeaveInbox', title: 'employee_name', subtitle: ['leave_type_name', 'no'], since: 'created_at', due: 'from_date' },
+    { id: 'hr-leave', label: 'ใบลารออนุมัติ', screen: 'leaveInbox', title: 'employee_name', subtitle: ['leave_type_name', 'department_name', 'no'], since: 'created_at', due: 'from_date' },
+  ],
   menu: [
     { label: 'ของฉัน (ลงเวลา/วันลา)', screen: 'me' },
     { label: 'ยื่นใบลา', screen: 'leaveNew' },

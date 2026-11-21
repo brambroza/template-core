@@ -65,6 +65,11 @@ export default defineUi({
   label: 'จัดซื้อ',
   glyph: 'ซ',
   icon: 'shopping-cart',
+  todo: [
+    { id: 'po-approve', label: 'ใบสั่งซื้อรออนุมัติ', screen: 'poList', query: { status: 'draft' }, perm: 'purchasing.po.approve', title: 'no', subtitle: ['supplier_name', 'created_by_name'],
+      amount: 'gross', since: 'created_at', due: 'expected_date',
+      actions: [{ id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/purchase-orders/:id/approve', perm: 'purchasing.po.approve', when: { field: 'status', in: ['draft'] }, tone: 'primary', confirm: 'อนุมัติใบสั่งซื้อนี้?', mobile: true }] },
+  ],
   menu: [{ label: 'ใบสั่งซื้อ', screen: 'poList' }, { label: 'สร้างใบสั่งซื้อ', screen: 'poNew' }, { label: 'ใบส่งคืนสินค้า', screen: 'rtList' },
     { label: 'บันทึกการรับของ', screen: 'receipts' }, { label: 'ตั้งค่าการอนุมัติ', screen: 'settings' },
     { label: 'บิลผู้ขาย (ตั้งหนี้)', screen: 'billList' }, { label: 'เจ้าหนี้ค้างจ่าย', screen: 'payables' }, { label: 'อายุเจ้าหนี้', screen: 'aging' },
@@ -147,7 +152,7 @@ export default defineUi({
       }],
       actions: [
         { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/purchase-orders/:id/approve', perm: 'purchasing.po.approve', when: { field: 'status', in: ['draft'] }, tone: 'primary', mobile: true },
-        { id: 'receive', label: 'รับของที่ค้างทั้งหมด', method: 'POST', endpoint: '/purchase-orders/:id/receive', perm: 'purchasing.po.receive', when: { field: 'status', in: ['approved', 'partially_received'] }, confirm: 'บันทึกรับของทุกรายการที่ยังค้างรับ', tone: 'primary', mobile: true,
+        { id: 'receive', label: 'รับของที่ค้างทั้งหมด', method: 'POST', endpoint: '/purchase-orders/:id/receive', perm: 'purchasing.po.receive', when: { field: 'status', in: ['approved', 'partially_received'] }, confirm: 'บันทึกรับของทุกรายการที่ยังค้างรับ', tone: 'primary', mobile: true, impact: true,
           // C8: the supplier's tax invoice that came with the goods (optional — for the purchase VAT register)
           fields: [
             { name: 'receivedDate', label: 'วันที่รับของ (เว้นว่าง = วันนี้)', type: 'date' },

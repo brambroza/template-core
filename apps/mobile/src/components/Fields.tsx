@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
+import { dateInputText, get, initialValues, monthInputText, parseDateInput, parseMonthInput, type Field, type LinesSpec } from '@erp/ui-schema';
 import { api } from '../lib/api';
 import { thaiDate } from '../lib/dates';
 import { radius, themed, useIsDark, usePalette } from '../lib/theme';
@@ -175,6 +175,8 @@ export function FieldInput(props: Props) {
   switch (field.type) {
     case 'lookup': return <LookupInput {...props} />;
     case 'select': return <SelectInput {...props} />;
+    case 'date':
+    case 'month': return <DateInput {...props} />;
     case 'boolean':
       return (
         <Switch
@@ -210,10 +212,77 @@ export function FieldInput(props: Props) {
           autoCorrect={field.type === 'textarea' || field.type === 'text'}
           placeholderTextColor={c.inkFaint}
           selectTextOnFocus={field.type === 'number'}
-          placeholder={field.type === 'date' ? 'ปปปป-ดด-วว (ค.ศ.)' : undefined}
         />
       );
   }
+}
+
+/** Bangkok month ± n as "YYYY-MM". */
+function bangkokMonth(offset = 0): string {
+  const [y, m] = bangkokIso(0).split('-').map(Number);
+  const t = y * 12 + (m - 1) + offset;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+}
+
+/** Bangkok "today" ± days as ISO. */
+function bangkokIso(offsetDays = 0): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date(Date.now() + offsetDays * 86_400_000));
+}
+
+/**
+ * Date / month box in พ.ศ.: type 03/10/2569, 3/10/69, 3 ต.ค. 69 (months: 10/2569, ต.ค. 2569); ค.ศ. and ISO also work.
+ * One tap: เมื่อวาน / วันนี้ / พรุ่งนี้ (months: เดือนก่อน / เดือนนี้). The value handed on stays ISO (what the server expects).
+ */
+function DateInput({ field, values, onChange, error }: Props) {
+  const c = usePalette();
+  const s = useS();
+  const month = field.type === 'month';
+  const show = month ? monthInputText : dateInputText;
+  const parse = month ? parseMonthInput : parseDateInput;
+  const v = String(values[field.name] ?? '');
+  const [text, setText] = useState(show(v));
+  const [bad, setBad] = useState(false);
+  useEffect(() => { if (parse(text) !== v) { setText(show(v)); setBad(false); } }, [v]); // eslint-disable-line react-hooks/exhaustive-deps
+  const type = (t: string) => {
+    setText(t);
+    const iso = parse(t);
+    setBad(!!t.trim() && !iso);
+    onChange({ [field.name]: t.trim() ? iso ?? v : '' });
+  };
+  // dates: yesterday / today / tomorrow · months: last month / this month
+  const quick: [string, string][] = month
+    ? [['เดือนก่อน', bangkokMonth(-1)], ['เดือนนี้', bangkokMonth(0)]]
+    : [['เมื่อวาน', bangkokIso(-1)], ['วันนี้', bangkokIso(0)], ['พรุ่งนี้', bangkokIso(1)]];
+  return (
+    <View style={{ gap: 8 }}>
+      <TextInput
+        accessibilityLabel={field.label}
+        style={[s.input, { fontVariant: ['tabular-nums'] }, error || bad ? { borderColor: c.stop } : null]}
+        value={text}
+        onChangeText={type}
+        onBlur={() => { if (bad) { setText(show(v)); setBad(false); } }}
+        keyboardType={month ? 'default' : 'numbers-and-punctuation'}
+        returnKeyType="done"
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder={month ? 'ดด/ปปปป เช่น 10/2569 หรือ ต.ค. 2569' : 'วว/ดด/ปปปป เช่น 03/10/2569'}
+        placeholderTextColor={c.inkFaint}
+      />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {quick.map(([label, iso]) => {
+          const on = iso === v;
+          return (
+            <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected: on }}
+              onPress={() => { setText(show(iso)); setBad(false); onChange({ [field.name]: iso }); }}
+              style={{ paddingHorizontal: 14, minHeight: 36, justifyContent: 'center', borderRadius: 999, borderWidth: 1,
+                borderColor: on ? c.signal : c.ruleStrong, backgroundColor: on ? c.signal : 'transparent' }}>
+              <Text style={{ color: on ? c.paper : c.ink, fontSize: 14 }}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 export function FieldRow(props: Props) {
@@ -222,7 +291,7 @@ export function FieldRow(props: Props) {
   const s = useS();
   const st = useSt();
   const v = values[field.name];
-  // typed in ค.ศ. (what the server stores), shown back in พ.ศ. so nobody has to convert in their head
+  // typed in พ.ศ. (or ค.ศ.), stored ISO; the long Thai form below confirms which day was understood
   const dateHint = field.type === 'date' && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? thaiDate(v) : '';
   return (
     <View style={{ marginBottom: 16 }}>

@@ -49,6 +49,13 @@ export default defineUi({
   glyph: 'อ',
   icon: 'stamp',
   statusLabels: { active: 'มีผลวันนี้', scheduled: 'ยังไม่ถึงกำหนด', ended: 'สิ้นสุดแล้ว' },
+  todo: [
+    { id: 'inbox', label: 'คำขอรออนุมัติ', screen: 'inbox', title: 'title', subtitle: ['no', 'requester_name'], amount: 'amount', since: 'submitted_at', due: 'needed_by',
+      actions: [
+        { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/requests/:id/approve', perm: 'approvals.request.approve', when: { field: 'can_act', in: [true] }, tone: 'primary', confirm: 'อนุมัติคำขอนี้?', mobile: true },
+        { id: 'reject', label: 'ไม่อนุมัติ', method: 'POST', endpoint: '/requests/:id/reject', perm: 'approvals.request.approve', when: { field: 'can_act', in: [true] }, tone: 'danger', fields: [noteField(true, 'เหตุผลที่ไม่อนุมัติ')], mobile: true },
+      ] },
+  ],
   menu: [
     { label: 'รออนุมัติ (ของฉัน)', screen: 'inbox' },
     { label: 'คำขอของฉัน', screen: 'myRequests' },

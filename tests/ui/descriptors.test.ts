@@ -48,7 +48,8 @@ describe.each(ids)('%s screens', (id) => {
     const ui = uis.get(id);
     if (!ui) return;
     const declared = new Set(services.get(id)!.manifest.permissions.map((p) => p.key));
-    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? [...(s.rowActions ?? []).map((a) => a.perm), s.import?.perm] : []), s.kind === 'detail' ? s.attachments?.perm : undefined]);
+    const used = Object.values(ui.screens).flatMap((s) => [s.perm, ...(s.kind !== 'form' ? (s.actions ?? []).map((a) => a.perm) : []), ...(s.kind === 'list' ? [...(s.rowActions ?? []).map((a) => a.perm), s.import?.perm] : []), s.kind === 'detail' ? s.attachments?.perm : undefined])
+      .concat((ui.todo ?? []).flatMap((t) => [t.perm, ...(t.actions ?? []).map((a) => a.perm)]));
     expect(used.filter((p) => p && !declared.has(p))).toEqual([]);
   });
 

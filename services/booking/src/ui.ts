@@ -50,6 +50,9 @@ export default defineUi({
   label: 'จองห้องและรถ',
   glyph: 'จอ',
   icon: 'calendar',
+  todo: [
+    { id: 'pending', label: 'การจองรออนุมัติ', screen: 'approvals', title: 'purpose', subtitle: ['resource_name', 'requester_name', 'time_range'], since: 'created_at', due: 'start_at' },
+  ],
   menu: [
     { label: 'ตารางวันนี้', screen: 'board' },
     { label: 'จองใหม่', screen: 'bookingNew' },

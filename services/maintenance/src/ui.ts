@@ -11,6 +11,11 @@ export default defineUi({
   glyph: 'บ',
   icon: 'wrench',
   statusLabels: { in_progress: 'กำลังซ่อม' },
+  todo: [
+    { id: 'open-wo', label: 'งานซ่อมรอรับ', screen: 'woList', query: { status: 'open' }, perm: 'maintenance.wo.work', title: 'title', subtitle: ['machine_code', 'no'],
+      since: 'reported_at', due: 'due_on', urgent: { field: 'kind', in: ['breakdown'] },
+      actions: [{ id: 'start', label: 'รับงาน', method: 'POST', endpoint: '/work-orders/:id/start', perm: 'maintenance.wo.work', when: { field: 'status', in: ['open'] }, tone: 'primary', mobile: true }] },
+  ],
   menu: [
     { label: 'งานซ่อม', screen: 'woList' },
     { label: 'แจ้งซ่อม', screen: 'woNew' },
