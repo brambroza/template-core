@@ -10,9 +10,10 @@
     "master-data"
   ],
   "enhancedBy": [
-    "inventory",
+    "accounting",
+    "automation",
     "costing",
-    "accounting"
+    "inventory"
   ],
   "publishes": [
     "purchasing.goods_received",
@@ -20,11 +21,13 @@
     "purchasing.po_approved",
     "purchasing.goods_returned",
     "purchasing.bill_recorded",
-    "purchasing.supplier_paid"
+    "purchasing.supplier_paid",
+    "purchasing.line_decision_result"
   ],
   "subscribes": [
     "accounting.period_closed",
-    "accounting.period_reopened"
+    "accounting.period_reopened",
+    "automation.line_decision"
   ],
   "permissions": [
     {

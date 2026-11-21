@@ -109,3 +109,46 @@ describe('purchase order approval controls', () => {
     expect((await t.api('GET', '/receipts')).body.length).toBeGreaterThan(0);
   });
 });
+
+describe('approve a PO from LINE (automation.line_decision)', () => {
+  const decide = (who: { userId: string }, poId: string, perms: string[], permsAt = Math.floor(Date.now() / 1000)) => ({
+    lineActionId: randomUUID(), userId: who.userId, userName: 'จาก LINE', perms, permsAt, target: 'purchasing.po', entityId: poId, decision: 'approved',
+  });
+  const result = async (id: string) => (await t.published('purchasing.line_decision_result')).find((e) => e.data.lineActionId === id)?.data;
+
+  it('uses the same rules as the app: not the creator, within the approval tier, fresh permissions', async () => {
+    // back to the secure defaults (an earlier test switched them off)
+    expect((await t.api('PUT', '/settings', { creatorCannotApprove: true, standardApprovalLimit: 50000 })).status).toBe(200);
+    const small = await createPo(buyer, 30); // 3,210
+    const own = decide(buyer, small.id, ['purchasing.po.approve']);
+    await t.deliver('automation.line_decision', own);
+    expect((await result(own.lineActionId)).message).toContain('อนุมัติเองไม่ได้');
+
+    const big = await createPo(buyer, 1000); // 107,000 > tier
+    const overTier = decide(manager, big.id, ['purchasing.po.approve']);
+    await t.deliver('automation.line_decision', overTier);
+    expect(await result(overTier.lineActionId)).toMatchObject({ ok: false });
+    expect((await result(overTier.lineActionId)).message).toContain('เกินวงเงินอนุมัติ');
+
+    const seen = Math.floor(Date.now() / 1000) - 60;
+    await t.deliver('identity.tokens_revoked', { userId: manager.userId, before: seen + 5, reason: 'roles_changed' });
+    const stale = decide(manager, small.id, ['purchasing.po.approve'], seen);
+    await t.deliver('automation.line_decision', stale);
+    expect((await result(stale.lineActionId)).message).toContain('เปลี่ยนไป');
+
+    const ok = decide(manager, small.id, ['purchasing.po.approve']);
+    await t.deliver('automation.line_decision', ok);
+    expect(await result(ok.lineActionId)).toMatchObject({ ok: true, message: `✅ อนุมัติใบสั่งซื้อ ${small.no} (Siam Steel) ยอด 3,210.00 บาทแล้ว` });
+    expect((await t.api('GET', `/purchase-orders/${small.id}`)).body).toMatchObject({ status: 'approved', approved_by: manager.userId });
+
+    const none = decide(store, big.id, ['purchasing.po.receive']);
+    await t.deliver('automation.line_decision', none);
+    expect((await result(none.lineActionId)).message).toBe('บัญชีของคุณไม่มีสิทธิ์อนุมัติใบสั่งซื้อ');
+  });
+
+  it('tells automation who raised the PO (no approve button for them)', async () => {
+    const po = await createPo(buyer, 10);
+    const created = (await t.published('purchasing.po_created')).find((e) => e.data.poId === po.id);
+    expect(created?.data.createdById).toBe(buyer.userId);
+  });
+});

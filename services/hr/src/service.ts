@@ -213,6 +213,57 @@ const withLeaveFlags = (a: AuthContext) => (lv: any) => ({
   is_my_team: !!lv.approver_user_id && lv.approver_user_id === a.userId,
 });
 
+/** What leave decisions need from the kernel: emit in the same transaction (routes pass `k`, event handlers wrap `ctx.emit`). */
+type Emitter = Pick<Kernel, 'emit'>;
+
+/** Approve / reject a pending leave as `a` (manager on the org chart, HR, or `hr.leave.approve` when there is no manager). */
+async function decideLeaveAs(k: Emitter, c: Client, id: string, a: AuthContext, decision: 'approved' | 'rejected', note: string | null) {
+  const lv = await loadLeave(c, id, true);
+  assertLeaveStatus(lv, ['pending'], decision === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ');
+  if (!canDecide(a, lv)) {
+    throw forbidden(lv.approver_user_id
+      ? `ใบลา ${lv.no} รอ ${lv.approver_name} (หัวหน้าของ ${lv.employee_name}) อนุมัติ — อนุมัติแทนได้เฉพาะฝ่ายบุคคล`
+      : 'ไม่มีสิทธิ์อนุมัติใบลานี้');
+  }
+  if (isOwn(a, lv)) {
+    throw conflict(decision === 'approved' ? 'อนุมัติใบลาของตนเองไม่ได้ — ให้หัวหน้าหรือฝ่ายบุคคลอนุมัติ' : 'พิจารณาใบลาของตนเองไม่ได้ — ถ้าไม่ต้องการลาแล้วให้กด "ยกเลิก"');
+  }
+  await c.query(`update leave_requests set status = $4, decided_by = $2, decided_by_name = $5, decided_at = now(), decision_note = $3 where id = $1`,
+    [id, a.userId, note, decision, a.userName ?? null]);
+  await k.emit(c, 'hr.leave_decided', {
+    leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision,
+    employeeUserId: lv.employee_user_id ?? null, byName: a.userName ?? null, note,
+    // wave 5: for Payroll (unpaid leave → deduction in the month's run)
+    employeeId: lv.employee_id, employeeCode: lv.employee_code, from: String(lv.from_date).slice(0, 10), to: String(lv.to_date).slice(0, 10),
+    days: Number(lv.days), unpaid: !!lv.leave_type_unpaid, byMonth: await leaveDaysByMonth(c, lv),
+  });
+  return withLeaveFlags(a)(await loadLeave(c, id));
+}
+
+/**
+ * "อนุมัติ" pressed on a LINE card (automation.line_decision): decide the leave as that person with the app's rules. Refused when
+ * their sessions were revoked after automation last saw their permissions, or when they hold no leave permission. Never throws.
+ */
+export async function lineLeaveDecision(e: { lineActionId: string; userId: string; userName: string | null; perms: string[]; permsAt: number; entityId: string },
+  ctx: { client: Client; tenantId: string; emit: (type: any, data: any) => Promise<string> }) {
+  const c = ctx.client;
+  const answer = (ok: boolean, message: string) => ctx.emit('hr.line_decision_result', { lineActionId: e.lineActionId, userId: e.userId, ok, message });
+  const cutoff = (await c.query<{ before: string }>('select before from _revoked_tokens where user_id = $1', [e.userId])).rows[0];
+  if (cutoff && Number(cutoff.before) > e.permsAt) return answer(false, 'สิทธิ์หรือการเข้าระบบของคุณเปลี่ยนไปหลังจากได้รับข้อความนี้ — เปิดแอปเพื่ออนุมัติแทน');
+  const a: AuthContext = { tenantId: ctx.tenantId, userId: e.userId, userName: e.userName ?? undefined, perms: e.perms };
+  if (!anyLeavePerm(a)) return answer(false, 'บัญชีของคุณไม่มีสิทธิ์อนุมัติใบลา');
+  await c.query('savepoint line_decision');
+  try {
+    const lv = await decideLeaveAs({ emit: (_c, type, data) => ctx.emit(type, data) } as Emitter, c, e.entityId, a, 'approved', 'อนุมัติผ่าน LINE');
+    await c.query('release savepoint line_decision');
+    return answer(true, `✅ อนุมัติใบลา ${lv.no} ของ ${lv.employee_name} (${lv.leave_type_name} ${Number(lv.days)} วัน) แล้ว`);
+  } catch (err) {
+    await c.query('rollback to savepoint line_decision');
+    return answer(false, `อนุมัติไม่สำเร็จ: ${(err as Error).message}`);
+  }
+}
+
+
 /** Reject a manager that is the employee themself or would create a loop (A → B → A). */
 async function checkManager(c: Client, employeeId: string | null, managerId: string | null | undefined) {
   if (!managerId) return;
@@ -296,6 +347,9 @@ export const definition: ServiceDefinition = {
         },
       },
     },
+  },
+  handlers: {
+    'automation.line_decision': async (e, ctx) => { if (e.target === 'hr.leave') await lineLeaveDecision(e, ctx); },
   },
   routes(app, k) {
     /* ---------------- departments & positions ---------------- */
@@ -754,28 +808,7 @@ export const definition: ServiceDefinition = {
       if (!anyLeavePerm(a)) requirePerm(a, 'hr.leave.approve');
       const { id } = parse(IdParam, req.params);
       const b = decision === 'approved' ? parse(NoteInput, req.body ?? {}) : parse(RejectInput, req.body ?? {});
-      return k.db.tx(a.tenantId, async (c) => {
-        const lv = await loadLeave(c, id, true);
-        assertLeaveStatus(lv, ['pending'], decision === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ');
-        if (!canDecide(a, lv)) {
-          throw forbidden(lv.approver_user_id
-            ? `ใบลา ${lv.no} รอ ${lv.approver_name} (หัวหน้าของ ${lv.employee_name}) อนุมัติ — อนุมัติแทนได้เฉพาะฝ่ายบุคคล`
-            : 'ไม่มีสิทธิ์อนุมัติใบลานี้');
-        }
-        if (isOwn(a, lv)) {
-          throw conflict(decision === 'approved' ? 'อนุมัติใบลาของตนเองไม่ได้ — ให้หัวหน้าหรือฝ่ายบุคคลอนุมัติ' : 'พิจารณาใบลาของตนเองไม่ได้ — ถ้าไม่ต้องการลาแล้วให้กด "ยกเลิก"');
-        }
-        await c.query(`update leave_requests set status = $4, decided_by = $2, decided_by_name = $5, decided_at = now(), decision_note = $3 where id = $1`,
-          [id, a.userId, b.note ?? null, decision, a.userName ?? null]);
-        await k.emit(c, 'hr.leave_decided', {
-          leaveId: lv.id, no: lv.no, employeeName: lv.employee_name, typeName: lv.leave_type_name, decision,
-          employeeUserId: lv.employee_user_id ?? null, byName: a.userName ?? null, note: b.note ?? null,
-          // wave 5: for Payroll (unpaid leave → deduction in the month's run)
-          employeeId: lv.employee_id, employeeCode: lv.employee_code, from: String(lv.from_date).slice(0, 10), to: String(lv.to_date).slice(0, 10),
-          days: Number(lv.days), unpaid: !!lv.leave_type_unpaid, byMonth: await leaveDaysByMonth(c, lv),
-        });
-        return withLeaveFlags(a)(await loadLeave(c, id));
-      });
+      return k.db.tx(a.tenantId, (c) => decideLeaveAs(k, c, id, a, decision, b.note ?? null));
     };
     app.post('/leave-requests/:id/approve', decideLeave('approved'));
     app.post('/leave-requests/:id/reject', decideLeave('rejected'));

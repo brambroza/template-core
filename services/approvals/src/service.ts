@@ -168,8 +168,35 @@ function requireOwner(r: any, a: AuthContext) {
   if (r.requester_id !== a.userId && !isAdmin(a)) throw forbidden(`ทำได้เฉพาะผู้ขออนุมัติ หรือผู้ดูแลงานอนุมัติ`);
 }
 
+/** What the decision helpers need from the kernel: emit in the same transaction (routes pass `k`, event handlers wrap `ctx.emit`). */
+type Emitter = Pick<Kernel, 'emit'>;
+
+/**
+ * "อนุมัติ" pressed on a LINE card (automation.line_decision): decide as that person with the same rules as the app.
+ * Refused when their sessions were revoked after automation last saw their permissions (roles changed, logged out everywhere,
+ * disabled) or when those permissions lack approvals.request.approve. Never throws: the answer goes back as an event.
+ */
+export async function lineDecision(e: { lineActionId: string; userId: string; userName: string | null; perms: string[]; permsAt: number; entityId: string },
+  ctx: { client: Client; tenantId: string; emit: (type: 'approvals.request_submitted' | 'approvals.request_decided' | 'approvals.line_decision_result', data: any) => Promise<string> }) {
+  const c = ctx.client;
+  const answer = (ok: boolean, message: string) => ctx.emit('approvals.line_decision_result', { lineActionId: e.lineActionId, userId: e.userId, ok, message });
+  const cutoff = (await c.query<{ before: string }>('select before from _revoked_tokens where user_id = $1', [e.userId])).rows[0];
+  if (cutoff && Number(cutoff.before) > e.permsAt) return answer(false, 'สิทธิ์หรือการเข้าระบบของคุณเปลี่ยนไปหลังจากได้รับข้อความนี้ — เปิดแอปเพื่ออนุมัติแทน');
+  const a: AuthContext = { tenantId: ctx.tenantId, userId: e.userId, userName: e.userName ?? undefined, perms: e.perms };
+  if (!hasPerm(a, 'approvals.request.approve')) return answer(false, 'บัญชีของคุณไม่มีสิทธิ์อนุมัติคำขอ');
+  await c.query('savepoint line_decision');
+  try {
+    const r = await decide({ emit: (_c, type, data) => ctx.emit(type as any, data) } as Emitter, c, e.entityId, a, 'approved', 'อนุมัติผ่าน LINE');
+    await c.query('release savepoint line_decision');
+    return answer(true, `✅ อนุมัติคำขอ ${r.no} "${r.title}" แล้ว${r.status === 'pending' ? ` — ส่งต่อขั้นที่ ${r.current_step}/${r.step_count}` : ''}`);
+  } catch (err) {
+    await c.query('rollback to savepoint line_decision');
+    return answer(false, `อนุมัติไม่สำเร็จ: ${(err as Error).message}`);
+  }
+}
+
 /** Tell whoever is next on the chain (automation turns this into a LINE / in-app alert). */
-async function emitReachedApprover(k: Kernel, c: Client, r: any, stepNo: number) {
+async function emitReachedApprover(k: Emitter, c: Client, r: any, stepNo: number) {
   const st = (await c.query('select approver_id, approver_name, (select count(*)::int from request_steps where request_id = $1) as n from request_steps where request_id = $1 and step_no = $2', [r.id, stepNo])).rows[0];
   if (!st) return;
   // whoever stands in for the approver today is told too
@@ -181,7 +208,7 @@ async function emitReachedApprover(k: Kernel, c: Client, r: any, stepNo: number)
   });
 }
 
-async function submit(k: Kernel, c: Client, r: any, a: AuthContext) {
+async function submit(k: Emitter, c: Client, r: any, a: AuthContext) {
   if (!['draft', 'returned'].includes(r.status)) throw conflict(`ส่งขออนุมัติไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
   if (r.step_count < 1) throw badRequest(`เพิ่มผู้อนุมัติอย่างน้อย 1 คนก่อนส่งขออนุมัติ`);
   await c.query(`update request_steps set status = 'waiting', acted_by = null, acted_at = null, note = null where request_id = $1`, [r.id]);
@@ -191,7 +218,7 @@ async function submit(k: Kernel, c: Client, r: any, a: AuthContext) {
 }
 
 /** Approve / reject / return the current step. Only that step's approver, their delegate for today, or an approvals admin may act. */
-async function decide(k: Kernel, c: Client, id: string, a: AuthContext, action: 'approved' | 'rejected' | 'returned', note: string | undefined) {
+async function decide(k: Emitter, c: Client, id: string, a: AuthContext, action: 'approved' | 'rejected' | 'returned', note: string | undefined) {
   const r = await loadRequest(c, id, a, true);
   if (r.status !== 'pending') throw conflict(`${action === 'approved' ? 'อนุมัติ' : action === 'rejected' ? 'ไม่อนุมัติ' : 'ส่งกลับแก้ไข'}ไม่ได้ — คำขออยู่ในสถานะ "${statusTh(r.status)}"`);
   const own = r.current_approver_id === a.userId;
@@ -232,6 +259,9 @@ export const definition: ServiceDefinition = {
     read: 'approvals.request.read',
     write: 'approvals.request.write',
     entities: { request: { table: 'requests', access: (c, a, id) => loadRequest(c, id, a) } },
+  },
+  handlers: {
+    'automation.line_decision': async (e, ctx) => { if (e.target === 'approvals.request') await lineDecision(e, ctx); },
   },
   routes(app, k) {
     /* ----- request types ----- */

@@ -78,6 +78,65 @@ export const HELP_TEXT = [
 const NOT_LINKED = 'บัญชี LINE นี้ยังไม่ได้ผูกกับระบบ ERP\nเข้าระบบ → ระบบอัตโนมัติ → ผูก LINE ของฉัน → กด "ขอรหัสผูกบัญชี" แล้วพิมพ์ "ผูกบัญชี" ตามด้วยรหัส 6 หลักในแชตนี้';
 const LINKED_OK = 'ผูกบัญชีเรียบร้อย คุณจะได้รับแจ้งเตือนส่วนตัวทาง LINE';
 
+// ---------- decide from LINE (approval cards) ----------
+
+/** How long an "อนุมัติ" button on a LINE card stays usable. */
+export const DECISION_TTL_HOURS = 72;
+
+export type DecisionPostback = { step: 'ask' | 'go' | 'no'; id: string };
+
+/** Postback data of our decision buttons: "erp:ask:<uuid>" (first tap) → "erp:go:<uuid>" (confirmed) / "erp:no:<uuid>" (cancelled). */
+export function parseDecisionPostback(data: string | undefined): DecisionPostback | null {
+  const m = /^erp:(ask|go|no):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(data ?? '');
+  return m ? { step: m[1].toLowerCase() as DecisionPostback['step'], id: m[2].toLowerCase() } : null;
+}
+
+const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+
+/**
+ * The LINE Flex card for one decision: what it is, the alert text, an "อนุมัติ" button (postback → confirm step) and
+ * "เปิดดู / ไม่อนุมัติ" (the record in the web app — rejecting needs a reason, typed there). `altText` shows in the chat list.
+ */
+export function decisionFlex(o: { heading: string; title: string; text: string; actionId: string; openUrl?: string | null }) {
+  const footer: unknown[] = [
+    { type: 'button', style: 'primary', height: 'sm', color: '#2F5BFF', action: { type: 'postback', label: 'อนุมัติ', data: `erp:ask:${o.actionId}`, displayText: 'อนุมัติ' } },
+  ];
+  if (o.openUrl) footer.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: 'เปิดดู / ไม่อนุมัติ', uri: o.openUrl } });
+  return {
+    type: 'flex',
+    altText: clip(`${o.heading}: ${o.text}`, 390),
+    contents: {
+      type: 'bubble',
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'sm',
+        contents: [
+          { type: 'text', text: clip(o.heading, 60), size: 'xs', color: '#6B7690' },
+          { type: 'text', text: clip(o.title, 120), weight: 'bold', size: 'md', wrap: true },
+          { type: 'text', text: clip(o.text, 900), size: 'sm', color: '#3B4560', wrap: true },
+          { type: 'text', text: `ปุ่มอนุมัติใช้ได้ ${DECISION_TTL_HOURS} ชั่วโมง`, size: 'xxs', color: '#98A2B8', margin: 'md' },
+        ],
+      },
+      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: footer },
+    },
+  };
+}
+
+/** The confirm question after the first tap (a mistaken tap must not approve). */
+export function decisionConfirm(title: string, actionId: string) {
+  return {
+    type: 'template',
+    altText: clip(`ยืนยันอนุมัติ ${title}?`, 390),
+    template: {
+      type: 'confirm',
+      text: clip(`ยืนยันอนุมัติ ${title}?`, 240),
+      actions: [
+        { type: 'postback', label: 'ยืนยัน', data: `erp:go:${actionId}`, displayText: 'ยืนยันอนุมัติ' },
+        { type: 'postback', label: 'ยกเลิก', data: `erp:no:${actionId}`, displayText: 'ยกเลิก' },
+      ],
+    },
+  };
+}
+
 const when = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /** Public address of the installation (for the webhook URL): PUBLIC_BASE_URL, else the host the request came in on. */
@@ -112,11 +171,52 @@ async function lineCall(path: string, env: NodeJS.ProcessEnv, init: { method?: s
   }
 }
 
-/** Reply API (free, needs the event's replyToken, valid ~1 minute). */
-export async function replyLine(replyToken: string, text: string, env: NodeJS.ProcessEnv): Promise<Delivery> {
+export type LineMessage = string | Record<string, unknown>;
+const asMessage = (m: LineMessage) => (typeof m === 'string' ? { type: 'text', text: m.slice(0, 4900) } : m);
+
+/** Reply API (free, needs the event's replyToken, valid ~1 minute). A string is sent as text; an object as-is (flex, template). */
+export async function replyLine(replyToken: string, message: LineMessage, env: NodeJS.ProcessEnv): Promise<Delivery> {
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { ok: false, detail: 'ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN' };
-  const r = await lineCall('/v2/bot/message/reply', env, { method: 'POST', body: { replyToken, messages: [{ type: 'text', text: text.slice(0, 4900) }] } });
+  const r = await lineCall('/v2/bot/message/reply', env, { method: 'POST', body: { replyToken, messages: [asMessage(message)] } });
   return { ok: r.ok, detail: r.detail };
+}
+
+/** Push API to one LINE user (text or a flex/template object). */
+export async function pushLineMessage(to: string, message: LineMessage, env: NodeJS.ProcessEnv): Promise<Delivery> {
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { ok: false, detail: 'ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN' };
+  const r = await lineCall('/v2/bot/message/push', env, { method: 'POST', body: { to, messages: [asMessage(message)] } });
+  return { ok: r.ok, detail: r.detail };
+}
+
+/**
+ * Personal decision cards: for each recipient with a linked LINE, a line_actions row (the button's only key) and a Flex card.
+ * Never throws; same tally as pushToUsers.
+ */
+export async function pushDecisionToUsers(c: Client, userIds: string[], d: { target: string; entityId: string; heading: string; title: string; text: string; openUrl?: string | null },
+  env: NodeJS.ProcessEnv): Promise<{ sent: number; notLinked: number; failed: string[] }> {
+  const out = { sent: 0, notLinked: 0, failed: [] as string[] };
+  if (!userIds.length) return out;
+  const links = new Map((await c.query('select user_id, line_user_id from line_links where user_id = any($1::uuid[])', [userIds])).rows.map((r) => [r.user_id as string, r.line_user_id as string]));
+  for (const u of userIds) {
+    const to = links.get(u);
+    if (!to) { out.notLinked++; continue; }
+    const row = (await c.query(
+      `insert into line_actions (user_id, target, entity_id, title, expires_at) values ($1,$2,$3,$4, now() + make_interval(hours => $5)) returning id`,
+      [u, d.target, d.entityId, d.title, DECISION_TTL_HOURS])).rows[0];
+    const r = await pushLineMessage(to, decisionFlex({ heading: d.heading, title: d.title, text: d.text, actionId: row.id, openUrl: d.openUrl }), env);
+    if (r.ok) out.sent++; else out.failed.push(r.detail);
+  }
+  return out;
+}
+
+/**
+ * Remember the permissions of a valid token for the user's LINE link (and pending link code), so a LINE decision can carry them.
+ * Written at most every 5 minutes unless they changed. Called from routes every signed-in user hits (bell, LINE pages).
+ */
+export async function touchLinePerms(c: Client, a: { userId: string; perms: string[] }): Promise<void> {
+  await c.query(
+    `update line_links set perms = $2, perms_at = now() where user_id = $1 and (perms is distinct from $2 or perms_at is null or perms_at < now() - interval '5 minutes')`,
+    [a.userId, a.perms]);
 }
 
 /** Display name of a LINE user who added the OA (best effort). */
@@ -148,14 +248,45 @@ interface LineEvent {
   replyToken?: string;
   source?: { type?: string; userId?: string; groupId?: string; roomId?: string };
   message?: { type?: string; text?: string };
+  postback?: { data?: string };
 }
 
-/** One webhook event inside the tenant's transaction → the reply text (or null) and, after a link, whose profile to fetch. */
-async function handleEvent(c: Client, ev: LineEvent): Promise<{ reply: string | null; linked?: string }> {
+/**
+ * A tap on a decision card. Only the ERP user the card was pushed to (through their linked LINE) may use it, once, before it
+ * expires. "ask" → confirm question, "go" → publish automation.line_decision (the owning module decides and answers with
+ * <module>.line_decision_result, which is pushed back), "no" → nothing happens.
+ */
+async function handleDecision(c: Client, k: Pick<Kernel, 'emit'>, lineUserId: string, pb: DecisionPostback): Promise<LineMessage> {
+  const link = (await c.query('select user_id, user_name, perms, perms_at from line_links where line_user_id = $1', [lineUserId])).rows[0];
+  if (!link) return NOT_LINKED;
+  const act = (await c.query('select * from line_actions where id = $1', [pb.id])).rows[0];
+  // a card pushed to someone else (forwarded, or a re-linked LINE): answer as if it did not exist
+  if (!act || act.user_id !== link.user_id) return 'ไม่พบรายการนี้ หรือรายการนี้ไม่ได้ส่งถึงบัญชีของคุณ';
+  if (act.confirmed_at) return act.result_message ?? `${act.title}: กดอนุมัติไปแล้ว กำลังดำเนินการ`;
+  if (new Date(act.expires_at).getTime() < Date.now()) return `ปุ่มนี้หมดอายุแล้ว (${DECISION_TTL_HOURS} ชั่วโมง) — เปิดแอปเพื่ออนุมัติ ${act.title}`;
+  if (pb.step === 'no') return `ยกเลิกแล้ว — ยังไม่ได้อนุมัติ ${act.title}`;
+  if (pb.step === 'ask') return decisionConfirm(act.title, act.id);
+  if (!link.perms || !link.perms_at) return 'ระบบยังไม่รู้สิทธิ์ของบัญชีนี้ — เปิดแอป ERP หนึ่งครั้ง แล้วกดอนุมัติใน LINE อีกครั้ง';
+  const claimed = (await c.query('update line_actions set confirmed_at = now() where id = $1 and confirmed_at is null returning id', [act.id])).rowCount;
+  if (!claimed) return `${act.title}: กดอนุมัติไปแล้ว กำลังดำเนินการ`;
+  await k.emit(c, 'automation.line_decision', {
+    lineActionId: act.id, userId: link.user_id, userName: link.user_name ?? null, perms: link.perms,
+    permsAt: Math.floor(new Date(link.perms_at).getTime() / 1000), target: act.target, entityId: act.entity_id, decision: 'approved',
+  });
+  return `กำลังอนุมัติ ${act.title}… จะแจ้งผลในแชตนี้`;
+}
+
+/** One webhook event inside the tenant's transaction → the reply (or null) and, after a link, whose profile to fetch. */
+async function handleEvent(c: Client, ev: LineEvent, k: Pick<Kernel, 'emit'>): Promise<{ reply: LineMessage | null; linked?: string }> {
   if (ev.mode === 'standby') return { reply: null }; // another channel (module) has the chat
   const src = ev.source ?? {};
   const lineUserId = src.type === 'user' ? src.userId : undefined;
   const groupId = src.groupId ?? src.roomId;
+  if (ev.type === 'postback') {
+    const pb = parseDecisionPostback(ev.postback?.data);
+    // decisions only in the 1:1 chat (never act on a tap in a group)
+    return { reply: pb && lineUserId && !groupId ? await handleDecision(c, k, lineUserId, pb) : null };
+  }
 
   if (ev.type === 'join' && groupId) return { reply: `สวัสดีครับ บอทแจ้งเตือน ERP พร้อมส่งข้อความเข้ากลุ่มนี้แล้ว\nรหัสกลุ่ม: ${groupId}\nนำรหัสนี้ไปใส่ช่อง "LINE group ID" ในกฎอัตโนมัติ` };
   if (ev.type === 'unfollow' && lineUserId) {
@@ -181,7 +312,7 @@ async function handleEvent(c: Client, ev: LineEvent): Promise<{ reply: string | 
     const wrongAll = (await c.query(`select count(*)::int as n from line_link_attempts where created_at > now() - interval '15 minutes'`)).rows[0].n;
     if (wrongAll >= MAX_WRONG_CODES_PER_TENANT) return { reply: 'ระบบพักการผูกบัญชีชั่วคราวเพราะมีการใส่รหัสผิดจำนวนมาก กรุณาลองใหม่ใน 15 นาที' };
     const code = (await c.query(
-      `update line_link_codes set used_at = now(), line_user_id = $2 where code = $1 and used_at is null and expires_at > now() returning user_id, user_name`, [cmd.code, lineUserId])).rows[0];
+      `update line_link_codes set used_at = now(), line_user_id = $2 where code = $1 and used_at is null and expires_at > now() returning user_id, user_name, perms, created_at`, [cmd.code, lineUserId])).rows[0];
     if (!code) {
       // LINE re-delivery of a message we already handled: same code, same LINE account → same answer
       const again = (await c.query('select 1 from line_link_codes where code = $1 and line_user_id = $2 and used_at > now() - interval \'1 hour\'', [cmd.code, lineUserId])).rowCount;
@@ -192,7 +323,8 @@ async function handleEvent(c: Client, ev: LineEvent): Promise<{ reply: string | 
     }
     // one LINE per ERP user and one ERP user per LINE: the newest link wins
     await c.query('delete from line_links where user_id = $1 or line_user_id = $2', [code.user_id, lineUserId]);
-    await c.query('insert into line_links (user_id, user_name, line_user_id) values ($1,$2,$3)', [code.user_id, code.user_name, lineUserId]);
+    // the code was made on a valid token: its permissions (as of then) stand until the user next uses the app
+    await c.query('insert into line_links (user_id, user_name, line_user_id, perms, perms_at) values ($1,$2,$3,$4,$5)', [code.user_id, code.user_name, lineUserId, code.perms ?? null, code.perms ? code.created_at : null]);
     await c.query('delete from line_link_attempts where line_user_id = $1', [lineUserId]);
     return { reply: `${LINKED_OK}${code.user_name ? `\nบัญชี ERP: ${code.user_name}` : ''}\nพิมพ์ "ช่วยเหลือ" เพื่อดูคำสั่ง`, linked: lineUserId };
   }
@@ -310,7 +442,7 @@ export function lineRoutes(app: FastifyInstance, k: Kernel) {
   app.get('/line/me', async (req) => {
     const a = auth(req);
     requirePerm(a, 'automation.notify.read');
-    return k.db.tx(a.tenantId, (c) => meView(c, a.userId));
+    return k.db.tx(a.tenantId, async (c) => { await touchLinePerms(c, a); return meView(c, a.userId); });
   });
 
   /** A 6-digit one-time code for the signed-in user, valid 10 minutes. A new code replaces the previous one. */
@@ -328,7 +460,7 @@ export function lineRoutes(app: FastifyInstance, k: Kernel) {
         if (!taken) code = candidate;
       }
       if (!code) throw badRequest('สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง');
-      await c.query(`insert into line_link_codes (user_id, user_name, code, expires_at) values ($1,$2,$3, now() + make_interval(mins => $4))`, [a.userId, a.userName ?? null, code, LINK_TTL_MINUTES]);
+      await c.query(`insert into line_link_codes (user_id, user_name, code, expires_at, perms) values ($1,$2,$3, now() + make_interval(mins => $4), $5)`, [a.userId, a.userName ?? null, code, LINK_TTL_MINUTES, a.perms]);
       const me = await meView(c, a.userId);
       return { ...me, message: `รหัสของคุณ ${code} — พิมพ์ "ผูกบัญชี ${code}" ใน LINE OA ของบริษัทภายใน ${LINK_TTL_MINUTES} นาที` };
     });
@@ -389,7 +521,7 @@ export function lineRoutes(app: FastifyInstance, k: Kernel) {
       let handled = 0;
       for (const ev of events.slice(0, 100)) {
         try {
-          const r = await k.db.tx(parsedKey.tenantId, (c) => handleEvent(c, ev));
+          const r = await k.db.tx(parsedKey.tenantId, (c) => handleEvent(c, ev, k));
           handled++;
           if (r.reply && ev.replyToken) {
             const d = await replyLine(ev.replyToken, r.reply, env);

@@ -310,3 +310,27 @@ describe('expense — who (wave 4)', () => {
     expect(old.claimant_name).toBe('สมหญิง');
   });
 });
+
+describe('approve a claim from LINE (automation.line_decision)', () => {
+  it('approves as the manager with the app rules; never one\'s own claim', async () => {
+    const claimant = as(STAFF);
+    const boss = as([...STAFF, 'expense.claim.approve']);
+    const claim = (await t.api('POST', '/claims', { purpose: 'ค่าแท็กซี่ไปลูกค้า', claimantName: 'ผู้เบิก LINE', claimDate: today,
+      lines: [{ expenseDate: today, categoryId: hotel.id, description: 'แท็กซี่', amount: 350, receiptNo: 'R-1' }] }, { token: claimant.token })).body;
+    await t.api('POST', `/claims/${claim.id}/submit`, undefined, { token: claimant.token });
+    const decide = (userId: string, perms: string[]) => ({ lineActionId: randomUUID(), userId, userName: 'หัวหน้า', perms, permsAt: Math.floor(Date.now() / 1000), target: 'expense.claim', entityId: claim.id, decision: 'approved' });
+    const result = async (id: string) => (await t.published('expense.line_decision_result')).find((e) => e.data.lineActionId === id)?.data;
+
+    const self = decide(claimant.id, [...STAFF, 'expense.claim.approve']);
+    await t.deliver('automation.line_decision', self);
+    expect((await result(self.lineActionId)).message).toContain('ของตนเองไม่ได้');
+    const noPerm = decide(boss.id, STAFF);
+    await t.deliver('automation.line_decision', noPerm);
+    expect((await result(noPerm.lineActionId)).message).toBe('บัญชีของคุณไม่มีสิทธิ์อนุมัติใบเบิก');
+    const ok = decide(boss.id, [...STAFF, 'expense.claim.approve']);
+    await t.deliver('automation.line_decision', ok);
+    expect(await result(ok.lineActionId)).toMatchObject({ ok: true });
+    expect((await result(ok.lineActionId)).message).toContain(`✅ อนุมัติใบเบิก ${claim.no}`);
+    expect((await t.api('GET', `/claims/${claim.id}`)).body).toMatchObject({ status: 'approved', approved_by: boss.id, last_note: 'อนุมัติผ่าน LINE' });
+  });
+});

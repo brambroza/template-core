@@ -62,6 +62,9 @@ Permissions: `expense.claim.read | write | approve | pay`, `expense.claim.approv
 
 ## Events
 - publishes `expense.claim_submitted` (claimId, no, claimantName, total, overLimit, claimantId — after limit warnings are refreshed) on submit (also `POST /claims { submit: true }`).
+- subscribes `automation.line_decision` (target `expense.claim`): `lineClaimDecision()` runs `approveClaim()` (shared with `POST /claims/:id/approve`:
+  never one's own, over-limit needs approve-over-limit; note "อนุมัติผ่าน LINE") as that user; refused on a later revocation cutoff than `permsAt` or
+  without `expense.claim.approve`. Never throws; publishes `expense.line_decision_result`.
 - publishes `expense.claim_paid` (claimId, no, claimantName, total, claimantId) on pay — automation's expense-paid-to-claimant alerts the claimant personally.
   Wave 5 (optional fields): `paidDate`, `payMethod` (transfer|cash|cheque), `department`, `lines[{ categoryCode, categoryName, amount (before VAT), vat, description }]`,
   and `advanceNo` / `advanceAmount` when the claim cleared a cash advance — Accounting posts each category to its mapped expense account + ภาษีซื้อ, from cash or bank, on the paid date.

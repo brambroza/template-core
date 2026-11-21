@@ -47,7 +47,13 @@ Permissions: `approvals.request.read | write | approve | admin`, `approvals.type
 - publishes `approvals.request_submitted` (requestId, no, title, typeName, requesterName, amount, nextApproverId/Name, step, stepCount, requesterId, delegateId?/delegateName? when the approver has delegated today) — on submit (step 1)
   **and** each time an approval moves the request to the next step, so the next approver can be alerted.
 - publishes `approvals.request_decided` (requestId, no, title, decision approved|rejected|returned, requesterId, requesterName, byName, note) — final approve, reject or return.
-- subscribes: none. Automation turns both into LINE / in-app alerts addressed to the person (`to: field:nextApproverId,delegateId` / `field:requesterId`; link `/m/approvals/requestDetail/:id`).
+- Automation turns both into LINE / in-app alerts addressed to the person (`to: field:nextApproverId,delegateId` / `field:requesterId`; link `/m/approvals/requestDetail/:id`).
+  The approver's personal LINE alert is a card with an "อนุมัติ" button (automation `decide`).
+- subscribes `automation.line_decision` (target `approvals.request`): the approver pressed อนุมัติ + ยืนยัน in LINE → `lineDecision()` runs `decide()`
+  as that user (same rules: current approver / today's delegate, not own request; note "อนุมัติผ่าน LINE") inside a savepoint. Refused when the user's
+  `_revoked_tokens` cutoff is later than `permsAt` (roles changed / logged out everywhere / disabled since automation last saw their permissions)
+  or `perms` lacks `approvals.request.approve`. Never throws.
+- publishes `approvals.line_decision_result` (lineActionId, userId, ok, message in Thai) — automation pushes it to that person's LINE.
 
 ## Screens
 `src/ui.ts`: inbox (mobile, row action อนุมัติ, "อนุมัติแทน" column), myRequests (mobile), requests (all, filters), requestNew (mobile; no name/approver inputs — both come from the login and the type),

@@ -316,3 +316,56 @@ describe('approvals — who (wave 4)', () => {
     expect((await t.api('GET', '/delegations', undefined, { token: t.token([]) })).status).toBe(403);
   });
 });
+
+describe('decide from LINE (automation.line_decision)', () => {
+  const lineDecision = (who: { id: string; name: string }, requestId: string, perms: string[], permsAt = Math.floor(Date.now() / 1000)) => ({
+    lineActionId: randomUUID(), userId: who.id, userName: who.name, perms, permsAt, target: 'approvals.request', entityId: requestId, decision: 'approved',
+  });
+  const results = async (lineActionId: string) => (await t.published('approvals.line_decision_result')).filter((e) => e.data.lineActionId === lineActionId).map((e) => e.data);
+  async function pending() {
+    const requester = user('ผู้ขอ LINE', STAFF);
+    const first = user('หัวหน้า LINE', APPROVER);
+    const second = user('MD LINE', APPROVER);
+    const type = (await t.api('POST', '/types', { code: `L${Math.floor(Math.random() * 1e6)}`, name: 'ขอซื้อ (LINE)', approvers: [{ userId: first.id, userName: first.name }, { userId: second.id, userName: second.name }] })).body;
+    const r = (await t.api('POST', '/requests', { typeId: type.id, title: 'ซื้อสว่าน', amount: 3200, requesterName: requester.name }, { token: requester.token })).body;
+    await t.api('POST', `/requests/${r.id}/submit`, undefined, { token: requester.token });
+    return { requester, first, second, id: r.id as string, no: r.no as string };
+  }
+
+  it('approves as the current approver with the app rules, then tells the next approver and answers in Thai', async () => {
+    const p = await pending();
+    const ev = lineDecision(p.first, p.id, APPROVER);
+    expect((await t.deliver('automation.line_decision', ev)).body.status).toBe('handled');
+    const r = (await t.api('GET', `/requests/${p.id}`)).body;
+    expect(r).toMatchObject({ status: 'pending', current_step: 2 });
+    expect(r.history.find((h: any) => h.action === 'approved')).toMatchObject({ actor_name: 'หัวหน้า LINE', note: 'อนุมัติผ่าน LINE' });
+    expect(await results(ev.lineActionId)).toEqual([{ lineActionId: ev.lineActionId, userId: p.first.id, ok: true, message: `✅ อนุมัติคำขอ ${p.no} "ซื้อสว่าน" แล้ว — ส่งต่อขั้นที่ 2/2` }]);
+    expect((await t.published('approvals.request_submitted')).some((e) => e.data.requestId === p.id && e.data.step === 2)).toBe(true);
+  });
+
+  it('refuses: not the current approver, no approve permission, sessions revoked after the permissions were seen', async () => {
+    const p = await pending();
+    const notYet = lineDecision(p.second, p.id, APPROVER);
+    await t.deliver('automation.line_decision', notYet);
+    expect((await results(notYet.lineActionId))[0]).toMatchObject({ ok: false });
+    expect((await results(notYet.lineActionId))[0].message).toContain('ยังไม่ใช่ผู้อนุมัติขั้นนี้');
+
+    const noPerm = lineDecision(p.first, p.id, STAFF);
+    await t.deliver('automation.line_decision', noPerm);
+    expect(await results(noPerm.lineActionId)).toEqual([expect.objectContaining({ ok: false, message: 'บัญชีของคุณไม่มีสิทธิ์อนุมัติคำขอ' })]);
+
+    // roles changed (identity revoked the user's tokens) after automation last saw the permissions
+    const seenAt = Math.floor(Date.now() / 1000) - 60;
+    await t.deliver('identity.tokens_revoked', { userId: p.first.id, before: seenAt + 30, reason: 'roles_changed' });
+    const stale = lineDecision(p.first, p.id, APPROVER, seenAt);
+    await t.deliver('automation.line_decision', stale);
+    expect((await results(stale.lineActionId))[0]).toMatchObject({ ok: false });
+    expect((await results(stale.lineActionId))[0].message).toContain('เปลี่ยนไป');
+    expect((await t.api('GET', `/requests/${p.id}`)).body).toMatchObject({ status: 'pending', current_step: 1 });
+
+    // other modules' targets are ignored
+    const other = { ...lineDecision(p.first, p.id, APPROVER), target: 'hr.leave' };
+    await t.deliver('automation.line_decision', other);
+    expect(await results(other.lineActionId)).toEqual([]);
+  });
+});

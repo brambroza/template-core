@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootTestService, type TestService } from '@erp/kernel/testing';
-import { definition } from '../src/service.ts';
+import { DECISION_RESULTS, definition } from '../src/service.ts';
 import { isPrivateAddress, describe as sentence, matches, render, resolvesPrivate, webhookProblem } from '../src/engine.ts';
 import { EVENTS, TEMPLATES } from '../src/catalog.ts';
 import { events, isKnownEvent, parseEvent, type EventType } from '@erp/contracts';
@@ -177,7 +177,8 @@ const SAMPLES: Partial<Record<EventType, Record<string, unknown>>> = {
 
 describe('event catalogue and templates', () => {
   it('lists exactly the subscribed events, all known to @erp/contracts, with fields that exist in the payload', () => {
-    expect(EVENTS.map((e) => e.type).sort()).toEqual([...manifestJson.subscribes].sort());
+    // + the answers to LINE decisions, which are not rule triggers
+    expect([...EVENTS.map((e) => e.type), ...DECISION_RESULTS].sort()).toEqual([...manifestJson.subscribes].sort());
     for (const e of EVENTS) {
       expect(isKnownEvent(e.type), e.type).toBe(true);
       expect(manifestJson.enhancedBy, e.type).toContain(e.module);
@@ -193,8 +194,8 @@ describe('event catalogue and templates', () => {
     }
   });
 
-  it('ships 26 templates, every one valid and appliable with a click', async () => {
-    expect(TEMPLATES).toHaveLength(26);
+  it('ships 28 templates, every one valid and appliable with a click', async () => {
+    expect(TEMPLATES).toHaveLength(28);
     expect(new Set(TEMPLATES.map((x) => x.id)).size).toBe(TEMPLATES.length);
     const other = t.token(['*'], t.otherTenantId);
     for (const tpl of TEMPLATES) {

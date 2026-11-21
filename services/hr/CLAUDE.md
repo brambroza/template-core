@@ -62,7 +62,10 @@ Managers need no special permission — being the approver in the org chart (wit
 - publishes `hr.employee_upserted` (employeeId, code, name (prefix + first + last), departmentName, positionName, status, startDate, resignedDate, userId) after
   `POST /employees`, `PATCH /employees/:id`, `confirm` and `resign` → Payroll creates / updates the pay profile. No salary or ID numbers.
   Automation alerts the manager (`field:approverUserId`) and the employee (`field:employeeUserId`) personally.
-- subscribes: none. Candidates (not added): identity deactivation on resign (could subscribe to `hr.employee_upserted` status resigned);
+- subscribes `automation.line_decision` (target `hr.leave`): the manager pressed อนุมัติ + ยืนยัน on the LINE card → `lineLeaveDecision()` runs
+  `decideLeaveAs()` (shared with `POST /leave-requests/:id/approve`: `canDecide`, never own leave; note "อนุมัติผ่าน LINE"). Refused when the user's
+  revocation cutoff is later than `permsAt` or they hold no leave permission. Never throws. Publishes `hr.line_decision_result` (lineActionId, userId, ok, message).
+- Candidates (not added): identity deactivation on resign (could subscribe to `hr.employee_upserted` status resigned);
   an event for cancelling approved leave (Payroll would undo unpaid days).
 
 ## Screens

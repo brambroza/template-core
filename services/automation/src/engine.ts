@@ -43,12 +43,14 @@ export function render(template: string, data: unknown): string {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Parsed `to` of a notify action. */
-export type Recipients = { kind: 'all' } | { kind: 'fields'; fields: string[] } | { kind: 'user'; userId: string };
+export type Recipients = { kind: 'all' } | { kind: 'fields'; fields: string[] } | { kind: 'user'; userId: string } | { kind: 'approvers' };
 
-/** Parse `to` ('all' | 'field:a,b' | 'user:<uuid>'); returns an error text for anything else. */
+/** Parse `to` ('all' | 'field:a,b' | 'user:<uuid>' | 'approvers'); returns an error text for anything else. */
 export function parseTo(to: string | undefined): Recipients | string {
   const v = (to ?? '').trim();
   if (!v || v === 'all') return { kind: 'all' };
+  // personal LINE only: whoever may approve this kind of document (event catalogue `decide.approverPerms`)
+  if (v === 'approvers') return { kind: 'approvers' };
   if (v.startsWith('field:')) {
     const fields = v.slice(6).split(',').map((x) => x.trim()).filter(Boolean);
     return fields.length ? { kind: 'fields', fields } : 'ระบุช่องข้อมูลผู้รับ เช่น field:requesterId';
@@ -62,6 +64,7 @@ export function resolveRecipients(to: string | undefined, data: unknown): string
   const r = parseTo(to);
   if (typeof r === 'string' || r.kind === 'all') return null;
   if (r.kind === 'user') return [r.userId];
+  if (r.kind === 'approvers') return []; // resolved from LINE links by the handler (approverRecipients)
   const ids = r.fields.map((f) => get(data, f)).filter((x): x is string => typeof x === 'string' && UUID.test(x)).map((x) => x.toLowerCase());
   return [...new Set(ids)];
 }
@@ -71,6 +74,7 @@ export function describeTo(to: string | undefined, eventType: string): string {
   const r = parseTo(to);
   if (typeof r === 'string' || r.kind === 'all') return 'ทุกคน';
   if (r.kind === 'user') return 'ผู้ใช้ที่เลือก';
+  if (r.kind === 'approvers') return 'ผู้มีสิทธิ์อนุมัติที่ผูก LINE';
   const ev = eventInfo(eventType);
   return r.fields.map((f) => ev?.userFields?.find((x) => x.key === f)?.label ?? f).join(' / ');
 }

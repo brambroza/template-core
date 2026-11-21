@@ -413,3 +413,39 @@ describe('hr — org chart approvals (wave 4)', () => {
     expect((await t.api('GET', '/leave-requests/inbox', undefined, { token: t.token([]) })).status).toBe(403);
   });
 });
+
+describe('hr: decide leave from LINE (automation.line_decision)', () => {
+  const MANAGER = ['hr.leave.request'];
+  const results = async (lineActionId: string) => (await t.published('hr.line_decision_result')).filter((e) => e.data.lineActionId === lineActionId).map((e) => e.data);
+  const decision = (userId: string, leaveId: string, perms: string[], permsAt = Math.floor(Date.now() / 1000)) => ({
+    lineActionId: randomUUID(), userId, userName: 'หัวหน้า LINE', perms, permsAt, target: 'hr.leave', entityId: leaveId, decision: 'approved',
+  });
+
+  it('approves as the employee\'s manager on the org chart; refuses anyone else and stale permissions', async () => {
+    const boss = randomUUID();
+    const worker = randomUUID();
+    const outsider = randomUUID();
+    const lead = (await t.api('POST', '/employees', { code: 'LN-LEAD', firstName: 'หัวหน้า LINE', startDate: '2020-01-01', userId: boss })).body;
+    await t.api('POST', '/employees', { code: 'LN-W', firstName: 'ลูกทีม', startDate: '2024-01-01', userId: worker, managerId: lead.id });
+    const types = (await t.api('GET', '/leave-types')).body;
+    const sick = types.find((x: any) => x.code === 'SICK');
+    const lv = (await t.api('POST', '/leave-requests', { leaveTypeId: sick.id, fromDate: '2027-09-06' }, { token: userToken(worker, STAFF) })).body;
+    expect(lv).toMatchObject({ status: 'pending', approver_user_id: boss });
+
+    const stranger = decision(outsider, lv.id, MANAGER);
+    await t.deliver('automation.line_decision', stranger);
+    expect((await results(stranger.lineActionId))[0]).toMatchObject({ ok: false });
+
+    const seenAt = Math.floor(Date.now() / 1000) - 60;
+    await t.deliver('identity.tokens_revoked', { userId: boss, before: seenAt + 10, reason: 'logout' });
+    const stale = decision(boss, lv.id, MANAGER, seenAt);
+    await t.deliver('automation.line_decision', stale);
+    expect((await results(stale.lineActionId))[0].message).toContain('เปลี่ยนไป');
+
+    const ok = decision(boss, lv.id, MANAGER);
+    await t.deliver('automation.line_decision', ok);
+    expect(await results(ok.lineActionId)).toEqual([expect.objectContaining({ ok: true, message: `✅ อนุมัติใบลา ${lv.no} ของ ${lv.employee_name} (${lv.leave_type_name} 1 วัน) แล้ว` })]);
+    expect((await t.api('GET', `/leave-requests/${lv.id}`)).body).toMatchObject({ status: 'approved', decided_by: boss, decision_note: 'อนุมัติผ่าน LINE' });
+    expect((await t.published('hr.leave_decided')).some((e) => e.data.leaveId === lv.id && e.data.decision === 'approved')).toBe(true);
+  });
+});

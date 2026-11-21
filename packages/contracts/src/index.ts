@@ -36,7 +36,8 @@ export const events = {
     itemId: id, itemCode: z.string(), itemName: z.string().optional(), warehouseCode: z.string(), onHand: qty, minQty: qty,
   }),
 
-  'purchasing.po_created': z.object({ poId: id, poNo: z.string(), supplierName: z.string(), gross: money }),
+  /** optional `createdById`: who raised it (automation does not send them an approve button — they may not approve their own PO) */
+  'purchasing.po_created': z.object({ poId: id, poNo: z.string(), supplierName: z.string(), gross: money, createdById: id.nullable().optional() }),
   'purchasing.po_approved': z.object({ poId: id, poNo: z.string(), supplierName: z.string(), gross: money }),
 
   'purchasing.goods_received': z.object({
@@ -337,6 +338,22 @@ export const events = {
    * user disabled, roles changed). Every module's kernel subscribes automatically.
    */
   'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin']) }),
+
+  /**
+   * A linked LINE user pressed "อนุมัติ" (and confirmed) on a decision card automation pushed to them. The owning module decides
+   * as that user with its own rules (current approver / delegate / own request…). `perms` = the user's permissions as last seen
+   * by automation on a valid token at `permsAt` (epoch seconds): refuse when the user's revocation cutoff is later (roles changed,
+   * logged out everywhere, disabled) or when `perms` lacks the module's approve permission.
+   */
+  'automation.line_decision': z.object({
+    lineActionId: id, userId: id, userName: z.string().nullable(), perms: z.array(z.string()), permsAt: z.number().int(),
+    target: z.enum(['approvals.request', 'hr.leave', 'purchasing.po', 'expense.claim']), entityId: id, decision: z.literal('approved'),
+  }),
+  /** The outcome of an `automation.line_decision`, in Thai for the person who pressed the button (automation pushes it to their LINE). */
+  'approvals.line_decision_result': z.object({ lineActionId: id, userId: id, ok: z.boolean(), message: z.string() }),
+  'hr.line_decision_result': z.object({ lineActionId: id, userId: id, ok: z.boolean(), message: z.string() }),
+  'purchasing.line_decision_result': z.object({ lineActionId: id, userId: id, ok: z.boolean(), message: z.string() }),
+  'expense.line_decision_result': z.object({ lineActionId: id, userId: id, ok: z.boolean(), message: z.string() }),
 } as const;
 
 export type EventType = keyof typeof events;

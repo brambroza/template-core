@@ -1,9 +1,10 @@
 import { auth, badRequest, loadManifest, notFound, one, parse, requirePerm, s, z, type AuthContext, type Client, type EventHandlers, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
 import type { EventType } from '@erp/contracts';
 import { fileURLToPath } from 'node:url';
-import { EVENTS, MODULE_TH, TEMPLATES, eventInfo, type ActionSpec, type Condition } from './catalog.ts';
+import { get, hasPerm } from '@erp/ui-schema';
+import { EVENTS, MODULE_TH, TEMPLATES, eventInfo, type ActionSpec, type Condition, type EventInfo } from './catalog.ts';
 import { describe, describeTo, matches, parseTo, render, renderLink, resolveRecipients, sendLine, sendWebhook, webhookProblem } from './engine.ts';
-import { lineRoutes, pushToUsers } from './line.ts';
+import { lineRoutes, pushDecisionToUsers, pushLineMessage, pushToUsers, touchLinePerms } from './line.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -55,6 +56,9 @@ function validateRule(r: { eventType: string; conditions: Condition[]; actions: 
         if (to.kind === 'all') throw badRequest('LINE ถึงทุกคนไม่ได้ — ใส่ LINE group ID ใน target หรือเลือกผู้รับเป็นรายคน', { fieldErrors: { to: ['เลือกผู้รับ LINE เป็นรายคน'] } });
         if (a.target) throw badRequest('LINE ส่วนตัว (ผู้รับ) กับ LINE กลุ่ม (target) ต้องแยกเป็นคนละการกระทำ', { fieldErrors: { target: ['เว้นว่างเมื่อส่ง LINE ส่วนตัว'] } });
       }
+      if (to.kind === 'approvers' && (a.type !== 'line' || !ev.decide?.approverPerms)) {
+        throw badRequest(`"ผู้มีสิทธิ์อนุมัติ" ใช้ได้กับ LINE ส่วนตัวของเหตุการณ์ที่อนุมัติทาง LINE ได้เท่านั้น`, { fieldErrors: { to: ['เลือกผู้รับแบบอื่น'] } });
+      }
       if (to.kind === 'fields') {
         for (const f of to.fields) {
           if (!ev.userFields?.some((x) => x.key === f)) {
@@ -96,6 +100,18 @@ async function createRule(c: Client, body: { name: string; eventType: string; co
   return withSummary(row);
 }
 
+/**
+ * `to: 'approvers'`: linked LINE users whose last-seen permissions hold one of the event's `decide.approverPerms`, minus the
+ * people in its `exclude` fields (whoever raised the document). The deciding module re-checks everything when they press.
+ */
+async function approverRecipients(c: Client, ev: EventInfo, data: unknown): Promise<string[]> {
+  const want = ev.decide?.approverPerms ?? [];
+  if (!want.length) return [];
+  const excluded = new Set((ev.decide?.exclude ?? []).map((f) => String(get(data, f) ?? '').toLowerCase()).filter(Boolean));
+  const links = (await c.query<{ user_id: string; perms: string[] | null }>('select user_id, perms from line_links where perms is not null')).rows;
+  return links.filter((l) => !excluded.has(l.user_id) && want.some((p) => hasPerm(l.perms ?? [], p))).map((l) => l.user_id);
+}
+
 /** Runs every enabled rule for one event. Never throws: failures are recorded as runs. */
 function handlerFor(type: EventType) {
   return async (data: unknown, ctx: HandlerContext) => {
@@ -124,15 +140,27 @@ function handlerFor(type: EventType) {
             results.push(`แจ้งในแอปแล้ว (ถึง${describeTo(a.to, type)} ${users.length} คน)`);
           }
         } else if (a.type === 'line' && a.to) {
-          // personal LINE: each recipient's linked LINE account
-          const users = resolveRecipients(a.to, data) ?? [];
+          // personal LINE: each recipient's linked LINE account ('approvers': linked users allowed to approve this document)
+          const users = a.to === 'approvers' ? await approverRecipients(ctx.client, ev, data) : resolveRecipients(a.to, data) ?? [];
           const who = describeTo(a.to, type);
           if (!users.length) {
             results.push(`LINE ส่วนตัว: เหตุการณ์ไม่มีผู้รับ (${who})`);
           } else {
             const link = ev.link ? renderLink(ev.link, data) : null;
             const app = env.PUBLIC_APP_URL?.replace(/\/+$/, '');
-            const r = await pushToUsers(ctx.client, users, `${rule.name}\n${text}${app && link ? `\nเปิดดู: ${app}${link}` : ''}`, env);
+            // the people who decide get a card with an "อนุมัติ" button; anyone else addressed by this action gets text
+            const entityId = ev.decide ? get(data, ev.decide.entityField) : undefined;
+            const deciders = ev.decide && typeof entityId === 'string'
+              ? (a.to === 'approvers' ? users : users.filter((u) => ev.decide!.deciders.some((f) => String(get(data, f) ?? '').toLowerCase() === u))) : [];
+            const others = users.filter((u) => !deciders.includes(u));
+            const cards = deciders.length
+              ? await pushDecisionToUsers(ctx.client, deciders, {
+                target: ev.decide!.target, entityId: entityId as string, heading: rule.name, title: render(ev.decide!.title, data), text,
+                openUrl: app && link ? `${app}${link}` : null,
+              }, env)
+              : { sent: 0, notLinked: 0, failed: [] as string[] };
+            const plain = await pushToUsers(ctx.client, others, `${rule.name}\n${text}${app && link ? `\nเปิดดู: ${app}${link}` : ''}`, env);
+            const r = { sent: cards.sent + plain.sent, notLinked: cards.notLinked + plain.notLinked, failed: [...cards.failed, ...plain.failed] };
             const parts = [
               ...(r.sent ? [`ส่งแล้ว ${r.sent} คน`] : []),
               ...(r.notLinked ? [`ผู้รับยังไม่ได้ผูก LINE ${r.notLinked} คน`] : []),
@@ -171,7 +199,24 @@ async function markRead(c: Client, a: AuthContext, notes: { id: string; personal
   }
 }
 
-const handlers = Object.fromEntries(manifest.subscribes.map((t) => [t, handlerFor(t)])) as EventHandlers;
+/**
+ * The deciding module answered a LINE decision: store it on the button's row and push the Thai answer to the person who pressed it.
+ * Never throws (a failed push is only logged on the row).
+ */
+async function decisionResult(data: { lineActionId: string; userId: string; ok: boolean; message: string }, ctx: HandlerContext) {
+  const c = ctx.client;
+  const row = (await c.query('update line_actions set result_at = now(), result_ok = $2, result_message = $3 where id = $1 and user_id = $4 returning id', [data.lineActionId, data.ok, data.message, data.userId])).rows[0];
+  if (!row) return;
+  const link = (await c.query('select line_user_id from line_links where user_id = $1', [data.userId])).rows[0];
+  if (!link) return;
+  const d = await pushLineMessage(link.line_user_id, data.message, ctx.env);
+  if (!d.ok) await c.query('update line_actions set result_message = result_message || $2 where id = $1', [row.id, ` (ส่งผลทาง LINE ไม่สำเร็จ: ${d.detail})`]);
+}
+
+/** Answers to LINE decisions — not rule triggers (they are not in the EVENTS catalogue). */
+export const DECISION_RESULTS = ['approvals.line_decision_result', 'hr.line_decision_result', 'purchasing.line_decision_result', 'expense.line_decision_result'] as const;
+
+const handlers = Object.fromEntries(manifest.subscribes.map((t) => [t, (DECISION_RESULTS as readonly string[]).includes(t) ? decisionResult : handlerFor(t)])) as EventHandlers;
 
 export const definition: ServiceDefinition = {
   manifest,
@@ -309,6 +354,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'automation.notify.read');
       const q = parse(z.object({ unread: z.enum(['true', 'false', '1', '0', '']).optional().transform((v) => v === 'true' || v === '1') }), req.query);
       return k.db.tx(a.tenantId, async (c) => {
+        await touchLinePerms(c, a); // the bell polls: keeps the LINE link's permissions current for LINE decisions
         const items = (await c.query(
           `select * from (${MY_NOTES}) n ${q.unread ? 'where n.read_at is null' : ''} order by n.created_at desc limit 30`, [a.userId])).rows;
         const unread = (await c.query(`select count(*)::int as n from (${MY_NOTES}) n where n.read_at is null`, [a.userId])).rows[0].n;

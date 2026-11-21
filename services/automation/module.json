@@ -25,7 +25,9 @@
     "contracts",
     "payroll"
   ],
-  "publishes": [],
+  "publishes": [
+    "automation.line_decision"
+  ],
   "subscribes": [
     "inventory.low_stock",
     "purchasing.po_created",
@@ -55,7 +57,11 @@
     "contracts.visit_due",
     "contracts.contract_expiring",
     "payroll.run_paid",
-    "hr.employee_upserted"
+    "hr.employee_upserted",
+    "approvals.line_decision_result",
+    "hr.line_decision_result",
+    "purchasing.line_decision_result",
+    "expense.line_decision_result"
   ],
   "permissions": [
     {

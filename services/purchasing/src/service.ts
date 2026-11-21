@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, forbidden, guardLockDate, hasPerm, loadManifest, lockThroughPeriod, nextDocNo, one, parse, readLock, requirePerm, s, setLockDate, thaiToday, unlockPeriod, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, forbidden, guardLockDate, hasPerm, loadManifest, lockThroughPeriod, nextDocNo, one, parse, readLock, requirePerm, s, setLockDate, thaiToday, unlockPeriod, z, type AuthContext, type Client, type Kernel, type ServiceDefinition } from '@erp/kernel';
 import { documentTotals, isValidThaiTaxId, VAT_RATE } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { statusTh } from '@erp/ui-schema';
@@ -91,6 +91,45 @@ const tierOf = (tiers: Tier[], gross: number) => {
 };
 
 /** 403 unless `a` holds the tier's permission or a higher tier's (a high approver may approve small POs too). */
+/** Approve a draft PO as `a`: segregation of duties (creator ≠ approver when set) and the approval tiers apply. */
+async function approvePo(k: Pick<Kernel, 'emit'>, c: Client, id: string, a: AuthContext) {
+  const po = await loadPo(c, id, true);
+  if (po.status !== 'draft') throw conflict(`อนุมัติใบสั่งซื้อไม่ได้ — อยู่ในสถานะ "${statusTh(po.status)}"`);
+  const cfg = await readSettings(c);
+  // segregation of duties: whoever raised the PO cannot also approve it (setting creatorCannotApprove, default on)
+  if (cfg.creatorCannotApprove && po.created_by && po.created_by === a.userId) {
+    throw forbidden(`ผู้สร้างใบสั่งซื้อ ${po.no} อนุมัติเองไม่ได้ (แยกหน้าที่ผู้สร้าง/ผู้อนุมัติ) — ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ`);
+  }
+  requireApprovalLimit(a, cfg.approvalTiers, po);
+  await c.query(`update purchase_orders set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);
+  await k.emit(c, 'purchasing.po_approved', { poId: po.id, poNo: po.no, supplierName: po.supplier_name, gross: po.gross });
+  return loadPo(c, id);
+}
+
+/**
+ * "อนุมัติ" pressed on a LINE card (automation.line_decision, target purchasing.po): approve as that person with the app's rules
+ * (SoD, approval tiers). Refused when their sessions were revoked after automation last saw their permissions, or they hold no
+ * approve permission. Never throws: the Thai answer goes back as purchasing.line_decision_result.
+ */
+export async function linePoDecision(e: { lineActionId: string; userId: string; userName: string | null; perms: string[]; permsAt: number; entityId: string },
+  ctx: { client: Client; tenantId: string; emit: (type: any, data: any) => Promise<string> }) {
+  const c = ctx.client;
+  const answer = (ok: boolean, message: string) => ctx.emit('purchasing.line_decision_result', { lineActionId: e.lineActionId, userId: e.userId, ok, message });
+  const cutoff = (await c.query<{ before: string }>('select before from _revoked_tokens where user_id = $1', [e.userId])).rows[0];
+  if (cutoff && Number(cutoff.before) > e.permsAt) return answer(false, 'สิทธิ์หรือการเข้าระบบของคุณเปลี่ยนไปหลังจากได้รับข้อความนี้ — เปิดแอปเพื่ออนุมัติแทน');
+  const a: AuthContext = { tenantId: ctx.tenantId, userId: e.userId, userName: e.userName ?? undefined, perms: e.perms };
+  if (!APPROVE_PERMS.some((p) => hasPerm(a, p))) return answer(false, 'บัญชีของคุณไม่มีสิทธิ์อนุมัติใบสั่งซื้อ');
+  await c.query('savepoint line_decision');
+  try {
+    const po = await approvePo({ emit: (_c, type, data) => ctx.emit(type, data) } as Pick<Kernel, 'emit'>, c, e.entityId, a);
+    await c.query('release savepoint line_decision');
+    return answer(true, `✅ อนุมัติใบสั่งซื้อ ${po.no} (${po.supplier_name}) ยอด ${baht(po.gross)} บาทแล้ว`);
+  } catch (err) {
+    await c.query('rollback to savepoint line_decision');
+    return answer(false, `อนุมัติไม่สำเร็จ: ${(err as Error).message}`);
+  }
+}
+
 function requireApprovalLimit(a: AuthContext, tiers: Tier[], po: { no: string; gross: number }) {
   const i = tierOf(tiers, Number(po.gross));
   if (tiers.slice(i).some((t) => hasPerm(a, t.perm))) return;
@@ -154,7 +193,7 @@ export const definition: ServiceDefinition = {
             [po.id, i + 1, l.itemId, l.itemCode, l.itemName ?? null, l.qty, l.unitPrice, t.amounts[i]],
           );
         }
-        await k.emit(c, 'purchasing.po_created', { poId: po.id, poNo: no, supplierName: b.supplierName, gross: t.gross });
+        await k.emit(c, 'purchasing.po_created', { poId: po.id, poNo: no, supplierName: b.supplierName, gross: t.gross, createdById: a.userId });
         return loadPo(c, po.id);
       });
     });
@@ -241,19 +280,7 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       if (!APPROVE_PERMS.some((p) => hasPerm(a, p))) requirePerm(a, 'purchasing.po.approve');
       const { id } = parse(IdParam, req.params);
-      return k.db.tx(a.tenantId, async (c) => {
-        const po = await loadPo(c, id, true);
-        if (po.status !== 'draft') throw conflict(`อนุมัติใบสั่งซื้อไม่ได้ — อยู่ในสถานะ "${statusTh(po.status)}"`);
-        const cfg = await readSettings(c);
-        // segregation of duties: whoever raised the PO cannot also approve it (setting creatorCannotApprove, default on)
-        if (cfg.creatorCannotApprove && po.created_by && po.created_by === a.userId) {
-          throw forbidden(`ผู้สร้างใบสั่งซื้อ ${po.no} อนุมัติเองไม่ได้ (แยกหน้าที่ผู้สร้าง/ผู้อนุมัติ) — ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ`);
-        }
-        requireApprovalLimit(a, cfg.approvalTiers, po);
-        await c.query(`update purchase_orders set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);
-        await k.emit(c, 'purchasing.po_approved', { poId: po.id, poNo: po.no, supplierName: po.supplier_name, gross: po.gross });
-        return loadPo(c, id);
-      });
+      return k.db.tx(a.tenantId, (c) => approvePo(k, c, id, a));
     });
 
     app.post('/purchase-orders/:id/cancel', async (req) => {
@@ -360,7 +387,8 @@ export const definition: ServiceDefinition = {
       return k.db.tx(a.tenantId, async (c) => ({ id: 'lock', ...(await setLockDate(c, b.lockDate, a.userName ?? null)) }));
     });
 
-    app.post('/purchase-orders/:id/receive', async (req) => {
+    // dry-runnable: the receive dialog previews stock, cost, accounting and QC effects before saving (kernel impact.ts)
+    app.post('/purchase-orders/:id/receive', { config: { dryRun: true } }, async (req) => {
       const a = auth(req);
       requirePerm(a, 'purchasing.po.receive');
       const { id } = parse(IdParam, req.params);
@@ -410,6 +438,7 @@ export const definition: ServiceDefinition = {
   },
 
   handlers: {
+    'automation.line_decision': async (e, ctx) => { if (e.target === 'purchasing.po') await linePoDecision(e, ctx); },
     /** Accounting closed a period → receipts / returns dated up to its last day are locked (forward only). */
     'accounting.period_closed': async (e, { client }) => { await lockThroughPeriod(client, e.period, e.closedByName ?? 'ฝ่ายบัญชี (ปิดงวด)'); },
     'accounting.period_reopened': async (e, { client }) => { await unlockPeriod(client, e.period, e.reopenedByName ?? 'ฝ่ายบัญชี (เปิดงวด)'); },

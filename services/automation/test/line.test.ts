@@ -337,3 +337,130 @@ describe('LINE setup, permissions and tenants', () => {
     expect((await t.api('DELETE', `/line/links/${linkId}`, undefined, { token: b.admin })).status).toBe(404);
   });
 });
+
+describe('decide from LINE (approval cards)', () => {
+  const postback = (userId: string, data: string, source: Record<string, string> = { type: 'user', userId }) => ({
+    type: 'postback', mode: 'active', timestamp: Date.now(), webhookEventId: randomUUID(), deliveryContext: { isRedelivery: false },
+    replyToken: `rt-${randomUUID()}`, source, postback: { data },
+  });
+  /** tap a button, return the bot's reply message (text or template object) */
+  const tap = async (key: string, userId: string, data: string, source?: Record<string, string>) => {
+    const ev = postback(userId, data, source);
+    expect((await hook(key, { destination: 'Ubot', events: [ev] })).statusCode).toBe(200);
+    return received.find((x) => x.path === '/v2/bot/message/reply' && x.body.replyToken === ev.replyToken)?.body.messages[0] ?? null;
+  };
+  const cardsTo = (lineUserId: string) => received.filter((x) => x.path === '/v2/bot/message/push' && x.body.to === lineUserId && x.body.messages[0].type === 'flex').map((x) => x.body.messages[0]);
+  const submitted = (approverId: string, requesterId: string, requestId = randomUUID()) => ({
+    requestId, no: 'APV-2569-0042', title: 'ซื้อเครื่องเชื่อม', typeName: 'ขอซื้อ', requesterName: 'มาลี', amount: 48000,
+    nextApproverId: approverId, nextApproverName: 'คุณวิชัย', step: 1, stepCount: 2, requesterId,
+  });
+
+  it('pushes a card with an อนุมัติ button only to the approver; confirm → automation.line_decision with their permissions', async () => {
+    const { tid, key, admin } = await setup();
+    expect((await t.api('POST', '/templates/approval-to-approver/apply', {}, { token: admin })).status).toBe(201);
+    const approver = await link(key, tid, 'Uapprover1', 'คุณวิชัย');
+    const requester = await link(key, tid, 'Urequester1', 'มาลี');
+    const ev = submitted(approver.userId, requester.userId);
+    await t.deliver('approvals.request_submitted', ev, { tenantId: tid });
+
+    const [card] = cardsTo('Uapprover1');
+    expect(card.altText).toContain('APV-2569-0042');
+    expect(card.contents.body.contents[1].text).toBe('คำขอ APV-2569-0042 "ซื้อเครื่องเชื่อม"');
+    const [approve, open] = card.contents.footer.contents;
+    expect(approve.action).toMatchObject({ type: 'postback', label: 'อนุมัติ' });
+    expect(open.action).toEqual({ type: 'uri', label: 'เปิดดู / ไม่อนุมัติ', uri: `https://erp.example.co.th/m/approvals/requestDetail/${ev.requestId}` });
+    expect(cardsTo('Urequester1')).toEqual([]); // nobody else gets a button
+
+    const id = (approve.action.data as string).split(':')[2];
+    // first tap asks; "ยกเลิก" does nothing
+    const ask = await tap(key, 'Uapprover1', approve.action.data);
+    expect(ask).toMatchObject({ type: 'template', template: { type: 'confirm' } });
+    expect(ask.template.text).toContain('ยืนยันอนุมัติ คำขอ APV-2569-0042');
+    expect((await tap(key, 'Uapprover1', `erp:no:${id}`)).text).toContain('ยกเลิกแล้ว');
+    expect(await t.published('automation.line_decision')).toEqual([]);
+
+    // someone else's LINE (a forwarded card) cannot use it; neither can a tap in a group
+    expect((await tap(key, 'Urequester1', `erp:go:${id}`)).text).toContain('ไม่ได้ส่งถึงบัญชีของคุณ');
+    expect(await tap(key, 'Uapprover1', `erp:go:${id}`, { type: 'group', groupId: 'Cgroup', userId: 'Uapprover1' })).toBeNull();
+
+    const go = await tap(key, 'Uapprover1', `erp:go:${id}`);
+    expect(go.text).toContain('กำลังอนุมัติ');
+    const [decision] = await t.published('automation.line_decision');
+    expect(decision.data).toMatchObject({ lineActionId: id, userId: approver.userId, userName: 'คุณวิชัย', perms: ['automation.notify.read'], target: 'approvals.request', entityId: ev.requestId, decision: 'approved' });
+    expect(decision.data.permsAt).toBeGreaterThan(Date.now() / 1000 - 120);
+    // a second confirm (double tap, LINE re-delivery) does not decide twice
+    expect((await tap(key, 'Uapprover1', `erp:go:${id}`)).text).toContain('กดอนุมัติไปแล้ว');
+    expect(await t.published('automation.line_decision')).toHaveLength(1);
+
+    // the module answers → stored and pushed to the person who pressed it
+    await t.deliver('approvals.line_decision_result', { lineActionId: id, userId: approver.userId, ok: true, message: '✅ อนุมัติคำขอ APV-2569-0042 แล้ว' }, { tenantId: tid });
+    expect(pushesTo('Uapprover1')).toContain('✅ อนุมัติคำขอ APV-2569-0042 แล้ว');
+    expect((await tap(key, 'Uapprover1', `erp:go:${id}`)).text).toBe('✅ อนุมัติคำขอ APV-2569-0042 แล้ว');
+  });
+
+  it('leave cards go to the manager; expired buttons and unknown ids are refused', async () => {
+    const { tid, key, admin } = await setup();
+    expect((await t.api('POST', '/templates/leave-to-manager/apply', {}, { token: admin })).status).toBe(201);
+    const boss = await link(key, tid, 'Uboss2', 'หัวหน้า');
+    await t.deliver('hr.leave_requested', { leaveId: randomUUID(), no: 'LV-2569-0007', employeeName: 'สมชาย', typeName: 'ลาพักร้อน', from: '2026-11-25', to: '2026-11-26', days: 2, approverUserId: boss.userId, approverName: 'หัวหน้า' }, { tenantId: tid });
+    const [card] = cardsTo('Uboss2');
+    expect(card.contents.body.contents[1].text).toBe('ใบลา LV-2569-0007 ของ สมชาย');
+    const id = (card.contents.footer.contents[0].action.data as string).split(':')[2];
+    const before = (await t.published('automation.line_decision')).length; // earlier tests share the outbox
+    await t.svc.db.tx(tid, (c) => c.query(`update line_actions set expires_at = now() - interval '1 minute' where id = $1`, [id]));
+    expect((await tap(key, 'Uboss2', `erp:go:${id}`)).text).toContain('หมดอายุแล้ว');
+    expect((await tap(key, 'Uboss2', `erp:go:${randomUUID()}`)).text).toContain('ไม่พบรายการนี้');
+    expect(await tap(key, 'Uboss2', 'erp:go:not-a-uuid')).toBeNull();
+    expect(await t.published('automation.line_decision')).toHaveLength(before);
+  });
+});
+
+describe('decide from LINE: documents approved by permission (PO, expense claim)', () => {
+  const cardsTo = (lineUserId: string) => received.filter((x) => x.path === '/v2/bot/message/push' && x.body.to === lineUserId && x.body.messages[0].type === 'flex').map((x) => x.body.messages[0]);
+  async function linkWith(key: string, tid: string, lineUserId: string, perms: string[], name: string) {
+    const userId = randomUUID();
+    const token = t.token(['automation.notify.read', ...perms], tid, { userId, userName: name });
+    const code = (await t.api('POST', '/line/link-code', {}, { token })).body.code;
+    expect(await say(key, lineUserId, `ผูกบัญชี ${code}`)).toContain('ผูกบัญชีเรียบร้อย');
+    return { userId, token };
+  }
+
+  it('sends the PO card to linked users allowed to approve, never to its creator or to others', async () => {
+    const { tid, key, admin } = await setup();
+    expect((await t.api('POST', '/templates/po-approval-line/apply', {}, { token: admin })).status).toBe(201);
+    const boss = await linkWith(key, tid, 'Upo-boss', ['purchasing.po.approve'], 'ผู้จัดการ');
+    const md = await linkWith(key, tid, 'Upo-md', ['purchasing.*'], 'MD');
+    const buyer = await linkWith(key, tid, 'Upo-buyer', ['purchasing.po.write'], 'จัดซื้อ');
+    const creatorApprover = await linkWith(key, tid, 'Upo-self', ['purchasing.po.approve'], 'สร้างเอง');
+    const poId = randomUUID();
+    await t.deliver('purchasing.po_created', { poId, poNo: 'PO-2569-0101', supplierName: 'สยามเหล็ก', gross: 64200, createdById: creatorApprover.userId }, { tenantId: tid });
+    expect(cardsTo('Upo-boss')).toHaveLength(1);
+    expect(cardsTo('Upo-md')).toHaveLength(1);
+    expect(cardsTo('Upo-buyer')).toEqual([]);
+    expect(cardsTo('Upo-self')).toEqual([]);
+    expect(cardsTo('Upo-boss')[0].contents.body.contents[1].text).toBe('ใบสั่งซื้อ PO-2569-0101 สยามเหล็ก 64,200 บาท');
+
+    const id = (cardsTo('Upo-boss')[0].contents.footer.contents[0].action.data as string).split(':')[2];
+    const before = (await t.published('automation.line_decision')).length;
+    const ev = postbackEvent('Upo-boss', `erp:go:${id}`);
+    await hook(key, { destination: 'Ubot', events: [ev] });
+    const all = await t.published('automation.line_decision');
+    expect(all).toHaveLength(before + 1);
+    expect(all[all.length - 1].data).toMatchObject({ target: 'purchasing.po', entityId: poId, userId: boss.userId, perms: ['automation.notify.read', 'purchasing.po.approve'] });
+    void md; void buyer;
+  });
+
+  it('refuses "approvers" on events without approver permissions and for anything but personal LINE', async () => {
+    const { admin } = await setup();
+    const bad = await t.api('POST', '/rules', { name: 'x', eventType: 'sales.invoiced', actions: [{ type: 'line', to: 'approvers' }] }, { token: admin });
+    expect(bad.status).toBe(400);
+    const notify = await t.api('POST', '/rules', { name: 'y', eventType: 'purchasing.po_created', actions: [{ type: 'notify', to: 'approvers' }] }, { token: admin });
+    expect(notify.status).toBe(400);
+  });
+});
+
+/** a LINE postback event (button tap) */
+function postbackEvent(userId: string, data: string) {
+  return { type: 'postback', mode: 'active', timestamp: Date.now(), webhookEventId: randomUUID(), deliveryContext: { isRedelivery: false },
+    replyToken: `rt-${randomUUID()}`, source: { type: 'user', userId }, postback: { data } };
+}

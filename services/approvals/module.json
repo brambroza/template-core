@@ -8,12 +8,17 @@
   "requires": [
     "identity"
   ],
-  "enhancedBy": [],
+  "enhancedBy": [
+    "automation"
+  ],
   "publishes": [
     "approvals.request_submitted",
-    "approvals.request_decided"
+    "approvals.request_decided",
+    "approvals.line_decision_result"
   ],
-  "subscribes": [],
+  "subscribes": [
+    "automation.line_decision"
+  ],
   "permissions": [
     {
       "key": "approvals.request.read",

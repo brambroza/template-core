@@ -146,6 +146,45 @@ function refuseSelfApproval(owner: string, a: AuthContext, what: string) {
   if (owner === a.userId) throw forbidden(`อนุมัติ${what}ของตนเองไม่ได้ — ให้ผู้อนุมัติคนอื่นอนุมัติ`);
 }
 
+/** Approve a submitted claim as `a`: never one's own, and over the monthly limit only with approve-over-limit (wave 8). */
+async function approveClaim(c: Client, id: string, a: AuthContext, note: string | null) {
+  const cl = await loadClaim(c, id, a, true);
+  if (cl.status !== 'submitted') throw conflict(`อนุมัติใบเบิกไม่ได้ — อยู่ในสถานะ "${statusTh(cl.status)}"`);
+  refuseSelfApproval(cl.claimant_id, a, 'ใบเบิก');
+  // over the monthly limit (re-checked now) → only someone with approve-over-limit (e.g. the executive), not the line approver (wave 8)
+  await refreshWarnings(c, id);
+  const lim = (await c.query('select over_limit, warnings from claims where id = $1', [id])).rows[0];
+  if (lim.over_limit && !hasPerm(a, 'expense.claim.approve-over-limit')) {
+    const why = (lim.warnings as any[]).filter((w) => w.kind === 'limit').map((w) => w.message).join(' · ');
+    throw forbidden(`ใบเบิก ${cl.no} เกินวงเงินรายเดือน (${why}) — ต้องให้ผู้มีสิทธิ์ "อนุมัติใบเบิกที่เกินวงเงินรายเดือน" (เช่น ผู้บริหาร) อนุมัติ`);
+  }
+  await c.query(`update claims set status = 'approved', approved_by = $2, approved_by_name = $4, approved_at = now(), last_note = coalesce($3, last_note), updated_at = now() where id = $1`, [id, a.userId, note, a.userName ?? null]);
+  return loadClaim(c, id, a);
+}
+
+/**
+ * "อนุมัติ" pressed on a LINE card (automation.line_decision, target expense.claim): approve as that person with the app's rules.
+ * Refused when their sessions were revoked after automation last saw their permissions, or they lack expense.claim.approve. Never throws.
+ */
+export async function lineClaimDecision(e: { lineActionId: string; userId: string; userName: string | null; perms: string[]; permsAt: number; entityId: string },
+  ctx: { client: Client; tenantId: string; emit: (type: any, data: any) => Promise<string> }) {
+  const c = ctx.client;
+  const answer = (ok: boolean, message: string) => ctx.emit('expense.line_decision_result', { lineActionId: e.lineActionId, userId: e.userId, ok, message });
+  const cutoff = (await c.query<{ before: string }>('select before from _revoked_tokens where user_id = $1', [e.userId])).rows[0];
+  if (cutoff && Number(cutoff.before) > e.permsAt) return answer(false, 'สิทธิ์หรือการเข้าระบบของคุณเปลี่ยนไปหลังจากได้รับข้อความนี้ — เปิดแอปเพื่ออนุมัติแทน');
+  const a: AuthContext = { tenantId: ctx.tenantId, userId: e.userId, userName: e.userName ?? undefined, perms: e.perms };
+  if (!hasPerm(a, 'expense.claim.approve')) return answer(false, 'บัญชีของคุณไม่มีสิทธิ์อนุมัติใบเบิก');
+  await c.query('savepoint line_decision');
+  try {
+    const cl = await approveClaim(c, e.entityId, a, 'อนุมัติผ่าน LINE');
+    await c.query('release savepoint line_decision');
+    return answer(true, `✅ อนุมัติใบเบิก ${cl.no} ของ ${cl.claimant_name ?? '-'} ยอด ${Number(cl.total).toLocaleString('en-US', { minimumFractionDigits: 2 })} บาทแล้ว`);
+  } catch (err) {
+    await c.query('rollback to savepoint line_decision');
+    return answer(false, `อนุมัติไม่สำเร็จ: ${(err as Error).message}`);
+  }
+}
+
 const SettingsInput = z.object({ separatePayer: z.boolean() });
 async function readSettings(c: Client) {
   const r = (await c.query('select separate_payer from settings')).rows[0];
@@ -473,20 +512,7 @@ export const definition: ServiceDefinition = {
       requirePerm(a, 'expense.claim.approve');
       const { id } = parse(IdParam, req.params);
       const b = parse(OptionalNote, req.body ?? {});
-      return k.db.tx(a.tenantId, async (c) => {
-        const cl = await loadClaim(c, id, a, true);
-        if (cl.status !== 'submitted') throw conflict(`อนุมัติใบเบิกไม่ได้ — อยู่ในสถานะ "${statusTh(cl.status)}"`);
-        refuseSelfApproval(cl.claimant_id, a, 'ใบเบิก');
-        // over the monthly limit (re-checked now) → only someone with approve-over-limit (e.g. the executive), not the line approver (wave 8)
-        await refreshWarnings(c, id);
-        const lim = (await c.query('select over_limit, warnings from claims where id = $1', [id])).rows[0];
-        if (lim.over_limit && !hasPerm(a, 'expense.claim.approve-over-limit')) {
-          const why = (lim.warnings as any[]).filter((w) => w.kind === 'limit').map((w) => w.message).join(' · ');
-          throw forbidden(`ใบเบิก ${cl.no} เกินวงเงินรายเดือน (${why}) — ต้องให้ผู้มีสิทธิ์ "อนุมัติใบเบิกที่เกินวงเงินรายเดือน" (เช่น ผู้บริหาร) อนุมัติ`);
-        }
-        await c.query(`update claims set status = 'approved', approved_by = $2, approved_by_name = $4, approved_at = now(), last_note = coalesce($3, last_note), updated_at = now() where id = $1`, [id, a.userId, b.note ?? null, a.userName ?? null]);
-        return loadClaim(c, id, a);
-      });
+      return k.db.tx(a.tenantId, (c) => approveClaim(c, id, a, b.note ?? null));
     });
 
     for (const [path, status] of [['reject', 'rejected'], ['return', 'returned']] as const) {
@@ -767,6 +793,7 @@ export const definition: ServiceDefinition = {
   },
 
   handlers: {
+    'automation.line_decision': async (e, ctx) => { if (e.target === 'expense.claim') await lineClaimDecision(e, ctx); },
     /** Accounting closed a period → payments dated up to its last day are locked (forward only). */
     'accounting.period_closed': async (e, { client }) => { await lockThroughPeriod(client, e.period, e.closedByName ?? 'ฝ่ายบัญชี (ปิดงวด)'); },
     'accounting.period_reopened': async (e, { client }) => { await unlockPeriod(client, e.period, e.reopenedByName ?? 'ฝ่ายบัญชี (เปิดงวด)'); },

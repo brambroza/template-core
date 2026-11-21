@@ -8,9 +8,20 @@
   "requires": [
     "identity"
   ],
-  "enhancedBy": ["accounting"],
-  "publishes": ["expense.claim_submitted", "expense.claim_paid"],
-  "subscribes": ["accounting.period_closed", "accounting.period_reopened"],
+  "enhancedBy": [
+    "accounting",
+    "automation"
+  ],
+  "publishes": [
+    "expense.claim_submitted",
+    "expense.claim_paid",
+    "expense.line_decision_result"
+  ],
+  "subscribes": [
+    "accounting.period_closed",
+    "accounting.period_reopened",
+    "automation.line_decision"
+  ],
   "permissions": [
     {
       "key": "expense.claim.read",
@@ -44,7 +55,13 @@
       "key": "expense.attachment.delete",
       "label": "ลบไฟล์แนบของผู้อื่น"
     },
-    { "key": "expense.lock.write", "label": "ตั้งวันที่ปิดงวดการจ่ายเงิน" },
-    { "key": "expense.lock.override", "label": "จ่ายเงินย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)" }
+    {
+      "key": "expense.lock.write",
+      "label": "ตั้งวันที่ปิดงวดการจ่ายเงิน"
+    },
+    {
+      "key": "expense.lock.override",
+      "label": "จ่ายเงินย้อนหลังเข้างวดที่ปิดแล้ว (ต้องระบุเหตุผล)"
+    }
   ]
 }

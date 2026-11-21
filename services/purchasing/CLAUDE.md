@@ -46,7 +46,11 @@ Purchase orders with Thai VAT and goods receipt; supplier bills (payables), supp
 ## Events
 - publishes `purchasing.goods_received` per receipt (only the quantities received this time, with unit price) → Inventory stock-in, Costing moving average;
   wave 5 adds the PO's `vatMode`, this receipt's `net`/`vat`/`gross` (`documentTotals` of the received lines) and line `vatRate` (0.07) → Accounting books ภาษีซื้อ apart
-- publishes `purchasing.po_created` and `purchasing.po_approved` → Automation (e.g. big-PO approval alert)
+- publishes `purchasing.po_created` (+ optional `createdById`: the creator gets no LINE approve button) and `purchasing.po_approved` → Automation (e.g. big-PO approval alert)
+- subscribes `automation.line_decision` (target `purchasing.po`): an approver pressed อนุมัติ + ยืนยัน on a LINE card → `linePoDecision()` runs `approvePo()`
+  (shared with `POST /purchase-orders/:id/approve`: SoD creator ≠ approver, approval tiers) as that user; refused when their revocation cutoff is later
+  than `permsAt` or they hold no approve permission. Never throws; publishes `purchasing.line_decision_result` (lineActionId, userId, ok, message).
+- `POST /purchase-orders/:id/receive` is dry-runnable (`?_dryRun=1`, kernel impact.ts) — the receive dialog previews stock, cost, accounting and QC
 - publishes `purchasing.goods_returned` per return (lines with unit price + reason) → Inventory issues the qty (QC-HOLD for rejected material);
   wave 5 adds `vatMode`, the return's `net`/`vat`/`gross` and `returnDate` (always sent since wave 8) → Accounting reverses ภาษีซื้อ.
   Costing does not reverse the moving average yet (extension idea).

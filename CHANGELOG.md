@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — 2026-11-20 · ใช้งานเร็วขึ้น: ตัดสินใจจากหน้าแรกและ LINE, เห็นผลก่อนกด
+
+- **Login with e-mail only**: no company code; an e-mail belongs to one user across all companies (identity migration 003, 409 `email_taken`).
+  E-mails shared by two companies before the change still log in: the password picks the account, or the app asks for the company code.
+- **ปฏิทิน พ.ศ.**: every date / month box (forms, filters, date ranges) shows and accepts พ.ศ. (`03/10/2569`, `3 ต.ค. 69` …) with a calendar
+  (web) or เมื่อวาน/วันนี้/พรุ่งนี้ (mobile); values stay ISO — no service changed.
+- **ต้องตัดสินใจวันนี้** on the home page: POs, claims, advances, leave, bookings, repair jobs and approval requests waiting on *me*, most
+  pressing first (overdue → urgent → due today → longest waiting), with the approve / reject / accept buttons on the card (`ModuleUi.todo`).
+- **Approve from LINE**: approvers' personal LINE alerts for approval requests and leave are cards with **อนุมัติ** (+ confirm); the
+  owning module decides as that person with the app's rules and the answer comes back in the chat. POs and expense claims go to every
+  linked user allowed to approve them (never the person who raised it) — templates `po-approval-line`, `claim-approval-line`. Refused when the person's roles changed
+  or they logged out everywhere after the app last saw their permissions. Reject still opens the app (a reason is required).
+- **ผลกระทบเมื่อกดยืนยัน**: "รับของ" on a PO shows, before saving, the stock before → after, the new average cost, the journal accounting
+  would post (or why it could not) and the QC inspections that would open. Kernel dry runs (`?_dryRun=1`, rolled back) + `/_impact`.
+  Also on "รายงานผลผลิต" (materials out, finished goods in, job cost, final QC) and "บันทึกส่งของ" (stock that would go negative in red).
+- **Mobile app**: "ต้องตัดสินใจวันนี้" on the home screen, the impact panel in action dialogs, and พ.ศ. month boxes.
+
 ## 0.3.1 — 2026-10-03 · ภาษีไทยครบรอบเดือน + ยกเลิกเซสชัน
 
 **In numbers:** 22 modules (new: `etax`) · 931 automated tests · **77 UAT cases (UAT-01..77)** all passing in Chromium · roadmap 553 of 1,060 functions done.

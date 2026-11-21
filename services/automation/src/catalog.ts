@@ -16,6 +16,16 @@ export interface EventInfo {
   level: 'info' | 'warn' | 'stop' | 'ok';
   /** fields holding a user id (identity) — a notify action can be addressed to them: `to: 'field:<key>'` */
   userFields?: { key: string; label: string }[];
+  /**
+   * A decision the recipient can make from LINE: personal LINE pushes of this event become a card with an "อนุมัติ" button
+   * (+ "เปิดดู" when PUBLIC_APP_URL is set). `target` = the module that decides (it subscribes to automation.line_decision),
+   * `entityField` = the record id in the event, `title` = what is being approved ({{field}} placeholders). Only recipients named
+   * by a `deciders` field get the button (the requester told about the same event gets plain text).
+   * Documents approved by a permission rather than a named person (PO, expense claim) set `approverPerms`: a personal LINE action
+   * `to: 'approvers'` then goes to every linked user whose last-seen permissions hold one of them, except the users in `exclude`
+   * fields (whoever raised it — they may not approve their own).
+   */
+  decide?: { target: 'approvals.request' | 'hr.leave' | 'purchasing.po' | 'expense.claim'; entityField: string; title: string; deciders: string[]; approverPerms?: string[]; exclude?: string[] };
 }
 
 export const EVENTS: EventInfo[] = [
@@ -30,7 +40,10 @@ export const EVENTS: EventInfo[] = [
     message: 'ซ่อม {{machineCode}} เสร็จแล้ว ({{workOrderNo}}) เครื่องหยุด {{downtimeMinutes}} นาที', link: '/m/maintenance/woDetail/{{workOrderId}}' },
   { type: 'purchasing.po_created', module: 'purchasing', label: 'สร้างใบสั่งซื้อใหม่', level: 'info',
     fields: [{ key: 'poNo', label: 'เลขที่ PO' }, { key: 'supplierName', label: 'ผู้ขาย' }, { key: 'gross', label: 'ยอดรวม', numeric: true }],
-    message: 'ใบสั่งซื้อ {{poNo}} จาก {{supplierName}} ยอด {{gross}} บาท รออนุมัติ', link: '/m/purchasing/poDetail/{{poId}}' },
+    userFields: [{ key: 'createdById', label: 'ผู้สร้างใบสั่งซื้อ' }],
+    message: 'ใบสั่งซื้อ {{poNo}} จาก {{supplierName}} ยอด {{gross}} บาท รออนุมัติ', link: '/m/purchasing/poDetail/{{poId}}',
+    decide: { target: 'purchasing.po', entityField: 'poId', title: 'ใบสั่งซื้อ {{poNo}} {{supplierName}} {{gross}} บาท', deciders: [],
+      approverPerms: ['purchasing.po.approve', 'purchasing.po.approve-high'], exclude: ['createdById'] } },
   { type: 'purchasing.po_approved', module: 'purchasing', label: 'อนุมัติใบสั่งซื้อแล้ว', level: 'info',
     fields: [{ key: 'poNo', label: 'เลขที่ PO' }, { key: 'supplierName', label: 'ผู้ขาย' }, { key: 'gross', label: 'ยอดรวม', numeric: true }],
     message: 'อนุมัติ {{poNo}} ({{supplierName}}) ยอด {{gross}} บาทแล้ว', link: '/m/purchasing/poDetail/{{poId}}' },
@@ -58,7 +71,8 @@ export const EVENTS: EventInfo[] = [
     fields: [{ key: 'no', label: 'เลขที่คำขอ' }, { key: 'title', label: 'เรื่อง' }, { key: 'typeName', label: 'ประเภทคำขอ' }, { key: 'requesterName', label: 'ผู้ขอ' },
       { key: 'amount', label: 'จำนวนเงิน', numeric: true }, { key: 'nextApproverName', label: 'ผู้อนุมัติขั้นนี้' }, { key: 'step', label: 'ขั้นที่', numeric: true }],
     userFields: [{ key: 'nextApproverId', label: 'ผู้อนุมัติขั้นนี้' }, { key: 'delegateId', label: 'ผู้อนุมัติแทน (ช่วงผู้อนุมัติไม่อยู่)' }, { key: 'requesterId', label: 'ผู้ขอ' }],
-    message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอ {{nextApproverName}} อนุมัติ (ขั้นที่ {{step}}/{{stepCount}})', link: '/m/approvals/requestDetail/{{requestId}}' },
+    message: 'คำขอ {{no}} "{{title}}" ({{typeName}}) จาก {{requesterName}} รอ {{nextApproverName}} อนุมัติ (ขั้นที่ {{step}}/{{stepCount}})', link: '/m/approvals/requestDetail/{{requestId}}',
+    decide: { target: 'approvals.request', entityField: 'requestId', title: 'คำขอ {{no}} "{{title}}"', deciders: ['nextApproverId', 'delegateId'] } },
   { type: 'approvals.request_decided', module: 'approvals', label: 'คำขออนุมัติมีผลแล้ว', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่คำขอ' }, { key: 'title', label: 'เรื่อง' }, { key: 'decision', label: 'ผล (approved / rejected / returned)' }, { key: 'requesterName', label: 'ผู้ขอ' },
       { key: 'byName', label: 'ผู้พิจารณา' }, { key: 'note', label: 'หมายเหตุ' }],
@@ -67,7 +81,9 @@ export const EVENTS: EventInfo[] = [
   { type: 'expense.claim_submitted', module: 'expense', label: 'มีใบเบิกค่าใช้จ่ายรออนุมัติ', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่ใบเบิก' }, { key: 'claimantName', label: 'ผู้เบิก' }, { key: 'total', label: 'ยอดเบิก', numeric: true }, { key: 'overLimit', label: 'เกินวงเงิน (true / false)' }],
     userFields: [{ key: 'claimantId', label: 'ผู้เบิก' }],
-    message: 'ใบเบิก {{no}} ของ {{claimantName}} ยอด {{total}} บาท รออนุมัติ', link: '/m/expense/claimDetail/{{claimId}}' },
+    message: 'ใบเบิก {{no}} ของ {{claimantName}} ยอด {{total}} บาท รออนุมัติ', link: '/m/expense/claimDetail/{{claimId}}',
+    decide: { target: 'expense.claim', entityField: 'claimId', title: 'ใบเบิก {{no}} ของ {{claimantName}} {{total}} บาท', deciders: [],
+      approverPerms: ['expense.claim.approve'], exclude: ['claimantId'] } },
   { type: 'expense.claim_paid', module: 'expense', label: 'จ่ายเงินตามใบเบิกแล้ว', level: 'ok',
     fields: [{ key: 'no', label: 'เลขที่ใบเบิก' }, { key: 'claimantName', label: 'ผู้เบิก' }, { key: 'total', label: 'ยอดเบิก', numeric: true }],
     userFields: [{ key: 'claimantId', label: 'ผู้เบิก' }],
@@ -76,7 +92,8 @@ export const EVENTS: EventInfo[] = [
     fields: [{ key: 'no', label: 'เลขที่ใบลา' }, { key: 'employeeName', label: 'พนักงาน' }, { key: 'typeName', label: 'ประเภทการลา' }, { key: 'from', label: 'ลาตั้งแต่' },
       { key: 'to', label: 'ถึง' }, { key: 'days', label: 'จำนวนวัน', numeric: true }, { key: 'approverName', label: 'หัวหน้าผู้อนุมัติ' }],
     userFields: [{ key: 'approverUserId', label: 'หัวหน้าผู้อนุมัติ (ตามผังองค์กร)' }, { key: 'employeeUserId', label: 'พนักงานผู้ลา' }],
-    message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รออนุมัติ', link: '/m/hr/leaveDetail/{{leaveId}}' },
+    message: '{{employeeName}} ขอ{{typeName}} {{from}} ถึง {{to}} ({{days}} วัน) ใบลา {{no}} รออนุมัติ', link: '/m/hr/leaveDetail/{{leaveId}}',
+    decide: { target: 'hr.leave', entityField: 'leaveId', title: 'ใบลา {{no}} ของ {{employeeName}}', deciders: ['approverUserId'] } },
   { type: 'hr.leave_decided', module: 'hr', label: 'ใบลามีผลแล้ว', level: 'info',
     fields: [{ key: 'no', label: 'เลขที่ใบลา' }, { key: 'employeeName', label: 'พนักงาน' }, { key: 'typeName', label: 'ประเภทการลา' }, { key: 'decision', label: 'ผล (approved / rejected)' },
       { key: 'byName', label: 'ผู้พิจารณา' }, { key: 'note', label: 'หมายเหตุ' }],
@@ -166,7 +183,12 @@ export interface ActionSpec {
 export const TEMPLATES: Template[] = [
   { id: 'low-stock-alert', name: 'เตือนของใกล้หมด', description: 'แจ้งทุกคนเมื่อสินค้าต่ำกว่าจุดสั่งซื้อ', eventType: 'inventory.low_stock', conditions: [], actions: [{ type: 'notify' }] },
   { id: 'breakdown-alert', name: 'เครื่องเสีย แจ้งช่างทันที', description: 'แจ้งในแอปและส่ง LINE กลุ่มช่างเมื่อมีการแจ้งซ่อม', eventType: 'maintenance.breakdown_reported', conditions: [], actions: [{ type: 'notify' }, { type: 'line', target: '' }] },
-  { id: 'big-po-approval', name: 'PO ยอดสูงรออนุมัติ', description: 'แจ้งผู้จัดการเมื่อมีใบสั่งซื้อเกิน 50,000 บาท', eventType: 'purchasing.po_created', conditions: [{ field: 'gross', op: 'gt', value: 50000 }], actions: [{ type: 'notify', message: 'PO ยอดสูง {{poNo}} จาก {{supplierName}} {{gross}} บาท รอคุณอนุมัติ' }] },
+  { id: 'big-po-approval', name: 'PO ยอดสูงรออนุมัติ', description: 'แจ้งผู้จัดการเมื่อมีใบสั่งซื้อเกิน 50,000 บาท — ในแอป และการ์ดอนุมัติทาง LINE ถึงผู้มีสิทธิ์อนุมัติที่ผูก LINE ไว้', eventType: 'purchasing.po_created', conditions: [{ field: 'gross', op: 'gt', value: 50000 }],
+    actions: [{ type: 'notify', message: 'PO ยอดสูง {{poNo}} จาก {{supplierName}} {{gross}} บาท รอคุณอนุมัติ' }, { type: 'line', to: 'approvers', message: 'PO ยอดสูง {{poNo}} จาก {{supplierName}} {{gross}} บาท รออนุมัติ' }] },
+  { id: 'po-approval-line', name: 'ใบสั่งซื้อรออนุมัติ — อนุมัติทาง LINE', description: 'ส่งการ์ดมีปุ่มอนุมัติทาง LINE ถึงผู้มีสิทธิ์อนุมัติใบสั่งซื้อที่ผูก LINE ไว้ ทุกครั้งที่มีใบสั่งซื้อใหม่ (ไม่ส่งถึงคนสร้าง)', eventType: 'purchasing.po_created', conditions: [],
+    actions: [{ type: 'line', to: 'approvers' }] },
+  { id: 'claim-approval-line', name: 'ใบเบิกรออนุมัติ — อนุมัติทาง LINE', description: 'ส่งการ์ดมีปุ่มอนุมัติทาง LINE ถึงผู้มีสิทธิ์อนุมัติใบเบิกที่ผูก LINE ไว้ (ไม่ส่งถึงผู้เบิก)', eventType: 'expense.claim_submitted', conditions: [],
+    actions: [{ type: 'line', to: 'approvers' }] },
   { id: 'goods-arrived', name: 'ของเข้าแล้ว แจ้งฝ่ายผลิต', description: 'แจ้งเมื่อรับวัตถุดิบเข้าคลัง', eventType: 'purchasing.goods_received', conditions: [], actions: [{ type: 'notify' }] },
   { id: 'big-sale', name: 'ปิดการขายก้อนใหญ่', description: 'แจ้งเมื่อยืนยันคำสั่งซื้อเกิน 100,000 บาท', eventType: 'sales.order_confirmed', conditions: [{ field: 'total', op: 'gte', value: 100000 }], actions: [{ type: 'notify', message: '🎉 ปิดการขาย {{customerName}} {{total}} บาท ({{orderNo}})' }] },
   { id: 'invoice-issued', name: 'ออกใบกำกับแล้ว แจ้งบัญชี', description: 'ส่งข้อมูลใบกำกับไปยังระบบบัญชีผ่าน webhook', eventType: 'sales.invoiced', conditions: [], actions: [{ type: 'notify' }, { type: 'webhook', target: '' }] },

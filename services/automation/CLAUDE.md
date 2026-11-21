@@ -10,7 +10,10 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 - `notifications` — the bell: `level (info|warn|stop|ok)`, `title`, `body`, `link` (in-app path), `recipient_user_id` (null = broadcast), `read_at` (personal ones; also legacy broadcast reads)
 - `notification_reads` — per-user read state of broadcast notifications (`notification_id`, `user_id`, `read_at`)
 - `line_settings` — one row per tenant: `webhook_secret` (second half of the webhook key) · `line_links` — ERP `user_id` ↔ `line_user_id` (+ names), unique both ways per tenant
-- `line_link_codes` — 6-digit one-time codes (10 min, single use, `used_at`, `line_user_id`) · `line_link_attempts` — wrong codes per LINE account (5 per 15 min) and per company (30 per 15 min, security review 0.3 SEC-09)
+- `line_actions` — one "อนุมัติ" button pushed to one person (migration 004): `user_id`, `target`, `entity_id`, `title`, `expires_at` (72 h),
+  `confirmed_at` (set once — a second confirm does nothing), `result_ok/result_message` (the deciding module's answer)
+- `line_links.perms/perms_at` — the permissions of the user's last valid token (bell polling, `/line/me`, link code), sent with a LINE decision
+- `line_link_codes` — 6-digit one-time codes (10 min, single use, `used_at`, `line_user_id`, `perms` of the token that asked) · `line_link_attempts` — wrong codes per LINE account (5 per 15 min) and per company (30 per 15 min, security review 0.3 SEC-09)
 
 ## Behaviour
 - `src/catalog.ts` is the single list of events a rule can react to (Thai label, usable fields, default
@@ -43,6 +46,15 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
   otherwise always 200 (each event handled in its own tenant transaction, errors logged; replies sent after commit).
   Key = tenant id (32 hex) + `line_settings.webhook_secret` (32 hex): the tenant comes from the key and the secret is compared inside that tenant's
   RLS transaction — no global lookup table (verify forbids tables without RLS). The gateway forwards `/api/automation/line/webhook/:key` byte for byte.
+- **Decide from LINE** (`src/line.ts`): events with `decide` in the catalogue (`approvals.request_submitted` → deciders `nextApproverId,delegateId`;
+  `hr.leave_requested` → `approverUserId`) push a Flex card instead of text to those recipients: title, alert text, **อนุมัติ** (postback
+  `erp:ask:<line_actions.id>`) and **เปิดดู / ไม่อนุมัติ** (web link; rejecting needs a reason typed in the app). Tap → confirm template
+  (`erp:go` / `erp:no`) → `automation.line_decision { lineActionId, userId, userName, perms, permsAt, target, entityId }`; the owning module decides
+  with its own rules and answers `<module>.line_decision_result` → stored on the row and pushed to that person. Only the 1:1 chat; only the
+  linked LINE of `line_actions.user_id` (a forwarded card answers "not yours"); expired / used buttons say so; no perms snapshot yet → "open the app once".
+  Documents approved by permission (PO: `purchasing.po.approve|approve-high`, expense claim: `expense.claim.approve`) use recipient `to: 'approvers'`
+  (personal LINE only, events with `decide.approverPerms`): every linked user whose `line_links.perms` hold one of them, minus `decide.exclude`
+  fields (`createdById`, `claimantId`). Templates `po-approval-line`, `claim-approval-line`; `big-po-approval` also sends the cards.
 - **LINE commands** (1:1 chat, linked users): `แจ้งเตือน` (last 5 personal notifications), `ยกเลิกผูกบัญชี`, `ช่วยเหลือ`; in groups only `ไอดีกลุ่ม`
   (and the bot posts the group id when it joins). Unknown text gets **no** reply — the OA may also be used for human chat.
 - Env for LINE: `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_OA_ID` (add-friend link/QR), `PUBLIC_BASE_URL` (public https of the gateway → webhook URL;
@@ -62,7 +74,8 @@ notify in the app, push to LINE, or call a webhook. Requires only `identity`; ev
 - perms: `automation.rule.read`, `automation.rule.write`, `automation.notify.read`, `automation.line.manage`
 
 ## Events
-- publishes: none · subscribes: see `module.json` — factory: stock low, PO created/approved/received, SO confirmed/delivered/invoiced, production completed, breakdown, work completed;
+- publishes `automation.line_decision` (see Decide from LINE) · subscribes `approvals.line_decision_result`, `hr.line_decision_result` (not rule
+  triggers — `DECISION_RESULTS` in service.ts) and, for rules, see `module.json` — factory: stock low, PO created/approved/received, SO confirmed/delivered/invoiced, production completed, breakdown, work completed;
   office/service: `approvals.request_submitted|request_decided`, `expense.claim_submitted|claim_paid`, `hr.leave_requested|leave_decided`,
   `helpdesk.ticket_created|ticket_resolved`, `crm.lead_created|quotation_accepted`, `quality.inspection_completed|ncr_raised`, `booking.requested`, `assets.repair_reported`,
   `sales.payment_received`; wave 5: `contracts.visit_due` (userField `technicianId`), `contracts.contract_expiring`, `payroll.run_paid`, `hr.employee_upserted` (userField `userId`, no template).
