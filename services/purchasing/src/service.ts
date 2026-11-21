@@ -98,7 +98,11 @@ async function approvePo(k: Pick<Kernel, 'emit'>, c: Client, id: string, a: Auth
   const cfg = await readSettings(c);
   // segregation of duties: whoever raised the PO cannot also approve it (setting creatorCannotApprove, default on)
   if (cfg.creatorCannotApprove && po.created_by && po.created_by === a.userId) {
-    throw forbidden(`ผู้สร้างใบสั่งซื้อ ${po.no} อนุมัติเองไม่ได้ (แยกหน้าที่ผู้สร้าง/ผู้อนุมัติ) — ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ`);
+    // whoever may change the rule gets told where (a one-person company would otherwise be stuck at its first PO)
+    const howToOff = hasPerm(a, 'purchasing.settings.write')
+      ? ' · ถ้าบริษัทมีคนทำจัดซื้อและอนุมัติคนเดียว ปิดข้อนี้ได้ที่ จัดซื้อ › ตั้งค่าการอนุมัติใบสั่งซื้อ'
+      : '';
+    throw forbidden(`ผู้สร้างใบสั่งซื้อ ${po.no} อนุมัติเองไม่ได้ (แยกหน้าที่ผู้สร้าง/ผู้อนุมัติ) — ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ${howToOff}`);
   }
   requireApprovalLimit(a, cfg.approvalTiers, po);
   await c.query(`update purchase_orders set status = 'approved', approved_by = $2, approved_by_name = $3, approved_at = now() where id = $1`, [id, a.userId, a.userName ?? null]);

@@ -29,6 +29,8 @@ Purchase orders with Thai VAT and goods receipt; supplier bills (payables), supp
   `purchasing.goods_received` so accounting's purchase VAT register shows the supplier's invoice instead of our PO number. Empty strings = not given.
 - `GET /lock` (`purchasing.po.read`) · `POST /lock { lockDate | null }` (`purchasing.lock.write`) — wave 8 lock date
 - `GET /summary` (dashboard: to approve, to receive, spend this month, 6-month trend)
+- SoD 403 for the creator: when the creator also holds `purchasing.settings.write` (owner / admin), the message adds where to switch the rule off
+  (จัดซื้อ › ตั้งค่าการอนุมัติใบสั่งซื้อ) — a one-person company is otherwise stuck at its first PO. The default stays on.
 - `GET /settings` (`purchasing.po.read`) → `{ creatorCannotApprove, approvalTiers, standardApprovalLimit, tiersText }` ·
   `PUT /settings { creatorCannotApprove?, approvalTiers? | standardApprovalLimit? }` (`purchasing.settings.write`; tiers ascending, last `upTo: null`,
   perms only the two approve perms; `standardApprovalLimit` = form shortcut, 0 = one tier without limit)

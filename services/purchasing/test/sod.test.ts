@@ -43,7 +43,11 @@ describe('purchase order approval controls', () => {
     // even an all-powerful admin who raised the PO
     const admin = person('Admin', ['*']);
     const adminPo = await createPo(admin, 30);
-    expect((await t.api('POST', `/purchase-orders/${adminPo.id}/approve`, undefined, { token: admin.token })).status).toBe(403);
+    const adminOwn = await t.api('POST', `/purchase-orders/${adminPo.id}/approve`, undefined, { token: admin.token });
+    expect(adminOwn.status).toBe(403);
+    // whoever may change the rule is told where to switch it off; a buyer is not
+    expect(adminOwn.body.error.message).toContain('ตั้งค่าการอนุมัติใบสั่งซื้อ');
+    expect(own.body.error.message).not.toContain('ตั้งค่าการอนุมัติใบสั่งซื้อ');
     const ok = await t.api('POST', `/purchase-orders/${po.id}/approve`, undefined, { token: manager.token });
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ status: 'approved', approved_by: manager.userId, approved_by_name: 'หัวหน้าจัดซื้อ' });

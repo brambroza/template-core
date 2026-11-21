@@ -17,6 +17,16 @@
   Also on "รายงานผลผลิต" (materials out, finished goods in, job cost, final QC) and "บันทึกส่งของ" (stock that would go negative in red).
 - **Mobile app**: "ต้องตัดสินใจวันนี้" on the home screen, the impact panel in action dialogs, and พ.ศ. month boxes.
 
+**Phase 0 (self-serve blockers found by the new-user test)**
+- Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
+  The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.
+- Dates: a Buddhist-era year in an API date (`2569-11-20`) is a Thai 400 ("ปี 2569 เป็น พ.ศ. — ระบบรับปี ค.ศ. (2026)") instead of a document
+  dated 543 years ahead (PO-3112-…). `s.isoDate` everywhere; expense months too.
+- Validation errors in Thai for every module (kernel zod error map): "ข้อมูลไม่ถูกต้อง — lines › แถวที่ 2 › qty: ต้องมากกว่า 0"; list problems
+  name the row; duplicates say which value (`"RM-01" มีอยู่ในระบบแล้ว`); broken JSON is explained. `details.issues` carries the full paths.
+- Impact preview: red lines (stock going below zero) must be acknowledged with a tick before the confirm button works (web + mobile).
+- Purchasing: the creator-cannot-approve 403 tells an owner/admin where to switch the rule off (one-person companies).
+
 ## 0.3.1 — 2026-10-03 · ภาษีไทยครบรอบเดือน + ยกเลิกเซสชัน
 
 **In numbers:** 22 modules (new: `etax`) · 931 automated tests · **77 UAT cases (UAT-01..77)** all passing in Chromium · roadmap 553 of 1,060 functions done.
