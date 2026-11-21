@@ -5,7 +5,7 @@ import {
 import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { applyTemplate, ROLE_TEMPLATES } from './role-templates.ts';
-import { daysLeft, entitlementOf, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type SubscriptionRow } from './plans.ts';
+import { daysLeft, entitlementOf, MODULE_NAMES_TH, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type SubscriptionRow } from './plans.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -355,7 +355,7 @@ export const definition: ServiceDefinition = {
           status_text: view ? (view.blocked ?? (view.daysLeft === null ? view.statusTh : `${view.statusTh} · เหลือ ${view.daysLeft} วัน`)) : 'ใช้งาน',
           usable_until: view?.usableUntil ?? null,
           users_text: view ? `${usedUsers} / ${view.maxUsers} คน` : `${usedUsers} คน`,
-          modules: view?.modules ?? [],
+          modules: (view?.modules ?? []).map((m) => MODULE_NAMES_TH[m] ?? m),
           how_to_pay: view ? 'โอนค่าบริการเข้าบัญชีบริษัท โกอะลอง จำกัด แล้วส่งสลิปทาง LINE OA ของ GO Along — ทีมงานยืนยันและต่ออายุให้ภายในวันทำการ' : null,
         };
       });

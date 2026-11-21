@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyToken } from '@erp/kernel';
 import { bootTestService, TEST_INTERNAL_TOKEN, TEST_JWT_SECRET, type TestService } from '@erp/kernel/testing';
 import { definition, resetLoginThrottle } from '../src/service.ts';
-import { entitlementOf, GRACE_DAYS, PLANS, tokenTtl, TRIAL_DAYS, type SubscriptionRow } from '../src/plans.ts';
+import { entitlementOf, GRACE_DAYS, MODULE_NAMES_TH, PLANS, tokenTtl, TRIAL_DAYS, type SubscriptionRow } from '../src/plans.ts';
 
 /** Cloud plans (identity migration 004): trial, plan modules in the token, user limit, payment by transfer, suspension. */
 let t: TestService;
@@ -124,5 +125,18 @@ describe('entitlement rules', () => {
     expect(e).toMatchObject({ modules: ['hr'], maxUsers: 3, blocked: null });
     expect(tokenTtl(43200, e, now)).toBe(3600);
     expect(tokenTtl(43200, null, now)).toBe(43200);
+  });
+});
+
+describe('plan catalogue', () => {
+  it('every plan module exists, and its Thai name matches module.json', () => {
+    for (const id of PLANS.business.modules) {
+      const m = JSON.parse(readFileSync(new URL(`../../${id}/module.json`, import.meta.url), 'utf8'));
+      expect(m.tier).toBe('feature');
+      expect(MODULE_NAMES_TH[id]).toBe(m.nameTh);
+    }
+    // each plan includes the one below it
+    expect(PLANS.starter.modules.every((m) => PLANS.factory.modules.includes(m))).toBe(true);
+    expect(PLANS.factory.modules.every((m) => PLANS.business.modules.includes(m))).toBe(true);
   });
 });

@@ -27,6 +27,17 @@ export const PLANS: Record<PlanId, Plan> = {
 
 export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
 
+/**
+ * Thai names of the plan modules for the "แพ็กเกจของบริษัท" screen (identity cannot read other modules' manifests at run time).
+ * A test checks them against services/<id>/module.json.
+ */
+export const MODULE_NAMES_TH: Record<string, string> = {
+  approvals: 'อนุมัติออนไลน์', expense: 'เบิกค่าใช้จ่าย', hr: 'บุคคลและลงเวลา', booking: 'จองห้องและรถ',
+  maintenance: 'ซ่อมบำรุงเครื่องจักร', inventory: 'คลังสินค้า', purchasing: 'จัดซื้อ', assets: 'ทะเบียนทรัพย์สิน', automation: 'ระบบอัตโนมัติ',
+  sales: 'ขาย', production: 'วางแผนการผลิต', quality: 'ควบคุมคุณภาพ', costing: 'ต้นทุนการผลิต', crm: 'ลูกค้าสัมพันธ์และใบเสนอราคา',
+  helpdesk: 'แจ้งปัญหาและบริการ', accounting: 'บัญชี', payroll: 'เงินเดือน', etax: 'ใบกำกับภาษีอิเล็กทรอนิกส์',
+};
+
 /** Free trial length for a new self-serve company. */
 export const TRIAL_DAYS = 14;
 /** Days a paid company keeps working after `paid_through` before it is blocked (time to pay the next transfer). */
