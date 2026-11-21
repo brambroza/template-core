@@ -337,7 +337,7 @@ export const events = {
    * Every token issued to `userId` before `before` (epoch seconds) must be refused (logout everywhere, password change,
    * user disabled, roles changed). Every module's kernel subscribes automatically.
    */
-  'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin']) }),
+  'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin', 'plan_changed']) }),
 
   /**
    * A linked LINE user pressed "อนุมัติ" (and confirmed) on a decision card automation pushed to them. The owning module decides

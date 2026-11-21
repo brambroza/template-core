@@ -14,6 +14,7 @@ import { screenHref } from '@/lib/nav';
 import { ModuleIcon } from './Icon';
 import { CommandPalette, openCommandPalette } from './CommandPalette';
 import { NotificationBell } from './NotificationBell';
+import { PlanBanner } from './PlanBanner';
 import { Toaster } from './Toaster';
 
 /** With more modules than this, menu areas start collapsed (except the one being worked in) until the user chooses. */
@@ -162,6 +163,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <a href={SHOWCASE_CONTACT}>ขอเดโมเต็ม</a>
           </p>
         )}
+        <PlanBanner />
         <header className="topbar">
           <Link href={HOME} className="topbar-logo" aria-label="Factory OS — ภาพรวมวันนี้"><LogoMark size={34} /></Link>
           <button type="button" className="btn menu-toggle" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>

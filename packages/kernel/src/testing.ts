@@ -46,7 +46,7 @@ export interface TestService {
   tenantId: string;
   otherTenantId: string;
   /** sign a token; `user` sets a fixed userId / display name (default: random id, no name) */
-  token(perms?: string[], tenantId?: string, user?: { userId?: string; userName?: string }): string;
+  token(perms?: string[], tenantId?: string, user?: { userId?: string; userName?: string; modules?: string[] }): string;
   /** call the API as an admin of `tenantId` (default: the main test tenant) */
   api<T = any>(method: string, url: string, body?: unknown, opts?: { token?: string }): Promise<ApiResult<T>>;
   /** like `api` but returns the raw response (binary bodies, headers); `token: null` sends no Authorization header */
@@ -66,8 +66,8 @@ export async function bootTestService(def: ServiceDefinition, extraEnv: Record<s
   await svc.app.ready();
   const tenantId = randomUUID();
   const otherTenantId = randomUUID();
-  const token = (perms = ['*'], tid = tenantId, user: { userId?: string; userName?: string } = {}) =>
-    signToken(TEST_JWT_SECRET, { tenantId: tid, userId: user.userId ?? randomUUID(), perms, ...(user.userName ? { userName: user.userName } : {}) });
+  const token = (perms = ['*'], tid = tenantId, user: { userId?: string; userName?: string; modules?: string[] } = {}) =>
+    signToken(TEST_JWT_SECRET, { tenantId: tid, userId: user.userId ?? randomUUID(), perms, ...(user.userName ? { userName: user.userName } : {}), ...(user.modules ? { modules: user.modules } : {}) });
   const defaultToken = token();
   return {
     svc, tenantId, otherTenantId, token,

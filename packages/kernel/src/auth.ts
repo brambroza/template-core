@@ -12,6 +12,11 @@ export interface AuthContext {
   tokenId?: string;
   /** issue time of the token (`iat`, epoch seconds) */
   issuedAt?: number;
+  /**
+   * Feature modules the company's plan includes (claim `mods`, set by identity for cloud subscriptions). Undefined = no plan
+   * limit (self-hosted installs, older tokens): every installed module is open. Core modules are always open.
+   */
+  modules?: string[];
 }
 
 /** Message of the 401 a revoked token gets (error code `session_revoked`; apps send the user to login with a notice). */
@@ -36,7 +41,10 @@ export function signToken(secret: string, ctx: AuthContext, ttlSeconds = 60 * 60
   const now = Math.max(Math.floor(Date.now() / 1000), opts.iat ?? 0);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const jti = randomBytes(16).toString('base64url');
-  const payload = b64url(JSON.stringify({ sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, ...(ctx.userName ? { name: ctx.userName } : {}), jti, iat: now, exp: now + ttlSeconds }));
+  const payload = b64url(JSON.stringify({
+    sub: ctx.userId, tid: ctx.tenantId, perms: ctx.perms, ...(ctx.userName ? { name: ctx.userName } : {}),
+    ...(ctx.modules ? { mods: ctx.modules } : {}), jti, iat: now, exp: now + ttlSeconds,
+  }));
   const sig = b64url(createHmac('sha256', secret).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
 }
@@ -65,7 +73,17 @@ export function verifyToken(secret: string, token: string, revokedBefore?: Revok
     ...(typeof claims.name === 'string' && claims.name ? { userName: claims.name } : {}),
     ...(typeof claims.jti === 'string' && claims.jti ? { tokenId: claims.jti } : {}),
     ...(typeof claims.iat === 'number' ? { issuedAt: claims.iat } : {}),
+    ...(Array.isArray(claims.mods) ? { modules: claims.mods.map(String) } : {}),
   };
+}
+
+/** Message of the 403 a module answers when the company's plan does not include it (error code `module_not_in_plan`). */
+export const notInPlan = (moduleNameTh: string) =>
+  new HttpError(403, 'module_not_in_plan', `แพ็กเกจของบริษัทไม่รวม "${moduleNameTh}" — อัปเกรดแพ็กเกจเพื่อใช้งานส่วนนี้`);
+
+/** True when `ctx` may use module `id` of tier `tier`: core always; a feature module when the token has no plan list or lists it. */
+export function inPlan(ctx: Pick<AuthContext, 'modules'>, id: string, tier: 'core' | 'feature'): boolean {
+  return tier === 'core' || !ctx.modules || ctx.modules.includes(id);
 }
 
 /** "*" grants everything, "sales.*" grants every sales permission. */

@@ -6,6 +6,9 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
 - `createService(def, env)` — Fastify app + auth hook + error format + `/_health`, `/_manifest`, `/_events` + outbox dispatcher + license check.
 - `auth(req)`, `requirePerm`, `hasPerm`, `signToken`, `verifyToken`, `hashPassword` — JWT HS256 shared secret (`JWT_SECRET`). Tokens carry a unique `jti`
   (`AuthContext.tokenId`, undefined for older tokens — still accepted) and `iat` (`issuedAt`); `signToken(secret, ctx, ttl, { iat })`.
+- Cloud plans: `AuthContext.modules` (token claim `mods`, set by identity) lists the company's feature modules; the auth hook answers
+  403 `module_not_in_plan` (`notInPlan`, Thai) for a feature module outside it (`inPlan`). No claim = no limit (self-hosted, older tokens).
+  Core modules are always open. Test tokens: `t.token(perms, tenantId, { modules })`.
 - `revocation.ts` — token revocation (security review 0.3, SEC-07). `KERNEL_SUBSCRIPTIONS` = events every module's kernel handles itself
   (`identity.tokens_revoked`): not listed in module.json (allowed if listed; the module's own handler then runs after the kernel's), the gateway router
   sends them to every installed module. Stored in the kernel tenant table `_revoked_tokens (tenant_id, user_id, before, reason)` — one row per user,

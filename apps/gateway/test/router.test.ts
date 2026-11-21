@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ModuleManifest } from '@erp/kernel';
-import { createGateway, routeTargets, type Gateway } from '../src/gateway.ts';
+import { createGateway, planModules, routeTargets, type Gateway } from '../src/gateway.ts';
 
 /** Event router: kernel subscriptions (identity.tokens_revoked, security review 0.3 SEC-07) reach every installed module. */
 const TOKEN = 'router-test-internal-token';
@@ -91,5 +91,16 @@ describe('proxy', () => {
   it('tells modules the client IP it saw itself, never one copied from the request', async () => {
     const res = await gw.app.inject({ method: 'GET', url: '/api/sales/whoami', remoteAddress: '203.0.113.9', headers: { 'x-erp-client-ip': '1.2.3.4', 'x-forwarded-for': '5.6.7.8' } });
     expect(res.json()).toEqual({ ip: '203.0.113.9' });
+  });
+
+  it('catalog: a token with a plan list hides the modules outside the plan (core always shown)', async () => {
+    const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const token = `Bearer ${b64({ alg: 'HS256' })}.${b64({ sub: 'u', tid: 't', mods: ['sales'] })}.sig`;
+    expect(planModules(token)).toEqual(['sales']);
+    expect(planModules('Bearer garbage')).toBeUndefined();
+    const all = (await gw.app.inject({ method: 'GET', url: '/api/_catalog' })).json().modules.map((m: { id: string }) => m.id);
+    expect(all.sort()).toEqual(['identity', 'inventory', 'master-data', 'sales']);
+    const planned = (await gw.app.inject({ method: 'GET', url: '/api/_catalog', headers: { authorization: token } })).json().modules.map((m: { id: string }) => m.id);
+    expect(planned.sort()).toEqual(['identity', 'master-data', 'sales']);
   });
 });

@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { EventData, EventType } from '@erp/contracts';
 import { attachmentPerms, mountAttachments, type AttachmentsSpec } from './attachments.ts';
 import { mountAudit, recordAudit } from './audit.ts';
-import { safeEqual, secretProblems, verifyToken, type AuthContext } from './auth.ts';
+import { inPlan, notInPlan, safeEqual, secretProblems, verifyToken, type AuthContext } from './auth.ts';
 import { createDb, migrate, type Client, type Db } from './db.ts';
 import { badRequest, toErrorBody, unauthorized } from './errors.ts';
 import { dispatchOutbox, emit, receiveEvent, type EventHandlers, type HandlerContext } from './events.ts';
@@ -155,6 +155,8 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     const h = req.headers.authorization;
     if (!h?.startsWith('Bearer ')) throw unauthorized();
     req.authCtx = verifyToken(jwtSecret, h.slice(7), revocations.before);
+    // cloud plans: a company whose plan lacks this feature module gets a Thai 403 (the impact preview just skips the module)
+    if (!inPlan(req.authCtx, manifest.id, manifest.tier)) throw notInPlan(manifest.nameTh);
   });
 
   const reloadRevocations = () => revocations.load(db);

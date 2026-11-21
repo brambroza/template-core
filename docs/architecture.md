@@ -84,6 +84,15 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
 อ่านด้วย `GET /_audit?from=&to=&userId=&ref=&q=&limit=` (วันที่ล้วน = วันตามเวลาไทย, `to` รวมวันนั้น) ต้องมีสิทธิ์ **`<module>.audit.read`**
 (หรือ `<module>.*` / `*`) — kernel เติม permission นี้ให้ทุกโมดูลใน `/_manifest` เอง ไม่ต้องประกาศใน module.json
 
+## แพ็กเกจคลาวด์ (Factory OS Cloud)
+
+- บริษัทที่สมัครแพ็กเกจมีแถวใน `identity.tenant_subscriptions` (Starter / Factory / Business ใน `services/identity/src/plans.ts`) — ไม่มีแถว = ไม่จำกัด (ติดตั้งเอง)
+- login ใส่รายการโมดูลของแพ็กเกจใน token (`mods`) → kernel ของทุกโมดูลปฏิเสธบริษัทที่แพ็กเกจไม่รวมโมดูลนั้น (403 `module_not_in_plan`)
+  และ gateway ซ่อนเมนูของโมดูลนั้นใน `/api/_catalog` (อ่าน claim โดยไม่ตรวจลายเซ็น — ใช้แค่ซ่อนเมนู)
+- ทดลอง 14 วัน → ชำระด้วยการโอน แล้วทีม GO Along ยืนยัน (`pnpm erp plan set <code> --status active --paid-through …`) · เลยกำหนด 7 วัน หรือถูกระงับ → login ได้ 402 พร้อมเหตุผล
+  token ไม่มีอายุเกินวันที่ใช้ได้ · เปลี่ยนแพ็กเกจ/สถานะ → ยกเลิก token ของทุกคนในบริษัท ให้ login ใหม่พร้อมโมดูลชุดใหม่
+- event ยังส่งถึงทุกโมดูลที่ติดตั้ง (โมดูลนอกแพ็กเกจรับ event ของบริษัทนั้นได้ แต่ผู้ใช้เปิดดูไม่ได้)
+
 ## License
 
 - ใบอนุญาต = JSON ที่เซ็นด้วย Ed25519 (private key อยู่ที่ GO Along เท่านั้น) ระบุลูกค้า + โมดูล + วันหมดอายุ

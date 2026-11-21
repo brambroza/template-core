@@ -29,6 +29,18 @@ export function routeTargets(manifests: ModuleManifest[], event: { type?: string
   return manifests.filter((m) => m.id !== event.source && (everyone || m.subscribes.includes(type as never)));
 }
 
+/**
+ * The plan's module list from a bearer token (claim `mods`), undefined when there is none. NOT verified — the gateway has no
+ * JWT secret — so it is only used to hide menus; each module verifies the token and refuses modules outside the plan itself.
+ */
+export function planModules(authorization: unknown): string[] | undefined {
+  if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(authorization.slice(7).split('.')[1] ?? '', 'base64url').toString('utf8'));
+    return Array.isArray(claims?.mods) ? claims.mods.map(String) : undefined;
+  } catch { return undefined; }
+}
+
 export interface GatewayOptions {
   /** module id -> base URL, e.g. { sales: 'http://sales:3000' } */
   modules: Record<string, string>;
@@ -100,9 +112,17 @@ export function createGateway(opts: GatewayOptions): Gateway {
 
   app.get('/_health', async () => ({ status: 'ok', modules: manifests.map((m) => m.id) }));
 
-  app.get('/api/_catalog', async () => ({
-    modules: manifests.map((m) => ({ id: m.id, name: m.name, nameTh: m.nameTh, version: m.version, tier: m.tier, description: m.description, permissions: m.permissions, enhancedBy: m.enhancedBy.filter((e) => opts.modules[e]) })),
-  }));
+  // menus: only what the company's plan includes (claim `mods`); every module also enforces it itself, this only hides the rest
+  app.get('/api/_catalog', async (req) => {
+    const mods = planModules(req.headers.authorization);
+    const open = (m: ModuleManifest) => m.tier === 'core' || !mods || mods.includes(m.id);
+    return {
+      modules: manifests.filter(open).map((m) => ({
+        id: m.id, name: m.name, nameTh: m.nameTh, version: m.version, tier: m.tier, description: m.description, permissions: m.permissions,
+        enhancedBy: m.enhancedBy.filter((e) => opts.modules[e] && (!mods || mods.includes(e))),
+      })),
+    };
+  });
 
   app.post('/_events/publish', async (req, reply) => {
     if (!safeEqual(req.headers['x-internal-token'], opts.internalToken)) throw unauthorized('Internal endpoint');

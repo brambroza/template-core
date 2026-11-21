@@ -5,6 +5,7 @@ import {
 import { isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { applyTemplate, ROLE_TEMPLATES } from './role-templates.ts';
+import { daysLeft, entitlementOf, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type SubscriptionRow } from './plans.ts';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
 
@@ -15,7 +16,23 @@ const TenantInput = z.object({
   code: z.string().trim().toLowerCase().regex(/^[a-z0-9-]{2,30}$/),
   name: s.name,
   admin: z.object({ email, name: s.name, password }),
+  /** cloud plan: the company starts a TRIAL_DAYS trial of it. Omitted = no plan limit (self-hosted install). */
+  plan: z.enum(PLAN_IDS as [string, ...string[]]).optional(),
 });
+/** GO Along back office: change a company's plan / status / payment (bank transfer confirmed by staff). */
+const SubscriptionChange = z.object({
+  plan: z.enum(PLAN_IDS as [string, ...string[]]).optional(),
+  status: z.enum(['trial', 'active', 'suspended', 'cancelled']).optional(),
+  /** last day paid for; with status active this is what keeps the company open (plus GRACE_DAYS) */
+  paidThrough: s.isoDate.optional(),
+  /** extend or shorten the trial: days from now */
+  trialDays: z.number().int().min(0).max(90).optional(),
+  modules: z.array(z.string().regex(/^[a-z-]+$/)).nullable().optional(),
+  maxUsers: z.number().int().positive().nullable().optional(),
+  note: z.string().trim().max(500).optional(),
+  /** who at GO Along made the change (for the log) */
+  by: z.string().trim().min(1).max(100),
+}).refine((v) => Object.keys(v).some((k) => k !== 'by' && k !== 'note'), 'ไม่มีค่าที่จะเปลี่ยน');
 /** `tenant` (company code) is optional: e-mail is unique across companies. It is still accepted (older apps, and e-mails duplicated before 003). */
 const LoginInput = z.object({ tenant: z.string().trim().toLowerCase().optional().transform((v) => v || undefined), email, password: z.string() });
 const UserInput = z.object({ email, name: s.name, password, roleIds: z.array(s.uuid).default([]) });
@@ -124,9 +141,9 @@ async function permissionsOfRoles(c: Client, roleIds: string[]): Promise<string[
 
 /* ---- token revocation (security review 0.3, SEC-07) ---- */
 
-export type RevokeReason = 'logout' | 'password_changed' | 'user_disabled' | 'roles_changed' | 'admin';
+export type RevokeReason = 'logout' | 'password_changed' | 'user_disabled' | 'roles_changed' | 'admin' | 'plan_changed';
 const REVOKE_REASON_TH: Record<RevokeReason, string> = {
-  logout: 'ออกจากระบบ', password_changed: 'เปลี่ยนรหัสผ่าน', user_disabled: 'ปิดใช้งานบัญชี', roles_changed: 'เปลี่ยนบทบาท', admin: 'ผู้ดูแลบังคับออกจากระบบ',
+  logout: 'ออกจากระบบ', password_changed: 'เปลี่ยนรหัสผ่าน', user_disabled: 'ปิดใช้งานบัญชี', roles_changed: 'เปลี่ยนบทบาท', admin: 'ผู้ดูแลบังคับออกจากระบบ', plan_changed: 'เปลี่ยนแพ็กเกจ',
 };
 
 /**
@@ -206,6 +223,44 @@ function emailTakenOnRace(e: unknown): never {
   throw e;
 }
 
+/* ---- cloud plans (migration 004, src/plans.ts) ---- */
+
+/** The company's subscription row, or undefined (no plan limit). Inside the company's transaction. */
+async function subscriptionRow(c: Client): Promise<SubscriptionRow | undefined> {
+  return (await c.query<SubscriptionRow>('select * from tenant_subscriptions')).rows[0];
+}
+
+/** What the company may use now, null = no plan limit. */
+async function entitlement(c: Client): Promise<Entitlement | null> {
+  const row = await subscriptionRow(c);
+  return row ? entitlementOf(row) : null;
+}
+
+/** The plan as the apps show it (banner "ทดลองใช้เหลือ 5 วัน", settings page). */
+function subscriptionView(e: Entitlement | null) {
+  if (!e) return null;
+  return {
+    plan: e.plan.id, planName: e.plan.nameTh, priceMonthly: e.plan.priceMonthly, status: e.status, statusTh: STATUS_TH[e.status],
+    modules: e.modules, maxUsers: e.maxUsers, usableUntil: e.usableUntil?.toISOString() ?? null, daysLeft: daysLeft(e), blocked: e.blocked,
+  };
+}
+
+/** 409 `user_limit` when the plan's active users are all taken (deactivated users free a seat). */
+async function requireUserSeat(c: Client): Promise<void> {
+  const plan = await entitlement(c);
+  if (!plan) return;
+  await c.query('select pg_advisory_xact_lock(hashtext(current_setting(\'app.tenant_id\')))'); // two admins adding the last seat at once
+  const used = Number((await c.query<{ n: string }>('select count(*) as n from users where active')).rows[0].n);
+  if (used >= plan.maxUsers) {
+    throw new HttpError(409, 'user_limit', `แพ็กเกจ ${plan.plan.nameTh} ใช้ได้ ${plan.maxUsers} ผู้ใช้ (ตอนนี้ ${used}) — ปิดบัญชีผู้ใช้ที่ไม่ใช้แล้ว หรืออัปเกรดแพ็กเกจ`);
+  }
+}
+
+/** 402 with the Thai reason when the company may not sign in now (trial over, unpaid, suspended). */
+function requireOpen(e: Entitlement | null): void {
+  if (e?.blocked) throw new HttpError(402, 'subscription_inactive', e.blocked);
+}
+
 /** compared against when the user does not exist, so a wrong e-mail costs the same time as a wrong password */
 const DUMMY_HASH = hashPassword('not-a-real-password-' + Math.random());
 
@@ -225,13 +280,17 @@ export const definition: ServiceDefinition = {
         const role = (await c.query(`insert into roles (name, permissions) values ('Administrator', '{*}') returning id`)).rows[0];
         const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [body.admin.email, body.admin.name, hashPassword(body.admin.password)])).rows[0];
         await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, role.id]);
+        if (body.plan) {
+          await c.query(`insert into tenant_subscriptions (plan, status, trial_ends_at) values ($1, 'trial', now() + make_interval(days => $2))`, [body.plan, TRIAL_DAYS]);
+          await c.query('insert into tenant_subscription_log (change, by_name) values ($1, $2)', [JSON.stringify({ plan: body.plan, status: 'trial', trialDays: TRIAL_DAYS }), 'สมัครใช้งาน']);
+        }
         return u;
       }).catch(async (e) => {
         await k.db.rawTx((c) => c.query('delete from tenants where id = $1', [tenant.id])); // lost a race on the e-mail: no empty company
         return emailTakenOnRace(e);
       });
       reply.code(201);
-      return { tenant, admin: user };
+      return { tenant, admin: user, subscription: body.plan ? subscriptionView(await k.db.tx(tenant.id, entitlement)) : null };
     });
 
     /**
@@ -264,10 +323,14 @@ export const definition: ServiceDefinition = {
         const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
         if (!ok) return fail();
         loginFailures.delete(buckets[0][0]); // the right password clears this e-mail + IP; the wider caps age out on their own
+        // cloud plan: closed companies get the reason (402); the token lists the plan's modules and ends when access ends
+        const plan = await entitlement(c);
+        requireOpen(plan);
         const perms = await permissionsOf(c, u.id);
+        const life = tokenTtl(ttl, plan);
         // signed at or after the user's revocation cutoff, so a login in the same second as a logout is not refused (SEC-07)
-        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name }, ttl, { iat: await cutoffOf(c, u.id) });
-        return { token, expiresIn: ttl, tenant, user: { id: u.id, email: u.email, name: u.name }, permissions: perms };
+        const token = signToken(secret, { tenantId: tenant.id, userId: u.id, perms, userName: u.name, ...(plan ? { modules: plan.modules } : {}) }, life, { iat: await cutoffOf(c, u.id) });
+        return { token, expiresIn: life, tenant, user: { id: u.id, email: u.email, name: u.name }, permissions: perms, subscription: subscriptionView(plan) };
       });
     });
 
@@ -275,8 +338,96 @@ export const definition: ServiceDefinition = {
       const a = auth(req);
       return k.db.tx(a.tenantId, async (c) => {
         const u = await one(c, `select ${publicUser} from users where id = $1`, [a.userId], 'User');
-        return { ...u, tenantId: a.tenantId, permissions: await permissionsOf(c, a.userId) };
+        return { ...u, tenantId: a.tenantId, permissions: await permissionsOf(c, a.userId), subscription: subscriptionView(await entitlement(c)) };
       });
+    });
+
+    /** The company's cloud plan (null = no plan limit): name, status, modules, user limit, days left. Any signed-in user. */
+    app.get('/subscription', async (req) => {
+      const a = auth(req);
+      return k.db.tx(a.tenantId, async (c) => {
+        const view = subscriptionView(await entitlement(c));
+        const usedUsers = Number((await c.query<{ n: string }>('select count(*) as n from users where active')).rows[0].n);
+        // flat fields for the settings screen ("แพ็กเกจของบริษัท"), `subscription` for the apps' banner
+        return {
+          subscription: view, usedUsers, plans: Object.values(PLANS),
+          plan_text: view ? `${view.planName} · ${view.priceMonthly.toLocaleString('en-US')} บาท/เดือน (ไม่รวม VAT)` : 'ไม่จำกัดแพ็กเกจ (ติดตั้งในเครื่องของบริษัท)',
+          status_text: view ? (view.blocked ?? (view.daysLeft === null ? view.statusTh : `${view.statusTh} · เหลือ ${view.daysLeft} วัน`)) : 'ใช้งาน',
+          usable_until: view?.usableUntil ?? null,
+          users_text: view ? `${usedUsers} / ${view.maxUsers} คน` : `${usedUsers} คน`,
+          modules: view?.modules ?? [],
+          how_to_pay: view ? 'โอนค่าบริการเข้าบัญชีบริษัท โกอะลอง จำกัด แล้วส่งสลิปทาง LINE OA ของ GO Along — ทีมงานยืนยันและต่ออายุให้ภายในวันทำการ' : null,
+        };
+      });
+    });
+
+    /* ---- GO Along back office (internal token only; the ops console and `pnpm erp` call these) ---- */
+
+    /** Every company with its plan, status, days left and active users. `?q=` filters by code or name. */
+    app.get('/_ops/tenants', { config: { internal: true } }, async (req) => {
+      const q = String((req.query as { q?: string }).q ?? '').trim().toLowerCase();
+      return k.db.rawTx(async (c) => {
+        await c.query(`select set_config('app.ops_read', 'on', true), set_config('app.login_lookup', 'on', true)`);
+        const rows = (await c.query<SubscriptionRow & { id: string; code: string; name: string; created_at: string; users: string }>(
+          `select t.id, t.code, t.name, t.created_at, s.*, (select count(*) from users u where u.tenant_id = t.id and u.active) as users
+             from tenants t left join tenant_subscriptions s on s.tenant_id = t.id
+            where $1 = '' or lower(t.code) like '%' || $1 || '%' or lower(t.name) like '%' || $1 || '%'
+            order by t.created_at desc limit 500`, [q])).rows;
+        return rows.map((r) => ({
+          id: r.id, code: r.code, name: r.name, createdAt: r.created_at, activeUsers: Number(r.users),
+          subscription: r.plan ? subscriptionView(entitlementOf(r)) : null, paidThrough: r.paid_through ?? null, note: r.note ?? null,
+        }));
+      });
+    });
+
+    /**
+     * Change a company's plan, status or payment — e.g. after a bank transfer: `{ status: 'active', paidThrough: '2026-12-31', by }`.
+     * Creates the row when the company had none (it then gets plan limits). Every change is logged; when what the company may use
+     * changes (plan, modules, status), every user's tokens are revoked so the next login carries the new module list.
+     */
+    app.put('/_ops/tenants/:code/subscription', { config: { internal: true } }, async (req) => {
+      const { code } = req.params as { code: string };
+      const b = parse(SubscriptionChange, req.body);
+      const t = (await k.db.pool.query<{ id: string }>('select id from tenants where code = $1', [code.toLowerCase()])).rows[0];
+      if (!t) throw new HttpError(404, 'not_found', `ไม่พบบริษัทรหัส ${code}`);
+      return k.db.tx(t.id, async (c) => {
+        const before = await subscriptionRow(c);
+        if (!before && !b.plan) throw badRequest('บริษัทนี้ยังไม่มีแพ็กเกจ — ระบุ plan', { fieldErrors: { plan: ['ระบุแพ็กเกจ'] }, formErrors: [] });
+        if (b.status === 'active' && !b.paidThrough && !before?.paid_through) {
+          throw badRequest('เปิดใช้งานแบบชำระเงินต้องระบุวันที่ชำระถึง (paidThrough)', { fieldErrors: { paidThrough: ['ระบุวันที่ชำระถึง'] }, formErrors: [] });
+        }
+        await c.query(
+          `insert into tenant_subscriptions (plan, status, trial_ends_at) values ($1, 'trial', now() + make_interval(days => $2))
+           on conflict (tenant_id) do nothing`, [b.plan ?? before?.plan, TRIAL_DAYS]);
+        await c.query(
+          `update tenant_subscriptions set
+             plan = coalesce($1, plan), status = coalesce($2, status), paid_through = coalesce($3::date, paid_through),
+             trial_ends_at = case when $4::int is null then trial_ends_at else now() + make_interval(days => $4::int) end,
+             modules = case when $5::boolean then $6::text[] else modules end,
+             max_users = case when $7::boolean then $8::int else max_users end,
+             note = coalesce($9, note), updated_at = now()`,
+          [b.plan ?? null, b.status ?? null, b.paidThrough ?? null, b.trialDays ?? null,
+            b.modules !== undefined, b.modules ?? null, b.maxUsers !== undefined, b.maxUsers ?? null, b.note ?? null]);
+        const { by, ...change } = b;
+        await c.query('insert into tenant_subscription_log (change, by_name) values ($1, $2)', [JSON.stringify(change), by]);
+        const after = (await subscriptionRow(c))!;
+        const was = before ? entitlementOf(before) : null;
+        const now = entitlementOf(after);
+        const accessChanged = !was || was.modules.join() !== now.modules.join() || !!was.blocked !== !!now.blocked || was.status !== now.status;
+        let revoked = 0;
+        if (accessChanged) {
+          for (const u of (await c.query<{ id: string }>('select id from users where active')).rows) { await revokeTokens(k, c, u.id, 'plan_changed'); revoked++; }
+        }
+        return { subscription: subscriptionView(now), revokedUsers: revoked };
+      });
+    });
+
+    /** A company's plan history (newest first). */
+    app.get('/_ops/tenants/:code/subscription-log', { config: { internal: true } }, async (req) => {
+      const { code } = req.params as { code: string };
+      const t = (await k.db.pool.query<{ id: string }>('select id from tenants where code = $1', [code.toLowerCase()])).rows[0];
+      if (!t) throw new HttpError(404, 'not_found', `ไม่พบบริษัทรหัส ${code}`);
+      return k.db.tx(t.id, async (c) => (await c.query('select change, by_name, created_at from tenant_subscription_log order by created_at desc, id desc limit 200')).rows);
     });
 
     /** Log out everywhere: every token of the signed-in user issued up to now stops working in every module (SEC-07). */
@@ -312,11 +463,13 @@ export const definition: ServiceDefinition = {
         await c.query('update users set password_hash = $2 where id = $1', [a.userId, hashPassword(b.newPassword)]);
         const before = await revokeTokens(k, c, a.userId, 'password_changed');
         const perms = await permissionsOf(c, a.userId);
-        return { before, token: signToken(secret, { tenantId: a.tenantId, userId: a.userId, perms, userName: u.name }, ttl, { iat: before }) };
+        const plan = await entitlement(c);
+        requireOpen(plan);
+        return { before, life: tokenTtl(ttl, plan), token: signToken(secret, { tenantId: a.tenantId, userId: a.userId, perms, userName: u.name, ...(plan ? { modules: plan.modules } : {}) }, tokenTtl(ttl, plan), { iat: before }) };
       });
       loginFailures.delete(key);
       reply.header('x-erp-session-token', out.token);
-      return { ok: true, message: 'เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นที่เข้าสู่ระบบไว้จะต้องเข้าสู่ระบบใหม่', token: out.token, expiresIn: ttl, revokedBefore: out.before };
+      return { ok: true, message: 'เปลี่ยนรหัสผ่านแล้ว อุปกรณ์อื่นที่เข้าสู่ระบบไว้จะต้องเข้าสู่ระบบใหม่', token: out.token, expiresIn: out.life, revokedBefore: out.before };
     });
 
     /** Seller details for letterheads and tax invoices. Any signed-in user may read them (they print documents). */
@@ -399,6 +552,7 @@ export const definition: ServiceDefinition = {
       const body = parse(UserInput, req.body);
       await requireEmailFree(k, body.email);
       const user = await k.db.tx(a.tenantId, async (c) => {
+        await requireUserSeat(c);
         requireGrantable(a, await permissionsOfRoles(c, body.roleIds), 'กำหนดบทบาทไม่ได้');
         const u = (await c.query(`insert into users (email, name, password_hash) values ($1, $2, $3) returning ${publicUser}`, [body.email, body.name, hashPassword(body.password)])).rows[0];
         for (const roleId of body.roleIds) await c.query('insert into user_roles (user_id, role_id) values ($1, $2)', [u.id, roleId]);

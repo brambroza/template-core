@@ -10,9 +10,22 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - `users.email` is unique across ALL companies (migration 003, index `users_email_global`). Policy `login_lookup` (SELECT only, on while a transaction sets `app.login_lookup = 'on'`) lets login and the e-mail-taken check read users of every company; nothing else sets it.
 - `users`, `roles` (`permissions text[]`), `user_roles` — tenant tables
 - `company_profiles` (one row per tenant, `tenant_id` is the key) — seller details printed on every document
+- `tenant_subscriptions` (migration 004, one row per cloud company; none = no plan limit, e.g. self-hosted) — `plan starter|factory|business`,
+  `status trial|active|suspended|cancelled`, `trial_ends_at`, `paid_through` (Bangkok day), overrides `modules`, `max_users`, `note`.
+  `tenant_subscription_log` — every change with `by_name`. Policy `ops_read` (SELECT, on while `app.ops_read = 'on'`) only for `/_ops` lists.
+  Plans (modules, user limit, price), TRIAL_DAYS 14 and GRACE_DAYS 7 are in `src/plans.ts`.
 
 ## API
-- `POST /tenants` (internal token) — provision company + Administrator role (`*`) + first admin
+- `POST /tenants` (internal token) — provision company + Administrator role (`*`) + first admin; `plan?` starts a 14-day trial of it
+- **Cloud plans:** login refuses a closed company (trial over, `paid_through` + 7 days passed, suspended, cancelled) with 402
+  `subscription_inactive` + Thai reason; otherwise the token carries the plan's modules (claim `mods`, the kernel refuses other feature
+  modules) and never outlives access (`tokenTtl`). Login and `/me` return `subscription` (plan, status, daysLeft, modules, maxUsers, blocked).
+  `POST /users` → 409 `user_limit` when the plan's active users are all taken. `GET /subscription` (any signed-in user) → `subscription`,
+  `usedUsers`, `plans` + flat fields for the "แพ็กเกจของบริษัท" screen.
+- **Back office (internal token):** `GET /_ops/tenants?q=` (every company + plan + active users), `PUT /_ops/tenants/:code/subscription
+  { by, plan?, status?, paidThrough?, trialDays?, modules?, maxUsers?, note? }` (bank transfer confirmed → `status: active, paidThrough`;
+  creates the row when missing — `plan` then required; access changes revoke every user's tokens, reason `plan_changed`),
+  `GET /_ops/tenants/:code/subscription-log`. CLI: `pnpm erp plan list | set <code> … | log <code>`.
 - `POST /auth/login` (public) `{ email, password, tenant? }` → `{ token, tenant, permissions, … }` — the company comes from the e-mail. `tenant` (company code) is optional; only e-mails that two companies shared before 003 need it: the password picks the account, several fit → 409 `tenant_required` (web/mobile then show the รหัสบริษัท field)
 - `POST /tenants` and `POST /users` answer 409 `email_taken` when any company already has the e-mail (checked before the company row is created)
 - `GET /company` (any signed-in user) — letterhead/seller details: `legal_name, name_en, branch_code, branch_label` (as typed, may be null), `branch_text` (what to print), `address, tax_id, tax_id_text` (0-0000-00000-00-0), phone, email, website, logo, footer_note, signature_labels, configured`. Before setup it answers `configured: false` with the tenant name and empty fields.

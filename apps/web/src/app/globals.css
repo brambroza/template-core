@@ -1104,3 +1104,10 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 /* acknowledge red impact lines before confirming */
 .impact-ack { display: flex; gap: .5rem; align-items: flex-start; margin: .25rem 0 .75rem; padding: .6rem .75rem; border: 1px solid var(--stop-text); border-radius: 8px; font-weight: 600; color: var(--stop-text); cursor: pointer; }
 .impact-ack input { margin-top: .2rem; width: 1.05rem; height: 1.05rem; accent-color: var(--stop); }
+
+/* cloud plan reminder (PlanBanner): trial days left, payment due */
+.plan-bar { margin: 0; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; padding: 6px 16px; font-size: .85rem;
+  color: var(--ink); background: var(--surface); border-bottom: 1px solid var(--line); }
+.plan-bar a { color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.plan-bar.is-urgent { background: var(--stop-soft); color: var(--stop-text); font-weight: 600; }
+@media print { .plan-bar { display: none; } }

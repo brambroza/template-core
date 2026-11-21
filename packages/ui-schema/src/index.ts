@@ -1725,3 +1725,24 @@ export function calendarWeeks(year: number, month: number): { iso: string; inMon
   }
   return weeks;
 }
+
+/* ---- cloud plan banner ---- */
+
+/** The company's cloud plan as identity's GET /subscription returns it (`subscription`; null = no plan limit). */
+export interface PlanView { planName: string; status: 'trial' | 'active' | 'suspended' | 'cancelled'; daysLeft: number | null; blocked: string | null }
+
+/** remind paid companies this many days before access ends */
+export const PLAN_REMIND_DAYS = 7;
+
+/**
+ * Banner above every page (web and mobile): trial days left, or a payment reminder in the last REMIND_DAYS of a paid period.
+ * Null when there is nothing to say (self-hosted, plenty of time left).
+ */
+export function planNotice(p: PlanView | null): { text: string; urgent: boolean } | null {
+  if (!p || p.daysLeft === null) return null;
+  if (p.status === 'trial') {
+    return { text: p.daysLeft > 0 ? `ทดลองใช้แพ็กเกจ ${p.planName} เหลือ ${p.daysLeft} วัน` : `ทดลองใช้แพ็กเกจ ${p.planName} วันสุดท้าย`, urgent: p.daysLeft <= 3 };
+  }
+  if (p.status === 'active' && p.daysLeft <= PLAN_REMIND_DAYS) return { text: `ใกล้ครบกำหนดชำระค่าบริการ — ใช้งานได้อีก ${p.daysLeft} วัน`, urgent: p.daysLeft <= 3 };
+  return null;
+}

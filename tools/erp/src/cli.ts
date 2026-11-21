@@ -17,6 +17,9 @@
  *   verify                                    architecture rules (run in CI)
  *   showcase-capture [--gateway URL] [--tenant demo] [--password demo1234] [--rows 5] [--out apps/web/showcase/snapshot.json]
  *                                             record a running demo's answers for the public showcase (SHOWCASE=1, docs/deploy-vercel.md)
+ *   plan     list [--q text] | set <code> --by NAME [--plan …] [--status …] [--paid-through YYYY-MM-DD] [--trial-days N]
+ *            [--max-users N|default] [--modules a,b|default] [--note …] | log <code>
+ *                                             cloud plans (back office; IDENTITY_URL + INTERNAL_TOKEN), see tools/erp/src/plan.ts
  *
  * <modules>: comma-separated module ids and/or bundle ids, e.g. "sales,inventory" or "factory-full".
  */
@@ -190,6 +193,9 @@ function main() {
       });
       return;
     }
+    case 'plan':
+      pending = import('./plan.ts').then(({ runPlan }) => runPlan(args, flags));
+      return;
     default:
       console.log(readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace('/**', '').replace(/^ \* ?/gm, ''));
   }

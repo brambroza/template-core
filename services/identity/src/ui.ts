@@ -11,9 +11,21 @@ export default defineUi({
     { label: 'ผู้ใช้', screen: 'users' },
     { label: 'บทบาทและสิทธิ์', screen: 'roles' },
     { label: 'ข้อมูลบริษัท', screen: 'company' },
+    { label: 'แพ็กเกจของบริษัท', screen: 'plan' },
     { label: 'ประวัติการแก้ไข', screen: 'audit' },
   ],
   screens: {
+    plan: {
+      // cloud plan (identity migration 004); self-hosted installs show "ไม่จำกัดแพ็กเกจ"
+      kind: 'detail', title: 'แพ็กเกจของบริษัท', endpoint: '/subscription', heading: 'plan_text', perm: 'identity.user.read',
+      fields: [
+        { key: 'status_text', label: 'สถานะ' },
+        { key: 'usable_until', label: 'ใช้งานได้ถึง', format: 'datetime' },
+        { key: 'users_text', label: 'ผู้ใช้' },
+        { key: 'modules', label: 'โมดูลในแพ็กเกจ', format: 'list' },
+        { key: 'how_to_pay', label: 'วิธีชำระ / ต่ออายุ' },
+      ],
+    },
     audit: {
       // kernel route every module has (GET /_audit); this one lists identity's own log: users, roles, company profile
       kind: 'list', title: 'ประวัติการแก้ไข (ผู้ใช้และสิทธิ์)', endpoint: '/_audit', perm: 'identity.audit.read',

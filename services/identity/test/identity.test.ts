@@ -344,7 +344,7 @@ describe('company profile', () => {
     const visible = (perms: string[]) => ui.menu.filter((i) => hasPerm(perms, ui.screens[i.screen]?.perm)).map((i) => i.screen);
     expect(visible(['approvals.request.write', 'expense.claim.write', 'hr.leave.request'])).toEqual([]);
     expect(visible(['identity.company.write'])).toEqual(['company']);
-    expect(visible(['identity.*'])).toEqual(['users', 'roles', 'company', 'audit']);
+    expect(visible(['identity.*'])).toEqual(['users', 'roles', 'company', 'plan', 'audit']);
   });
 });
 

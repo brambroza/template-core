@@ -17,6 +17,15 @@
   Also on "รายงานผลผลิต" (materials out, finished goods in, job cost, final QC) and "บันทึกส่งของ" (stock that would go negative in red).
 - **Mobile app**: "ต้องตัดสินใจวันนี้" on the home screen, the impact panel in action dialogs, and พ.ศ. month boxes.
 
+**Cloud plans (phase 1, part 1)**
+- Plans Starter 1,490 / Factory 3,490 / Business 6,990 บาท/เดือน (`services/identity/src/plans.ts`): a company provisioned with `plan`
+  starts a 14-day trial; the token lists the plan's modules and every module refuses the rest (403 `module_not_in_plan`); menus hide them.
+- Trial over / unpaid 7 days past `paid_through` / suspended → login 402 with the Thai reason; user limit per plan (409 `user_limit`).
+- Back office: `pnpm erp plan list | set | log` (bank transfer confirmed → `--status active --paid-through …`), every change logged;
+  access changes sign everyone in the company out so the new module list applies at once.
+- Web: banner "ทดลองใช้แพ็กเกจ Factory เหลือ 5 วัน" / payment reminder; settings screen "แพ็กเกจของบริษัท" with how to pay.
+- Companies without a plan (self-hosted installs, the demo) are unchanged.
+
 **Phase 0 (self-serve blockers found by the new-user test)**
 - Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
   The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.
