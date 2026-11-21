@@ -53,6 +53,16 @@
 - Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
+**Import from Excel and opening stock (phase 2, part 3)**
+- Every import screen ("นำเข้าจาก Excel") reads .xlsx (first sheet) as well as CSV, and hands out the template as .xlsx (bold frozen header,
+  text columns so codes and tax IDs keep their leading zeros). No library: `packages/ui-schema/src/xlsx.ts` reads the ZIP/XML itself
+  (shared strings, rich text, dates by number format → YYYY-MM-DD, 1904 dates, plain numbers without float noise).
+- ยอดสต็อกยกมา: "นำเข้าจาก Excel" on ยอดคงเหลือ → `POST /api/inventory/opening/import` (item code, warehouse, qty, unit cost): per-row
+  errors in a dry run, then one transaction (moves with refType `opening`); an item already given an opening balance in a warehouse is
+  refused, so the same file cannot double the stock. Item codes are turned into ids by master-data first (`ImportSpec.resolve`,
+  `POST /api/master-data/items/resolve`).
+- Not yet: opening receivables / payables (they touch the VAT registers, e-Tax and the ledger — designed separately).
+
 **Setup wizard and team invitations (phase 2, part 2)**
 - After the sign-up link the owner lands on `/setup`, "ตั้งค่าเริ่มต้น" in 5 steps (each can be skipped; a bar "ตั้งค่าเริ่มต้นแล้ว 2/5 — ทำต่อ"
   stays until it is finished): company profile for the letterhead, who approves purchase orders (works alone = may approve own POs, one tier;

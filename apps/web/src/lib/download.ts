@@ -1,8 +1,8 @@
 'use client';
 
-/** Save text as a file in the browser (CSV export, import templates). */
-export function downloadText(fileName: string, text: string, type = 'text/csv;charset=utf-8') {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+/** Save text (CSV) or bytes (an .xlsx template) as a file in the browser. */
+export function downloadText(fileName: string, text: string | Uint8Array, type = 'text/csv;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text as BlobPart], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = fileName;
@@ -27,3 +27,5 @@ export function decodeText(buf: ArrayBuffer): string {
     return new TextDecoder('windows-874').decode(buf);
   }
 }
+
+export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

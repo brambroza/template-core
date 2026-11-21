@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Download, Upload } from 'lucide-react';
-import { csvTemplate, IMPORT_MAX_ROWS, mapImportRows, parseCsv, type ImportResult, type ImportSpec } from '@erp/ui-schema';
+import { applyResolved, IMPORT_MAX_ROWS, looksLikeXlsx, mapImportRows, parseCsv, readXlsx, xlsxTemplate, type ImportResult, type ImportSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
-import { datedFileName, decodeText, downloadText } from '@/lib/download';
+import { datedFileName, decodeText, downloadText, XLSX_TYPE } from '@/lib/download';
 import { toast } from '@/lib/toast';
 
 const PREVIEW_ROWS = 100;
@@ -13,7 +13,7 @@ const n = (v: number) => v.toLocaleString('th-TH');
 interface Parsed { rows: Record<string, string>[]; lines: number[]; ignored: string[] }
 
 /**
- * "นำเข้า CSV" for a list screen with `import`: pick a file → parsed in the browser → dry run on the server →
+ * "นำเข้าจาก Excel" for a list screen with `import`: pick an .xlsx (first sheet) or .csv → parsed in the browser → dry run on the server →
  * preview with per-row errors → confirm → the server writes everything in one transaction.
  */
 export function ImportButton({ module, spec, title, onDone }: { module: string; spec: ImportSpec; title: string; onDone: () => void }) {
@@ -45,10 +45,19 @@ export function ImportButton({ module, spec, title, onDone }: { module: string; 
     setFileName(file.name);
     setBusy(true);
     try {
-      const m = mapImportRows(spec.columns, parseCsv(decodeText(await file.arrayBuffer())));
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // by content, not by name: a renamed file is still read the right way
+      const table = looksLikeXlsx(bytes) ? await readXlsx(bytes) : parseCsv(decodeText(bytes.buffer));
+      const m = mapImportRows(spec.columns, table);
       if (m.missing.length) throw new Error(`ไฟล์ไม่มีคอลัมน์ ${m.missing.map((c) => c.label).join(', ')} — ใช้หัวคอลัมน์ตามแบบฟอร์ม`);
       if (!m.rows.length) throw new Error('ไม่พบข้อมูลในไฟล์ (แถวแรกต้องเป็นหัวคอลัมน์)');
       if (m.rows.length > IMPORT_MAX_ROWS) throw new Error(`นำเข้าได้ครั้งละไม่เกิน ${n(IMPORT_MAX_ROWS)} แถว ไฟล์นี้มี ${n(m.rows.length)} แถว — แบ่งเป็นหลายไฟล์`);
+      // codes owned by another module (item codes for opening stock) → ids, before the dry run
+      if (spec.resolve) {
+        const codes = [...new Set(m.rows.map((r) => (r[spec.resolve!.column] ?? '').trim()).filter(Boolean))];
+        const answer = codes.length ? await api<Record<string, unknown>[]>(spec.resolve.module, spec.resolve.endpoint, { method: 'POST', body: { codes } }) : [];
+        m.rows = applyResolved(m.rows, spec.resolve, answer);
+      }
       setParsed(m);
       setPreview(await api<ImportResult>(module, spec.endpoint, { method: 'POST', body: { rows: m.rows, dryRun: true } }));
     } catch (e) {
@@ -86,21 +95,21 @@ export function ImportButton({ module, spec, title, onDone }: { module: string; 
   return (
     <>
       <button type="button" className="btn" onClick={() => { reset(); setOpen(true); }}>
-        <Upload size={16} aria-hidden /> นำเข้า CSV
+        <Upload size={16} aria-hidden /> นำเข้าจาก Excel
       </button>
       <dialog ref={dialog} className="dialog dialog-wide" onClose={() => setOpen(false)} aria-labelledby={`imp-${spec.endpoint}`}>
         <form method="dialog" onSubmit={(e) => { e.preventDefault(); if (ready) confirm(); }}>
-          <h2 id={`imp-${spec.endpoint}`}>นำเข้า{title}จากไฟล์ CSV</h2>
+          <h2 id={`imp-${spec.endpoint}`}>นำเข้า{title}จากไฟล์ Excel</h2>
           <p className="confirm-text">
-            แถวแรกเป็นหัวคอลัมน์ (ชื่อภาษาไทยตามแบบฟอร์ม) รายการที่มีรหัสอยู่แล้วจะถูกอัปเดต รหัสใหม่จะถูกเพิ่ม · ครั้งละไม่เกิน {n(IMPORT_MAX_ROWS)} แถว
+            ไฟล์ Excel (.xlsx แผ่นแรก) หรือ CSV · แถวแรกเป็นหัวคอลัมน์ (ชื่อภาษาไทยตามแบบฟอร์ม) · {spec.note ?? 'รายการที่มีรหัสอยู่แล้วจะถูกอัปเดต รหัสใหม่จะถูกเพิ่ม'} · ครั้งละไม่เกิน {n(IMPORT_MAX_ROWS)} แถว
           </p>
           <ul className="import-cols" aria-label="คอลัมน์ที่รองรับ">
             {spec.columns.map((c) => <li key={c.key}>{c.label}{c.required && <span className="req" aria-label="จำเป็น"> *</span>}</li>)}
           </ul>
           <div className="import-pick">
-            <label className="sr-only" htmlFor={`imp-file-${spec.endpoint}`}>เลือกไฟล์ CSV</label>
-            <input ref={fileInput} id={`imp-file-${spec.endpoint}`} type="file" accept=".csv,text/csv" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
-            <button type="button" className="btn-ghost" onClick={() => downloadText(spec.template ?? datedFileName(`แบบฟอร์ม${title}`), csvTemplate(spec))}>
+            <label className="sr-only" htmlFor={`imp-file-${spec.endpoint}`}>เลือกไฟล์ Excel หรือ CSV</label>
+            <input ref={fileInput} id={`imp-file-${spec.endpoint}`} type="file" accept={`.xlsx,.csv,text/csv,${XLSX_TYPE}`} disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
+            <button type="button" className="btn-ghost" onClick={() => downloadText(templateName(spec, title), xlsxTemplate(spec.columns.map((c) => c.label)), XLSX_TYPE)}>
               <Download size={16} aria-hidden /> ดาวน์โหลดแบบฟอร์ม
             </button>
           </div>
@@ -156,4 +165,9 @@ export function ImportButton({ module, spec, title, onDone }: { module: string; 
       </dialog>
     </>
   );
+}
+
+/** "แบบฟอร์มนำเข้าสินค้า.csv" → "แบบฟอร์มนำเข้าสินค้า.xlsx" (the template is an Excel file; CSV is still accepted) */
+function templateName(spec: ImportSpec, title: string): string {
+  return spec.template ? spec.template.replace(/\.csv$/i, '') + '.xlsx' : datedFileName(`แบบฟอร์ม${title}`, 'xlsx');
 }

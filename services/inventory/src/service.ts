@@ -145,6 +145,57 @@ export const definition: ServiceDefinition = {
       });
     });
 
+    /**
+     * ยอดสต็อกยกมา from a spreadsheet (phase 2): rows `{ itemCode, itemId, itemName, warehouseCode, qty, unitCost }` — itemId/itemName
+     * filled in by the app from master-data (ImportSpec.resolve). A dry run reports every problem per row; the real run posts one
+     * receipt per warehouse (refType "opening") in one transaction, or nothing. An item already given an opening balance in a
+     * warehouse is refused, so importing the same file twice cannot double the stock.
+     */
+    app.post('/opening/import', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'inventory.move.write');
+      const body = parse(z.object({ rows: z.array(z.record(z.string(), z.unknown())).min(1).max(2000), dryRun: z.boolean().default(false) }), req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        const errors: { row: number; field?: string; message: string }[] = [];
+        const lines: (MoveInput & { row: number })[] = [];
+        const seen = new Map<string, number>();
+        const warehouses = new Map((await c.query<{ code: string; is_hold: boolean }>('select code, coalesce(is_hold, false) as is_hold from warehouses')).rows.map((w) => [w.code.toLowerCase(), w]));
+        const already = new Set((await c.query<{ k: string }>(
+          `select lower(item_code) || '|' || lower(w.code) as k from stock_moves m join warehouses w on w.id = m.warehouse_id where m.ref_type = 'opening' group by 1`)).rows.map((r) => r.k));
+        const num = (v: unknown) => { const t = String(v ?? '').replace(/,/g, '').trim(); return t === '' ? NaN : Number(t); };
+        body.rows.forEach((raw, i) => {
+          const row = i + 1;
+          const itemCode = String(raw.itemCode ?? '').trim();
+          const wh = String(raw.warehouseCode ?? '').trim();
+          const itemId = String(raw.itemId ?? '').trim();
+          const qty = num(raw.qty);
+          const cost = String(raw.unitCost ?? '').trim() === '' ? 0 : num(raw.unitCost);
+          const before = errors.length;
+          if (!itemCode) errors.push({ row, field: 'itemCode', message: 'กรอกรหัสสินค้า' });
+          else if (!/^[0-9a-f-]{36}$/i.test(itemId)) errors.push({ row, field: 'itemCode', message: `ไม่พบรหัสสินค้า ${itemCode} ในข้อมูลหลัก — นำเข้าหรือเพิ่มสินค้าก่อน` });
+          if (!wh) errors.push({ row, field: 'warehouseCode', message: 'กรอกรหัสคลัง' });
+          else if (!warehouses.has(wh.toLowerCase())) errors.push({ row, field: 'warehouseCode', message: `ไม่พบคลัง ${wh} — สร้างคลังก่อนที่ คลังสินค้า → คลัง` });
+          else if (warehouses.get(wh.toLowerCase())!.is_hold) errors.push({ row, field: 'warehouseCode', message: `${wh} เป็นคลังกักกัน QC — ใส่ยอดยกมาในคลังปกติ` });
+          if (!Number.isFinite(qty) || qty <= 0) errors.push({ row, field: 'qty', message: 'จำนวนต้องเป็นตัวเลขมากกว่า 0' });
+          if (!Number.isFinite(cost) || cost < 0) errors.push({ row, field: 'unitCost', message: 'ต้นทุนต่อหน่วยต้องเป็นตัวเลข 0 ขึ้นไป' });
+          if (errors.length > before) return;
+          const key = `${itemCode.toLowerCase()}|${wh.toLowerCase()}`;
+          if (seen.has(key)) return void errors.push({ row, field: 'itemCode', message: `สินค้า ${itemCode} คลัง ${wh} ซ้ำกับแถวที่ ${seen.get(key)}` });
+          seen.set(key, row);
+          if (already.has(key)) return void errors.push({ row, field: 'itemCode', message: `สินค้า ${itemCode} คลัง ${wh} มียอดยกมาแล้ว — แก้ด้วย "ปรับปรุงยอด" แทน` });
+          lines.push({ row, itemId, itemCode, itemName: String(raw.itemName ?? '') || undefined, warehouseCode: wh, qty, unitCost: cost, kind: 'receive' });
+        });
+        const result = { dryRun: body.dryRun || errors.length > 0, total: body.rows.length, created: lines.length, updated: 0, errors };
+        if (result.dryRun) return result;
+        const em: Emit = (t, d) => k.emit(c, t, d);
+        for (const l of lines) {
+          const { row: _row, ...move } = l;
+          await postMove(em, c, { ...move, refType: 'opening', refId: 'OPENING', note: 'ยอดยกมา (นำเข้าจากไฟล์)', userId: a.userId });
+        }
+        return result;
+      });
+    });
+
     app.post('/issues', async (req, reply) => {
       const a = auth(req);
       requirePerm(a, 'inventory.move.write');

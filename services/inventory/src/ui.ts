@@ -44,7 +44,17 @@ export default defineUi({
         { key: 'available', label: 'พร้อมใช้', format: 'qty' }, { key: 'isHold', label: 'คลังกักกัน', format: 'boolean' },
       ],
       rowLink: { screen: 'stockCard', idFrom: 'itemId' },
-      empty: 'ยังไม่มีสต็อก บันทึกรับเข้าครั้งแรกเพื่อเริ่มต้น',
+      empty: 'ยังไม่มีสต็อก นำเข้ายอดยกมาจาก Excel หรือบันทึกรับเข้าครั้งแรกเพื่อเริ่มต้น',
+      // ยอดยกมา: stock counted on the first day, from the old Excel sheet (item codes resolved through master-data)
+      import: {
+        endpoint: '/opening/import', perm: 'inventory.move.write', template: 'แบบฟอร์มยอดสต็อกยกมา.csv',
+        note: 'ยอดยกมา = จำนวนที่นับได้ ณ วันเริ่มใช้ระบบ ใส่ได้ครั้งเดียวต่อสินค้าต่อคลัง (แก้ภายหลังด้วย "ปรับปรุงยอด") · สินค้าและคลังต้องมีในระบบก่อน',
+        columns: [
+          { key: 'itemCode', label: 'รหัสสินค้า', required: true }, { key: 'warehouseCode', label: 'รหัสคลัง', required: true },
+          { key: 'qty', label: 'จำนวนคงเหลือ', required: true }, { key: 'unitCost', label: 'ต้นทุนต่อหน่วย' },
+        ],
+        resolve: { module: 'master-data', endpoint: '/items/resolve', column: 'itemCode', into: { itemId: 'id', itemName: 'name' } },
+      },
     },
     stockCard: {
       kind: 'list', title: 'สต็อกการ์ด', endpoint: '/items/:itemId/stock-card', perm: 'inventory.stock.read', mobile: true,

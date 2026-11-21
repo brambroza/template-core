@@ -176,8 +176,29 @@ export interface ImportSpec {
   endpoint: string;
   perm?: string;
   columns: ImportColumn[];
-  /** file name of the downloadable empty template (header row only), e.g. "items-template.csv" */
+  /** what the import does with existing records, shown in the dialog (default: existing codes are updated, new ones added) */
+  note?: string;
+  /** file name of the downloadable empty template (header row only), e.g. "items-template.csv" (handed out as .xlsx) */
   template?: string;
+  /**
+   * Codes the importing module does not own, turned into ids by the module that does before the dry run: the app POSTs
+   * `{ codes }` (the distinct values of `column`) to `module` `endpoint`, which answers `[{ code, …fields }]`; each row then gets
+   * `row[target] = match[source]` for every pair in `into`. Unknown codes are left empty for the importing module to report.
+   * E.g. opening stock (inventory) resolves item codes through master-data.
+   */
+  resolve?: { module: string; endpoint: string; column: string; into: Record<string, string> };
+}
+
+/** Rows after `ImportSpec.resolve`: `answer` is what the owning module returned for the distinct codes. */
+export function applyResolved(rows: Record<string, string>[], resolve: NonNullable<ImportSpec['resolve']>, answer: Record<string, unknown>[]): Record<string, string>[] {
+  const byCode = new Map(answer.map((r) => [String(r.code ?? '').trim().toLowerCase(), r]));
+  return rows.map((row) => {
+    const hit = byCode.get(String(row[resolve.column] ?? '').trim().toLowerCase());
+    if (!hit) return row;
+    const out = { ...row };
+    for (const [target, source] of Object.entries(resolve.into)) if (hit[source] != null) out[target] = String(hit[source]);
+    return out;
+  });
 }
 
 export interface ImportColumn {
@@ -1748,3 +1769,4 @@ export function planNotice(p: PlanView | null): { text: string; urgent: boolean 
   if (p.status === 'active' && p.daysLeft <= PLAN_REMIND_DAYS) return { text: `ใกล้ครบกำหนดชำระค่าบริการ — ใช้งานได้อีก ${p.daysLeft} วัน`, urgent: p.daysLeft <= 3 };
   return null;
 }
+export * from './xlsx.ts';

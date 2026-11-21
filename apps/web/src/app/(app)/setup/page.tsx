@@ -254,6 +254,7 @@ function TeamStep({ onDone }: { onDone: () => Promise<void> }) {
 
 /** 4 — starting data: the CSV imports of items and partners (sample data can be cleared from the bar on top). */
 function DataStep({ onDone }: { onDone: () => Promise<void> }) {
+  const { installed } = useRegistry();
   const [hasSample, setHasSample] = useState(false);
   useEffect(() => { api<{ starter: unknown }>('identity', '/starter').then((r) => setHasSample(!!r.starter)).catch(() => undefined); }, []);
   return (
@@ -262,8 +263,9 @@ function DataStep({ onDone }: { onDone: () => Promise<void> }) {
         <p className="setup-note">ตอนนี้ในระบบเป็น<b>ข้อมูลตัวอย่าง</b> · ลองใช้ให้คล่องก่อน แล้วกด “ล้างข้อมูลตัวอย่าง — เริ่มใช้จริง” ที่แถบด้านบน ก่อนนำเข้าข้อมูลจริง (การล้างจะลบทุกอย่างที่บันทึกไว้)</p>
       )}
       <ul className="setup-links">
-        <li><Link href={screenHref('master-data', 'items')}>สินค้าและวัตถุดิบ</Link> — กด “นำเข้า CSV” แล้วดาวน์โหลดแบบฟอร์ม กรอกจาก Excel เดิม ระบบบอกแถวที่ผิดก่อนบันทึก</li>
+        <li><Link href={screenHref('master-data', 'items')}>สินค้าและวัตถุดิบ</Link> — กด “นำเข้าจาก Excel” แล้วดาวน์โหลดแบบฟอร์ม (.xlsx) คัดลอกจาก Excel เดิมมาวาง ระบบบอกแถวที่ผิดก่อนบันทึก</li>
         <li><Link href={screenHref('master-data', 'partners')}>ลูกค้าและผู้ขาย</Link> — นำเข้าแบบเดียวกัน (เลขผู้เสียภาษีตรวจให้)</li>
+        {installed('inventory') && <li><Link href={screenHref('inventory', 'balances')}>ยอดสต็อกยกมา</Link> — หลังมีสินค้าและคลังแล้ว นำเข้ายอดที่นับได้ ณ วันเริ่มใช้ (รหัสสินค้า รหัสคลัง จำนวน ต้นทุน)</li>}
       </ul>
       <div className="form-actions"><button className="btn-primary" type="button" onClick={() => void onDone()}>ไปขั้นถัดไป</button></div>
     </div>
