@@ -3,6 +3,7 @@
  *
  *  - /api/<module>/*      proxied to that module (only modules the customer installed exist)
  *  - /api/_catalog         installed modules + manifests (the web/mobile apps build menus from this)
+ *  - /api/_health          uptime monitors (UptimeRobot): 200 when every installed module and its database answer, else 503
  *  - /api/_impact          impact preview: asks every installed subscriber of each event what it would do (see kernel impact.ts)
  *  - /_events/publish      event router: fans each event out to installed modules that subscribe to it, and kernel events
  *                          (`KERNEL_SUBSCRIPTIONS`, e.g. identity.tokens_revoked) to every installed module
@@ -10,7 +11,7 @@
  * The gateway holds no business logic and no database. It discovers wiring from each module's /_manifest.
  */
 import Fastify, { type FastifyInstance } from 'fastify';
-import { isKernelSubscription, safeEqual, toErrorBody, unauthorized, type ModuleManifest } from '@erp/kernel';
+import { isKernelSubscription, safeEqual, toErrorBody, unauthorized, type ErrorReporter, type ModuleManifest } from '@erp/kernel';
 
 /**
  * module response headers passed through to the client. `x-rd-prep-layout` is purchasing's "this RD Prep text layout is
@@ -52,6 +53,25 @@ export interface GatewayOptions {
    * Leave unset when clients connect to the gateway directly.
    */
   trustProxy?: boolean | string;
+  /** unexpected gateway errors (500) go here — `createErrorReporter('gateway', …)` when SENTRY_DSN is set */
+  errors?: ErrorReporter;
+}
+
+/**
+ * Health of the whole installation from each module's /_health (which checks its database): ok only when all answer ok within
+ * `timeoutMs`. Only module ids and ok/down are returned — never addresses or error text (the endpoint is public).
+ */
+export async function installationHealth(modules: Record<string, string>, timeoutMs = 3000): Promise<{ ok: boolean; modules: Record<string, 'ok' | 'down'> }> {
+  const states = await Promise.all(Object.entries(modules).map(async ([id, url]) => {
+    try {
+      const res = await fetch(`${url}/_health`, { signal: AbortSignal.timeout(timeoutMs) });
+      const body = (await res.json().catch(() => ({}))) as { status?: string };
+      return [id, res.ok && body.status === 'ok' ? 'ok' : 'down'] as const;
+    } catch {
+      return [id, 'down'] as const;
+    }
+  }));
+  return { ok: states.every(([, s]) => s === 'ok'), modules: Object.fromEntries(states) };
 }
 
 export function parseModules(spec: string): Record<string, string> {
@@ -105,12 +125,23 @@ export function createGateway(opts: GatewayOptions): Gateway {
     return manifests;
   }
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     const { status, body } = toErrorBody(err);
+    if (status === 500) {
+      req.log.error(err);
+      void opts.errors?.report(err, { kind: 'request', method: req.method, route: req.routeOptions.url });
+    }
     reply.code(status).send(body);
   });
 
   app.get('/_health', async () => ({ status: 'ok', modules: manifests.map((m) => m.id) }));
+
+  // what UptimeRobot watches (through the web app: https://<host>/api/_health, keyword "ok"); no cache so every check is live
+  app.get('/api/_health', async (_req, reply) => {
+    const h = await installationHealth(opts.modules);
+    reply.code(h.ok ? 200 : 503).header('cache-control', 'no-store');
+    return { status: h.ok ? 'ok' : 'down', modules: h.modules };
+  });
 
   // menus: only what the company's plan includes (claim `mods`); every module also enforces it itself, this only hides the rest
   app.get('/api/_catalog', async (req) => {
@@ -219,7 +250,14 @@ export function createGateway(opts: GatewayOptions): Gateway {
     // the visitor's IP as the gateway saw it (never copied from the request), e.g. identity throttles failed logins per e-mail + IP
     headers['x-erp-client-ip'] = req.ip;
     const hasBody = !['GET', 'HEAD'].includes(req.method) && req.body !== undefined;
-    const res = await fetch(`${base}/${rest}${qs}`, { method: req.method, headers, body: hasBody ? JSON.stringify(req.body) : undefined });
+    let res: Response;
+    try {
+      res = await fetch(`${base}/${rest}${qs}`, { method: req.method, headers, body: hasBody ? JSON.stringify(req.body) : undefined });
+    } catch {
+      // the module is down or restarting: an outage (UptimeRobot sees it on /api/_health), not a bug for Sentry
+      reply.code(502);
+      return { error: { code: 'module_unavailable', message: 'ระบบส่วนนี้ไม่ตอบสนองชั่วคราว ลองใหม่อีกครั้งในอีกสักครู่' } };
+    }
     reply.code(res.status);
     // binary responses (attachments) need their file name and safety headers, not only the type
     for (const h of FORWARDED_RESPONSE_HEADERS) {

@@ -97,6 +97,12 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
   → เมนู "หลังบ้าน: บริษัทลูกค้า": บันทึกรับโอน (ต่ออายุ + event `identity.subscription_paid` → ใบสั่งขายร่างสำหรับใบกำกับภาษีในบริษัท GO Along), เปลี่ยนแพ็กเกจ/ระงับ
 - event ยังส่งถึงทุกโมดูลที่ติดตั้ง (โมดูลนอกแพ็กเกจรับ event ของบริษัทนั้นได้ แต่ผู้ใช้เปิดดูไม่ได้)
 
+## Operations
+
+- backup รายวัน + ซ้อมกู้คืนอัตโนมัติ (container `backup`, `tools/erp/assets/erp-backup.sh`), สำเนาขึ้น Spaces (`backup-offsite`)
+- UptimeRobot ดู `GET /api/_health` (gateway ถาม `/_health` ของทุกโมดูล ซึ่งตรวจฐานข้อมูลด้วย) · Sentry ผ่าน `SENTRY_DSN` (`packages/kernel/src/sentry.ts`, ส่งแค่ id)
+- วิธีใช้และวิธีกู้คืนจริง: [operations.md](operations.md)
+
 ## License
 
 - ใบอนุญาต = JSON ที่เซ็นด้วย Ed25519 (private key อยู่ที่ GO Along เท่านั้น) ระบุลูกค้า + โมดูล + วันหมดอายุ

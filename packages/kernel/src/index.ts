@@ -10,6 +10,7 @@ export * from './license.ts';
 export * from './lock.ts';
 export * from './manifest.ts';
 export * from './revocation.ts';
+export * from './sentry.ts';
 export * from './service.ts';
 export * as s from './schemas.ts';
 export { z } from 'zod';

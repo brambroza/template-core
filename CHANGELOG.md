@@ -44,6 +44,15 @@
 - `<module>.ops.*` rights are never granted by `*` — a customer's administrator cannot see or grant them; the API also checks the company.
   First staff member: `pnpm erp plan grant-ops <email>`.
 
+**Operations: backups, uptime, error reporting (phase 1, part 4)** — runbook in `docs/operations.md`
+- `pnpm erp compose` adds a `backup` container: nightly `pg_dump` of every database at `BACKUP_AT`, then a restore drill into scratch
+  databases (checksums, tables, migrations), `BACKUP_KEEP_DAYS` retention, and a heartbeat ping (`BACKUP_PING_URL`) only when both
+  passed. `erp-backup now | list | check | restore <stamp> --yes [db…]`. `backup-offsite` copies the backups to a private Spaces bucket.
+- `GET /api/_health` on the gateway (through the web app) for UptimeRobot: 200 when every module and its database answer, 503 naming the
+  module that is down. A module's `/_health` now checks its database. A module that is down answers a Thai 502 through the gateway.
+- Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
+  route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
+
 **Phase 0 (self-serve blockers found by the new-user test)**
 - Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
   The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.

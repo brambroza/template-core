@@ -1,4 +1,5 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -46,6 +47,30 @@ describe('compose', () => {
     expect(yml).toContain('APP_DIR: apps/web');
     expect(yml).toContain('GATEWAY_URL: http://gateway:8080');
     expect(readFileSync(join(out, 'init-db.sh'), 'utf8')).toContain('create database erp_master_data owner erp_app;');
+  });
+
+  it('ships daily backups with a restore test, an off-site copy and Sentry settings', () => {
+    const out = join(tmp, 'compose-ops');
+    compose(resolveSelection(['maintenance'], manifests), manifests, out, REPO_ROOT);
+    const yml = readFileSync(join(out, 'docker-compose.yml'), 'utf8');
+    expect(yml).toContain('image: postgres:16-alpine');
+    expect(yml).toContain('command: ["erp-backup", "loop"]');
+    expect(yml).toContain('./erp-backup.sh:/usr/local/bin/erp-backup:ro');
+    expect(yml).toContain('rclone copy /backups "offsite:$$BACKUP_S3_BUCKET/$$BACKUP_S3_PREFIX"'); // $$ = literal $ for the container shell
+    expect(yml).toContain('RCLONE_CONFIG_OFFSITE_ACL: private');
+    // every module and the gateway report errors when SENTRY_DSN is set
+    expect(yml.match(/SENTRY_DSN: \$\{SENTRY_DSN:-\}/g)).toHaveLength(4);
+    const env = readFileSync(join(out, '.env.example'), 'utf8');
+    for (const key of ['SENTRY_DSN=', 'BACKUP_AT=0200', 'BACKUP_KEEP_DAYS=14', 'BACKUP_PING_URL=', 'BACKUP_S3_BUCKET=', 'BACKUP_S3_SECRET=']) expect(env).toContain(key);
+    const readme = readFileSync(join(out, 'README.md'), 'utf8');
+    expect(readme).toContain('/api/_health');
+    expect(readme).toContain('docker compose stop identity master-data maintenance gateway web');
+    const script = join(out, 'erp-backup.sh');
+    expect(statSync(script).mode & 0o111).not.toBe(0);
+    expect(() => execFileSync('sh', ['-n', script])).not.toThrow();
+    const text = readFileSync(script, 'utf8');
+    expect(text).toContain('[ "${1:-}" = "--yes" ] ||'); // a real restore needs --yes
+    expect(text).toContain('sha256sum -c SHA256SUMS');
   });
 });
 

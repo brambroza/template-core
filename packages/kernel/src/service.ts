@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { checkLicense } from './license.ts';
 import type { ModuleManifest } from './manifest.ts';
 import { applyRevocation, DEFAULT_REVOCATION_RELOAD_MS, isKernelSubscription, RevocationList } from './revocation.ts';
+import { createErrorReporter, type ErrorReporter } from './sentry.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -38,6 +39,8 @@ export interface Kernel {
   emit<T extends EventType>(c: Client, type: T, data: EventData<T>): Promise<string>;
   /** token revocation cutoffs this service enforces (SEC-07, see revocation.ts) */
   revocations: RevocationList;
+  /** unexpected errors to Sentry when SENTRY_DSN is set (see sentry.ts); 5xx answers are reported automatically */
+  errors: ErrorReporter;
 }
 
 export interface ServiceDefinition {
@@ -118,8 +121,9 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   const jwtSecret = required(env, 'JWT_SECRET');
   const internalToken = required(env, 'INTERNAL_TOKEN');
   const db = createDb(required(env, 'DATABASE_URL'));
+  const errors = createErrorReporter(manifest.id, manifest.version, env);
   const kernel: Kernel = {
-    db, manifest, env, revocations,
+    db, manifest, env, revocations, errors,
     async emit(c, type, data) {
       const id = await emit(c, manifest.id, type, data);
       dryRunStore.getStore()?.events.push({ type, data });
@@ -174,11 +178,23 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 
   app.setErrorHandler((err, req, reply) => {
     const { status, body } = toErrorBody(err);
-    if (status >= 500) req.log.error(err);
+    if (status >= 500) {
+      req.log.error(err);
+      // 503 "database busy" is an outage UptimeRobot sees; only real bugs (500) go to Sentry
+      if (status === 500) void errors.report(err, { kind: 'request', method: req.method, route: req.routeOptions.url, tenantId: req.authCtx?.tenantId, userId: req.authCtx?.userId });
+    }
     reply.code(status).send(body);
   });
 
-  app.get('/_health', { config: { public: true } }, async () => ({ status: 'ok', module: manifest.id, version: manifest.version }));
+  // uptime monitors: 200 only when this module can reach its database (2 s), else 503 — nothing about the data is revealed
+  app.get('/_health', { config: { public: true } }, async (_req, reply) => {
+    const dbState = await Promise.race([
+      db.pool.query('select 1').then(() => 'ok' as const, () => 'down' as const),
+      new Promise<'down'>((r) => setTimeout(() => r('down'), 2000).unref()),
+    ]);
+    if (dbState !== 'ok') reply.code(503);
+    return { status: dbState === 'ok' ? 'ok' : 'down', module: manifest.id, version: manifest.version, db: dbState };
+  });
   app.get('/_manifest', { config: { public: true } }, async () => manifest);
   app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body, env) }));
 
@@ -236,7 +252,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
         timer = setInterval(async () => {
           if (dispatching) return;
           dispatching = true;
-          try { await dispatch(); } catch (e) { app.log.error(e); } finally { dispatching = false; }
+          try { await dispatch(); } catch (e) { app.log.error(e); void errors.report(e, { kind: 'event', route: 'outbox dispatch' }); } finally { dispatching = false; }
         }, Number(env.EVENT_DISPATCH_MS ?? 1000));
       }
       // other instances of this module may have received a revocation this one did not (SEC-07)
@@ -260,6 +276,13 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 /** Entry point used by every service's src/main.ts. */
 export async function runService(def: ServiceDefinition): Promise<Service> {
   const svc = createService(def);
+  // a crash is reported before the process dies (the container restarts it); a stray rejection is reported and logged
+  process.on('unhandledRejection', (e) => { svc.app.log.error(e); void svc.kernel.errors.report(e, { kind: 'process' }); });
+  process.on('uncaughtException', (e) => {
+    svc.app.log.fatal(e);
+    void svc.kernel.errors.report(e, { kind: 'process' }).finally(() => process.exit(1));
+    setTimeout(() => process.exit(1), 3500).unref();
+  });
   await svc.start();
   const stop = async () => { await svc.close(); process.exit(0); };
   process.on('SIGINT', stop);
