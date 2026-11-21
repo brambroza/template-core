@@ -310,7 +310,8 @@ export const definition: ServiceDefinition = {
       });
     });
 
-    app.post('/orders/:id/deliver', async (req) => {
+    // dry-runnable: the dialog previews the stock that leaves each warehouse (kernel impact.ts)
+    app.post('/orders/:id/deliver', { config: { dryRun: true } }, async (req) => {
       const a = auth(req);
       requirePerm(a, 'sales.order.deliver');
       const { id } = parse(IdParam, req.params);

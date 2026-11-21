@@ -16,6 +16,13 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
   Propagation delay: publisher immediately; other modules when the outbox is dispatched (~`EVENT_DISPATCH_MS`, 1 s); other instances of a module
   that did not get the delivery ≤ reload interval. Loading all tenants uses a SELECT-only policy gated by `app.kernel_read = 'revoked_tokens'`
   (`RevocationList.load` only — never set it in module code).
+- `impact.ts` — impact preview ("ผลกระทบเมื่อกดยืนยัน"). (1) Dry run: a route with `config: { dryRun: true }` called with `?_dryRun=1` runs normally inside
+  `dryRunStore` (AsyncLocalStorage): every `db.tx`/`rawTx` rolls back instead of committing and `k.emit` records `{ type, data }`; the answer is
+  `{ dryRun: true, result, events }`, no audit row. Opt in only routes whose side effects are all in the database (no LINE/webhook/e-mail calls).
+  (2) `POST /_impact { type, data }` (signed-in): the module's `ServiceDefinition.impact[type]` describer returns Thai `ImpactLine[]`; it may call
+  `ctx.run()` (the module's own handler) and read what changed — the whole call is a rolled-back dry run, not audited. Describers check `ctx.auth`
+  permissions and return `[]` for what the caller may not see. Rows inserted by the preview transaction: `where xmin = pg_current_xact_id()::xid`.
+  The gateway's `POST /api/_impact { events }` asks every installed subscriber. Helpers `impactMoney`, `impactQty`. Test: `test/impact.test.ts`.
 - `db.tx(tenantId, fn)` — sets `app.tenant_id` for RLS, the transaction's `TimeZone` to Asia/Bangkok (wave 8: leftover SQL `current_date` / `date_trunc` is the Thai day)
   and `app.today` = `thaiToday()`; `TODAY_SQL` is the SQL expression for it (follows `setClock`) — use it for SQL date defaults instead of `current_date`. `migrate()` applies `-- @tenant` directives. `nextDocNo`, `one`.
 - `emit`, `dispatchOutbox`, `receiveEvent` — transactional outbox, at-least-once delivery, inbox de-dup.

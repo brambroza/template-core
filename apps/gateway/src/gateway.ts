@@ -3,6 +3,7 @@
  *
  *  - /api/<module>/*      proxied to that module (only modules the customer installed exist)
  *  - /api/_catalog         installed modules + manifests (the web/mobile apps build menus from this)
+ *  - /api/_impact          impact preview: asks every installed subscriber of each event what it would do (see kernel impact.ts)
  *  - /_events/publish      event router: fans each event out to installed modules that subscribe to it, and kernel events
  *                          (`KERNEL_SUBSCRIPTIONS`, e.g. identity.tokens_revoked) to every installed module
  *
@@ -138,6 +139,36 @@ export function createGateway(opts: GatewayOptions): Gateway {
       reply.code(res.status).header('content-type', res.headers.get('content-type') ?? 'application/json');
       return reply.send(Buffer.from(await res.arrayBuffer()));
     });
+  });
+
+  /**
+   * "ผลกระทบก่อนยืนยัน": `{ events: [{ type, data }] }` (what a dry run said an action would publish) → for every event, each installed
+   * module that subscribes to it describes what it would do, with the caller's own token (modules check permissions).
+   * A module that is down or has nothing to say is left out. At most 10 events per call.
+   */
+  app.post('/api/_impact', async (req, reply) => {
+    const body = (req.body ?? {}) as { events?: { type?: unknown; data?: unknown }[] };
+    const events = Array.isArray(body.events) ? body.events.slice(0, 10) : [];
+    const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined;
+    if (!authorization) throw unauthorized();
+    const asks = events.flatMap((ev) => {
+      const type = typeof ev?.type === 'string' ? ev.type : '';
+      if (isKernelSubscription(type)) return [];
+      return routeTargets(manifests, { type }).map((m) => ({ m, type, data: ev.data }));
+    });
+    const impacts = await Promise.all(asks.map(async ({ m, type, data }) => {
+      try {
+        const res = await fetch(`${opts.modules[m.id]}/_impact`, {
+          method: 'POST', headers: { 'content-type': 'application/json', authorization }, body: JSON.stringify({ type, data }),
+        });
+        if (res.status === 401) return { unauthorized: true as const };
+        if (!res.ok) return null;
+        const r = (await res.json()) as { lines?: unknown[] };
+        return r.lines?.length ? { module: m.id, nameTh: m.nameTh, event: type, lines: r.lines } : null;
+      } catch { return null; }
+    }));
+    if (impacts.some((x) => x && 'unauthorized' in x)) { reply.code(401); return { error: { code: 'unauthorized', message: 'Unauthorized' } }; }
+    return { impacts: impacts.filter((x): x is { module: string; nameTh: string; event: string; lines: unknown[] } => !!x && !('unauthorized' in x)) };
   });
 
   app.all('/api/:module/*', async (req, reply) => {

@@ -1,4 +1,4 @@
-import { auth, conflict, forbidden, hasPerm, loadManifest, notFound, parse, requirePerm, s, z, type AuthContext, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, conflict, forbidden, hasPerm, impactQty, loadManifest, notFound, parse, requirePerm, s, z, type AuthContext, type Client, type ImpactContext, type ImpactLine, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 import { ensureHoldWarehouse, fmtQty, postMove, reduceHold, warehouse, type Emit, type MoveInput, type MoveOptions } from './stock.ts';
 
@@ -66,6 +66,33 @@ const REF_TH: Record<string, string> = {
   sales_order: 'ส่งของตามใบสั่งขาย', production_order: 'ผลิต (ตัดวัตถุดิบ)', work_order: 'ใบสั่งซ่อม (อะไหล่)', purchase_order: 'รับตามใบสั่งซื้อ',
   purchase_return: 'ส่งคืนผู้ขาย', sales_note: 'รับคืนตามใบลดหนี้', qc_inspection: 'QC กักกัน/ปล่อย', qc_release: 'ปล่อยจากคลังกักกัน', transfer: 'โอนย้าย', adjustment: 'ปรับปรุงยอด',
 };
+
+/**
+ * "ผลกระทบ" on stock: on-hand of each item in the warehouse before → after the module's own handler ran (rolled back).
+ * Going below zero is flagged red; dropping to the reorder point or below amber.
+ */
+async function stockImpact(ctx: ImpactContext, warehouseCode: string, items: { itemId: string; itemCode: string; itemName?: string | null }[]): Promise<ImpactLine[]> {
+  if (!hasPerm(ctx.auth, 'inventory.stock.read')) return [];
+  const unique = items.filter((x, i, all) => all.findIndex((y) => y.itemId === x.itemId) === i);
+  const onHand = async (itemId: string) => Number((await ctx.client.query(
+    `select coalesce(sum(m.qty), 0) as q from stock_moves m join warehouses w on w.id = m.warehouse_id where m.item_id = $1 and w.code = $2`,
+    [itemId, warehouseCode])).rows[0].q);
+  const before = new Map<string, number>();
+  for (const l of unique) before.set(l.itemId, await onHand(l.itemId));
+  await ctx.run();
+  const out: ImpactLine[] = [];
+  for (const l of unique) {
+    const was = before.get(l.itemId)!;
+    const now = await onHand(l.itemId);
+    if (Math.abs(now - was) < 1e-9) continue;
+    const min = (await ctx.client.query<{ min_qty: number }>(
+      'select min_qty from reorder_points where item_id = $1 and warehouse_code = $2', [l.itemId, warehouseCode])).rows[0]?.min_qty;
+    const tone: ImpactLine['tone'] = now < 0 ? 'stop' : min !== undefined && now <= Number(min) && now < was ? 'warn' : now > was ? 'ok' : 'info';
+    const note = now < 0 ? ' — สต็อกติดลบ ตรวจสอบก่อนยืนยัน' : tone === 'warn' ? ` — ถึงจุดสั่งซื้อ (${impactQty(Number(min))})` : '';
+    out.push({ text: `สต็อก ${l.itemCode}${l.itemName ? ` ${l.itemName}` : ''} คลัง ${warehouseCode}: ${impactQty(was)} → ${impactQty(now)} (${now >= was ? '+' : ''}${impactQty(now - was)})${note}`, tone });
+  }
+  return out;
+}
 
 export const definition: ServiceDefinition = {
   manifest,
@@ -323,6 +350,14 @@ export const definition: ServiceDefinition = {
     });
   },
 
+  impact: {
+    /** "ผลกระทบ" of receiving goods: on-hand per item, before → after (runs the real handler, rolled back) */
+    'purchasing.goods_received': (e, ctx) => stockImpact(ctx, e.warehouseCode, e.lines),
+    /** materials issued and finished goods received by a production report */
+    'production.completed': (e, ctx) => stockImpact(ctx, e.warehouseCode, [...e.components, e.item]),
+    /** goods leaving stock on a delivery */
+    'sales.delivered': (e, ctx) => stockImpact(ctx, e.warehouseCode, e.lines),
+  },
   handlers: {
     'purchasing.goods_received': async (e, { client, emit }) => {
       for (const l of e.lines) await postMove(emit, client, { ...l, warehouseCode: e.warehouseCode, kind: 'receive', unitCost: l.unitPrice, refType: 'purchase_order', refId: e.poNo }, { autoCreateWarehouse: true });

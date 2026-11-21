@@ -4,8 +4,11 @@ import { attachmentPerms, mountAttachments, type AttachmentsSpec } from './attac
 import { mountAudit, recordAudit } from './audit.ts';
 import { safeEqual, secretProblems, verifyToken, type AuthContext } from './auth.ts';
 import { createDb, migrate, type Client, type Db } from './db.ts';
-import { toErrorBody, unauthorized } from './errors.ts';
-import { dispatchOutbox, emit, receiveEvent, type EventHandlers } from './events.ts';
+import { badRequest, toErrorBody, unauthorized } from './errors.ts';
+import { dispatchOutbox, emit, receiveEvent, type EventHandlers, type HandlerContext } from './events.ts';
+import { dryRunStore, type DryRunStore, type ImpactContext, type ImpactDescribers, type ImpactLine } from './impact.ts';
+import { isKnownEvent, parseEvent } from '@erp/contracts';
+import { randomUUID } from 'node:crypto';
 import { checkLicense } from './license.ts';
 import type { ModuleManifest } from './manifest.ts';
 import { applyRevocation, DEFAULT_REVOCATION_RELOAD_MS, isKernelSubscription, RevocationList } from './revocation.ts';
@@ -19,6 +22,8 @@ declare module 'fastify' {
     public?: boolean;
     /** service-to-service only (x-internal-token) */
     internal?: boolean;
+    /** `?_dryRun=1` runs the route and rolls everything back, answering the events it would publish (see impact.ts) */
+    dryRun?: boolean;
   }
 }
 
@@ -45,6 +50,8 @@ export interface ServiceDefinition {
    * Every permission named here, and `<module>.attachment.delete`, must be declared in module.json.
    */
   attachments?: AttachmentsSpec;
+  /** what this module would do with an event it subscribes to, in Thai, for the "ผลกระทบ" preview (see impact.ts) */
+  impact?: ImpactDescribers;
 }
 
 /** Permission prefix of a module ("master" for master-data) — the prefix kernel-provided permissions use. */
@@ -82,6 +89,9 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return v;
 }
 
+/** requests answered as a dry run (no audit row) */
+const dryRunNoAudit = new WeakSet<object>();
+
 export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = process.env): Service {
   const own = new Set(def.manifest.permissions.map((p) => p.key));
   const manifest: ModuleManifest = { ...def.manifest, permissions: [...def.manifest.permissions, ...kernelPermissions(def.manifest.id).filter((p) => !own.has(p.key))] };
@@ -112,6 +122,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     db, manifest, env, revocations,
     async emit(c, type, data) {
       const id = await emit(c, manifest.id, type, data);
+      dryRunStore.getStore()?.events.push({ type, data });
       if (type === 'identity.tokens_revoked') await applyRevocation(c, revocations, data as EventData<'identity.tokens_revoked'>);
       return id;
     },
@@ -120,6 +131,19 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   const app = Fastify({ logger: env.LOG_LEVEL ? { level: env.LOG_LEVEL } : false, bodyLimit: 5 * 1024 * 1024 });
   app.decorateRequest('authCtx', null);
   app.decorateRequest('auditEntityId', null);
+
+  // impact preview: routes with config.dryRun answer `?_dryRun=1` with what they would do, keeping nothing (impact.ts)
+  app.addHook('onRoute', (route) => {
+    if (!route.config?.dryRun) return;
+    const original = route.handler;
+    route.handler = async function dryRunnable(this: unknown, req, reply) {
+      if ((req.query as Record<string, unknown> | undefined)?._dryRun !== '1') return original.call(this as never, req, reply);
+      const store: DryRunStore = { events: [] };
+      dryRunNoAudit.add(req);
+      const result = await dryRunStore.run(store, () => original.call(this as never, req, reply));
+      return { dryRun: true, result, events: store.events };
+    };
+  });
 
   app.addHook('onRequest', async (req) => {
     const cfg = req.routeOptions.config ?? {};
@@ -141,6 +165,7 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
 
   // audit log: every successful write by a signed-in user (runs before the response leaves, so readers see it at once)
   app.addHook('onSend', async (req, reply, payload) => {
+    if (dryRunNoAudit.has(req)) return payload; // nothing happened: nothing to audit
     if (req.authCtx && req.method !== 'GET' && req.method !== 'HEAD' && reply.statusCode < 400) await recordAudit(db, req, reply.statusCode, payload);
     return payload;
   });
@@ -154,6 +179,29 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
   app.get('/_health', { config: { public: true } }, async () => ({ status: 'ok', module: manifest.id, version: manifest.version }));
   app.get('/_manifest', { config: { public: true } }, async () => manifest);
   app.post('/_events', { config: { internal: true } }, async (req) => ({ status: await receiveEvent(db, manifest.id, handlers, req.body, env) }));
+
+  /** What this module would do with one event (impact preview). Always rolled back; empty when the module has no describer for it. */
+  app.post('/_impact', async (req) => {
+    const a = req.authCtx!;
+    dryRunNoAudit.add(req); // a question, not a write
+    const body = (req.body ?? {}) as { type?: unknown; data?: unknown };
+    const type = String(body.type ?? '');
+    if (!isKnownEvent(type)) throw badRequest(`Unknown event type "${type}"`);
+    const describe = def.impact?.[type] as ((data: unknown, ctx: ImpactContext) => Promise<ImpactLine[]>) | undefined;
+    if (!describe || !manifest.subscribes.includes(type as never)) return { module: manifest.id, lines: [] };
+    const data = parseEvent(type, body.data);
+    const store: DryRunStore = { events: [] };
+    const lines = await dryRunStore.run(store, () => db.tx(a.tenantId, (c) => describe(data, {
+      client: c, tenantId: a.tenantId, auth: a,
+      run: async () => {
+        const handler = handlers[type] as ((d: unknown, ctx: HandlerContext) => Promise<void>) | undefined;
+        if (!handler) return;
+        const event = { id: randomUUID(), type, tenantId: a.tenantId, source: 'impact-preview', occurredAt: new Date().toISOString(), data };
+        await handler(data, { client: c, tenantId: a.tenantId, event, env, emit: (t, d) => kernel.emit(c, t, d) });
+      },
+    })));
+    return { module: manifest.id, lines: lines.slice(0, 50) };
+  });
 
   mountAudit(app, { db, permPrefix: prefix });
   if (def.attachments) mountAttachments(app, { db, moduleId: manifest.id, permPrefix: prefix, jwtSecret, spec: def.attachments, revokedBefore: revocations.before });

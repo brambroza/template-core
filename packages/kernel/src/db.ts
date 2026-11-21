@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { toBuddhistYear } from '@erp/thai';
 import { thaiToday } from './clock.ts';
+import { dryRunStore } from './impact.ts';
 
 // numeric -> JS number (money/qty are numeric(18,4); fine for SME volumes, see docs/architecture.md)
 pg.types.setTypeParser(1700, (v) => (v === null ? null : Number(v)));
@@ -30,7 +31,8 @@ export function createDb(url: string): Db {
     try {
       await c.query('begin');
       const r = await fn(c);
-      await c.query('commit');
+      // a dry run (impact preview) keeps nothing: same work, same checks, then rollback
+      await c.query(dryRunStore.getStore() ? 'rollback' : 'commit');
       return r;
     } catch (e) {
       await c.query('rollback').catch(() => {});

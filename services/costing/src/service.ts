@@ -1,4 +1,4 @@
-import { auth, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ServiceDefinition } from '@erp/kernel';
+import { auth, hasPerm, impactMoney, loadManifest, nextDocNo, one, parse, requirePerm, s, z, type Client, type ImpactLine, type ServiceDefinition } from '@erp/kernel';
 import { round } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 
@@ -123,6 +123,43 @@ export const definition: ServiceDefinition = {
     });
   },
 
+  impact: {
+    /** "ผลกระทบ" of receiving goods: the moving-average cost per item, before → after */
+    'purchasing.goods_received': async (e, ctx) => {
+      if (!hasPerm(ctx.auth, 'costing.cost.read')) return [];
+      const ids = [...new Set(e.lines.map((l) => l.itemId))];
+      const cost = async () => new Map((await ctx.client.query<{ item_id: string; avg_cost: number }>('select item_id, avg_cost from item_costs where item_id = any($1::uuid[])', [ids])).rows.map((r) => [r.item_id, Number(r.avg_cost)]));
+      const before = await cost();
+      await ctx.run();
+      const after = await cost();
+      const out: ImpactLine[] = [];
+      for (const id of ids) {
+        const code = e.lines.find((l) => l.itemId === id)!.itemCode;
+        const was = before.get(id);
+        const now = after.get(id);
+        if (now === undefined) continue;
+        if (was === undefined) out.push({ text: `ต้นทุนเฉลี่ย ${code}: ตั้งครั้งแรก ${impactMoney(now)} บาท/หน่วย`, tone: 'info' });
+        else if (Math.abs(now - was) < 0.00005) out.push({ text: `ต้นทุนเฉลี่ย ${code}: คงเดิม ${impactMoney(now)} บาท/หน่วย`, tone: 'info' });
+        else {
+          const pct = was ? ((now - was) / was) * 100 : 0;
+          out.push({ text: `ต้นทุนเฉลี่ย ${code}: ${impactMoney(was)} → ${impactMoney(now)} บาท/หน่วย (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`, tone: Math.abs(pct) >= 10 ? 'warn' : 'info' });
+        }
+      }
+      return out;
+    },
+    /** "ผลกระทบ" of a production report: the job cost it would record (materials at average cost), and items without a cost */
+    'production.completed': async (e, ctx) => {
+      if (!hasPerm(ctx.auth, 'costing.cost.read')) return [];
+      await ctx.run();
+      const j = (await ctx.client.query<{ material_cost: number; unit_cost: number; missing_costs: string[] | null }>(
+        'select material_cost, unit_cost, missing_costs from job_costs where xmin = pg_current_xact_id()::xid limit 1')).rows[0];
+      if (!j) return [];
+      const out: ImpactLine[] = [{ text: `ต้นทุนวัตถุดิบงาน ${e.orderNo}: ${impactMoney(Number(j.material_cost))} บาท · ต่อชิ้น ${e.item.itemCode} ${impactMoney(Number(j.unit_cost))} บาท`, tone: 'info' }];
+      const missing = (j.missing_costs ?? []).filter(Boolean);
+      if (missing.length) out.push({ text: `ยังไม่มีต้นทุนของ ${missing.join(', ')} — ต้นทุนงานนี้จะต่ำกว่าจริง`, tone: 'warn' });
+      return out;
+    },
+  },
   handlers: {
     'purchasing.goods_received': async (e, { client }) => {
       for (const l of e.lines) await setCost(client, l.itemId, l.itemCode, l.unitPrice, l.qty, 'purchase');

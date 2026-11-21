@@ -50,7 +50,7 @@ export default defineUi({
       lines: [{ path: 'requirements', label: 'วัตถุดิบที่ต้องใช้ (ส่วนที่ยังไม่ผลิต)', columns: [{ key: 'itemCode', label: 'รหัส' }, { key: 'itemName', label: 'ชื่อ' }, { key: 'qty', label: 'จำนวน', format: 'qty' }] }],
       actions: [
         { id: 'release', label: 'ปล่อยงานเข้าไลน์', method: 'POST', endpoint: '/orders/:id/release', perm: 'production.order.write', when: { field: 'status', in: ['planned'] }, tone: 'primary', mobile: true },
-        { id: 'complete', label: 'รายงานผลผลิต', method: 'POST', endpoint: '/orders/:id/complete', perm: 'production.order.write', when: { field: 'status', in: ['released'] }, tone: 'primary', mobile: true,
+        { id: 'complete', label: 'รายงานผลผลิต', method: 'POST', endpoint: '/orders/:id/complete', perm: 'production.order.write', when: { field: 'status', in: ['released'] }, tone: 'primary', mobile: true, impact: true,
           fields: [{ name: 'qty', label: 'จำนวนที่ผลิตได้', type: 'number', help: 'เว้นว่าง = ผลิตครบส่วนที่เหลือ' }] },
         { id: 'cancel', label: 'ยกเลิกใบสั่งผลิต', method: 'POST', endpoint: '/orders/:id/cancel', perm: 'production.order.write', when: { field: 'status', in: ['planned', 'released'] }, confirm: 'ยกเลิกแล้วแก้กลับไม่ได้', tone: 'danger' },
       ],

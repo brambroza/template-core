@@ -145,7 +145,8 @@ export const definition: ServiceDefinition = {
     });
 
     /** Report output. Consumes direct components (sub-assemblies are consumed as items). */
-    app.post('/orders/:id/complete', async (req) => {
+    // dry-runnable: the dialog previews materials issued, finished goods received, job cost and QC (kernel impact.ts)
+    app.post('/orders/:id/complete', { config: { dryRun: true } }, async (req) => {
       const a = auth(req);
       requirePerm(a, 'production.order.write');
       const { id } = parse(IdParam, req.params);

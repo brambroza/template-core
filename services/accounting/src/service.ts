@@ -1,4 +1,5 @@
-import { addDaysIso, auth, badRequest, conflict, loadManifest, one, parse, periodLastDate, requirePerm, s, z, type Client, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
+import { addDaysIso, auth, badRequest, conflict, hasPerm, impactMoney, loadManifest, one, parse, periodLastDate, requirePerm, s, z, type Client, type HandlerContext, type ImpactContext, type ImpactLine, type ServiceDefinition } from '@erp/kernel';
+import { randomUUID } from 'node:crypto';
 import { formatThaiDate } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, CATEGORY_TH, EVENT_TH, ROLE_TH, ROLES, TYPE_CATEGORIES, TYPE_TH, TYPES, type AccountType, type PostedEvent } from './chart.ts';
@@ -178,6 +179,24 @@ const MAPPING_SELECT = `select m.*, a.code as account_code, a.name as account_na
 const decorateMapping = (m: any) => m && ({ ...m, categoryCode: m.category_code, categoryName: m.category_name, accountId: m.account_id });
 
 /** event handler: post, never throw for business reasons (recorded in posting_errors instead) */
+/**
+ * "ผลกระทบ" of an event accounting posts automatically: the journal it WOULD post (Dr/Cr per account), or why it could not
+ * (missing mapping, closed period → it would wait in "รายการค้างลงบัญชี"). Posted inside the preview's rolled-back transaction.
+ */
+const previewPost = <T extends PostedEvent>(type: T) => async (data: unknown, ctx: ImpactContext): Promise<ImpactLine[]> => {
+  if (!hasPerm(ctx.auth, 'accounting.journal.read')) return [];
+  const r = await postEvent(ctx.client, type, data, { eventId: randomUUID(), occurredAt: new Date().toISOString() });
+  if (r.status === 'error') return [{ text: `ลงบัญชีอัตโนมัติไม่ได้: ${r.reason} — รายการจะไปรออยู่ที่ "รายการค้างลงบัญชี"`, tone: 'warn' }];
+  if (r.status === 'skipped') return r.message ? [{ text: r.message, tone: 'info' }] : [];
+  if (r.status !== 'posted') return [];
+  const lines = (await ctx.client.query<{ code: string; name: string; debit: number; credit: number }>(
+    `select a.code, a.name, l.debit, l.credit from journal_lines l join accounts a on a.id = l.account_id where l.journal_id = $1 order by l.line_no`, [r.journal.id])).rows;
+  return [
+    { text: `ลงบัญชีอัตโนมัติ ลงวันที่ ${formatThaiDate(`${String(r.journal.entry_date).slice(0, 10)}T00:00:00Z`)}`, tone: 'info' as const },
+    ...lines.map((l) => ({ text: `${Number(l.debit) ? 'Dr' : 'Cr'} ${l.code} ${l.name}  ${impactMoney(Number(l.debit) || Number(l.credit))}` })),
+  ];
+};
+
 const autoPost = <T extends PostedEvent>(type: T) => async (data: unknown, ctx: HandlerContext) => {
   await postEvent(ctx.client, type, data, { eventId: ctx.event.id, occurredAt: ctx.event.occurredAt });
 };
@@ -818,6 +837,9 @@ export const definition: ServiceDefinition = {
       });
     });
 
+  },
+  impact: {
+    'purchasing.goods_received': previewPost('purchasing.goods_received'),
   },
   handlers: {
     'sales.invoiced': autoPost('sales.invoiced'),

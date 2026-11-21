@@ -1,4 +1,4 @@
-import { auth, badRequest, conflict, loadManifest, nextDocNo, one, parse, requirePerm, s, thaiToday, z, type Client, type EventHandlers, type HandlerContext, type ServiceDefinition } from '@erp/kernel';
+import { auth, badRequest, conflict, hasPerm, impactQty, loadManifest, nextDocNo, one, parse, requirePerm, s, thaiToday, z, type Client, type EventHandlers, type HandlerContext, type ImpactDescribers, type ServiceDefinition } from '@erp/kernel';
 import { fileURLToPath } from 'node:url';
 
 const manifest = loadManifest(new URL('../module.json', import.meta.url));
@@ -304,6 +304,26 @@ export const handlers: EventHandlers = {
   },
 };
 
+/** "ผลกระทบ" of receiving goods: which incoming inspections would open (items with an active incoming plan). */
+export const impact: ImpactDescribers = {
+  'purchasing.goods_received': async (_e, ctx) => {
+    if (!hasPerm(ctx.auth, 'quality.inspection.read')) return [];
+    await ctx.run();
+    // rows inserted by this (rolled back) transaction
+    const created = (await ctx.client.query<{ item_code: string; plan_name: string | null; qty: number }>(
+      `select item_code, plan_name, qty from inspections where xmin = pg_current_xact_id()::xid order by item_code`)).rows;
+    return created.map((i) => ({ text: `เปิดงานตรวจรับ QC: ${i.item_code} ${impactQty(Number(i.qty))} หน่วย${i.plan_name ? ` (แผน ${i.plan_name})` : ''} — ใช้ของได้หลังตรวจผ่าน`, tone: 'warn' as const }));
+  },
+  /** a production report: the final inspection that would open for the finished item */
+  'production.completed': async (_e, ctx) => {
+    if (!hasPerm(ctx.auth, 'quality.inspection.read')) return [];
+    await ctx.run();
+    const created = (await ctx.client.query<{ item_code: string; plan_name: string | null; qty: number }>(
+      `select item_code, plan_name, qty from inspections where xmin = pg_current_xact_id()::xid`)).rows;
+    return created.map((i) => ({ text: `เปิดงานตรวจขั้นสุดท้าย QC: ${i.item_code} ${impactQty(Number(i.qty))} ชิ้น${i.plan_name ? ` (แผน ${i.plan_name})` : ''} — ส่งขายได้หลังตรวจผ่าน`, tone: 'warn' as const }));
+  },
+};
+
 /* ---------------- routes ---------------- */
 
 export const definition: ServiceDefinition = {
@@ -320,6 +340,7 @@ export const definition: ServiceDefinition = {
     },
   },
   handlers,
+  impact,
   routes(app, k) {
     /* ----- inspection plans ----- */
 

@@ -200,7 +200,7 @@ export default defineUi({
       }],
       actions: [
         { id: 'confirm', label: 'ยืนยันคำสั่งซื้อ', method: 'POST', endpoint: '/orders/:id/confirm', perm: 'sales.order.write', when: { field: 'status', in: ['draft'] }, tone: 'primary', mobile: true },
-        { id: 'deliver', label: 'บันทึกส่งของ', method: 'POST', endpoint: '/orders/:id/deliver', perm: 'sales.order.deliver', when: { field: 'status', in: ['confirmed'] }, tone: 'primary', mobile: true },
+        { id: 'deliver', label: 'บันทึกส่งของ', method: 'POST', endpoint: '/orders/:id/deliver', perm: 'sales.order.deliver', when: { field: 'status', in: ['confirmed'] }, tone: 'primary', mobile: true, impact: true },
         { id: 'invoice', label: 'ออกใบกำกับภาษี', method: 'POST', endpoint: '/orders/:id/invoice', perm: 'sales.invoice.write', when: { field: 'status', in: ['confirmed', 'delivered'] }, tone: 'primary',
           fields: [{ name: 'issueDate', label: 'วันที่ใบกำกับ', type: 'date' }, { name: 'dueDate', label: 'ครบกำหนดชำระ (ว่าง = ตามเครดิต)', type: 'date' }], then: { screen: 'invoice', idFrom: 'id' } },
         { id: 'cancel', label: 'ยกเลิกใบสั่งขาย', method: 'POST', endpoint: '/orders/:id/cancel', perm: 'sales.order.write', when: { field: 'status', in: ['draft', 'confirmed'] }, confirm: 'ยกเลิกแล้วแก้กลับไม่ได้', tone: 'danger' },
