@@ -66,7 +66,8 @@ export function ThaiDateInput({ kind, value, onChange, label, min, max, invalid 
         onBlur={() => { if (bad) { setText(show(value)); setBad(false); } }}
         onKeyDown={(e) => { if (e.key === 'ArrowDown' && e.altKey) { e.preventDefault(); setOpen(true); } }}
       />
-      <button type="button" className="thai-date-btn" aria-label={`เลือก${kind === 'date' ? 'วันที่' : 'เดือน'}: ${label}`}
+      {/* its own name only: repeating the field label gave two controls named after the field (screen readers, getByLabel) */}
+      <button type="button" className="thai-date-btn" aria-label={kind === 'date' ? 'เปิดปฏิทิน' : 'เลือกเดือนจากปฏิทิน'}
         aria-expanded={open} aria-controls={popId} onClick={() => setOpen((o) => !o)}>
         <CalendarDays size={16} aria-hidden />
       </button>
