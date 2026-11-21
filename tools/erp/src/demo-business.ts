@@ -871,7 +871,7 @@ async function seedReceivables(x: Ctx) {
   const acc = as.acc;
   const today = bkkDate();
   const cents = (n: number) => Math.round(n * 100) / 100;
-  const invoices = await acc<any[]>('GET', '/api/sales/invoices?limit=500');
+  const invoices = await acc<any[]>('GET', '/api/sales/invoices?kind=sale&limit=500'); // tax invoices of this system, not ลูกหนี้ยกมา
   const of = (code: string) => invoices.filter((i) => i.customer_id === partners[code]?.id).sort((a, b) => a.issue_date.localeCompare(b.issue_date));
   const on = (inv: any, days: number) => { const d = addDays(inv.due_date, days); return d > today ? today : d; };
   type Pay = [string, string, string, { inv: any; amount?: number }[], number, string?];

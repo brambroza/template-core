@@ -93,7 +93,7 @@ export async function seedTaxFilings(x: TaxCtx): Promise<string> {
 async function seedNotes(x: TaxCtx): Promise<string> {
   const acc = x.as.acc ?? x.call;
   if ((await acc<any[]>('GET', '/api/sales/notes?limit=5')).length) return 'notes: already there';
-  const invoices = await acc<any[]>('GET', '/api/sales/invoices?limit=500');
+  const invoices = await acc<any[]>('GET', '/api/sales/invoices?kind=sale&limit=500'); // tax invoices of this system, not ลูกหนี้ยกมา
   /** the customer's invoice issued in month n */
   const invoiceOf = (code: string, n: number) => invoices
     .filter((i) => i.customer_id === x.partners[code]?.id && String(i.issue_date).slice(0, 7) === monthStart(n).slice(0, 7))
@@ -142,7 +142,8 @@ async function seedNotes(x: TaxCtx): Promise<string> {
 async function seedPayables(x: TaxCtx): Promise<string> {
   const acc = x.as.acc ?? x.call;
   const buyer = x.as.buyer ?? x.call;
-  if ((await acc<any[]>('GET', '/api/purchasing/bills?limit=5')).length) return 'bills: already there';
+  // bills this seed made before (เจ้าหนี้ยกมา from demo.ts does not count)
+  if ((await acc<any[]>('GET', '/api/purchasing/bills?limit=5')).some((b) => b.kind !== 'opening')) return 'bills: already there';
   const sup = await ensureSuppliers(x);
   const byId: Record<string, any> = Object.fromEntries(Object.values(sup).map((p: any) => [p.id, p]));
   let bills = 0, payments = 0, wht = 0;
