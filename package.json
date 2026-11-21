@@ -23,6 +23,7 @@
     "@erp/contracts": "workspace:*",
     "@erp/gateway": "workspace:*",
     "@erp/kernel": "workspace:*",
+    "@erp/starter": "workspace:*",
     "@erp/svc-accounting": "workspace:*",
     "@erp/svc-approvals": "workspace:*",
     "@erp/svc-assets": "workspace:*",

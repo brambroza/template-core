@@ -1128,3 +1128,14 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
 .plan-bar a { color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .plan-bar.is-urgent { background: var(--stop-soft); color: var(--stop-text); font-weight: 600; }
 @media print { .plan-bar { display: none; } }
+
+/* sample data of a trial company (StarterBanner) */
+.starter-bar { margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px 14px; flex-wrap: wrap; padding: 8px 16px; font-size: .85rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--ink); border-bottom: 1px solid var(--line); }
+.starter-bar > svg { color: var(--accent-text); flex: none; }
+.starter-steps { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-left: 8px; }
+.starter-steps a { color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.starter-bar .starter-clear { padding: 4px 10px; min-height: 0; font-size: .8rem; }
+.starter-bar .dialog p { margin: 0 0 10px; line-height: 1.6; }
+.field-hint { display: block; margin-top: 4px; color: var(--ink-3); font-weight: 400; font-size: .8rem; line-height: 1.45; }
+@media print { .starter-bar { display: none; } }

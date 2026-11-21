@@ -9,6 +9,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { captchaOk } from './captcha.ts';
 import { buttonMail, createMailer } from './mailer.ts';
 import { attempts, clear as clearAttempts, note as noteAttempts, overLimit, type Queryable } from './throttle.ts';
+import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '@erp/starter';
+import { runStarter, starterOf, starterView } from './starter.ts';
 import {
   changeText, daysLeft, entitlementOf, MODULE_NAMES_TH, paymentPeriod, PLAN_IDS, PLANS, STATUS_TH, tokenTtl, TRIAL_DAYS, type Entitlement, type PlanId, type SubscriptionRow,
 } from './plans.ts';
@@ -24,6 +26,8 @@ const TenantInput = z.object({
   admin: z.object({ email, name: s.name, password }),
   /** cloud plan: the company starts a TRIAL_DAYS trial of it. Omitted = no plan limit (self-hosted install). */
   plan: z.enum(PLAN_IDS as [string, ...string[]]).optional(),
+  /** sample data of this type of business (see @erp/starter), put in after the answer; omitted = an empty company */
+  industry: z.enum(INDUSTRY_IDS as [string, ...string[]]).optional(),
 });
 /** Back office: a bank transfer received for `months` of the plan (amount before VAT; default plan price × months). */
 const PaymentInput = z.object({
@@ -50,8 +54,11 @@ const SignupInput = z.object({
   email,
   password: z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร').max(200),
   plan: z.enum(PLAN_IDS as [string, ...string[]]).default('factory'),
+  /** sample data to start with; "none" = an empty company */
+  industry: z.enum(['none', ...INDUSTRY_IDS] as [string, ...string[]]).default('none'),
   captchaToken: z.string().max(4096).optional(),
 });
+const ClearStarterInput = z.object({ confirm: z.literal('ล้างข้อมูลตัวอย่าง', { errorMap: () => ({ message: 'พิมพ์คำว่า "ล้างข้อมูลตัวอย่าง" เพื่อยืนยัน' }) }) });
 const TokenInput = z.object({ token: z.string().min(20).max(200) });
 const ForgotInput = z.object({ email, captchaToken: z.string().max(4096).optional() });
 const ResetInput = z.object({ token: z.string().min(20).max(200), newPassword: z.string().min(8, 'รหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร').max(200) });
@@ -367,6 +374,13 @@ export const definition: ServiceDefinition = {
       return { tenant, user };
     }
 
+    /** Sample data in the background (a few seconds): the answer does not wait; the home page shows "กำลังเตรียม…" meanwhile. */
+    async function startStarter(tenantId: string, industry: string | null | undefined) {
+      if (!industry || industry === 'none') return;
+      const plan = await k.db.tx(tenantId, entitlement);
+      void runStarter(k, { tenantId, industry: industry as IndustryId, modules: plan?.modules ?? null, log: (m) => app.log.info(`[starter ${tenantId}] ${m}`) });
+    }
+
     /** A free company code from a base (base, base-2 … base-9, then base-<random>). */
     async function freeCode(base: string): Promise<string> {
       for (let i = 1; i <= 9; i++) {
@@ -396,14 +410,17 @@ export const definition: ServiceDefinition = {
         code: body.code, name: body.name, plan: body.plan, by: 'GO Along (provisioning)',
         admin: { email: body.admin.email, name: body.admin.name, passwordHash: hashPassword(body.admin.password) },
       });
+      await startStarter(tenant.id, body.industry);
       reply.code(201);
-      return { tenant, admin: user, subscription: body.plan ? subscriptionView(await k.db.tx(tenant.id, entitlement)) : null };
+      return { tenant, admin: user, subscription: body.plan ? subscriptionView(await k.db.tx(tenant.id, entitlement)) : null, starter: body.industry ? 'seeding' : null };
     });
 
     /** Plans for the public sign-up page (no prices hard-coded in the apps). */
     app.get('/plans', { config: { public: true } }, async () => ({
       trialDays: TRIAL_DAYS,
       plans: Object.values(PLANS).map((p) => ({ ...p, modulesTh: p.modules.map((m) => MODULE_NAMES_TH[m] ?? m) })),
+      // types of business with sample data (@erp/starter) for the sign-up page
+      industries: INDUSTRY_IDS.map((id) => ({ id, nameTh: INDUSTRIES[id].nameTh, blurb: INDUSTRIES[id].blurb })),
     }));
 
     /**
@@ -429,9 +446,9 @@ export const definition: ServiceDefinition = {
       } else {
         const link = newLinkToken();
         await k.db.pool.query(
-          `insert into signups (email, company_name, name, password_hash, plan, token_hash, expires_at)
-           values ($1, $2, $3, $4, $5, $6, now() + make_interval(hours => $7))`,
-          [b.email, b.companyName, b.name, hashPassword(b.password), b.plan, link.hash, SIGNUP_LINK_HOURS]);
+          `insert into signups (email, company_name, name, password_hash, plan, token_hash, expires_at, industry)
+           values ($1, $2, $3, $4, $5, $6, now() + make_interval(hours => $7), $8)`,
+          [b.email, b.companyName, b.name, hashPassword(b.password), b.plan, link.hash, SIGNUP_LINK_HOURS, b.industry === 'none' ? null : b.industry]);
         mail = buttonMail(b.email, 'ยืนยันอีเมลเพื่อเริ่มใช้งาน GO Along', [
           `สวัสดีคุณ${b.name}`,
           `กดปุ่มด้านล่างเพื่อยืนยันอีเมลและเริ่มทดลองใช้ ${b.companyName} ฟรี ${TRIAL_DAYS} วัน`,
@@ -465,6 +482,7 @@ export const definition: ServiceDefinition = {
         admin: { email: pending.email, name: pending.name, passwordHash: pending.password_hash },
       });
       await k.db.pool.query('update signups set tenant_id = $2 where id = $1', [pending.id, tenant.id]);
+      await startStarter(tenant.id, pending.industry);
       reply.code(201);
       return k.db.tx(tenant.id, (c) => session(c, tenant, user));
     });
@@ -571,6 +589,31 @@ export const definition: ServiceDefinition = {
     });
 
     /** The company's cloud plan (null = no plan limit): name, status, modules, user limit, days left. Any signed-in user. */
+    /** Sample data of this company for the home-page banner: null when it has none (or it was cleared). */
+    app.get('/starter', async (req) => {
+      const a = auth(req);
+      return { starter: starterView(await k.db.tx(a.tenantId, starterOf)) };
+    });
+
+    /**
+     * "ล้างข้อมูลตัวอย่าง — เริ่มใช้จริง": every module deletes ALL of this company's data (sample and anything recorded since);
+     * users, roles, the company profile and the plan stay. Once only, never while seeding, and the owner types the words.
+     */
+    app.post('/starter/clear', async (req) => {
+      const a = auth(req);
+      requirePerm(a, 'identity.company.write');
+      parse(ClearStarterInput, req.body);
+      return k.db.tx(a.tenantId, async (c) => {
+        const row = await starterOf(c);
+        if (!row || row.state === 'cleared') throw new HttpError(409, 'no_sample_data', 'บริษัทนี้ไม่มีข้อมูลตัวอย่างให้ล้างแล้ว');
+        if (row.state === 'seeding') throw new HttpError(409, 'starter_seeding', 'กำลังเตรียมข้อมูลตัวอย่างอยู่ — รอสักครู่แล้วลองใหม่');
+        const by = a.userName ?? a.userId;
+        await c.query(`update tenant_starter set state = 'cleared', cleared_at = now(), cleared_by = $1`, [by]);
+        await k.emit(c, 'identity.tenant_data_cleared', { reason: 'starter', by });
+        return { ok: true, message: 'กำลังล้างข้อมูลตัวอย่างในทุกระบบ (ไม่กี่วินาที) — ผู้ใช้ บทบาท ข้อมูลบริษัท และแพ็กเกจยังอยู่ครบ' };
+      });
+    });
+
     app.get('/subscription', async (req) => {
       const a = auth(req);
       return k.db.tx(a.tenantId, async (c) => {

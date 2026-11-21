@@ -18,7 +18,7 @@ import type { EventData } from '@erp/contracts';
 import type { Client, Db } from './db.ts';
 
 /** Events every module's kernel subscribes to by itself, whatever module.json says. The gateway routes them to all modules. */
-export const KERNEL_SUBSCRIPTIONS = ['identity.tokens_revoked'] as const;
+export const KERNEL_SUBSCRIPTIONS = ['identity.tokens_revoked', 'identity.tenant_data_cleared'] as const;
 export type KernelSubscription = (typeof KERNEL_SUBSCRIPTIONS)[number];
 export const isKernelSubscription = (type: string): type is KernelSubscription => (KERNEL_SUBSCRIPTIONS as readonly string[]).includes(type);
 

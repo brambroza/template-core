@@ -347,6 +347,11 @@ export const events = {
     address: z.string().nullable(), email: z.string().nullable(), plan: z.string(), planName: z.string(), months: z.number().int().positive(),
     amount: money, paidOn: z.string(), periodFrom: z.string(), periodTo: z.string(), ref: z.string().nullable(),
   }),
+  /**
+   * The owner of a trial company pressed "ล้างข้อมูลตัวอย่าง": every module's kernel deletes all of the company's rows in its own
+   * database (built-in kernel subscription, see packages/kernel/src/wipe.ts). Identity keeps the company, users and plan.
+   */
+  'identity.tenant_data_cleared': z.object({ reason: z.literal('starter'), by: z.string() }),
   'identity.tokens_revoked': z.object({ userId: id, before: z.number().int(), reason: z.enum(['logout', 'password_changed', 'user_disabled', 'roles_changed', 'admin', 'plan_changed']) }),
 
   /**

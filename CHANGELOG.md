@@ -53,6 +53,17 @@
 - Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
+**Sample data per industry (phase 2, part 1)**
+- Sign-up asks the type of business: ซื้อมาขายไป/ค้าส่ง, อาหาร/แปรรูป, โรงงานชิ้นส่วนโลหะ/งานกลึง (or none). After the e-mail is confirmed the
+  company gets that industry's sample data (`packages/starter`) through the real APIs: items, customers, suppliers, warehouses and opening
+  stock, purchase orders, sales orders, production with BOMs, machines with PM and an open repair, QC plans, and journals from the same events
+  real work raises. Modules outside the plan are skipped. Two made-up helpers record and approve the samples, so the PO waiting for approval
+  can be approved by the owner (separation of duties).
+- Home page bar: what to try first (approve PO-…, receive PO-…, ship SO-…) and **ล้างข้อมูลตัวอย่าง — เริ่มใช้จริง**. Typing the words emits
+  `identity.tenant_data_cleared`, a kernel subscription: every module deletes all of the company's rows (`packages/kernel/src/wipe.ts`,
+  keeping `_revoked_tokens`); users, roles, company profile and plan stay, numbering restarts at 0001. Once only, never while seeding.
+- Identity needs the gateway address for this: `GATEWAY_URL`, or the host of `EVENT_ROUTER_URL`.
+
 **Phase 0 (self-serve blockers found by the new-user test)**
 - Login throttle per e-mail + client IP (plus 50/e-mail and 100/IP caps): wrong guesses from elsewhere no longer lock the owner out.
   The gateway sends `x-erp-client-ip` (what it saw, never copied from the request); behind a load balancer set `TRUST_PROXY` to its addresses.

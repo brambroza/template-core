@@ -12,5 +12,6 @@ export * from './manifest.ts';
 export * from './revocation.ts';
 export * from './sentry.ts';
 export * from './service.ts';
+export * from './wipe.ts';
 export * as s from './schemas.ts';
 export { z } from 'zod';

@@ -13,6 +13,7 @@ import { checkLicense } from './license.ts';
 import type { ModuleManifest } from './manifest.ts';
 import { applyRevocation, DEFAULT_REVOCATION_RELOAD_MS, isKernelSubscription, RevocationList } from './revocation.ts';
 import { createErrorReporter, type ErrorReporter } from './sentry.ts';
+import { wipeTenantData } from './wipe.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -115,6 +116,13 @@ export function createService(def: ServiceDefinition, env: NodeJS.ProcessEnv = p
     'identity.tokens_revoked': async (data, ctx) => {
       await applyRevocation(ctx.client, revocations, data);
       await ownHandlers['identity.tokens_revoked']?.(data, ctx);
+    },
+    // built-in: "ล้างข้อมูลตัวอย่าง" — every row of the company in this module's database (wipe.ts), then the module's own handler
+    'identity.tenant_data_cleared': async (data, ctx) => {
+      const deleted = await wipeTenantData(ctx.client, ctx.tenantId);
+      const total = Object.values(deleted).reduce((a, b) => a + b, 0);
+      app.log.info(`[${manifest.id}] tenant ${ctx.tenantId} data cleared (${data.reason}, by ${data.by}): ${total} rows`);
+      await ownHandlers['identity.tenant_data_cleared']?.(data, ctx);
     },
   };
 

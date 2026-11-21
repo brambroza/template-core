@@ -15,12 +15,14 @@ import { AuthLayout } from '@/components/AuthLayout';
 import { Turnstile, TURNSTILE_SITE_KEY } from '@/components/Turnstile';
 
 interface Plan { id: string; nameTh: string; priceMonthly: number; maxUsers: number; modulesTh: string[] }
+interface Industry { id: string; nameTh: string; blurb: string }
 
 export default function Signup() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [industries, setIndustries] = useState<Industry[]>([]);
   const [trialDays, setTrialDays] = useState(14);
-  const [form, setForm] = useState({ companyName: '', name: '', email: '', password: '', plan: 'factory' });
+  const [form, setForm] = useState({ companyName: '', name: '', email: '', password: '', plan: 'factory', industry: '' });
   const [captcha, setCaptcha] = useState('');
   const [captchaRound, setCaptchaRound] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -30,18 +32,20 @@ export default function Signup() {
 
   useEffect(() => {
     if (loadSession()) router.replace(HOME);
-    api<{ trialDays: number; plans: Plan[] }>('identity', '/plans').then((r) => { setPlans(r.plans); setTrialDays(r.trialDays); }).catch(() => setPlans([]));
+    api<{ trialDays: number; plans: Plan[]; industries?: Industry[] }>('identity', '/plans')
+      .then((r) => { setPlans(r.plans); setTrialDays(r.trialDays); setIndustries(r.industries ?? []); }).catch(() => setPlans([]));
   }, [router]);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (industries.length && !form.industry) { setFieldErrors({ industry: 'เลือกประเภทธุรกิจ หรือ "ไม่ต้องใส่ข้อมูลตัวอย่าง"' }); return; }
     if (TURNSTILE_SITE_KEY && !captcha) { setError('กรุณายืนยันว่าไม่ใช่โปรแกรมอัตโนมัติ'); return; }
     setBusy(true);
     setError('');
     setFieldErrors({});
     try {
-      const r = await api<{ message: string }>('identity', '/signup', { method: 'POST', body: { ...form, ...(captcha ? { captchaToken: captcha } : {}) } });
+      const r = await api<{ message: string }>('identity', '/signup', { method: 'POST', body: { ...form, industry: form.industry || 'none', ...(captcha ? { captchaToken: captcha } : {}) } });
       setSent(r.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'สมัครไม่สำเร็จ');
@@ -80,6 +84,17 @@ export default function Signup() {
               {fieldErrors.email && <span className="field-error">{fieldErrors.email}</span>}</label>
             <label>ตั้งรหัสผ่าน (อย่างน้อย 8 ตัว)<input type="password" value={form.password} onChange={set('password')} autoComplete="new-password" minLength={8} required aria-invalid={!!fieldErrors.password} />
               {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}</label>
+            {industries.length > 0 && (
+              <label>ประเภทธุรกิจ (เราใส่ข้อมูลตัวอย่างให้ลองกดได้ทันที ล้างทิ้งได้เมื่อพร้อมใช้จริง)
+                <select value={form.industry} onChange={set('industry')} required aria-invalid={!!fieldErrors.industry}>
+                  <option value="" disabled>— เลือกประเภทธุรกิจ —</option>
+                  {industries.map((i) => <option key={i.id} value={i.id}>{i.nameTh}</option>)}
+                  <option value="none">ไม่ต้องใส่ข้อมูลตัวอย่าง (เริ่มจากระบบว่าง)</option>
+                </select>
+                {industries.find((i) => i.id === form.industry) && <small className="field-hint">{industries.find((i) => i.id === form.industry)!.blurb}</small>}
+                {fieldErrors.industry && <span className="field-error">{fieldErrors.industry}</span>}
+              </label>
+            )}
             {plans.length > 0 && (
               <fieldset className="plan-pick">
                 <legend>เลือกแพ็กเกจ (เปลี่ยนได้ภายหลัง)</legend>

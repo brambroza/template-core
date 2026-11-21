@@ -17,6 +17,9 @@ importers:
       '@erp/kernel':
         specifier: workspace:*
         version: link:packages/kernel
+      '@erp/starter':
+        specifier: workspace:*
+        version: link:packages/starter
       '@erp/svc-accounting':
         specifier: workspace:*
         version: link:services/accounting
@@ -380,6 +383,8 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  packages/starter: {}
+
   packages/thai: {}
 
   packages/ui-schema: {}
@@ -608,6 +613,9 @@ importers:
       '@erp/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@erp/starter':
+        specifier: workspace:*
+        version: link:../../packages/starter
       '@erp/thai':
         specifier: workspace:*
         version: link:../../packages/thai
