@@ -26,6 +26,12 @@ Customers receive kernel updates as drop-in replacements, so never put customer-
 - `db.tx(tenantId, fn)` — sets `app.tenant_id` for RLS, the transaction's `TimeZone` to Asia/Bangkok (wave 8: leftover SQL `current_date` / `date_trunc` is the Thai day)
   and `app.today` = `thaiToday()`; `TODAY_SQL` is the SQL expression for it (follows `setClock`) — use it for SQL date defaults instead of `current_date`. `migrate()` applies `-- @tenant` directives. `nextDocNo`, `one`.
 - `emit`, `dispatchOutbox`, `receiveEvent` — transactional outbox, at-least-once delivery, inbox de-dup.
+- `errors.ts` — `parse(schema, input)` → 400 with a Thai summary (`validationMessage`: "ข้อมูลไม่ถูกต้อง — lines › แถวที่ 2 › qty: ต้องมากกว่า 0 (และอีก 1 จุด)")
+  and `details { fieldErrors, formErrors, issues[{ path, message }] }` (`fieldErrorsOf`: errors inside a list name the row). Importing the kernel installs
+  `thaiErrorMap` (`z.setErrorMap`) so zod's built-in checks speak Thai; messages a schema sets itself are kept. `toErrorBody` turns Postgres
+  duplicates into `"<value>" มีอยู่ในระบบแล้ว` (`duplicateValue`, tenant id hidden) and Fastify's JSON/body errors into Thai.
+- `schemas.ts` — `s.isoDate` rejects impossible days and Buddhist-era years (≥ `FIRST_BE_YEAR` 2400: "ปี 2569 เป็น พ.ศ. — ระบบรับปี ค.ศ. (2026)",
+  `buddhistYearProblem`); APIs take Christian-era ISO dates, the apps convert what users type.
 - `checkLicense`, `issueLicense`, `readLicense` — Ed25519-signed module licenses.
 - `attachments.ts` — opt-in file attachments per module (`ServiceDefinition.attachments` → `/_attachments` routes, `_attachments` table with RLS,
   5 MB, type by extension + magic bytes, signed links; optional per-entity `writable` hook freezes a record's files, e.g. a paid claim). `audit.ts` — `_audit` table (RLS) written by the `onSend` hook for every successful

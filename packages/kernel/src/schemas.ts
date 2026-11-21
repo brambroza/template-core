@@ -15,11 +15,30 @@ export function isCalendarDate(value: string): boolean {
   return d <= new Date(Date.UTC(y, mo, 0)).getUTCDate();
 }
 
-/** A calendar date "YYYY-MM-DD". Impossible dates are a 400 field error, never a database error. */
+/**
+ * Years from here on are Buddhist-era (พ.ศ.) typed into a Christian-era field: 2400 BE = 1857 CE, and no business date is that
+ * far ahead. Without this check "2569-11-20" would be saved as the year 2569 and the document numbers would read PO-3112-….
+ */
+export const FIRST_BE_YEAR = 2400;
+
+/** Thai 400 message when `value` looks like a Buddhist-era date (year ≥ FIRST_BE_YEAR), else null. */
+export function buddhistYearProblem(value: string): string | null {
+  const y = Number(/^(\d{4})-/.exec(value)?.[1]);
+  return y >= FIRST_BE_YEAR ? `ปี ${y} เป็น พ.ศ. — ระบบรับปี ค.ศ. (${y - 543})` : null;
+}
+
+/**
+ * A calendar date "YYYY-MM-DD" in the Christian era. Impossible dates and Buddhist-era years are a 400 field error,
+ * never a database error or a date 543 years ahead.
+ */
 export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ต้องเป็น YYYY-MM-DD')
-  .refine((v) => !/^\d{4}-\d{2}-\d{2}$/.test(v) || isCalendarDate(v), 'วันที่ไม่ถูกต้อง (ไม่มีวันนี้ในปฏิทิน)');
+  .refine((v) => !/^\d{4}-\d{2}-\d{2}$/.test(v) || isCalendarDate(v), 'วันที่ไม่ถูกต้อง (ไม่มีวันนี้ในปฏิทิน)')
+  .superRefine((v, ctx) => {
+    const problem = buddhistYearProblem(v);
+    if (problem && isCalendarDate(v)) ctx.addIssue({ code: 'custom', message: problem });
+  });
 
 /** A line that points at an item owned by master-data (snapshot of code/name travels with it). */
 export const itemLine = z.object({ itemId: uuid, itemCode: code, itemName: z.string().max(200).optional(), qty: positiveQty });

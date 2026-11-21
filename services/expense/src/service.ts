@@ -81,7 +81,8 @@ const ClearInput = z.object({ claimId: s.uuid });
 
 const IdParam = z.object({ id: s.uuid });
 const flag = z.enum(['true', 'false', '1', '0']).optional().transform((v) => (v === undefined ? undefined : v === 'true' || v === '1'));
-const month = z.string().regex(/^\d{4}-\d{2}$/, 'expected YYYY-MM');
+const month = z.string().regex(/^\d{4}-\d{2}$/, 'รูปแบบเดือนต้องเป็น YYYY-MM')
+  .refine((v) => !/^\d{4}-/.test(v) || Number(v.slice(0, 4)) < s.FIRST_BE_YEAR, (v) => ({ message: `ปี ${v.slice(0, 4)} เป็น พ.ศ. — ระบบรับปี ค.ศ. (${Number(v.slice(0, 4)) - 543})` }));
 const ListQuery = s.listQuery.extend({
   limit: z.coerce.number().int().min(1).max(500).default(200),
   status: z.string().optional(),

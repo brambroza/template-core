@@ -20,6 +20,15 @@ describe('s.isoDate (KRN-01)', () => {
     if (!r.success) expect(r.error.issues.map((i) => i.message)).toEqual(['รูปแบบวันที่ต้องเป็น YYYY-MM-DD']);
   });
 
+  it('rejects a Buddhist-era year with a Thai hint, accepts the Christian-era one', () => {
+    const r = s.isoDate.safeParse('2569-11-20');
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.map((i) => i.message)).toEqual(['ปี 2569 เป็น พ.ศ. — ระบบรับปี ค.ศ. (2026)']);
+    expect(s.isoDate.safeParse('2026-11-20').success).toBe(true);
+    expect(s.isoDate.safeParse('2399-12-31').success).toBe(true);
+    expect(s.buddhistYearProblem('2026-01-01')).toBeNull();
+  });
+
   it('turns into a 400 field error through parse(), also when optional / nullable', () => {
     const Body = z.object({ due: s.isoDate.nullable().optional(), at: s.isoDate });
     let err: unknown;
