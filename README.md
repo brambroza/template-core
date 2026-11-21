@@ -107,3 +107,8 @@ cd deploy/factory-a && cp .env.example .env && docker compose up -d --build
    · ส่งเข้ากลุ่ม: เชิญบอทเข้ากลุ่ม LINE แล้วพิมพ์ `ไอดีกลุ่ม` เอารหัสไปใส่ช่อง LINE group ID ของกฎ
 
 Webhook ต้องชี้ไปที่ gateway โดยตรง (gateway ส่ง body ไปแบบไบต์ต่อไบต์พร้อม `x-line-signature`; automation ตรวจลายเซ็นทุกครั้ง)
+
+
+
+by goalong.co.th 
+https://goalong.co.th
