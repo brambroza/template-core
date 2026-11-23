@@ -1,4 +1,4 @@
-import { defineUi, type Field, type Lookup } from '@erp/ui-schema';
+import { defineUi, type Action, type Field, type Lookup } from '@erp/ui-schema';
 
 /** Screens for web + mobile. Endpoints use the same path templates as the routes in service.ts. */
 
@@ -78,6 +78,15 @@ const quoteLines = {
   ],
 };
 
+/* stage actions: on the detail screens and as the Kanban moves of the lists */
+const leadContact: Action = { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true };
+const leadQualify: Action = { id: 'qualify', label: 'มีศักยภาพ', method: 'POST', endpoint: '/leads/:id/qualify', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted'] }, mobile: true };
+const leadConvert: Action = { id: 'convert', label: 'เปิดโอกาสขาย', method: 'POST', endpoint: '/leads/:id/convert', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'primary', fields: [{ name: 'name', label: 'ชื่อโอกาสขาย', type: 'text', help: 'เว้นว่าง = สิ่งที่สนใจ — บริษัท' }, { name: 'partnerId', label: 'ผูกกับลูกค้าในระบบ', type: 'lookup', lookup: { ...customerLookup, assign: { partnerId: 'id', customerName: 'name' } } }, { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', step: 0.01 }, { name: 'expectedClose', label: 'คาดว่าจะปิดการขาย', type: 'date' }], then: { screen: 'opportunity', idFrom: 'id' } };
+const leadLose: Action = { id: 'lose', label: 'ไม่สำเร็จ', method: 'POST', endpoint: '/leads/:id/lose', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'danger', fields: [{ name: 'reason', label: 'เหตุผล', type: 'text', required: true }] };
+const oppAdvance: Action = { id: 'advance', label: 'ไปขั้นถัดไป', method: 'POST', endpoint: '/opportunities/:id/advance', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal'] }, mobile: true };
+const oppWin: Action = { id: 'win', label: 'ปิดการขายได้', method: 'POST', endpoint: '/opportunities/:id/win', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal', 'negotiation'] }, tone: 'primary', confirm: 'ยืนยันว่าลูกค้าตกลงซื้อ' };
+const oppLose: Action = { id: 'lose', label: 'แพ้', method: 'POST', endpoint: '/opportunities/:id/lose', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal', 'negotiation'] }, tone: 'danger', fields: [{ name: 'reason', label: 'เหตุผล (ราคา, คู่แข่ง, ยกเลิกโครงการ…)', type: 'text', required: true }] };
+
 export default defineUi({
   module: 'crm',
   label: 'ลูกค้าสัมพันธ์',
@@ -122,9 +131,15 @@ export default defineUi({
         title: 'company', subtitle: 'contact_name',
         meta: [{ key: 'interest', label: 'สนใจ' }, { key: 'source_label', label: 'มาจาก' }, { key: 'created_at', label: 'เข้ามาเมื่อ', format: 'date' }],
         person: 'owner_name',
+        moves: [
+          { to: 'contacted', from: ['new'], action: leadContact },
+          { to: 'qualified', from: ['new', 'contacted'], action: leadQualify },
+          { to: 'converted', action: leadConvert },
+          { to: 'lost', action: leadLose },
+        ],
       },
       rowActions: [
-        { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true },
+        leadContact,
       ],
     },
     leadNew: {
@@ -150,19 +165,11 @@ export default defineUi({
       ],
       lines: [{ path: 'activities', label: 'กิจกรรม', columns: activityColumns }],
       actions: [
-        { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true },
-        { id: 'qualify', label: 'มีศักยภาพ', method: 'POST', endpoint: '/leads/:id/qualify', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted'] }, mobile: true },
-        { id: 'convert', label: 'เปิดโอกาสขาย', method: 'POST', endpoint: '/leads/:id/convert', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'primary',
-          fields: [
-            { name: 'name', label: 'ชื่อโอกาสขาย', type: 'text', help: 'เว้นว่าง = สิ่งที่สนใจ — บริษัท' },
-            { name: 'partnerId', label: 'ผูกกับลูกค้าในระบบ', type: 'lookup', lookup: { ...customerLookup, assign: { partnerId: 'id', customerName: 'name' } } },
-            { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', step: 0.01 },
-            { name: 'expectedClose', label: 'คาดว่าจะปิดการขาย', type: 'date' },
-          ],
-          then: { screen: 'opportunity', idFrom: 'id' } },
+        leadContact,
+        leadQualify,
+        leadConvert,
         { id: 'activity', label: 'บันทึกกิจกรรม', method: 'POST', endpoint: '/leads/:id/activities', perm: 'crm.activity.write', fields: activityFields, mobile: true },
-        { id: 'lose', label: 'ไม่สำเร็จ', method: 'POST', endpoint: '/leads/:id/lose', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'danger',
-          fields: [{ name: 'reason', label: 'เหตุผล', type: 'text', required: true }] },
+        leadLose,
       ],
     },
 
@@ -183,6 +190,12 @@ export default defineUi({
         amount: { key: 'value', label: 'มูลค่า', format: 'money' },
         meta: [{ key: 'probability', label: 'โอกาส', format: 'percent' }, { key: 'expected_close', label: 'คาดปิด', format: 'date' }],
         person: 'owner_name',
+        moves: [
+          { to: 'proposal', from: ['prospect'], action: oppAdvance },
+          { to: 'negotiation', from: ['proposal'], action: oppAdvance },
+          { to: 'won', action: oppWin },
+          { to: 'lost', action: oppLose },
+        ],
       },
     },
     opportunityNew: {
@@ -212,11 +225,10 @@ export default defineUi({
         { path: 'activities', label: 'กิจกรรม', columns: activityColumns },
       ],
       actions: [
-        { id: 'advance', label: 'ไปขั้นถัดไป', method: 'POST', endpoint: '/opportunities/:id/advance', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal'] }, mobile: true },
-        { id: 'win', label: 'ปิดการขายได้', method: 'POST', endpoint: '/opportunities/:id/win', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal', 'negotiation'] }, tone: 'primary', confirm: 'ยืนยันว่าลูกค้าตกลงซื้อ' },
+        oppAdvance,
+        oppWin,
         { id: 'activity', label: 'บันทึกกิจกรรม', method: 'POST', endpoint: '/opportunities/:id/activities', perm: 'crm.activity.write', fields: activityFields, mobile: true },
-        { id: 'lose', label: 'แพ้', method: 'POST', endpoint: '/opportunities/:id/lose', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal', 'negotiation'] }, tone: 'danger',
-          fields: [{ name: 'reason', label: 'เหตุผล (ราคา, คู่แข่ง, ยกเลิกโครงการ…)', type: 'text', required: true }] },
+        oppLose,
       ],
     },
 

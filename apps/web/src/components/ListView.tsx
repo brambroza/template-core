@@ -224,7 +224,8 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
       )}
 
       {kanban ? (
-        rows === null ? <p className="muted">กำลังโหลด…</p> : <KanbanBoard spec={kanban} rows={rows} hrefOf={rowHref} />
+        rows === null ? <p className="muted">กำลังโหลด…</p> : <KanbanBoard spec={kanban} rows={rows} module={module} perms={perms} hrefOf={rowHref}
+          onMoved={(m, res) => (m.action.then ? router.push(screenHref(module, m.action.then.screen, m.action.then.idFrom ? get(res, m.action.then.idFrom) : undefined)) : setTick((t) => t + 1))} />
       ) : screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}

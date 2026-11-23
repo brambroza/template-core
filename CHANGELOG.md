@@ -57,8 +57,12 @@
 - ลีด and โอกาสขาย get a ตาราง / Kanban switch (remembered per user and list). The board has one lane per status / stage with its
   count, and for opportunities the lane's total value. Cards show the number, name, customer or contact, value, probability or
   interest, the expected close or arrival date, and the owner's initials. Won / lost / converted lanes are drawn quieter.
-- The board is read-only: a card opens the record, where the stage buttons keep their rules and confirmations. The list's filters
-  apply to the board; printing prints the table. Any list can offer a board with `ListScreen.kanban` (ui-schema `kanbanLanes`).
+- Drag a card to another lane to change its stage, or use the card's ย้าย button (touch screens, keyboard). A move runs the
+  module's own action with its confirmation or fields dialog (ปิดการขายได้ asks to confirm, แพ้ / ไม่สำเร็จ ask for a reason,
+  เปิดโอกาสขาย asks for the opportunity and then opens it). Only the moves the list declares are offered (`KanbanSpec.moves`):
+  ไปขั้นถัดไป goes one stage at a time and nothing moves backwards. Lanes a card cannot reach dim while it is dragged.
+- A card opens the record. The list's filters apply to the board; printing prints the table. Any list can offer a board with
+  `ListScreen.kanban` (ui-schema `kanbanLanes`, `kanbanMove`).
 
 **Pages on every list**
 - Lists show 20 rows a page with page buttons under the table and a "แถวต่อหน้า" picker (10 / 20 / 50 / 100, remembered per user).

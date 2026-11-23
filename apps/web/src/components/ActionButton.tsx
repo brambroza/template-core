@@ -11,8 +11,12 @@ import { FieldRow, LinesEditor, type Values } from './Fields';
 /**
  * A button that calls an action endpoint. Opens a dialog first when the action needs input or a confirmation.
  * `params` fill the endpoint template (route id, row values).
+ * `auto`: no button — start at once (dialog or call), e.g. after a Kanban card is dropped; `onCancel` runs when the
+ * dialog is closed without saving or the call fails.
  */
-export function ActionButton({ action, module, params, onDone }: { action: Action; module: string; params: Record<string, unknown>; onDone: (result: any) => void }) {
+export function ActionButton({ action, module, params, onDone, auto, onCancel }: {
+  action: Action; module: string; params: Record<string, unknown>; onDone: (result: any) => void; auto?: boolean; onCancel?: () => void;
+}) {
   const needsDialog = !!(action.fields?.length || action.lines || action.confirm || action.impact);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -25,6 +29,7 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
   const [ack, setAck] = useState(false);
   useEffect(() => setAck(false), [stops]);
   const dialog = useRef<HTMLDialogElement>(null);
+  const saved = useRef(false);
 
   useEffect(() => {
     if (open) dialog.current?.showModal?.();
@@ -41,6 +46,7 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
       const filledLines = action.lines ? lines.filter((l) => Object.values(l).some((v) => v !== '' && v !== undefined)) : undefined;
       const body = action.fields?.length || action.lines ? toBody(action.fields ?? [], values, action.lines, filledLines) : undefined;
       const result = await api(module, fillPath(action.endpoint, values, params), { method: action.method, body });
+      saved.current = true;
       setOpen(false);
       if (action.toast) toast({ title: action.label, body: String(get(result, action.toast) ?? ''), tone: 'info' });
       else toast({ title: `${action.label} — เรียบร้อย`, tone: action.tone === 'danger' ? 'warn' : 'ok' });
@@ -48,21 +54,32 @@ export function ActionButton({ action, module, params, onDone }: { action: Actio
     } catch (e) {
       if (isShowcaseRefusal(e)) { setOpen(false); return; } // showcase: the toast explains it, no red error
       setError(e instanceof Error ? e.message : 'ทำรายการไม่สำเร็จ');
+      // no button to show the error under: say it in a toast and give up
+      if (auto && !needsDialog) { toast({ title: `${action.label} — ไม่สำเร็จ`, body: e instanceof Error ? e.message : '', tone: 'stop' }); onCancel?.(); }
       if (e instanceof ApiError) setFieldErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k, v[0]])));
     } finally {
       setBusy(false);
     }
   };
 
+  const started = useRef(false);
+  useEffect(() => {
+    if (!auto || started.current) return;
+    started.current = true; // once, also under React's double-run of effects in development
+    if (needsDialog) setOpen(true); else void run();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const tone = action.tone === 'primary' ? 'btn-primary' : action.tone === 'danger' ? 'btn-danger' : 'btn';
   return (
     <>
-      <button type="button" className={tone} disabled={busy} onClick={() => (needsDialog ? setOpen(true) : run())}>
-        {busy && !open ? 'กำลังบันทึก…' : action.label}
-      </button>
-      {!needsDialog && error && <p className="inline-error" role="alert">{error}</p>}
+      {!auto && (
+        <button type="button" className={tone} disabled={busy} onClick={() => (needsDialog ? setOpen(true) : run())}>
+          {busy && !open ? 'กำลังบันทึก…' : action.label}
+        </button>
+      )}
+      {!auto && !needsDialog && error && <p className="inline-error" role="alert">{error}</p>}
       {needsDialog && (
-        <dialog ref={dialog} className="dialog" onClose={() => setOpen(false)} aria-labelledby={`dlg-${action.id}`}>
+        <dialog ref={dialog} className="dialog" onClose={() => { setOpen(false); if (auto && !saved.current) onCancel?.(); }} aria-labelledby={`dlg-${action.id}`}>
           <form method="dialog" onSubmit={(e) => { e.preventDefault(); run(); }}>
             <h2 id={`dlg-${action.id}`}>{action.label}</h2>
             {action.confirm && <p className="confirm-text">{action.confirm}</p>}
