@@ -290,6 +290,23 @@ table.data td.row-actions { position: sticky; right: 0; background: var(--surfac
 table.data tr.is-link:hover td.row-actions { background: var(--surface-2); }
 .filters-toggle { display: none; }
 .list-count { margin: 10px 2px 0; font-size: .82rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 12px 2px 0; font-size: .85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pager-count { margin: 0; color: var(--ink-3); }
+.pager .pager-size { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; }
+.pager .pager-size span { white-space: nowrap; }
+.pager .pager-size select { width: auto; min-width: 72px; font: inherit; height: 34px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 8px; background-color: var(--surface); color: var(--ink); }
+.pager-pages { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.pager-btn { min-width: 34px; height: 34px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
+.pager-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--line); color: var(--ink); }
+.pager-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pager-btn.is-current { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; cursor: default; }
+.pager-btn:disabled { opacity: .35; cursor: default; }
+.pager-gap { min-width: 20px; text-align: center; color: var(--ink-3); }
+@media (max-width: 640px) {
+  .pager { gap: 10px 12px; }
+  .pager-pages { margin-left: 0; width: 100%; justify-content: center; }
+  .pager-btn { min-width: 40px; height: 40px; }
+}
 .print-only { display: none; }
 
 /* ---------- CSV import dialog ---------- */
@@ -1228,3 +1245,51 @@ table.data tfoot td.num { border-bottom: 3px double var(--ink-3); }
   .decide { scroll-margin-top: 72px; }
 }
 @media print { .bottom-nav { display: none !important; } }
+
+/* ---------- ตาราง / Kanban switch and the Kanban board (KanbanBoard.tsx) ---------- */
+.view-switch { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface-2); }
+.view-switch button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; font-size: .88rem; cursor: pointer; }
+.view-switch button:hover { color: var(--ink); }
+.view-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(11, 19, 36, .08), 0 0 0 1px var(--line); }
+.view-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.kanban {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 12px; align-items: start;
+  overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+}
+.kb-lane { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); scroll-snap-align: start; }
+.kb-lane.is-closed { background: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.kb-lane.is-closed .kb-card { box-shadow: none; }
+.kb-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; min-height: 26px; }
+.kb-head h2 { margin: 0; font-size: .92rem; font-weight: 600; color: var(--ink); letter-spacing: 0; }
+.kb-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.kb-dot.tone-neutral { background: var(--ink-3); }
+.kb-dot.tone-progress { background: var(--info); }
+.kb-dot.tone-ok { background: var(--ok); }
+.kb-dot.tone-warn { background: var(--warn); }
+.kb-dot.tone-stop { background: var(--stop); }
+.kb-count { min-width: 22px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 99px; background: var(--surface); color: var(--ink-2); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.kb-total { margin-left: auto; color: var(--ink-2); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kb-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.kb-empty { padding: 18px 8px; text-align: center; color: var(--ink-3); font-size: .82rem; }
+.kb-card {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); text-decoration: none; box-shadow: var(--shadow-sm);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+a.kb-card:hover { border-color: var(--line-strong); box-shadow: 0 6px 18px -10px rgba(11, 19, 36, .25); transform: translateY(-1px); }
+a.kb-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kb-no { font-size: .72rem; color: var(--ink-3); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.kb-title { font-weight: 600; font-size: .93rem; line-height: 1.4; overflow-wrap: anywhere; }
+.kb-sub { color: var(--ink-2); font-size: .84rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-amount { margin-top: 4px; font-size: 1.02rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kb-foot { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+.kb-meta { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--ink-3); font-size: .76rem; }
+.kb-meta > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-person { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent-text); font-size: .7rem; font-weight: 600; }
+@media (max-width: 760px) {
+  .kanban { grid-auto-columns: 82%; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
+  .view-switch button { padding: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .kb-card { transition: none; } a.kb-card:hover { transform: none; } }
+@media print { .view-switch { display: none; } }

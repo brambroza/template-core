@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, Kanban, Printer, SlidersHorizontal, Table2 } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
 import {
   columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, rowLinkScreen, toCsv,
@@ -13,6 +13,10 @@ import { api } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
+import { readPref, writePref } from '@/lib/prefs';
+import { clampPage, DEFAULT_PAGE_SIZE, validPageSize } from '@/lib/paging';
+import { Pagination } from './Pagination';
+import { KanbanBoard } from './KanbanBoard';
 import { ActionButton } from './ActionButton';
 import { DateRangeInput, FieldInput, type Values } from './Fields';
 import { loadCompany } from './print/company';
@@ -53,7 +57,6 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [moreFilters, setMoreFilters] = useState(false);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
-  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +93,40 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
     written.current = urlQuery;
     setFilters(Object.fromEntries([...search.entries()]));
   }, [urlQuery]);
+
+  // paging: the rows are already loaded, so a page is a slice of them. Reports (statements that must be read whole) and
+  // printing show every row; CSV and the totals row always use every row.
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPageSize(validPageSize(readPref<unknown>('list.pageSize', DEFAULT_PAGE_SIZE))); }, []);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [filterQuery, screen.endpoint, id]);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const before = () => setPrinting(true), after = () => setPrinting(false);
+    window.addEventListener('beforeprint', before); window.addEventListener('afterprint', after);
+    return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after); };
+  }, []);
+  // ตาราง / Kanban: only for lists that define a board; the choice is remembered per user and list
+  const viewPref = `list.view.${module}.${screen.endpoint}`;
+  const [view, setView] = useState<'table' | 'kanban'>('table');
+  useEffect(() => { if (screen.kanban) setView(readPref<string>(viewPref, 'table') === 'kanban' ? 'kanban' : 'table'); }, [viewPref, !!screen.kanban]);
+  const kanban = screen.kanban && view === 'kanban' && !printing ? screen.kanban : undefined;
+  const chooseView = (v: 'table' | 'kanban') => { setView(v); writePref(viewPref, v); };
+  const paged = !kanban && !report && !printing && !!rows && rows.length > pageSize;
+  const currentPage = rows ? clampPage(page, rows.length, pageSize) : 1;
+  const shown = rows && paged ? rows.slice((currentPage - 1) * pageSize, currentPage * pageSize) : rows;
+  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1, page, pageSize]);
+  const goToPage = (p: number) => {
+    setPage(p);
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const changePageSize = (size: number) => {
+    const next = validPageSize(size);
+    // keep the first row the user was looking at on screen
+    const firstRow = (currentPage - 1) * pageSize;
+    setPageSize(next); writePref('list.pageSize', next);
+    setPage(Math.floor(firstRow / next) + 1);
+  };
 
   const exportCsv = () => rows?.length && downloadText(datedFileName(screen.title), toCsv(screen.columns, rows, labels));
   const activeFilters = filterSummary(screen.filters ?? [], filters);
@@ -136,6 +173,12 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {subtitle && <p className="report-period">{subtitle}</p>}
         </div>
         <div className="screen-actions no-print">
+          {screen.kanban && (
+            <div className="view-switch" role="group" aria-label="มุมมอง">
+              <button type="button" aria-pressed={view === 'table'} onClick={() => chooseView('table')}><Table2 size={16} aria-hidden /> ตาราง</button>
+              <button type="button" aria-pressed={view === 'kanban'} onClick={() => chooseView('kanban')}><Kanban size={16} aria-hidden /> Kanban</button>
+            </div>
+          )}
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">
             <Download size={16} aria-hidden /> ส่งออก CSV
           </button>
@@ -180,11 +223,13 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </p>
       )}
 
-      {screen.display === 'cards' ? (
+      {kanban ? (
+        rows === null ? <p className="muted">กำลังโหลด…</p> : <KanbanBoard spec={kanban} rows={rows} hrefOf={rowHref} />
+      ) : screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
-          {rows?.map((row, i) => {
+          {shown?.map((row, i) => {
             const href = rowHref(row);
             const [head, body, ...facts] = screen.columns;
             return (
@@ -217,17 +262,17 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           <tbody role="rowgroup">
             {rows === null && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
             {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
-            {rows?.map((row, i) => {
+            {shown?.map((row, i) => {
               const href = rowHref(row);
               const style = reportRowStyle(report, row);
               const level = report ? reportIndent(report, row) : 0;
-              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(rows, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
+              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(shown!, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
               const cls = [href ? 'is-link' : '', style ? `r-${style}` : ''].filter(Boolean).join(' ') || undefined;
               return (
                 <tr role="row" key={report ? i : String(row.id ?? i)} className={cls} onClick={href ? () => router.push(href) : undefined}>
                   {screen.columns.map((c, ci) => {
                     const raw = get(row, c.key);
-                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(rows, i, c.key))
+                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(shown!, i, c.key))
                       || (!!report && (raw === null || raw === undefined || raw === ''));
                     const v = <Value value={get(row, c.key)} format={c.format} max={6} cell />;
                     return (
@@ -252,7 +297,9 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && !report && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
+      {rows !== null && rows.length > 0 && !report && !kanban && (rows.length > 10
+        ? <Pagination total={rows.length} page={currentPage} size={pageSize} onPage={goToPage} onSize={changePageSize} />
+        : <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>)}
     </div>
   );
 }
