@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initials, kanbanLanes, brokenLinks, type KanbanSpec, type ModuleUi } from '../src/index.ts';
+import { initials, kanbanLanes, kanbanMove, brokenLinks, type Action, type KanbanSpec, type ModuleUi } from '../src/index.ts';
 
 const spec: KanbanSpec = {
   field: 'stage',
@@ -45,5 +45,32 @@ describe('kanban lanes', () => {
     expect(brokenLinks(ui([{ value: 'a', label: 'A' }, { value: 'a', label: 'A2' }])).join()).toMatch(/two lanes with the same value/);
     expect(brokenLinks(ui([])).join()).toMatch(/has no lanes/);
     expect(brokenLinks(ui([{ value: 'a', label: 'A' }])).filter((p) => p.includes('kanban'))).toEqual([]);
+  });
+});
+
+describe('kanban moves', () => {
+  const advance: Action = { id: 'advance', label: 'ไปขั้นถัดไป', method: 'POST', endpoint: '/o/:id/advance', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal'] } };
+  const win: Action = { id: 'win', label: 'ปิดการขายได้', method: 'POST', endpoint: '/o/:id/win', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal'] }, confirm: 'ยืนยัน' };
+  const board: KanbanSpec = { ...spec, moves: [{ to: 'proposal', from: ['prospect'], action: advance }, { to: 'won', action: win }] };
+  const writer = ['crm.lead.write'];
+
+  it('finds the move for a drop, honouring from, when and the permission', () => {
+    expect(kanbanMove(board, { stage: 'prospect' }, 'proposal', writer)?.action.id).toBe('advance');
+    expect(kanbanMove(board, { stage: 'prospect' }, 'won', writer)?.action.id).toBe('win');
+    expect(kanbanMove(board, { stage: 'proposal' }, 'proposal', writer)).toBeUndefined(); // same lane
+    expect(kanbanMove(board, { stage: 'won' }, 'proposal', writer)).toBeUndefined(); // not from won
+    expect(kanbanMove({ ...board, moves: [{ to: 'won', action: win }] }, { stage: 'won-ish' }, 'won', writer)).toBeUndefined(); // when fails
+    expect(kanbanMove(board, { stage: 'prospect' }, 'won', ['crm.lead.read'])).toBeUndefined(); // no permission
+    expect(kanbanMove({ ...board, moves: undefined }, { stage: 'prospect' }, 'proposal', writer)).toBeUndefined(); // no moves = read-only
+  });
+
+  it('flags moves to or from a lane the board does not have', () => {
+    const ui = {
+      module: 'x', label: 'X', icon: 'box', menu: [{ label: 'L', screen: 'l' }],
+      screens: { l: { kind: 'list', title: 'L', endpoint: '/l', columns: [{ key: 'no', label: 'เลขที่' }], kanban: { ...board, moves: [{ to: 'nowhere', from: ['prospect'], action: { ...advance, then: { screen: 'missing' } } }] } } },
+    } as unknown as ModuleUi;
+    const problems = brokenLinks(ui).join('\n');
+    expect(problems).toMatch(/move "advance" uses unknown lane "nowhere"/);
+    expect(problems).toMatch(/kanban.advance.then points to unknown screen "missing"/);
   });
 });

@@ -187,7 +187,15 @@ export interface KanbanSpec {
   meta?: Column[];
   /** a person's name shown as initials on the card (e.g. owner_name) */
   person?: string;
+  /**
+   * Dragging a card to another lane runs one of these actions (its confirm / fields dialog first, its `when` and `perm` checked).
+   * Only moves listed here are allowed: the board never writes the field itself, so a module's stage rules stay the only way.
+   * `from` limits the lanes a move starts from (e.g. "ไปขั้นถัดไป" reaches เสนอราคา only from สนใจ).
+   */
+  moves?: KanbanMove[];
 }
+
+export interface KanbanMove { to: string; from?: string[]; action: Action }
 
 /**
  * CSV bulk import on a list screen. `endpoint` is a POST route of this module that accepts
@@ -992,6 +1000,10 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
         const values = s.kanban.lanes.map((l) => l.value);
         if (!values.length) todoProblems.push(`${ui.module}: ${id}.kanban has no lanes`);
         if (new Set(values).size !== values.length) todoProblems.push(`${ui.module}: ${id}.kanban has two lanes with the same value`);
+        for (const m of s.kanban.moves ?? []) {
+          for (const v of [m.to, ...(m.from ?? [])]) if (!values.includes(v)) todoProblems.push(`${ui.module}: ${id}.kanban move "${m.action.id}" uses unknown lane "${v}"`);
+          if (m.action.then) refs.push([m.action.then.screen, `${id}.kanban.${m.action.id}.then`]);
+        }
       }
     }
     if (s.kind === 'form' && s.after) refs.push([s.after.screen, `${id}.after`]);
@@ -1032,6 +1044,20 @@ export function kanbanLanes(spec: KanbanSpec, rows: Record<string, unknown>[]): 
     }
   }
   return lanes;
+}
+
+/**
+ * The move that takes `row` to lane `to`, or undefined when that drop is not allowed (same lane, no such move, wrong
+ * starting lane, the action's `when` does not match the row, or the user lacks its permission).
+ * @param spec the screen's kanban spec
+ * @param row the dragged row
+ * @param to the target lane value
+ * @param perms the user's permissions
+ */
+export function kanbanMove(spec: KanbanSpec, row: Record<string, unknown>, to: string, perms: string[]): KanbanMove | undefined {
+  const from = String(get(row, spec.field) ?? '');
+  if (from === to) return undefined;
+  return (spec.moves ?? []).find((m) => m.to === to && (!m.from || m.from.includes(from)) && matches(row, m.action.when) && hasPerm(perms, m.action.perm));
 }
 
 /**
