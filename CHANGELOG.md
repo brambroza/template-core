@@ -54,11 +54,12 @@
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
 **Web layout for every screen size**
-- Content uses the full width of the window (the 1,320 px cap is gone; a little more side padding from 1,600 px).
+- Content is up to 1,600 px wide and centred in the room right of the menu (it used to stop at 1,320 px against the left edge,
+  leaving the right of a wide screen empty). The search box and bell in the top bar line up with that column.
 - Tablets (901–1,200 px) keep the module rail; the menu panel opens as a drawer beside it ("เมนู" in the top bar).
 - Phones (≤ 760 px) get a bottom navigator above the home bar: หน้าแรก · the module being worked in (or the last one) ·
   ค้นหา/สั่งงาน · งานรอ (the decision inbox) · เมนู. Content and toasts keep clear of it; the page runs edge to edge (`viewport-fit=cover`).
-- Checked at 390, 820, 1180, 1440 and 2560 px: no sideways scrolling on home, lists and forms.
+- Checked at 390, 820, 1180, 1440, 1920, 2482 and 2560 px: no sideways scrolling on home, lists and forms.
 
 **Fix: simultaneous logins could hang identity**
 - Login (and password reset / change) held a transaction while the throttle took a second pool connection; as many logins at once as

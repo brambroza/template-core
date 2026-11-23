@@ -215,7 +215,9 @@ a { color: inherit; }
 .showcase-note { font-size: .85rem; color: var(--ink-2); margin: 0; }
 .showcase-note a { color: var(--accent-text); font-weight: 600; }
 .topbar {
-  position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 12px; padding: 12px 28px;
+  position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 12px;
+  /* the bar's background spans the window; its search box and bell line up with the centred content column below */
+  padding: 12px max(var(--gutter), calc((100% - var(--content-max)) / 2 + var(--gutter)));
   background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .topbar .menu-toggle, .topbar-logo { display: none; }
@@ -231,7 +233,9 @@ a { color: inherit; }
 .cmd-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd-trigger kbd { margin-left: auto; font: inherit; font-size: .75rem; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.content { padding: 12px 28px 72px; width: 100%; }
+/* wide screens: the page is at most --content-max wide and sits in the middle of the room right of the menu */
+.content { padding: 12px var(--gutter) 72px; width: 100%; max-width: var(--content-max); margin-inline: auto; }
+.shell { --gutter: 28px; --content-max: 1600px; }
 
 /* ---------- screens ---------- */
 .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 8px 0 20px; }
@@ -588,9 +592,9 @@ a.decide-title:hover { color: var(--accent-text); text-decoration: underline; }
 /* ---------- bottom navigator (phones only; see BottomNav.tsx) ---------- */
 .bottom-nav { display: none; }
 
-/* ---------- wide screens: use the room ---------- */
+/* ---------- wide screens: a little more breathing room inside the centred column ---------- */
 @media (min-width: 1600px) {
-  .content { padding-left: 36px; padding-right: 36px; }
+  .shell { --gutter: 36px; }
   .cmd-trigger { max-width: 760px; }
 }
 
