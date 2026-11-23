@@ -13,6 +13,9 @@ import { api } from '@/lib/api';
 import { datedFileName, downloadText } from '@/lib/download';
 import { screenHref } from '@/lib/nav';
 import { loadSession } from '@/lib/session';
+import { readPref, writePref } from '@/lib/prefs';
+import { clampPage, DEFAULT_PAGE_SIZE, validPageSize } from '@/lib/paging';
+import { Pagination } from './Pagination';
 import { ActionButton } from './ActionButton';
 import { DateRangeInput, FieldInput, type Values } from './Fields';
 import { loadCompany } from './print/company';
@@ -53,7 +56,6 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
   const [moreFilters, setMoreFilters] = useState(false);
   const params = routeParams(screen.endpoint, id);
   const tableRef = useRef<HTMLDivElement>(null);
-  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1]);
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +92,34 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
     written.current = urlQuery;
     setFilters(Object.fromEntries([...search.entries()]));
   }, [urlQuery]);
+
+  // paging: the rows are already loaded, so a page is a slice of them. Reports (statements that must be read whole) and
+  // printing show every row; CSV and the totals row always use every row.
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPageSize(validPageSize(readPref<unknown>('list.pageSize', DEFAULT_PAGE_SIZE))); }, []);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [filterQuery, screen.endpoint, id]);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const before = () => setPrinting(true), after = () => setPrinting(false);
+    window.addEventListener('beforeprint', before); window.addEventListener('afterprint', after);
+    return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after); };
+  }, []);
+  const paged = !report && !printing && !!rows && rows.length > pageSize;
+  const currentPage = rows ? clampPage(page, rows.length, pageSize) : 1;
+  const shown = rows && paged ? rows.slice((currentPage - 1) * pageSize, currentPage * pageSize) : rows;
+  useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1, page, pageSize]);
+  const goToPage = (p: number) => {
+    setPage(p);
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const changePageSize = (size: number) => {
+    const next = validPageSize(size);
+    // keep the first row the user was looking at on screen
+    const firstRow = (currentPage - 1) * pageSize;
+    setPageSize(next); writePref('list.pageSize', next);
+    setPage(Math.floor(firstRow / next) + 1);
+  };
 
   const exportCsv = () => rows?.length && downloadText(datedFileName(screen.title), toCsv(screen.columns, rows, labels));
   const activeFilters = filterSummary(screen.filters ?? [], filters);
@@ -184,7 +214,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
-          {rows?.map((row, i) => {
+          {shown?.map((row, i) => {
             const href = rowHref(row);
             const [head, body, ...facts] = screen.columns;
             return (
@@ -217,17 +247,17 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           <tbody role="rowgroup">
             {rows === null && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="muted">กำลังโหลด…</td></tr>}
             {rows?.length === 0 && !error && <tr role="row"><td role="cell" colSpan={screen.columns.length + 1} className="empty">{screen.empty ?? 'ไม่มีรายการ'}</td></tr>}
-            {rows?.map((row, i) => {
+            {shown?.map((row, i) => {
               const href = rowHref(row);
               const style = reportRowStyle(report, row);
               const level = report ? reportIndent(report, row) : 0;
-              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(rows, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
+              const linkAt = screen.columns.findIndex((c) => !(c.hideRepeats && repeatsAbove(shown!, i, c.key)) && get(row, c.key) !== undefined && get(row, c.key) !== null && get(row, c.key) !== '');
               const cls = [href ? 'is-link' : '', style ? `r-${style}` : ''].filter(Boolean).join(' ') || undefined;
               return (
                 <tr role="row" key={report ? i : String(row.id ?? i)} className={cls} onClick={href ? () => router.push(href) : undefined}>
                   {screen.columns.map((c, ci) => {
                     const raw = get(row, c.key);
-                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(rows, i, c.key))
+                    const blank = (style === 'heading' && (isNumeric(c.format) || ci !== linkAt)) || (c.hideRepeats && repeatsAbove(shown!, i, c.key))
                       || (!!report && (raw === null || raw === undefined || raw === ''));
                     const v = <Value value={get(row, c.key)} format={c.format} max={6} cell />;
                     return (
@@ -252,7 +282,9 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && !report && <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>}
+      {rows !== null && rows.length > 0 && !report && (rows.length > 10
+        ? <Pagination total={rows.length} page={currentPage} size={pageSize} onPage={goToPage} onSize={changePageSize} />
+        : <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>)}
     </div>
   );
 }

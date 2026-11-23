@@ -290,6 +290,23 @@ table.data td.row-actions { position: sticky; right: 0; background: var(--surfac
 table.data tr.is-link:hover td.row-actions { background: var(--surface-2); }
 .filters-toggle { display: none; }
 .list-count { margin: 10px 2px 0; font-size: .82rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 12px 2px 0; font-size: .85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pager-count { margin: 0; color: var(--ink-3); }
+.pager .pager-size { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; }
+.pager .pager-size span { white-space: nowrap; }
+.pager .pager-size select { width: auto; min-width: 72px; font: inherit; height: 34px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 8px; background-color: var(--surface); color: var(--ink); }
+.pager-pages { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.pager-btn { min-width: 34px; height: 34px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
+.pager-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--line); color: var(--ink); }
+.pager-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pager-btn.is-current { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; cursor: default; }
+.pager-btn:disabled { opacity: .35; cursor: default; }
+.pager-gap { min-width: 20px; text-align: center; color: var(--ink-3); }
+@media (max-width: 640px) {
+  .pager { gap: 10px 12px; }
+  .pager-pages { margin-left: 0; width: 100%; justify-content: center; }
+  .pager-btn { min-width: 40px; height: 40px; }
+}
 .print-only { display: none; }
 
 /* ---------- CSV import dialog ---------- */
