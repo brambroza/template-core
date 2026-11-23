@@ -120,6 +120,9 @@ describe('web app — customer with Core + Inventory + Purchasing + Sales', () =
     await page.getByRole('heading', { name: /^SO-/ }).waitFor();
     await page.getByRole('button', { name: 'ยืนยันคำสั่งซื้อ' }).click();
     await page.getByRole('button', { name: 'บันทึกส่งของ' }).click();
+    // "บันทึกส่งของ" previews its impact (stock out, cost) and is confirmed in the dialog (phase 0)
+    await page.getByRole('dialog').getByText('ผลกระทบเมื่อกดยืนยัน').waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: 'บันทึกส่งของ' }).click();
     await page.getByRole('button', { name: 'ออกใบกำกับภาษี' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'ออกใบกำกับภาษี' }).click();
     await page.getByRole('heading', { name: /^INV-/ }).waitFor();

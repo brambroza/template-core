@@ -327,6 +327,24 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     await settle();
   }
 
+  // ---------------- ยอดยกมา: what was still unpaid in the old program (Express) on the day the company started ----------------
+  // (the same rows the "นำเข้าจาก Excel" dialog sends after master-data resolved the codes)
+  const opening = (code: string, docNo: string, docDate: string, dueDate: string, amount: number, note?: string) => {
+    const p = partners[code];
+    return { partnerCode: code, partnerId: p.id, partnerName: p.name, partnerKind: p.kind, taxId: p.tax_id ?? '', branch: p.branch ?? '', address: p.address ?? '', docNo, docDate, dueDate, amount: String(amount), note: note ?? '' };
+  };
+  if (has('sales')) {
+    await call('POST', '/api/sales/opening-receivables/import', { rows: [
+      opening('C-002', 'EX-IV6904-0118', monthsAgo(6, 20), monthsAgo(4, 19), 64200, 'ยกมาจาก Express — ลูกค้าขอแบ่งชำระ'),
+      opening('C-003', 'EX-IV6904-0125', monthsAgo(6, 26), monthsAgo(5, 26), 18190),
+    ] });
+  }
+  if (has('purchasing')) {
+    await call('POST', '/api/purchasing/opening-payables/import', { rows: [
+      opening('S-003', 'CT-6904/077', monthsAgo(6, 18), monthsAgo(5, 18), 12305, 'ค่าอะไหล่ ยกมาจาก Express'),
+    ] });
+  }
+
   // ---------------- maintenance: the 3D floor ----------------
   if (has('maintenance')) {
     const machines: Record<string, any> = {};

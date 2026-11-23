@@ -541,8 +541,8 @@ export const definition: ServiceDefinition = {
       const mail = await k.db.tx(reset.tenant_id, async (c) => {
         const u = (await c.query<{ email: string }>('update users set password_hash = $2 where id = $1 and active returning email', [reset.user_id, hashPassword(b.newPassword)])).rows[0];
         if (!u) throw new HttpError(400, 'link_invalid', 'บัญชีนี้ถูกปิดใช้งาน — ติดต่อผู้ดูแลระบบของบริษัท');
-        // other links of this user stop working too
-        await k.db.pool.query('update password_resets set used_at = now() where user_id = $1 and used_at is null', [reset.user_id]);
+        // other links of this user stop working too (same transaction: a second pool connection here could deadlock under load)
+        await c.query('update password_resets set used_at = now() where user_id = $1 and used_at is null', [reset.user_id]);
         await revokeTokens(k, c, reset.user_id, 'password_changed');
         return u.email;
       });
@@ -575,13 +575,13 @@ export const definition: ServiceDefinition = {
         tenantId = fits[0].tenant_id;
       }
       const tenant = (await k.db.pool.query('select id, code, name from tenants where id = $1', [tenantId])).rows[0];
-      return k.db.tx(tenant.id, async (c) => {
-        const u = (await c.query('select * from users where email = $1 and active', [body.email])).rows[0];
-        const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
-        if (!ok) return fail();
-        await clearAttempts(k.db.pool, buckets[0][0]); // the right password clears this e-mail + IP; the wider caps age out on their own
-        return session(c, tenant, u);
-      });
+      // Never hold a transaction while taking a second pool connection (the throttle): with as many logins at once as the pool
+      // has connections, every one of them waited for another forever. Read, check, count — then the session transaction.
+      const u = await k.db.tx(tenant.id, async (c) => (await c.query('select * from users where email = $1 and active', [body.email])).rows[0]);
+      const ok = verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH) && !!u;
+      if (!ok) return fail();
+      await clearAttempts(k.db.pool, buckets[0][0]); // the right password clears this e-mail + IP; the wider caps age out on their own
+      return k.db.tx(tenant.id, (c) => session(c, tenant, u));
     });
 
     app.get('/me', async (req) => {
@@ -871,13 +871,19 @@ export const definition: ServiceDefinition = {
       const b = parse(PasswordChangeInput, req.body);
       const key = `me|${a.tenantId}|${a.userId}`;
       if ((await attempts(k.db.pool, key)) >= LOGIN_MAX_FAILURES) throw new HttpError(429, 'too_many_attempts', TOO_MANY);
+      // the wrong-password count must survive the rollback, and taking a pool connection inside the transaction can deadlock:
+      // check the current password first, outside any transaction
+      const current = await k.db.tx(a.tenantId, async (c) => (await c.query<{ password_hash: string }>('select password_hash from users where id = $1 and active', [a.userId])).rows[0]);
+      if (!current) throw unauthorized('บัญชีนี้ถูกปิดใช้งาน');
+      if (!verifyPassword(b.currentPassword, current.password_hash)) {
+        await noteAttempts(k.db.pool, [key]);
+        throw badRequest('รหัสผ่านปัจจุบันไม่ถูกต้อง', { fieldErrors: { currentPassword: ['รหัสผ่านปัจจุบันไม่ถูกต้อง'] }, formErrors: [] });
+      }
       const out = await k.db.tx(a.tenantId, async (c) => {
         const u = (await c.query('select id, name, password_hash from users where id = $1 and active', [a.userId])).rows[0];
         if (!u) throw unauthorized('บัญชีนี้ถูกปิดใช้งาน');
-        if (!verifyPassword(b.currentPassword, u.password_hash)) {
-          await noteAttempts(k.db.pool, [key]);
-          throw badRequest('รหัสผ่านปัจจุบันไม่ถูกต้อง', { fieldErrors: { currentPassword: ['รหัสผ่านปัจจุบันไม่ถูกต้อง'] }, formErrors: [] });
-        }
+        // the password changed between the check and this transaction (another device): check again, without counting
+        if (!verifyPassword(b.currentPassword, u.password_hash)) throw badRequest('รหัสผ่านปัจจุบันไม่ถูกต้อง', { fieldErrors: { currentPassword: ['รหัสผ่านปัจจุบันไม่ถูกต้อง'] }, formErrors: [] });
         if (b.newPassword === b.currentPassword) {
           throw badRequest('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม', { fieldErrors: { newPassword: ['รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม'] }, formErrors: [] });
         }

@@ -378,6 +378,9 @@ describe('UAT — full installation (uat-factory)', () => {
     expect(await fact(page, 'ยอดรวม')).toContain('802.50');
     await page.getByRole('button', { name: 'ยืนยันคำสั่งซื้อ' }).click();
     await page.getByRole('button', { name: 'บันทึกส่งของ' }).click();
+    // phase 0: the dialog previews the stock going out, then the user confirms
+    await page.getByRole('dialog').getByText('ผลกระทบเมื่อกดยืนยัน').waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: 'บันทึกส่งของ' }).click();
     await page.locator('.status', { hasText: 'ส่งของแล้ว' }).waitFor();
     await shot(page, 'UAT-15');
     await erp.settle();

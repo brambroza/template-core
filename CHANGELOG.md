@@ -53,6 +53,11 @@
 - Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
+**Fix: simultaneous logins could hang identity**
+- Login (and password reset / change) held a transaction while the throttle took a second pool connection; as many logins at once as
+  the pool has connections (10 by default) waited for each other forever. Found when the demo seed hung on 9 parallel logins. Now the
+  password is checked outside the transaction and the throttle never runs inside one (`services/identity/test/login-load.test.ts`).
+
 **Import from Excel and opening stock (phase 2, part 3)**
 - Every import screen ("นำเข้าจาก Excel") reads .xlsx (first sheet) as well as CSV, and hands out the template as .xlsx (bold frozen header,
   text columns so codes and tax IDs keep their leading zeros). No library: `packages/ui-schema/src/xlsx.ts` reads the ZIP/XML itself
