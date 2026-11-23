@@ -164,7 +164,29 @@ export interface ListScreen extends ScreenBase {
   import?: ImportSpec;
   /** draw the list as a financial report (row styles, indentation, totals, period title, letterhead on paper) */
   report?: ReportSpec;
+  /** web: offer a Kanban board beside the table (ตาราง / Kanban switch), one lane per value of a status field */
+  kanban?: KanbanSpec;
   empty?: string;
+}
+
+/**
+ * A Kanban board for a list: the same rows as the table, grouped into lanes by `field` (e.g. a sales pipeline by stage).
+ * Cards open the list's `rowLink`. Rows whose value has no lane are left out of the board (they still show in the table).
+ */
+export interface KanbanSpec {
+  /** the row field that picks the lane, e.g. "stage" */
+  field: string;
+  /** lanes left to right; `closed` lanes (won / lost) are drawn quieter */
+  lanes: { value: string; label: string; closed?: boolean }[];
+  /** card title and the line under it */
+  title: string;
+  subtitle?: string;
+  /** the card's headline number, also summed per lane (e.g. opportunity value) */
+  amount?: Column;
+  /** small facts at the bottom of the card */
+  meta?: Column[];
+  /** a person's name shown as initials on the card (e.g. owner_name) */
+  person?: string;
 }
 
 /**
@@ -966,6 +988,11 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
       if (s.rowLink) refs.push([s.rowLink.screen, `${id}.rowLink`]);
       for (const [v, target] of Object.entries(s.rowLink?.byField?.screens ?? {})) refs.push([target, `${id}.rowLink.byField.${v}`]);
       [...(s.actions ?? []), ...(s.rowActions ?? [])].forEach((a) => a.then && refs.push([a.then.screen, `${id}.${a.id}.then`]));
+      if (s.kanban) {
+        const values = s.kanban.lanes.map((l) => l.value);
+        if (!values.length) todoProblems.push(`${ui.module}: ${id}.kanban has no lanes`);
+        if (new Set(values).size !== values.length) todoProblems.push(`${ui.module}: ${id}.kanban has two lanes with the same value`);
+      }
     }
     if (s.kind === 'form' && s.after) refs.push([s.after.screen, `${id}.after`]);
     if (s.kind === 'detail') {
@@ -980,6 +1007,42 @@ function brokenScreenLinks(ui: ModuleUi): string[] {
     if ((w.kind === 'pipeline' || w.kind === 'floor3d') && w.link) refs.push([w.link.screen, `widget.${w.id}.link`]);
   }
   return [...todoProblems, ...refs.filter(([screen]) => !ids.has(screen)).map(([screen, where]) => `${ui.module}: ${where} points to unknown screen "${screen}"`)];
+}
+
+/* ---------------- Kanban (pure; the web board draws what this returns) ---------------- */
+
+export interface KanbanLane { value: string; label: string; closed: boolean; rows: Record<string, unknown>[]; total: number | null }
+
+/**
+ * Group list rows into the spec's lanes, keeping the list's row order inside each lane. `total` sums `amount`
+ * (null without one; values that are not numbers count as 0).
+ * @param spec the screen's kanban spec
+ * @param rows the list rows
+ */
+export function kanbanLanes(spec: KanbanSpec, rows: Record<string, unknown>[]): KanbanLane[] {
+  const lanes = spec.lanes.map((l) => ({ value: l.value, label: l.label, closed: !!l.closed, rows: [] as Record<string, unknown>[], total: spec.amount ? 0 : null as number | null }));
+  const byValue = new Map(lanes.map((l) => [l.value, l]));
+  for (const row of rows) {
+    const lane = byValue.get(String(get(row, spec.field) ?? ''));
+    if (!lane) continue;
+    lane.rows.push(row);
+    if (spec.amount && lane.total !== null) {
+      const n = Number(get(row, spec.amount.key));
+      lane.total += Number.isFinite(n) ? n : 0;
+    }
+  }
+  return lanes;
+}
+
+/**
+ * Initials for a card's person chip: "สมศักดิ์ ศรีสวัสดิ์" -> "สศ", "Jane Doe" -> "JD"; '' for no name.
+ * Thai leading vowels (เ แ โ ใ ไ) are skipped so the chip shows the consonant.
+ * @param name a person's display name
+ */
+export function initials(name: unknown): string {
+  if (typeof name !== 'string') return '';
+  const first = (w: string) => [...w.replace(/^[เแโใไ]+/, '')][0] ?? '';
+  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(first).join('').toUpperCase();
 }
 
 /* ---------------- CSV export / import (pure; used by web lists and the import dialog) ---------------- */

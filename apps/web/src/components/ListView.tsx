@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download, Printer, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, Kanban, Printer, SlidersHorizontal, Table2 } from 'lucide-react';
 import { useReveal } from '@/lib/motion';
 import {
   columnTotals, fillPath, fillTemplate, filterGroups, filtersToQuery, get, hasPerm, listRows, matches, repeatsAbove, reportIndent, reportRowStyle, routeParams, rowLinkScreen, toCsv,
@@ -16,6 +16,7 @@ import { loadSession } from '@/lib/session';
 import { readPref, writePref } from '@/lib/prefs';
 import { clampPage, DEFAULT_PAGE_SIZE, validPageSize } from '@/lib/paging';
 import { Pagination } from './Pagination';
+import { KanbanBoard } from './KanbanBoard';
 import { ActionButton } from './ActionButton';
 import { DateRangeInput, FieldInput, type Values } from './Fields';
 import { loadCompany } from './print/company';
@@ -105,7 +106,13 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
     window.addEventListener('beforeprint', before); window.addEventListener('afterprint', after);
     return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after); };
   }, []);
-  const paged = !report && !printing && !!rows && rows.length > pageSize;
+  // ตาราง / Kanban: only for lists that define a board; the choice is remembered per user and list
+  const viewPref = `list.view.${module}.${screen.endpoint}`;
+  const [view, setView] = useState<'table' | 'kanban'>('table');
+  useEffect(() => { if (screen.kanban) setView(readPref<string>(viewPref, 'table') === 'kanban' ? 'kanban' : 'table'); }, [viewPref, !!screen.kanban]);
+  const kanban = screen.kanban && view === 'kanban' && !printing ? screen.kanban : undefined;
+  const chooseView = (v: 'table' | 'kanban') => { setView(v); writePref(viewPref, v); };
+  const paged = !kanban && !report && !printing && !!rows && rows.length > pageSize;
   const currentPage = rows ? clampPage(page, rows.length, pageSize) : 1;
   const shown = rows && paged ? rows.slice((currentPage - 1) * pageSize, currentPage * pageSize) : rows;
   useReveal(tableRef, screen.display === 'cards' ? '.gcard' : 'tbody tr', [rows?.length ?? -1, page, pageSize]);
@@ -166,6 +173,12 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
           {subtitle && <p className="report-period">{subtitle}</p>}
         </div>
         <div className="screen-actions no-print">
+          {screen.kanban && (
+            <div className="view-switch" role="group" aria-label="มุมมอง">
+              <button type="button" aria-pressed={view === 'table'} onClick={() => chooseView('table')}><Table2 size={16} aria-hidden /> ตาราง</button>
+              <button type="button" aria-pressed={view === 'kanban'} onClick={() => chooseView('kanban')}><Kanban size={16} aria-hidden /> Kanban</button>
+            </div>
+          )}
           <button type="button" className="btn-ghost" onClick={exportCsv} disabled={!rows?.length} title="ดาวน์โหลดรายการที่แสดงอยู่ เปิดด้วย Excel ได้">
             <Download size={16} aria-hidden /> ส่งออก CSV
           </button>
@@ -210,7 +223,9 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </p>
       )}
 
-      {screen.display === 'cards' ? (
+      {kanban ? (
+        rows === null ? <p className="muted">กำลังโหลด…</p> : <KanbanBoard spec={kanban} rows={rows} hrefOf={rowHref} />
+      ) : screen.display === 'cards' ? (
         <div className="card-grid" ref={tableRef}>
           {rows === null && <p className="muted">กำลังโหลด…</p>}
           {rows?.length === 0 && !error && <p className="empty">{screen.empty ?? 'ไม่มีรายการ'}</p>}
@@ -282,7 +297,7 @@ export function ListView({ module, screen, id }: { module: string; screen: ListS
         </table>
       </div>
       )}
-      {rows !== null && rows.length > 0 && !report && (rows.length > 10
+      {rows !== null && rows.length > 0 && !report && !kanban && (rows.length > 10
         ? <Pagination total={rows.length} page={currentPage} size={pageSize} onPage={goToPage} onSize={changePageSize} />
         : <p className="list-count" role="status">แสดง {rows.length.toLocaleString('th-TH')} รายการ</p>)}
     </div>

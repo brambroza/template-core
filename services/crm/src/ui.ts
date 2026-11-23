@@ -116,6 +116,13 @@ export default defineUi({
         { key: 'source_label', label: 'มาจาก' }, { key: 'interest', label: 'สนใจ' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'created_at', label: 'เข้ามาเมื่อ', format: 'date' },
       ],
       create: 'leadNew', createLabel: 'เพิ่มลีด', rowLink: { screen: 'lead' }, empty: 'ยังไม่มีลีด',
+      kanban: {
+        field: 'status',
+        lanes: [...leadStatuses.slice(0, 3), { ...leadStatuses[3]!, closed: true }, { ...leadStatuses[4]!, closed: true }],
+        title: 'company', subtitle: 'contact_name',
+        meta: [{ key: 'interest', label: 'สนใจ' }, { key: 'source_label', label: 'มาจาก' }, { key: 'created_at', label: 'เข้ามาเมื่อ', format: 'date' }],
+        person: 'owner_name',
+      },
       rowActions: [
         { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true },
       ],
@@ -169,6 +176,14 @@ export default defineUi({
         { key: 'expected_close', label: 'คาดปิด', format: 'date' }, { key: 'owner_name', label: 'ผู้รับผิดชอบ' },
       ],
       create: 'opportunityNew', createLabel: 'เพิ่มโอกาสขาย', rowLink: { screen: 'opportunity' }, empty: 'ยังไม่มีโอกาสขาย',
+      kanban: {
+        field: 'stage',
+        lanes: [...stages.slice(0, 3), { ...stages[3]!, closed: true }, { ...stages[4]!, closed: true }],
+        title: 'name', subtitle: 'customer_name',
+        amount: { key: 'value', label: 'มูลค่า', format: 'money' },
+        meta: [{ key: 'probability', label: 'โอกาส', format: 'percent' }, { key: 'expected_close', label: 'คาดปิด', format: 'date' }],
+        person: 'owner_name',
+      },
     },
     opportunityNew: {
       kind: 'form', title: 'เพิ่มโอกาสขาย', method: 'POST', endpoint: '/opportunities', perm: 'crm.lead.write',

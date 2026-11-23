@@ -53,6 +53,13 @@
 - Sentry without an SDK (`SENTRY_DSN`): 500s, failed outbox dispatches and crashes from every module and the gateway, with ids and the
   route pattern only (no bodies, headers, e-mails or query strings), at most 30 per minute per process.
 
+**Kanban view for leads and opportunities (CRM)**
+- ลีด and โอกาสขาย get a ตาราง / Kanban switch (remembered per user and list). The board has one lane per status / stage with its
+  count, and for opportunities the lane's total value. Cards show the number, name, customer or contact, value, probability or
+  interest, the expected close or arrival date, and the owner's initials. Won / lost / converted lanes are drawn quieter.
+- The board is read-only: a card opens the record, where the stage buttons keep their rules and confirmations. The list's filters
+  apply to the board; printing prints the table. Any list can offer a board with `ListScreen.kanban` (ui-schema `kanbanLanes`).
+
 **Pages on every list**
 - Lists show 20 rows a page with page buttons under the table and a "แถวต่อหน้า" picker (10 / 20 / 50 / 100, remembered per user).
   Changing a filter goes back to page 1; changing the size keeps the first row you were looking at on screen.
