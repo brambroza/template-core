@@ -50,7 +50,7 @@ export function DecisionInbox({ modules, perms }: { modules: ModuleUi[]; perms: 
   const decided = (key: string) => { setDone((d) => new Set(d).add(key)); setTimeout(load, 900); };
 
   return (
-    <section className="decide" aria-labelledby="decide-h">
+    <section className="decide" id="decide" aria-labelledby="decide-h">
       <header className="decide-head">
         <h2 id="decide-h">ต้องตัดสินใจวันนี้{items && open.length > 0 && <span className="decide-count">{open.length}</span>}</h2>
         {pressing > 0 && <span className="decide-alert">{pressing} เรื่องเร่งด่วน/เกินกำหนด</span>}
