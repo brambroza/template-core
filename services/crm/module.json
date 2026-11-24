@@ -4,14 +4,14 @@
   "nameTh": "ลูกค้าสัมพันธ์และใบเสนอราคา",
   "version": "0.1.0",
   "tier": "feature",
-  "description": "Sales pipeline for B2B SMEs: leads from website/LINE/phone/trade shows, conversion to opportunities with stage, probability and weighted forecast, follow-up activities (calls, meetings, visits) with overdue tracking, and printable Thai quotations with discounts, VAT and revisions. Accepting a quotation marks its opportunity won.",
+  "description": "Sales pipeline for B2B SMEs: leads from website/LINE/phone/trade shows, conversion to opportunities with stage, probability and weighted forecast, follow-up activities (calls, meetings, visits) with overdue tracking, and printable Thai quotations with discounts, VAT and revisions. Accepting a quotation marks its opportunity won. Drafts a quotation from a confirmed print estimate when Estimating is installed.",
   "requires": [
     "identity",
     "master-data"
   ],
-  "enhancedBy": [],
+  "enhancedBy": ["estimating"],
   "publishes": ["crm.lead_created", "crm.quotation_accepted"],
-  "subscribes": [],
+  "subscribes": ["estimating.estimate_confirmed"],
   "permissions": [
     { "key": "crm.lead.read", "label": "ดูลีดและโอกาสขาย" },
     { "key": "crm.lead.write", "label": "จัดการลีดและโอกาสขาย" },

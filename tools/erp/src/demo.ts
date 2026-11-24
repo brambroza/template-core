@@ -375,6 +375,9 @@ export async function seedDemo(stack: DemoStack, opts: { tenant?: string; instal
     }).catch(() => undefined);
   }
 
+  // printing house: paper / press / finishing rates and draft estimates
+  if (has('estimating')) await (await import('./demo-estimating.ts')).seedEstimating(call, partners).catch((e) => console.error('demo seed: estimating failed —', e.message));
+
   // office & service modules: HR, approvals, expense, booking, CRM, helpdesk, projects, assets, QC results
   await business.seedBusiness({ call, loginAs, has, modules, items, partners });
 

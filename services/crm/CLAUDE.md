@@ -9,7 +9,8 @@ Sales pipeline for B2B SMEs: leads → opportunities → quotations, with follow
   stage `prospect → proposal → negotiation → won | lost`, `lost_reason`); `weighted_value = value × probability / 100` is computed in queries
 - `activities` (`call | meeting | email | visit | task`, `due_at`, `done`, linked to a lead and/or opportunity, owner snapshot)
 - `quotations` (`QT-…`, revisions `QT-2569-0001-R1` with `base_no`, `revision`, `revision_of`, `revised_by`; customer snapshot incl. tax id/branch/address;
-  `subtotal` (before discount), `discount`, `net`, `vat`, `gross`, `vat_mode`; `draft → sent → accepted | rejected | expired`) · `quotation_lines` (item snapshot or description, `discount_pct`, `amount` after discount)
+  `subtotal` (before discount), `discount`, `net`, `vat`, `gross`, `vat_mode`; `estimate_id` (migration 002) when drafted from a print estimate;
+  `draft → sent → accepted | rejected | expired`) · `quotation_lines` (item snapshot or description, `discount_pct`, `amount` after discount)
 
 ## Behaviour
 - Owner defaults to the caller; `?mine=1` and `GET /activities/mine` use `owner_id = caller`.
@@ -39,7 +40,10 @@ Permissions: `crm.lead.read|write`, `crm.activity.write`, `crm.quote.read|write|
 - publishes `crm.lead_created` (leadId, no, company, contactName, source) and `crm.quotation_accepted` (quotationId, no, customerName, total = gross,
   plus — optional in the contract, always sent now — `partnerId`, `customerTaxId`, `customerBranch`, `customerAddress`, `opportunityId`, `vatMode`,
   `subtotal`, `discount`, `net`, `vat`, `lines[{itemId, itemCode, itemName, description, qty, unitPrice, discountPct, amount}]`).
-- subscribes: none. Automation alerts sales; **Sales drafts a sales order** from `crm.quotation_accepted` (same lines/discounts/VAT, `ref` = quotation no.,
+- subscribes `estimating.estimate_confirmed` (Estimating is `enhancedBy`): drafts a quotation with the one line the estimate priced
+  (`description`, `qty`, `unitPrice`, VAT exclusive, valid 30 days, `created_by` null, note "สร้างจากใบประเมินราคา EST-…") — once per
+  estimate (`quotations.estimate_id`, unique; a revision leaves it empty). Test: `test/estimate.test.ts`.
+- Automation alerts sales; **Sales drafts a sales order** from `crm.quotation_accepted` (same lines/discounts/VAT, `ref` = quotation no.,
   once per quotation). The quote screen cannot link to it (no cross-module links) — find it in Sales by searching the quotation no.
 
 ## Screens

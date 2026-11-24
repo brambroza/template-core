@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-20 · ใช้งานเร็วขึ้น: ตัดสินใจจากหน้าแรกและ LINE, เห็นผลก่อนกด
 
+- **โมดูลใหม่ `estimating` — ประเมินราคางานพิมพ์** (2026-11-24): rate tables for paper (ream / kg / sheet), presses (plates, make-ready,
+  run per 1,000, minimum, waste) and finishing (per job / sheet / piece / square inch), each with "นำเข้าจาก Excel"; **cost formulas kept
+  as data** that the company edits on screen (a safe formula language — no `eval` — checked on a sample job before saving, with
+  "ลองสูตร"); estimates that lay the job out on the sheet and price several print quantities at once, printable, recalculated on
+  request. Confirming a price publishes `estimating.estimate_confirmed`; **CRM drafts the quotation** (crm migration 002), and Sales
+  drafts the order once the customer accepts. Catalog price 25,000 / 990 per month is a placeholder. Not in a cloud plan yet.
+
 - **Login with e-mail only**: no company code; an e-mail belongs to one user across all companies (identity migration 003, 409 `email_taken`).
   E-mails shared by two companies before the change still log in: the password picks the account, or the app asks for the company code.
 - **ปฏิทิน พ.ศ.**: every date / month box (forms, filters, date ranges) shows and accepts พ.ศ. (`03/10/2569`, `3 ต.ค. 69` …) with a calendar

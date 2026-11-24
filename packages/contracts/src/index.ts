@@ -176,6 +176,16 @@ export const events = {
     })).optional(),
   }),
 
+  /**
+   * Estimating fixed the price of one print quantity → CRM drafts a quotation with this one line (once per estimate).
+   * `price` = qty × unitPrice, before VAT.
+   */
+  'estimating.estimate_confirmed': z.object({
+    estimateId: id, no: z.string(), jobName: z.string(), customerName: z.string(), partnerId: id.nullable().optional(),
+    customerTaxId: z.string().nullable().optional(), customerBranch: z.string().nullable().optional(), customerAddress: z.string().nullable().optional(),
+    description: z.string(), qty, unitPrice: money, price: money,
+  }),
+
   'quality.inspection_completed': z.object({
     inspectionId: id, no: z.string(), stage: z.enum(['incoming', 'in_process', 'final']), itemCode: z.string(), itemName: z.string().nullable(),
     lotNo: z.string().nullable(), result: z.enum(['pass', 'fail', 'conditional']), rejectedQty: qty,

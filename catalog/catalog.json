@@ -72,6 +72,9 @@
     },
     "etax": {
       "price": 15000
+    },
+    "estimating": {
+      "price": 25000
     }
   },
   "bundles": [
@@ -377,7 +380,8 @@
       "accounting": 1590,
       "payroll": 1190,
       "contracts": 890,
-      "etax": 590
+      "etax": 590,
+      "estimating": 990
     },
     "bundles": {
       "trading": 1990,

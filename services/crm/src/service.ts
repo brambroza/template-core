@@ -671,4 +671,26 @@ export const definition: ServiceDefinition = {
       });
     });
   },
+
+  handlers: {
+    /**
+     * Estimating fixed the price of a print job → draft quotation with that one line (same qty × unit price, before VAT), once per
+     * estimate. Sales staff add the contact and validity, then send it; the estimate number stays in the note.
+     */
+    'estimating.estimate_confirmed': async (e, { client }) => {
+      if ((await client.query('select 1 from quotations where estimate_id = $1', [e.estimateId])).rowCount) return;
+      const lines: z.infer<typeof QuoteLine>[] = [{ description: e.description.slice(0, 1000), qty: e.qty, unitPrice: e.unitPrice, discountPct: 0 }];
+      const t = quoteTotals(lines, 'exclusive');
+      const issueDate = bangkokToday();
+      const no = await nextDocNo(client, 'QT', new Date(issueDate));
+      const q = (await client.query(
+        `insert into quotations (no, base_no, partner_id, customer_name, customer_tax_id, customer_branch, customer_address, issue_date, valid_until,
+           vat_mode, subtotal, discount, net, vat, gross, note, estimate_id)
+         values ($1,$1,$2,$3,$4,$5,$6, $7::date, $8::date, 'exclusive', $9,$10,$11,$12,$13,$14,$15) returning id`,
+        [no, e.partnerId ?? null, e.customerName, e.customerTaxId ?? null, e.customerBranch ?? null, e.customerAddress ?? null, issueDate, addDaysIso(issueDate, 30),
+          t.subtotal, t.discount, t.net, t.vat, t.gross, `สร้างจากใบประเมินราคา ${e.no} (${e.jobName})`, e.estimateId],
+      )).rows[0];
+      await insertLines(client, q.id, lines, t.amounts);
+    },
+  },
 };

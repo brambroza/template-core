@@ -1,0 +1,20 @@
+{
+  "id": "estimating",
+  "name": "Print Estimating",
+  "nameTh": "ประเมินราคางานพิมพ์",
+  "version": "0.1.0",
+  "tier": "feature",
+  "description": "Cost estimating for a printing house: rate tables for paper, presses and finishing (imported from Excel), cost formulas kept as data that the company edits itself, and estimates that lay the job out on the sheet and price several print quantities at once. A confirmed price becomes a draft quotation when CRM is installed.",
+  "requires": ["identity", "master-data"],
+  "enhancedBy": ["crm"],
+  "publishes": ["estimating.estimate_confirmed"],
+  "subscribes": [],
+  "permissions": [
+    { "key": "estimating.estimate.read", "label": "ดูใบประเมินราคา" },
+    { "key": "estimating.estimate.write", "label": "สร้างและคำนวณใบประเมินราคา" },
+    { "key": "estimating.estimate.confirm", "label": "ยืนยันราคาและส่งทำใบเสนอราคา" },
+    { "key": "estimating.rate.read", "label": "ดูตารางต้นทุน (กระดาษ เครื่องพิมพ์ งานหลังพิมพ์) และสูตรคำนวณ" },
+    { "key": "estimating.rate.write", "label": "แก้ไขและนำเข้าตารางต้นทุน" },
+    { "key": "estimating.formula.write", "label": "แก้ไขสูตรคำนวณต้นทุน" }
+  ]
+}
