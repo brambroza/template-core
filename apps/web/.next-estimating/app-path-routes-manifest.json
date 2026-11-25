@@ -1,0 +1,20 @@
+{
+  "/(app)/app/page": "/app",
+  "/(app)/m/[module]/[screen]/[[...id]]/page": "/m/[module]/[screen]/[[...id]]",
+  "/(app)/page": "/",
+  "/(app)/setup/page": "/setup",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/[...path]/route": "/api/[...path]",
+  "/assist/briefing/route": "/assist/briefing",
+  "/assist/fill/route": "/assist/fill",
+  "/assist/find/route": "/assist/find",
+  "/assist/route": "/assist",
+  "/favicon.ico/route": "/favicon.ico",
+  "/forgot-password/page": "/forgot-password",
+  "/icon.svg/route": "/icon.svg",
+  "/login/page": "/login",
+  "/reset-password/page": "/reset-password",
+  "/signup/page": "/signup",
+  "/signup/verify/page": "/signup/verify"
+}

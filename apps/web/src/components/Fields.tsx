@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ThaiDateInput } from './ThaiDate';
-import { datePresets, get, initialValues, type Field, type LinesSpec } from '@erp/ui-schema';
+import { caretAfterTyping, datePresets, get, initialValues, numberSpec, plainNumber, showNumber, typeNumber, type Field, type LinesSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
+import { useNumberFormat } from '@/lib/number-format';
 import { useRegistry } from '@/lib/registry';
 
 export type Values = Record<string, unknown>;
@@ -198,6 +199,75 @@ function ImageDataInput({ field, values, onChange }: FieldProps) {
   );
 }
 
+/**
+ * A number typed the way the company writes it (ข้อมูลบริษัท → รูปแบบตัวเลข): thousands are grouped while the digits are typed,
+ * decimals stop at what the field allows (money / quantity = the company's setting) and are padded when the field is left
+ * ("1250.5" -> "1,250.50"). The form itself still holds the plain number, so nothing downstream sees a comma.
+ */
+function NumberInput({ field, values, onChange, error, compact }: FieldProps) {
+  const spec = numberSpec(field, useNumberFormat());
+  const stored = values[field.name];
+  /** the text while the field has focus; null = show the stored value */
+  const [draft, setDraft] = useState<string | null>(null);
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const input = useRef<HTMLInputElement>(null);
+  /** where the caret goes once React has written the regrouped text */
+  const caret = useRef<number | null>(null);
+  /** focus just arrived by a click: that click selects the whole number (see onMouseUp) */
+  const fresh = useRef(false);
+  useLayoutEffect(() => {
+    if (caret.current === null || !input.current) return;
+    input.current.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
+  const shown = draft ?? showNumber(stored, spec);
+  return (
+    <input
+      ref={input}
+      aria-label={field.label}
+      aria-invalid={!!error}
+      className="num-input"
+      type="text"
+      inputMode={spec.decimals > 0 ? 'decimal' : 'numeric'}
+      autoComplete="off"
+      placeholder={compact ? field.label : undefined}
+      value={shown}
+      onFocus={(e) => {
+        setDraft(shown);
+        // typing replaces the number ("0.00" would otherwise swallow the first digit typed behind it).
+        // Tab focus: selected here. A click puts its caret after this event, so the click itself selects again in onMouseUp —
+        // never on a timer, which would select (and lose) the first digits of a fast typist or a barcode scanner.
+        fresh.current = true;
+        e.currentTarget.select();
+      }}
+      onMouseUp={(e) => {
+        if (!fresh.current) return;
+        fresh.current = false;
+        const el = e.currentTarget;
+        if (el.selectionStart === el.selectionEnd) el.select(); // a drag that selected part of the number is left alone
+      }}
+      onBlur={() => { fresh.current = false; setDraft(null); }}
+      onChange={(e) => {
+        const typed = e.target.value;
+        const next = typeNumber(typed, spec);
+        caret.current = caretAfterTyping(typed, e.target.selectionStart ?? typed.length, next);
+        setDraft(next);
+        redraw(); // a rejected key leaves `next` unchanged: draw anyway so the caret is put back
+        onChange({ [field.name]: plainNumber(next) });
+      }}
+      onKeyDown={(e) => {
+        fresh.current = false;
+        // Backspace / Delete next to a comma removes the digit beyond it, not the comma (which would just come back)
+        const el = e.currentTarget;
+        const at = el.selectionStart;
+        if (at === null || at !== el.selectionEnd) return;
+        if (e.key === 'Backspace' && el.value[at - 1] === ',') el.setSelectionRange(at - 1, at - 1);
+        if (e.key === 'Delete' && el.value[at] === ',') el.setSelectionRange(at + 1, at + 1);
+      }}
+    />
+  );
+}
+
 const isImageData = (field: Field, v: unknown) => field.type === 'image'
   || (field.type === 'textarea' && (String(v ?? '').startsWith('data:image/') || /data:image/.test(field.help ?? '')));
 
@@ -236,13 +306,12 @@ export function FieldInput(props: FieldProps) {
             onChange={(next) => onChange({ [field.name]: next })} />
         </div>
       );
+    case 'number': return <NumberInput {...props} />;
     default:
       return (
         <input
           {...common}
-          type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : field.type === 'email' ? 'email' : 'text'}
-          inputMode={field.type === 'number' ? 'decimal' : undefined}
-          step={field.type === 'number' ? field.step ?? 'any' : undefined}
+          type={field.type === 'password' ? 'password' : field.type === 'email' ? 'email' : 'text'}
           placeholder={compact ? field.label : undefined}
           value={String(v ?? '')}
           onChange={(e) => onChange({ [field.name]: e.target.value })}

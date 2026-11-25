@@ -34,7 +34,7 @@ const opportunityFields: Field[] = [
   { name: 'name', label: 'ชื่อโอกาสขาย', type: 'text', required: true },
   { name: 'partnerId', label: 'ลูกค้าในระบบ', type: 'lookup', lookup: { ...customerLookup, assign: { partnerId: 'id', customerName: 'name' } } },
   { name: 'customerName', label: 'ชื่อลูกค้า/บริษัท', type: 'text', required: true },
-  { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', step: 0.01 },
+  { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', format: 'money' },
   { name: 'probability', label: 'โอกาสสำเร็จ (%)', type: 'number', help: 'เว้นว่าง = ตามขั้นตอน' },
   { name: 'expectedClose', label: 'คาดว่าจะปิดการขาย', type: 'date' },
   ownerField,
@@ -72,8 +72,8 @@ const quoteLines = {
   fields: [
     { name: 'itemId', label: 'สินค้า', type: 'lookup' as const, lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } } },
     { name: 'description', label: 'รายละเอียด', type: 'text' as const },
-    { name: 'qty', label: 'จำนวน', type: 'number' as const, required: true },
-    { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number' as const, step: 0.01, required: true },
+    { name: 'qty', label: 'จำนวน', type: 'number' as const, format: 'qty' as const, required: true },
+    { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number' as const, format: 'money' as const, required: true },
     { name: 'discountPct', label: 'ส่วนลด %', type: 'number' as const, step: 0.01 },
   ],
 };
@@ -81,7 +81,7 @@ const quoteLines = {
 /* stage actions: on the detail screens and as the Kanban moves of the lists */
 const leadContact: Action = { id: 'contact', label: 'ติดต่อแล้ว', method: 'POST', endpoint: '/leads/:id/contact', perm: 'crm.lead.write', when: { field: 'status', in: ['new'] }, mobile: true };
 const leadQualify: Action = { id: 'qualify', label: 'มีศักยภาพ', method: 'POST', endpoint: '/leads/:id/qualify', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted'] }, mobile: true };
-const leadConvert: Action = { id: 'convert', label: 'เปิดโอกาสขาย', method: 'POST', endpoint: '/leads/:id/convert', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'primary', fields: [{ name: 'name', label: 'ชื่อโอกาสขาย', type: 'text', help: 'เว้นว่าง = สิ่งที่สนใจ — บริษัท' }, { name: 'partnerId', label: 'ผูกกับลูกค้าในระบบ', type: 'lookup', lookup: { ...customerLookup, assign: { partnerId: 'id', customerName: 'name' } } }, { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', step: 0.01 }, { name: 'expectedClose', label: 'คาดว่าจะปิดการขาย', type: 'date' }], then: { screen: 'opportunity', idFrom: 'id' } };
+const leadConvert: Action = { id: 'convert', label: 'เปิดโอกาสขาย', method: 'POST', endpoint: '/leads/:id/convert', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'primary', fields: [{ name: 'name', label: 'ชื่อโอกาสขาย', type: 'text', help: 'เว้นว่าง = สิ่งที่สนใจ — บริษัท' }, { name: 'partnerId', label: 'ผูกกับลูกค้าในระบบ', type: 'lookup', lookup: { ...customerLookup, assign: { partnerId: 'id', customerName: 'name' } } }, { name: 'value', label: 'มูลค่าคาดการณ์ (บาท)', type: 'number', format: 'money' }, { name: 'expectedClose', label: 'คาดว่าจะปิดการขาย', type: 'date' }], then: { screen: 'opportunity', idFrom: 'id' } };
 const leadLose: Action = { id: 'lose', label: 'ไม่สำเร็จ', method: 'POST', endpoint: '/leads/:id/lose', perm: 'crm.lead.write', when: { field: 'status', in: ['new', 'contacted', 'qualified'] }, tone: 'danger', fields: [{ name: 'reason', label: 'เหตุผล', type: 'text', required: true }] };
 const oppAdvance: Action = { id: 'advance', label: 'ไปขั้นถัดไป', method: 'POST', endpoint: '/opportunities/:id/advance', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal'] }, mobile: true };
 const oppWin: Action = { id: 'win', label: 'ปิดการขายได้', method: 'POST', endpoint: '/opportunities/:id/win', perm: 'crm.lead.write', when: { field: 'stage', in: ['prospect', 'proposal', 'negotiation'] }, tone: 'primary', confirm: 'ยืนยันว่าลูกค้าตกลงซื้อ' };
@@ -322,8 +322,8 @@ export default defineUi({
         { key: 'pipelineValue', label: 'มูลค่าในท่อ', format: 'money' },
         { key: 'weightedForecast', label: 'คาดการณ์ถ่วงน้ำหนัก', format: 'money' },
         { key: 'wonThisMonth', label: 'ปิดได้เดือนนี้', format: 'money', tone: 'ok' },
-        { key: 'openLeads', label: 'ลีดที่ยังเปิด', format: 'qty' },
-        { key: 'quotesSent', label: 'ใบเสนอราคารอตอบ', format: 'qty', tone: 'warn' },
+        { key: 'openLeads', label: 'ลีดที่ยังเปิด', format: 'number' },
+        { key: 'quotesSent', label: 'ใบเสนอราคารอตอบ', format: 'number', tone: 'warn' },
         { key: 'winRate', label: 'อัตราปิดการขาย', format: 'percent' },
       ] },
     { id: 'crm-pipeline', kind: 'pipeline', title: 'ท่อการขาย', endpoint: '/summary', perm: 'crm.lead.read', size: 'lg', href: 'opportunities',

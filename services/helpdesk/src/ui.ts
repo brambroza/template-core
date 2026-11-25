@@ -151,7 +151,7 @@ export default defineUi({
         { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'sla_mode_label', label: 'นับ SLA แบบ' }, { key: 'response_due_at', label: 'ต้องตอบรับภายใน', format: 'datetime' },
         { key: 'first_response_at', label: 'ตอบรับเมื่อ', format: 'datetime' }, { key: 'due_at', label: 'ต้องแก้ไขเสร็จภายใน', format: 'datetime' },
         { key: 'overdue', label: 'เกิน SLA', format: 'boolean' }, { key: 'resolution', label: 'วิธีแก้ไข' }, { key: 'resolved_at', label: 'แก้ไขเสร็จเมื่อ', format: 'datetime' },
-        { key: 'reopen_count', label: 'เปิดเรื่องซ้ำ (ครั้ง)', format: 'qty' }, { key: 'satisfaction', label: 'ความพึงพอใจ (1–5)', format: 'qty' }, { key: 'feedback', label: 'ความเห็นผู้แจ้ง' },
+        { key: 'reopen_count', label: 'เปิดเรื่องซ้ำ (ครั้ง)', format: 'number' }, { key: 'satisfaction', label: 'ความพึงพอใจ (1–5)', format: 'number' }, { key: 'feedback', label: 'ความเห็นผู้แจ้ง' },
       ],
       lines: [{ path: 'comments', label: 'การสนทนา', columns: [{ key: 'created_at', label: 'เวลา', format: 'datetime' }, { key: 'kind_label', label: 'ประเภท' }, { key: 'author_name', label: 'โดย' }, { key: 'body', label: 'ข้อความ' }] }],
       actions: [
@@ -181,7 +181,7 @@ export default defineUi({
     articles: {
       kind: 'list', display: 'cards', title: 'ฐานความรู้ — วิธีแก้ปัญหาที่พบบ่อย', endpoint: '/articles', perm: 'helpdesk.kb.read', mobile: true,
       filters: [{ name: 'q', label: 'ค้นหาวิธีแก้', type: 'text' }, { ...categoryField, label: 'หมวดหมู่' }],
-      columns: [{ key: 'title', label: 'หัวข้อ' }, { key: 'excerpt', label: 'เนื้อหา' }, { key: 'category_name', label: 'หมวด' }, { key: 'views', label: 'อ่าน', format: 'qty' }, { key: 'published', label: 'เผยแพร่', format: 'boolean' }],
+      columns: [{ key: 'title', label: 'หัวข้อ' }, { key: 'excerpt', label: 'เนื้อหา' }, { key: 'category_name', label: 'หมวด' }, { key: 'views', label: 'อ่าน', format: 'number' }, { key: 'published', label: 'เผยแพร่', format: 'boolean' }],
       create: 'articleNew', createLabel: 'เขียนบทความ', rowLink: { screen: 'article' }, empty: 'ยังไม่มีบทความ',
     },
     articleNew: {
@@ -196,7 +196,7 @@ export default defineUi({
       kind: 'detail', title: 'บทความ', endpoint: '/articles/:id', perm: 'helpdesk.kb.read', heading: 'title', mobile: true, edit: 'articleEdit', printable: true,
       fields: [
         { key: 'category_name', label: 'หมวดหมู่' }, { key: 'body', label: 'เนื้อหา' }, { key: 'published', label: 'เผยแพร่', format: 'boolean' },
-        { key: 'views', label: 'จำนวนครั้งที่อ่าน', format: 'qty' }, { key: 'updated_at', label: 'ปรับปรุงล่าสุด', format: 'datetime' },
+        { key: 'views', label: 'จำนวนครั้งที่อ่าน', format: 'number' }, { key: 'updated_at', label: 'ปรับปรุงล่าสุด', format: 'datetime' },
       ],
       actions: [
         { id: 'publish', label: 'เผยแพร่', method: 'POST', endpoint: '/articles/:id/publish', perm: 'helpdesk.kb.write', when: { field: 'published', in: [false] }, tone: 'primary' },
@@ -223,8 +223,8 @@ export default defineUi({
     categories: {
       kind: 'list', title: 'หมวดหมู่และ SLA', endpoint: '/categories', perm: 'helpdesk.ticket.read',
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'sla_response_hours', label: 'ตอบรับ (ชม.)', format: 'qty' },
-        { key: 'sla_resolve_hours', label: 'แก้เสร็จ (ชม.)', format: 'qty' }, { key: 'default_assignee_name', label: 'ช่างประจำ' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'sla_response_hours', label: 'ตอบรับ (ชม.)', format: 'number' },
+        { key: 'sla_resolve_hours', label: 'แก้เสร็จ (ชม.)', format: 'number' }, { key: 'default_assignee_name', label: 'ช่างประจำ' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'categoryNew', createLabel: 'เพิ่มหมวดหมู่', rowLink: { screen: 'categoryEdit' }, empty: 'ยังไม่มีหมวดหมู่ (ใช้ SLA มาตรฐาน 4/24 ชม.)',
     },
@@ -242,7 +242,7 @@ export default defineUi({
     },
     holidays: {
       kind: 'list', title: 'วันหยุด (ไม่นับ SLA)', endpoint: '/holidays', perm: 'helpdesk.ticket.read',
-      filters: [{ name: 'year', label: 'ปี (พ.ศ. หรือ ค.ศ.)', type: 'number' }],
+      filters: [{ name: 'year', label: 'ปี (พ.ศ. หรือ ค.ศ.)', type: 'number', comma: false }],
       columns: [{ key: 'date', label: 'วันที่', format: 'date' }, { key: 'name', label: 'วันหยุด' }],
       create: 'holidayNew', createLabel: 'เพิ่มวันหยุด', empty: 'ยังไม่มีวันหยุด',
       rowActions: [{ id: 'delete', label: 'ลบ', method: 'DELETE', endpoint: '/holidays/:id', perm: 'helpdesk.setup.write', tone: 'danger', confirm: 'ลบวันหยุดนี้', toast: 'message' }],
@@ -264,15 +264,15 @@ export default defineUi({
   widgets: [
     { id: 'hd-kpi', kind: 'kpi', title: 'งานบริการ', endpoint: '/summary', perm: 'helpdesk.ticket.read', size: 'md', href: 'tickets',
       items: [
-        { key: 'open', label: 'เรื่องค้าง', format: 'qty' },
-        { key: 'overdue', label: 'เกิน SLA', format: 'qty', tone: 'stop' },
-        { key: 'unassigned', label: 'ยังไม่มีคนรับ', format: 'qty', tone: 'warn' },
-        { key: 'resolvedToday', label: 'แก้เสร็จวันนี้', format: 'qty', tone: 'ok' },
-        { key: 'avgResolutionHours', label: 'เวลาแก้เฉลี่ย (ชม.)', format: 'qty' },
-        { key: 'satisfactionAvg', label: 'ความพึงพอใจ (เต็ม 5)', format: 'qty' },
+        { key: 'open', label: 'เรื่องค้าง', format: 'number' },
+        { key: 'overdue', label: 'เกิน SLA', format: 'number', tone: 'stop' },
+        { key: 'unassigned', label: 'ยังไม่มีคนรับ', format: 'number', tone: 'warn' },
+        { key: 'resolvedToday', label: 'แก้เสร็จวันนี้', format: 'number', tone: 'ok' },
+        { key: 'avgResolutionHours', label: 'เวลาแก้เฉลี่ย (ชม.)', format: 'number' },
+        { key: 'satisfactionAvg', label: 'ความพึงพอใจ (เต็ม 5)', format: 'number' },
       ] },
     { id: 'hd-pipeline', kind: 'pipeline', title: 'สถานะเรื่องแจ้งปัญหา', endpoint: '/summary', perm: 'helpdesk.ticket.read', size: 'wide', href: 'tickets',
       rows: 'rows', field: 'status', stages: statuses.slice(0, 4), title2: 'title', subtitle: 'no', link: { screen: 'ticket' } },
-    { id: 'hd-trend', kind: 'trend', title: 'เรื่องแจ้งเข้า 6 เดือน', endpoint: '/summary', perm: 'helpdesk.ticket.read', size: 'sm', href: 'tickets', rows: 'months', x: 'month', y: 'opened', format: 'qty' },
+    { id: 'hd-trend', kind: 'trend', title: 'เรื่องแจ้งเข้า 6 เดือน', endpoint: '/summary', perm: 'helpdesk.ticket.read', size: 'sm', href: 'tickets', rows: 'months', x: 'month', y: 'opened', format: 'number' },
   ],
 });

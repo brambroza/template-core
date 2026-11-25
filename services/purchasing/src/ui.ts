@@ -20,7 +20,7 @@ const whtFields = [
   { name: 'whtIncomeType', label: 'หักภาษี ณ ที่จ่าย', type: 'select' as const, default: 'none', options: [{ value: 'none', label: 'ไม่หัก' }, ...whtTypeOptions],
     help: 'คิดจากยอดก่อน VAT (ท.ป.4/2528) · จ่ายครั้งละไม่ถึง 1,000 บาท ระบบเตือนแต่ไม่บล็อก' },
   { name: 'whtRatePercent', label: 'อัตราภาษี % (เว้นว่าง = อัตราปกติ)', type: 'number' as const, step: 0.01 },
-  { name: 'whtBase', label: 'ฐานเงินได้ก่อน VAT (เว้นว่าง = ยอดก่อน VAT ที่จ่ายครั้งนี้)', type: 'number' as const, step: 0.01 },
+  { name: 'whtBase', label: 'ฐานเงินได้ก่อน VAT (เว้นว่าง = ยอดก่อน VAT ที่จ่ายครั้งนี้)', type: 'number' as const, format: 'money' as const },
   { name: 'whtDescription', label: 'คำอธิบายเงินได้ (จำเป็นเมื่อเลือก "อื่น ๆ")', type: 'text' as const },
   { name: 'form', label: 'ยื่นในแบบ', type: 'select' as const, default: 'auto', options: formOptions },
 ];
@@ -30,7 +30,7 @@ const payFields = [
   { name: 'bankRef', label: 'อ้างอิงการโอน / เลขที่เช็ค', type: 'text' as const },
 ];
 const RETURN_COLUMNS = [
-  { key: 'seq', label: 'ลำดับที่', format: 'qty' as const }, { key: 'tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'branch', label: 'สาขา' },
+  { key: 'seq', label: 'ลำดับที่', format: 'number' as const }, { key: 'tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'branch', label: 'สาขา' },
   { key: 'name', label: 'ชื่อผู้มีเงินได้' }, { key: 'address', label: 'ที่อยู่', phone: false }, { key: 'paid_date', label: 'วันที่จ่าย', format: 'date' as const },
   { key: 'income_type', label: 'ประเภทเงินได้' }, { key: 'rate_percent', label: 'อัตรา', format: 'percent' as const },
   { key: 'amount', label: 'จำนวนเงินที่จ่าย', format: 'accounting' as const, total: true }, { key: 'tax', label: 'ภาษีที่หักนำส่ง', format: 'accounting' as const, total: true },
@@ -46,7 +46,7 @@ const CERT_FIELDS = (copy: 'copy_1' | 'copy_2') => [
   { key: 'total_tax_text', label: 'รวมเงินภาษีที่หักนำส่ง (ตัวอักษร)' },
   { key: 'condition_boxes', label: 'ผู้จ่ายเงิน', section: 'เงื่อนไข' }, { key: 'paid_date_text', label: 'วันเดือนปีที่ออกหนังสือรับรอง' },
   { key: 'certify_text', label: 'คำรับรอง' }, { key: 'warning_text', label: 'คำเตือน' },
-  { key: 'payment_no', label: 'ใบสำคัญจ่าย', print: false }, { key: 'print_count', label: 'จำนวนครั้งที่เปิดพิมพ์', format: 'qty' as const, print: false },
+  { key: 'payment_no', label: 'ใบสำคัญจ่าย', print: false }, { key: 'print_count', label: 'จำนวนครั้งที่เปิดพิมพ์', format: 'number' as const, print: false },
 ];
 const CERT_LINES = [{
   path: 'lines', label: 'ประเภทเงินได้พึงประเมินที่จ่าย',
@@ -111,8 +111,8 @@ export default defineUi({
         name: 'lines', label: 'รายการสั่งซื้อ', min: 1,
         fields: [
           { name: 'itemId', label: 'สินค้า', type: 'lookup', required: true, lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } } },
-          { name: 'qty', label: 'จำนวน', type: 'number', required: true },
-          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', step: 0.01, required: true },
+          { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true },
+          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', format: 'money', required: true },
         ],
       },
       submitLabel: 'สร้างใบสั่งซื้อ', after: { screen: 'poDetail', idFrom: 'id' },
@@ -174,7 +174,7 @@ export default defineUi({
             name: 'lines', label: 'รายการที่ส่งคืน', min: 1,
             fields: [
               { name: 'itemId', label: 'สินค้า', type: 'lookup', required: true, lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } } },
-              { name: 'qty', label: 'จำนวน', type: 'number', required: true },
+              { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true },
               { name: 'reason', label: 'เหตุผล', type: 'text' },
             ],
           } },
@@ -211,7 +211,7 @@ export default defineUi({
       fields: [
         { name: 'creatorCannotApprove', label: 'ผู้สร้างใบสั่งซื้ออนุมัติใบของตัวเองไม่ได้ (แยกหน้าที่)', type: 'boolean',
           help: 'เปิดไว้ (แนะนำ ผู้สอบบัญชีตรวจข้อนี้) · ปิดได้เฉพาะบริษัทที่มีคนทำงานจัดซื้อคนเดียว — การรับของโดยผู้อนุมัติยังทำได้และถูกบันทึกในหน้า "บันทึกการรับของ"' },
-        { name: 'standardApprovalLimit', label: 'วงเงินอนุมัติปกติ (บาท รวม VAT)', type: 'number', step: 0.01,
+        { name: 'standardApprovalLimit', label: 'วงเงินอนุมัติปกติ (บาท รวม VAT)', type: 'number', format: 'money',
           help: 'ใบสั่งซื้อที่ยอดเกินวงเงินนี้ ต้องให้ผู้มีสิทธิ์ "อนุมัติใบสั่งซื้อวงเงินสูง" อนุมัติ · ใส่ 0 = ไม่แบ่งวงเงิน' },
       ],
       submitLabel: 'บันทึกการตั้งค่า', after: { screen: 'poList' },
@@ -293,8 +293,8 @@ export default defineUi({
         name: 'lines', label: 'รายการ', min: 1,
         fields: [
           { name: 'description', label: 'รายการ', type: 'text', required: true },
-          { name: 'qty', label: 'จำนวน', type: 'number', default: 1, required: true },
-          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', step: 0.01, required: true },
+          { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', default: 1, required: true },
+          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', format: 'money', required: true },
         ],
       },
       submitLabel: 'ตั้งหนี้', after: { screen: 'billDetail', idFrom: 'id' },
@@ -323,7 +323,7 @@ export default defineUi({
       actions: [
         { id: 'pay', label: 'จ่ายชำระ', method: 'POST', endpoint: '/bills/:id/payments', perm: 'purchasing.payment.write', when: { field: 'status', in: ['open', 'partially_paid'] }, tone: 'primary',
           then: { screen: 'paymentDetail', idFrom: 'id' },
-          fields: [{ name: 'amount', label: 'ตัดหนี้ (บาท รวม VAT · เว้นว่าง = ค้างทั้งหมด)', type: 'number', step: 0.01 }, ...payFields, ...whtFields,
+          fields: [{ name: 'amount', label: 'ตัดหนี้ (บาท รวม VAT · เว้นว่าง = ค้างทั้งหมด)', type: 'number', format: 'money' }, ...payFields, ...whtFields,
             { name: 'note', label: 'หมายเหตุ', type: 'textarea' }] },
       ],
     },
@@ -333,7 +333,7 @@ export default defineUi({
         { name: 'overdue', label: 'แสดง', type: 'select', options: [{ value: 'true', label: 'เฉพาะเกินกำหนด' }, { value: 'false', label: 'ยังไม่ครบกำหนด' }] }],
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'supplier_invoice_no', label: 'ใบกำกับผู้ขาย' },
-        { key: 'bill_date', label: 'วันที่', format: 'date' }, { key: 'due_on', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'qty' },
+        { key: 'bill_date', label: 'วันที่', format: 'date' }, { key: 'due_on', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'number' },
         { key: 'bucket', label: 'อายุหนี้' }, { key: 'outstanding', label: 'ค้างจ่าย', format: 'accounting', total: true },
       ],
       rowLink: { screen: 'billDetail' }, empty: 'ไม่มีหนี้ค้างจ่าย',
@@ -342,7 +342,7 @@ export default defineUi({
       kind: 'list', title: 'รายงานอายุเจ้าหนี้', endpoint: '/payables/aging', perm: 'purchasing.bill.read', rows: 'rows',
       filters: [{ name: 'asOf', label: 'ณ วันที่ (เว้นว่าง = วันนี้)', type: 'date' }],
       columns: [
-        { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'bills', label: 'บิล', format: 'qty' },
+        { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'bills', label: 'บิล', format: 'number' },
         { key: 'not_due', label: 'ยังไม่ครบกำหนด', format: 'accounting', total: true }, { key: 'd1_30', label: '1–30 วัน', format: 'accounting', total: true },
         { key: 'd31_60', label: '31–60 วัน', format: 'accounting', total: true }, { key: 'd61_90', label: '61–90 วัน', format: 'accounting', total: true },
         { key: 'over_90', label: 'เกิน 90 วัน', format: 'accounting', total: true }, { key: 'total', label: 'รวม', format: 'accounting', total: true },
@@ -360,7 +360,7 @@ export default defineUi({
         fields: [
           { name: 'billId', label: 'บิล', type: 'lookup', required: true,
             lookup: { path: '/bills', query: { status: 'unpaid' }, label: ['no', 'supplier_name', 'supplier_invoice_no', 'outstanding'], assign: { billId: 'id' } } },
-          { name: 'amount', label: 'ตัดหนี้ (เว้นว่าง = ค้างทั้งหมด)', type: 'number', step: 0.01 },
+          { name: 'amount', label: 'ตัดหนี้ (เว้นว่าง = ค้างทั้งหมด)', type: 'number', format: 'money' },
         ],
       },
       submitLabel: 'บันทึกการจ่าย', after: { screen: 'paymentDetail', idFrom: 'id' },
@@ -412,7 +412,7 @@ export default defineUi({
       columns: [
         { key: 'certificate_no', label: 'เลขที่' }, { key: 'payment_date', label: 'วันที่จ่าย', format: 'date' }, { key: 'supplier_name', label: 'ผู้ถูกหักภาษี' },
         { key: 'supplier_tax_id', label: 'เลขผู้เสียภาษี' }, { key: 'form_label', label: 'แบบ' }, { key: 'wht_base', label: 'เงินที่จ่าย', format: 'money', total: true },
-        { key: 'wht_total', label: 'ภาษีที่หัก', format: 'money', total: true }, { key: 'payment_no', label: 'ใบสำคัญจ่าย' }, { key: 'print_count', label: 'พิมพ์แล้ว (ครั้ง)', format: 'qty' },
+        { key: 'wht_total', label: 'ภาษีที่หัก', format: 'money', total: true }, { key: 'payment_no', label: 'ใบสำคัญจ่าย' }, { key: 'print_count', label: 'พิมพ์แล้ว (ครั้ง)', format: 'number' },
       ],
       rowLink: { screen: 'whtCert1' },
       rowActions: [{ id: 'copy2', label: 'ฉบับที่ 2', method: 'POST', endpoint: '/wht-certificates/:id/print', perm: 'purchasing.wht.read', then: { screen: 'whtCert2', idFrom: 'id' } }],
@@ -434,9 +434,9 @@ export default defineUi({
     /* ---------------- wave 9: monthly ภ.ง.ด.3 / ภ.ง.ด.53 ---------------- */
     whtReturns: {
       kind: 'list', title: 'ภ.ง.ด.3 / ภ.ง.ด.53 รายเดือน', endpoint: '/wht/returns', perm: 'purchasing.wht.read',
-      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ทุกปี)', type: 'number' }],
+      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ทุกปี)', type: 'number', comma: false }],
       columns: [
-        { key: 'period_label', label: 'เดือนภาษี' }, { key: 'form_label', label: 'แบบ' }, { key: 'payees', label: 'จำนวนราย', format: 'qty' },
+        { key: 'period_label', label: 'เดือนภาษี' }, { key: 'form_label', label: 'แบบ' }, { key: 'payees', label: 'จำนวนราย', format: 'number' },
         { key: 'total_amount', label: 'เงินได้ที่จ่าย', format: 'money' }, { key: 'total_tax', label: 'ภาษีที่หักนำส่ง', format: 'money' },
         { key: 'due_paper', label: 'ยื่นกระดาษภายใน', format: 'date' }, { key: 'due_efiling', label: 'ยื่น e-Filing ภายใน', format: 'date' },
       ],
@@ -446,7 +446,7 @@ export default defineUi({
       kind: 'detail', title: 'แบบ ภ.ง.ด.3 / ภ.ง.ด.53 — ใบแนบ', endpoint: '/wht/returns/:id', perm: 'purchasing.wht.read', heading: 'title',
       print: { title: 'ใบแนบ ภ.ง.ด.3 / ภ.ง.ด.53 (สำหรับตรวจทานก่อนยื่น)', signatures: ['ผู้จัดทำ', 'ผู้ตรวจ'] },
       fields: [
-        { key: 'form_label', label: 'แบบ' }, { key: 'period_label', label: 'เดือนภาษี' }, { key: 'payees', label: 'จำนวนราย', format: 'qty' },
+        { key: 'form_label', label: 'แบบ' }, { key: 'period_label', label: 'เดือนภาษี' }, { key: 'payees', label: 'จำนวนราย', format: 'number' },
         { key: 'total_amount', label: 'รวมเงินได้ที่จ่าย', format: 'money' }, { key: 'total_tax', label: 'รวมภาษีที่นำส่ง', format: 'money', emphasis: true },
         { key: 'total_tax_text', label: 'ตัวอักษร' }, { key: 'due_text', label: 'กำหนดยื่น' },
         { key: 'filing_note', label: 'การยื่นแบบ', print: false, section: 'ส่งออกไฟล์' }, { key: 'rd_note', label: 'ไฟล์ RD Prep', print: false },
@@ -465,7 +465,7 @@ export default defineUi({
   },
   widgets: [
     { id: 'po-kpi', kind: 'kpi', title: 'จัดซื้อ', endpoint: '/summary', perm: 'purchasing.po.read', size: 'sm', href: 'poList',
-      items: [{ key: 'toApprove', label: 'รออนุมัติ', format: 'qty', tone: 'warn' }, { key: 'toReceive', label: 'รอรับของ', format: 'qty' }, { key: 'spendMonth', label: 'ยอดซื้อเดือนนี้', format: 'money' }] },
+      items: [{ key: 'toApprove', label: 'รออนุมัติ', format: 'number', tone: 'warn' }, { key: 'toReceive', label: 'รอรับของ', format: 'number' }, { key: 'spendMonth', label: 'ยอดซื้อเดือนนี้', format: 'money' }] },
     { id: 'po-trend', kind: 'trend', title: 'ยอดซื้อ 6 เดือน', endpoint: '/summary', perm: 'purchasing.po.read', size: 'md', href: 'poList', rows: 'months', x: 'month', y: 'total', format: 'money' },
   ],
 });

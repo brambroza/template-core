@@ -110,7 +110,7 @@ export default defineUi({
         typeLookup,
         { name: 'title', label: 'เรื่อง', type: 'text', required: true },
         { name: 'detail', label: 'รายละเอียด / เหตุผล', type: 'textarea' },
-        { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', step: 0.01 },
+        { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', format: 'money' },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
         { name: 'department', label: 'แผนก', type: 'text' },
         { name: 'submit', label: 'ส่งขออนุมัติทันที', type: 'boolean', default: true, help: 'ผู้ขอคือผู้ใช้ที่ล็อกอินอยู่ — สายอนุมัติมาจากประเภทคำขอ' },
@@ -122,7 +122,7 @@ export default defineUi({
       fields: [
         { name: 'title', label: 'เรื่อง', type: 'text', required: true },
         { name: 'detail', label: 'รายละเอียด / เหตุผล', type: 'textarea' },
-        { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', step: 0.01 },
+        { name: 'amount', label: 'จำนวนเงิน (ถ้ามี)', type: 'number', format: 'money' },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
         { name: 'department', label: 'แผนก', type: 'text' },
       ],
@@ -204,7 +204,7 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }, { name: 'active', label: 'สถานะ', type: 'select', options: [{ value: 'true', label: 'ใช้งาน' }, { value: 'false', label: 'ปิดใช้งาน' }] }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'chain', label: 'สายอนุมัติ' },
-        { key: 'step_count', label: 'จำนวนขั้น', format: 'qty' }, { key: 'lock_approvers', label: 'ล็อกสายอนุมัติ', format: 'boolean' },
+        { key: 'step_count', label: 'จำนวนขั้น', format: 'number' }, { key: 'lock_approvers', label: 'ล็อกสายอนุมัติ', format: 'boolean' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'typeNew', createLabel: 'เพิ่มประเภท', rowLink: { screen: 'typeDetail' }, empty: 'ยังไม่มีประเภทคำขอ — เช่น ขอซื้อ, ขอเดินทาง, ขอใช้งบ, บันทึกข้อความ',
@@ -237,7 +237,7 @@ export default defineUi({
       kind: 'detail', title: 'ประเภทคำขอ', endpoint: '/types/:id', perm: 'approvals.request.read', heading: 'name', edit: 'typeEdit',
       fields: [
         { key: 'code', label: 'รหัส' }, { key: 'description', label: 'คำอธิบาย' }, { key: 'amount_note', label: 'เงื่อนไขวงเงิน' },
-        { key: 'step_count', label: 'จำนวนขั้นอนุมัติ', format: 'qty' }, { key: 'request_count', label: 'จำนวนคำขอที่ใช้ประเภทนี้', format: 'qty' },
+        { key: 'step_count', label: 'จำนวนขั้นอนุมัติ', format: 'number' }, { key: 'request_count', label: 'จำนวนคำขอที่ใช้ประเภทนี้', format: 'number' },
         { key: 'lock_approvers', label: 'ล็อกสายอนุมัติ (ผู้ขอแก้ไม่ได้)', format: 'boolean' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
@@ -251,14 +251,14 @@ export default defineUi({
   widgets: [
     { id: 'approvals-kpi', kind: 'kpi', title: 'อนุมัติออนไลน์', endpoint: '/summary', perm: 'approvals.request.read', size: 'md', href: 'inbox',
       items: [
-        { key: 'waitingForMe', label: 'รอฉันอนุมัติ', format: 'qty', tone: 'warn' },
-        { key: 'pendingTotal', label: 'อยู่ระหว่างอนุมัติ', format: 'qty' },
-        { key: 'approvedThisMonth', label: 'อนุมัติเดือนนี้', format: 'qty', tone: 'ok' },
-        { key: 'avgHoursToDecide', label: 'เวลาตัดสินเฉลี่ย (ชม.)', format: 'qty' },
+        { key: 'waitingForMe', label: 'รอฉันอนุมัติ', format: 'number', tone: 'warn' },
+        { key: 'pendingTotal', label: 'อยู่ระหว่างอนุมัติ', format: 'number' },
+        { key: 'approvedThisMonth', label: 'อนุมัติเดือนนี้', format: 'number', tone: 'ok' },
+        { key: 'avgHoursToDecide', label: 'เวลาตัดสินเฉลี่ย (ชม.)', format: 'number' },
       ] },
     { id: 'approvals-pipeline', kind: 'pipeline', title: 'คำขออนุมัติล่าสุด', endpoint: '/summary', perm: 'approvals.request.read', size: 'wide', href: 'requests',
       rows: 'rows', field: 'status', title2: 'title', subtitle: 'requester_name', link: { screen: 'requestDetail' },
       stages: [{ value: 'pending', label: 'รออนุมัติ' }, { value: 'returned', label: 'ส่งกลับแก้ไข' }, { value: 'approved', label: 'อนุมัติแล้ว' }, { value: 'rejected', label: 'ไม่อนุมัติ' }] },
-    { id: 'approvals-trend', kind: 'trend', title: 'คำขอที่ส่ง 6 เดือน', endpoint: '/summary', perm: 'approvals.request.read', size: 'md', href: 'requests', rows: 'months', x: 'month', y: 'submitted', format: 'qty' },
+    { id: 'approvals-trend', kind: 'trend', title: 'คำขอที่ส่ง 6 เดือน', endpoint: '/summary', perm: 'approvals.request.read', size: 'md', href: 'requests', rows: 'months', x: 'month', y: 'submitted', format: 'number' },
   ],
 });

@@ -21,7 +21,7 @@ const contractFields: Field[] = [
   { name: 'contactPhone', label: 'เบอร์ / LINE ผู้ติดต่อ', type: 'text' },
   { name: 'startDate', label: 'เริ่มสัญญา', type: 'date', required: true },
   { name: 'endDate', label: 'สิ้นสุดสัญญา', type: 'date', required: true },
-  { name: 'value', label: 'มูลค่าสัญญา (บาท ก่อน VAT)', type: 'number', step: 0.01, required: true },
+  { name: 'value', label: 'มูลค่าสัญญา (บาท ก่อน VAT)', type: 'number', format: 'money', required: true },
   { name: 'billingPlan', label: 'การวางบิล', type: 'select', default: 'yearly', options: plans },
   { name: 'coverage', label: 'ช่วงเวลาให้บริการ', type: 'select', default: '8x5', options: coverages },
   { name: 'slaResponseHours', label: 'SLA ตอบรับ (ชั่วโมง)', type: 'number', default: 4, step: 0.5 },
@@ -41,7 +41,7 @@ const itemFields: Field[] = [
 
 const contractColumns: Column[] = [
   { key: 'no', label: 'เลขที่' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'title', label: 'สัญญา' },
-  { key: 'end_date', label: 'สิ้นสุด', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
+  { key: 'end_date', label: 'สิ้นสุด', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'number' },
   { key: 'value', label: 'มูลค่า', format: 'money', total: true }, { key: 'billing_plan_label', label: 'วางบิล' }, { key: 'status', label: 'สถานะ', format: 'status' },
 ];
 
@@ -115,11 +115,11 @@ export default defineUi({
       fields: [
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'title', label: 'สัญญา' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'contact_name', label: 'ผู้ติดต่อ' }, { key: 'contact_phone', label: 'เบอร์ / LINE' },
-        { key: 'start_date', label: 'เริ่มสัญญา', format: 'date', section: 'ระยะเวลาและมูลค่า' }, { key: 'end_date', label: 'สิ้นสุดสัญญา', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
+        { key: 'start_date', label: 'เริ่มสัญญา', format: 'date', section: 'ระยะเวลาและมูลค่า' }, { key: 'end_date', label: 'สิ้นสุดสัญญา', format: 'date' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'number' },
         { key: 'value', label: 'มูลค่าสัญญา (ก่อน VAT)', format: 'money', emphasis: true }, { key: 'billing_plan_label', label: 'การวางบิล' },
         { key: 'billed_amount', label: 'วางบิลแล้ว', format: 'money' }, { key: 'unbilled_amount', label: 'ยังไม่วางบิล', format: 'money' },
-        { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ', section: 'ระดับบริการและ PM' }, { key: 'sla_response_hours', label: 'SLA ตอบรับ (ชม.)', format: 'qty' }, { key: 'sla_resolve_hours', label: 'SLA แก้ไขเสร็จ (ชม.)', format: 'qty' },
-        { key: 'pm_label', label: 'รอบ PM' }, { key: 'next_visit_date', label: 'นัด PM ถัดไป', format: 'date' }, { key: 'visits_done', label: 'เข้า PM แล้ว (ครั้ง)', format: 'qty' },
+        { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ', section: 'ระดับบริการและ PM' }, { key: 'sla_response_hours', label: 'SLA ตอบรับ (ชม.)', format: 'number' }, { key: 'sla_resolve_hours', label: 'SLA แก้ไขเสร็จ (ชม.)', format: 'number' },
+        { key: 'pm_label', label: 'รอบ PM' }, { key: 'next_visit_date', label: 'นัด PM ถัดไป', format: 'date' }, { key: 'visits_done', label: 'เข้า PM แล้ว (ครั้ง)', format: 'number' },
         { key: 'technician_name', label: 'ช่างประจำสัญญา' }, { key: 'checklist', label: 'รายการตรวจเช็ค PM', format: 'list' }, { key: 'note', label: 'เงื่อนไข / หมายเหตุ' },
         { key: 'renewal_of_no', label: 'ต่ออายุจากสัญญา', section: 'การต่ออายุ / ยกเลิก' }, { key: 'renewed_to_no', label: 'ต่ออายุเป็นสัญญา' }, { key: 'uplift_pct', label: 'ปรับราคาต่ออายุ (%)', format: 'percent' },
         { key: 'cancel_reason', label: 'เหตุผลที่ยกเลิก' },
@@ -127,7 +127,7 @@ export default defineUi({
       lines: [
         { path: 'items', label: 'อุปกรณ์ / สถานที่ในสัญญา', columns: [{ key: 'asset', label: 'อุปกรณ์ / ระบบ' }, { key: 'serial_no', label: 'Serial No.' }, { key: 'location', label: 'สถานที่' }] },
         { path: 'installments', label: 'งวดวางบิล', columns: [
-          { key: 'seq', label: 'งวด', format: 'qty' }, { key: 'due_date', label: 'ถึงกำหนด', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money', total: true },
+          { key: 'seq', label: 'งวด', format: 'number' }, { key: 'due_date', label: 'ถึงกำหนด', format: 'date' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money', total: true },
           { key: 'invoiced', label: 'วางบิลแล้ว', format: 'boolean' }, { key: 'invoice_no', label: 'เลขที่ใบแจ้งหนี้' }] },
         { path: 'visits', label: 'นัดเข้า PM', columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'technician_name', label: 'ช่าง' },
@@ -166,7 +166,7 @@ export default defineUi({
       columns: [
         { key: 'serial_no', label: 'Serial No.' }, { key: 'asset', label: 'อุปกรณ์' }, { key: 'location', label: 'สถานที่' }, { key: 'customer_name', label: 'ลูกค้า' },
         { key: 'no', label: 'สัญญา' }, { key: 'end_date', label: 'คุ้มครองถึง', format: 'date' }, { key: 'coverage_label', label: 'ช่วงเวลา' },
-        { key: 'sla_response_hours', label: 'ตอบรับ (ชม.)', format: 'qty' }, { key: 'sla_resolve_hours', label: 'แก้เสร็จ (ชม.)', format: 'qty' },
+        { key: 'sla_response_hours', label: 'ตอบรับ (ชม.)', format: 'number' }, { key: 'sla_resolve_hours', label: 'แก้เสร็จ (ชม.)', format: 'number' },
       ],
       rowLink: { screen: 'contract' }, empty: 'ไม่พบในสัญญาที่มีผล — อยู่นอกสัญญา MA',
     },
@@ -182,7 +182,7 @@ export default defineUi({
     myVisits: {
       kind: 'list', title: 'งาน PM ของฉัน', endpoint: '/visits/mine', perm: 'contracts.visit.work', mobile: true,
       filters: [{ name: 'days', label: 'ล่วงหน้า (วัน)', type: 'number' }],
-      columns: [{ key: 'customer_name', label: 'ลูกค้า' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'no', label: 'เลขที่' }, { key: 'overdue', label: 'เลยนัด', format: 'boolean' }, { key: 'checks_total', label: 'รายการตรวจ', format: 'qty' }],
+      columns: [{ key: 'customer_name', label: 'ลูกค้า' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'no', label: 'เลขที่' }, { key: 'overdue', label: 'เลยนัด', format: 'boolean' }, { key: 'checks_total', label: 'รายการตรวจ', format: 'number' }],
       rowLink: { screen: 'visit' }, empty: 'วันนี้ไม่มีงาน PM', rowActions: [{ ...startAction, label: 'เริ่ม' }],
     },
     visits: {
@@ -220,11 +220,11 @@ export default defineUi({
         { key: 'due_date', label: 'ครบกำหนด PM', format: 'date', section: 'นัดหมาย' }, { key: 'scheduled_date', label: 'วันนัด', format: 'date' }, { key: 'overdue', label: 'เลยนัด', format: 'boolean' },
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'technician_name', label: 'ช่างผู้ปฏิบัติงาน' },
         { key: 'coverage_label', label: 'ช่วงเวลาให้บริการ' }, { key: 'sla_text', label: 'SLA' },
-        { key: 'checks_done', label: 'ตรวจแล้ว (รายการ)', format: 'qty', section: 'ผลการปฏิบัติงาน' }, { key: 'checks_failed', label: 'ไม่ผ่าน (รายการ)', format: 'qty' },
+        { key: 'checks_done', label: 'ตรวจแล้ว (รายการ)', format: 'number', section: 'ผลการปฏิบัติงาน' }, { key: 'checks_failed', label: 'ไม่ผ่าน (รายการ)', format: 'number' },
         { key: 'done_on', label: 'เข้าปฏิบัติงานเมื่อ', format: 'date' }, { key: 'findings', label: 'สิ่งที่พบ / ข้อเสนอแนะ' },
         { key: 'signoff_name', label: 'ลูกค้าผู้รับรอง' }, { key: 'missed_reason', label: 'เหตุที่ไม่ได้เข้า' },
       ],
-      lines: [{ path: 'checks', label: 'ผลการตรวจเช็ค', columns: [{ key: 'seq', label: 'ลำดับ', format: 'qty' }, { key: 'item', label: 'รายการตรวจ' }, { key: 'result_label', label: 'ผล' }, { key: 'note', label: 'หมายเหตุ' }] }],
+      lines: [{ path: 'checks', label: 'ผลการตรวจเช็ค', columns: [{ key: 'seq', label: 'ลำดับ', format: 'number' }, { key: 'item', label: 'รายการตรวจ' }, { key: 'result_label', label: 'ผล' }, { key: 'note', label: 'หมายเหตุ' }] }],
       actions: [
         startAction,
         { id: 'complete', label: 'ปิดงาน + ลูกค้ารับรอง', method: 'POST', endpoint: '/visits/:id/complete', perm: 'contracts.visit.work', when: { field: 'status', in: ['planned'] }, tone: 'primary', mobile: true,
@@ -277,20 +277,20 @@ export default defineUi({
   widgets: [
     { id: 'ma-kpi', kind: 'kpi', title: 'สัญญาบริการ MA', endpoint: '/summary', perm: 'contracts.contract.read', size: 'md', href: 'contracts',
       items: [
-        { key: 'activeContracts', label: 'สัญญาที่มีผล', format: 'qty' },
+        { key: 'activeContracts', label: 'สัญญาที่มีผล', format: 'number' },
         { key: 'activeValue', label: 'มูลค่าสัญญาที่มีผล', format: 'money', tone: 'ok' },
-        { key: 'expiring60', label: 'หมดใน 60 วัน', format: 'qty', tone: 'warn' },
+        { key: 'expiring60', label: 'หมดใน 60 วัน', format: 'number', tone: 'warn' },
         { key: 'billingDueMonth', label: 'ถึงกำหนดวางบิลเดือนนี้', format: 'money', tone: 'warn' },
       ] },
     { id: 'ma-pm', kind: 'kpi', title: 'งานเข้า PM', endpoint: '/summary', perm: 'contracts.visit.read', size: 'md', href: 'visitsToday',
       items: [
-        { key: 'visitsToday', label: 'PM วันนี้ (รวมเลยนัด)', format: 'qty' },
-        { key: 'visitsDueWeek', label: 'นัด 7 วันข้างหน้า', format: 'qty' },
-        { key: 'overdueVisits', label: 'เลยนัด', format: 'qty', tone: 'stop' },
-        { key: 'visitsDoneMonth', label: 'เข้าแล้วเดือนนี้', format: 'qty', tone: 'ok' },
+        { key: 'visitsToday', label: 'PM วันนี้ (รวมเลยนัด)', format: 'number' },
+        { key: 'visitsDueWeek', label: 'นัด 7 วันข้างหน้า', format: 'number' },
+        { key: 'overdueVisits', label: 'เลยนัด', format: 'number', tone: 'stop' },
+        { key: 'visitsDoneMonth', label: 'เข้าแล้วเดือนนี้', format: 'number', tone: 'ok' },
       ] },
     { id: 'ma-pipeline', kind: 'pipeline', title: 'สัญญา MA ตามสถานะ', endpoint: '/summary', perm: 'contracts.contract.read', size: 'wide', href: 'contracts',
       rows: 'rows', field: 'status', stages: contractStatuses.slice(0, 3), title2: 'customer_name', subtitle: 'no', link: { screen: 'contract' } },
-    { id: 'ma-trend', kind: 'trend', title: 'เข้า PM แล้ว 6 เดือน', endpoint: '/summary', perm: 'contracts.visit.read', size: 'sm', href: 'visits', rows: 'months', x: 'month', y: 'done', format: 'qty' },
+    { id: 'ma-trend', kind: 'trend', title: 'เข้า PM แล้ว 6 เดือน', endpoint: '/summary', perm: 'contracts.visit.read', size: 'sm', href: 'visits', rows: 'months', x: 'month', y: 'done', format: 'number' },
   ],
 });

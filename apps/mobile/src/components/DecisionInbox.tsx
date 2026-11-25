@@ -6,6 +6,7 @@
 import { router } from 'expo-router';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useNumberFormat } from '../lib/number-format';
 import { buildTodo, fillPath, formatValue, listRows, rowLinkScreen, todoActions, todoSources, type Action, type ModuleUi, type TodoItem } from '@erp/ui-schema';
 import { api } from '../lib/api';
 import { radius, themed, usePalette } from '../lib/theme';
@@ -18,6 +19,7 @@ const FIRST = 4;
 export interface DecisionInboxHandle { reload(): Promise<void> }
 
 export const DecisionInbox = forwardRef<DecisionInboxHandle, { modules: ModuleUi[]; perms: string[] }>(function DecisionInbox({ modules, perms }, ref) {
+  useNumberFormat(); // amounts are drawn again when the company changes its number format
   const c = usePalette();
   const s = useS();
   const st = useSt();

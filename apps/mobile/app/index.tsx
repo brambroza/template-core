@@ -7,6 +7,7 @@ import { screenPath } from '../src/components/Screens';
 import { Button, EmptyState, ErrorText, useS } from '../src/components/ui';
 import { api } from '../src/lib/api';
 import { useRegistry } from '../src/lib/registry';
+import { useNumberFormat } from '../src/lib/number-format';
 import { clearSession, getSession } from '../src/lib/session';
 import { radius, themed, toneColor, usePalette } from '../src/lib/theme';
 
@@ -17,6 +18,7 @@ type Data = Record<string, unknown>;
  * (feed widgets), then the shop-floor screens (mobile: true) this user may open.
  */
 export default function Home() {
+  useNumberFormat(); // the cards are drawn again when the company changes its number format
   const { modules, loading, error, reload } = useRegistry();
   const session = getSession();
   const perms = session?.permissions ?? [];
@@ -30,6 +32,8 @@ export default function Home() {
   const widgets = modules.flatMap((m) => (m.widgets ?? []).filter((w) => (w.kind === 'kpi' || w.kind === 'feed') && hasPerm(perms, w.perm)).map((w) => ({ m, w })));
   const key = widgets.map(({ m, w }) => `${m.module}${w.endpoint}`).join(',');
   const load = useCallback(() => {
+    // the company profile brings the number format (comma, decimals) — api.ts applies it; a failure keeps what the phone remembers
+    void api('identity', '/company').catch(() => undefined);
     const srcs = [...new Set(widgets.map(({ m, w }) => `${m.module}|${w.endpoint}`))];
     return Promise.all(srcs.map(async (src) => {
       const [mod, path] = src.split('|');
@@ -69,7 +73,7 @@ export default function Home() {
             return (
               <Pressable key={`${m.module}.${w.id}.${it.key}`} accessibilityRole="button" onPress={() => w.href && router.push(screenPath(m.module, w.href))} style={st.kpi}>
                 <Text style={st.kpiModule}>{m.label}</Text>
-                <Text style={[st.kpiValue, { color }]} numberOfLines={1}>{d ? (it.format === 'money' ? `฿${formatValue(Math.round(v), 'qty')}` : formatValue(v, 'qty')) : '–'}</Text>
+                <Text style={[st.kpiValue, { color }]} numberOfLines={1}>{d ? (it.format === 'money' ? `฿${formatValue(Math.round(v), 'number')}` : formatValue(v, 'number')) : '–'}</Text>
                 <Text style={s.muted} numberOfLines={2}>{it.label}</Text>
               </Pressable>
             );

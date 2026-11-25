@@ -56,7 +56,7 @@ export default defineUi({
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'machine_code', label: 'เครื่อง' }, { key: 'machine_name', label: 'ชื่อเครื่อง' },
         { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'title', label: 'อาการ/งาน' }, { key: 'description', label: 'รายละเอียด' },
         { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'started_at', label: 'เริ่มซ่อม', format: 'datetime' },
-        { key: 'completed_at', label: 'ซ่อมเสร็จ', format: 'datetime' }, { key: 'downtime_minutes', label: 'เครื่องหยุด (นาที)', format: 'qty' },
+        { key: 'completed_at', label: 'ซ่อมเสร็จ', format: 'datetime' }, { key: 'downtime_minutes', label: 'เครื่องหยุด (นาที)', format: 'number' },
         { key: 'resolution', label: 'วิธีแก้' }, { key: 'parts_warehouse', label: 'คลังอะไหล่' },
       ],
       lines: [{ path: 'parts', label: 'อะไหล่ที่ใช้', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'จำนวน', format: 'qty' }] }],
@@ -73,7 +73,7 @@ export default defineUi({
             name: 'parts', label: 'อะไหล่ที่ใช้',
             fields: [
               { name: 'itemId', label: 'อะไหล่', type: 'lookup', lookup: { module: 'master-data', path: '/items', query: { type: 'spare' }, label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }, scanField: 'code' } },
-              { name: 'qty', label: 'จำนวน', type: 'number' },
+              { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty' },
             ],
           } },
       ],
@@ -97,17 +97,17 @@ export default defineUi({
       kind: 'detail', title: 'ประวัติเครื่องจักร', endpoint: '/machines/:id/history', perm: 'maintenance.machine.read', heading: 'machine.code', attachments: { entity: 'machine', label: 'รูปเครื่อง / คู่มือ / ใบรับรอง' }, mobile: true,
       fields: [
         { key: 'machine.name', label: 'ชื่อ' }, { key: 'machine.location', label: 'ที่ตั้ง' }, { key: 'machine.status', label: 'สถานะ', format: 'status' },
-        { key: 'breakdowns', label: 'เสียทั้งหมด (ครั้ง)', format: 'qty' }, { key: 'totalDowntimeMinutes', label: 'เครื่องหยุดรวม (นาที)', format: 'qty' },
+        { key: 'breakdowns', label: 'เสียทั้งหมด (ครั้ง)', format: 'number' }, { key: 'totalDowntimeMinutes', label: 'เครื่องหยุดรวม (นาที)', format: 'number' },
       ],
       lines: [{
         path: 'workOrders', label: 'งานซ่อมทั้งหมด',
-        columns: [{ key: 'no', label: 'เลขที่' }, { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'title', label: 'อาการ/งาน' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'downtime_minutes', label: 'หยุด (นาที)', format: 'qty' }],
+        columns: [{ key: 'no', label: 'เลขที่' }, { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'title', label: 'อาการ/งาน' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'reported_at', label: 'แจ้งเมื่อ', format: 'datetime' }, { key: 'downtime_minutes', label: 'หยุด (นาที)', format: 'number' }],
       }],
     },
     pmList: {
       kind: 'list', title: 'แผนบำรุงรักษาเชิงป้องกัน (PM)', endpoint: '/pm-plans', perm: 'maintenance.machine.read',
       columns: [
-        { key: 'machine_code', label: 'เครื่อง' }, { key: 'title', label: 'งาน' }, { key: 'interval_days', label: 'ทุก (วัน)', format: 'qty' },
+        { key: 'machine_code', label: 'เครื่อง' }, { key: 'title', label: 'งาน' }, { key: 'interval_days', label: 'ทุก (วัน)', format: 'number' },
         { key: 'next_due_on', label: 'ครบกำหนด', format: 'date' }, { key: 'last_done_on', label: 'ทำล่าสุด', format: 'date' },
       ],
       create: 'pmNew', createLabel: 'เพิ่มแผน PM', empty: 'ยังไม่มีแผน PM',
@@ -135,6 +135,6 @@ export default defineUi({
     { id: 'floor', kind: 'floor3d', title: 'ผังโรงงาน', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'wide', href: 'machines',
       rows: 'machines', code: 'code', name: 'name', status: 'status', group: 'location', badge: 'open_work_orders', link: { screen: 'machineHistory' } },
     { id: 'mt-kpi', kind: 'kpi', title: 'ซ่อมบำรุง', endpoint: '/summary', perm: 'maintenance.machine.read', size: 'sm', href: 'woList',
-      items: [{ key: 'down', label: 'เครื่องเสียตอนนี้', format: 'qty', tone: 'stop' }, { key: 'openWorkOrders', label: 'งานซ่อมค้าง', format: 'qty', tone: 'warn' }, { key: 'pmDue7d', label: 'PM ใน 7 วัน', format: 'qty' }] },
+      items: [{ key: 'down', label: 'เครื่องเสียตอนนี้', format: 'number', tone: 'stop' }, { key: 'openWorkOrders', label: 'งานซ่อมค้าง', format: 'number', tone: 'warn' }, { key: 'pmDue7d', label: 'PM ใน 7 วัน', format: 'number' }] },
   ],
 });

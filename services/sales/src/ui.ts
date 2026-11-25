@@ -25,7 +25,7 @@ function noteAction(kind: NoteKind): Action {
       { name: 'reasonCode', label: `เหตุผลการออก${NOTE_TITLE[kind]} (มาตรา ${credit ? '82/10' : '82/9'})`, type: 'select', required: true, options: reasonOptions(kind) },
       { name: 'reasonText', label: 'คำอธิบายเพิ่มเติม (พิมพ์ต่อท้ายเหตุผล)', type: 'text', help: 'จำเป็นเมื่อเลือก "เหตุอื่นตามที่อธิบดีกำหนด"' },
       { name: 'issueDate', label: `วันที่${NOTE_TITLE[kind]} (ว่าง = วันนี้)`, type: 'date', help: `ลด/เพิ่มภาษีขายในเดือนที่ออก${NOTE_TITLE[kind]} — ไม่ใช่เดือนของใบกำกับเดิม` },
-      { name: 'amount', label: `จำนวนเงินผลต่าง (ว่าง = คิดจากรายการด้านล่าง)`, type: 'number', step: 0.01,
+      { name: 'amount', label: `จำนวนเงินผลต่าง (ว่าง = คิดจากรายการด้านล่าง)`, type: 'number', format: 'money',
         help: 'ตามราคาของใบกำกับเดิม: ใบสั่งขายแบบยังไม่รวม VAT = ก่อน VAT, แบบรวม VAT = รวม VAT แล้ว — ระบบคิด VAT ของผลต่างให้' },
       ...(credit ? [{ name: 'warehouseCode', label: 'รับคืนเข้าคลัง (ว่าง = คลังที่ส่งของ)', type: 'text' as const }] : []),
       { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
@@ -33,10 +33,10 @@ function noteAction(kind: NoteKind): Action {
     lines: {
       name: 'lines', label: credit ? 'รายการที่ลดหนี้ / รับคืน' : 'รายการที่เพิ่มหนี้',
       fields: [
-        { name: 'lineNo', label: 'ลำดับรายการในใบกำกับ (#)', type: 'number', help: 'ว่าง = รายการอื่น (พิมพ์คำอธิบายและราคา)' },
+        { name: 'lineNo', label: 'ลำดับรายการในใบกำกับ (#)', type: 'number', comma: false, help: 'ว่าง = รายการอื่น (พิมพ์คำอธิบายและราคา)' },
         { name: 'description', label: 'คำอธิบาย (ว่าง = ตามใบกำกับ)', type: 'text' },
-        { name: 'qty', label: 'จำนวน (ว่าง = ทั้งรายการ)', type: 'number' },
-        { name: 'unitPrice', label: credit ? 'ราคาต่อหน่วยที่ลด (ว่าง = ตามใบกำกับ)' : 'ราคาต่อหน่วยที่เพิ่ม (ว่าง = ตามใบกำกับ)', type: 'number', step: 0.01 },
+        { name: 'qty', label: 'จำนวน (ว่าง = ทั้งรายการ)', type: 'number', format: 'qty' },
+        { name: 'unitPrice', label: credit ? 'ราคาต่อหน่วยที่ลด (ว่าง = ตามใบกำกับ)' : 'ราคาต่อหน่วยที่เพิ่ม (ว่าง = ตามใบกำกับ)', type: 'number', format: 'money' },
         ...(credit ? [{ name: 'returnToStock', label: 'รับสินค้าคืนเข้าคลัง', type: 'boolean' as const }] : []),
       ],
     },
@@ -169,8 +169,8 @@ export default defineUi({
           { name: 'itemId', label: 'สินค้า/บริการ', type: 'lookup', lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' } },
             help: 'เว้นว่างได้ถ้าเป็นค่าบริการ — พิมพ์คำอธิบายแทน (ไม่ตัดสต็อก)' },
           { name: 'description', label: 'คำอธิบาย', type: 'text' },
-          { name: 'qty', label: 'จำนวน', type: 'number', required: true },
-          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', step: 0.01, required: true },
+          { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true },
+          { name: 'unitPrice', label: 'ราคาต่อหน่วย', type: 'number', format: 'money', required: true },
           { name: 'discountPct', label: 'ส่วนลด %', type: 'number', step: 0.01 },
         ],
       },
@@ -182,7 +182,7 @@ export default defineUi({
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'customer_tax_id', label: 'เลขผู้เสียภาษี' },
         { key: 'ref', label: 'อ้างอิง' }, { key: 'order_date', label: 'วันที่', format: 'date' }, { key: 'warehouse_code', label: 'ส่งจากคลัง' },
-        { key: 'credit_days', label: 'เครดิต (วัน)', format: 'qty' },
+        { key: 'credit_days', label: 'เครดิต (วัน)', format: 'number' },
         { key: 'subtotal', label: 'รวมก่อนส่วนลด', format: 'money' }, { key: 'discount', label: 'ส่วนลด', format: 'money' },
         { key: 'net', label: 'ก่อน VAT', format: 'money' }, { key: 'vat', label: 'VAT 7%', format: 'money' }, { key: 'gross', label: 'ยอดรวม', format: 'money' },
         { key: 'invoice_no', label: 'ใบกำกับ' }, { key: 'payment_status', label: 'การชำระ', format: 'status' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' },
@@ -247,7 +247,7 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหาเลขที่หรือลูกค้า', type: 'text' }],
       columns: [
         { key: 'no', label: 'เลขที่เดิม' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'issue_date', label: 'วันที่', format: 'date' },
-        { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'qty' },
+        { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'number' },
         { key: 'gross', label: 'ยอดยกมา', format: 'money' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' }, { key: 'payment_status', label: 'การชำระ', format: 'status' },
       ],
       rowLink: { screen: 'openingInvoice' },
@@ -281,7 +281,7 @@ export default defineUi({
       ],
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'issue_date', label: 'วันที่', format: 'date' },
-        { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'qty' },
+        { key: 'due_date', label: 'ครบกำหนด', format: 'date' }, { key: 'days_overdue', label: 'เกินกำหนด (วัน)', format: 'number' },
         { key: 'gross', label: 'ยอดรวม', format: 'money' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' }, { key: 'payment_status', label: 'การชำระ', format: 'status' },
       ],
       // ลูกหนี้ยกมา is not a tax invoice of this system: it opens (and never prints) as one
@@ -311,7 +311,7 @@ export default defineUi({
         { name: 'whtPct', label: 'หัก ณ ที่จ่าย', type: 'select', default: '0', options: whtRates, help: 'คิดจากฐานหัก ณ ที่จ่ายของแต่ละใบกำกับ (ค่าบริการก่อน VAT) — ขายสินค้าโดยทั่วไปไม่อยู่ในบังคับหัก ณ ที่จ่าย' },
         { name: 'applyDepositId', label: 'ใช้เงินมัดจำ', type: 'lookup',
           lookup: { path: '/receipts', query: { kind: 'deposit', open: '1' }, label: ['no', 'customer_name', 'deposit_remaining'], assign: { applyDepositId: 'id' } } },
-        { name: 'applyDepositAmount', label: 'ใช้มัดจำ (บาท, ว่าง = เท่าที่ใช้ได้)', type: 'number', step: 0.01 },
+        { name: 'applyDepositAmount', label: 'ใช้มัดจำ (บาท, ว่าง = เท่าที่ใช้ได้)', type: 'number', format: 'money' },
         { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
       ],
       lines: {
@@ -319,8 +319,8 @@ export default defineUi({
         fields: [
           { name: 'invoiceId', label: 'ใบกำกับ', type: 'lookup', required: true,
             lookup: { path: '/invoices', query: { status: 'open' }, label: ['no', 'customer_name', 'outstanding'], assign: { invoiceId: 'id', amount: 'outstanding' } } },
-          { name: 'amount', label: 'รับชำระ (รวม VAT)', type: 'number', step: 0.01, required: true },
-          { name: 'whtBase', label: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)', type: 'number', step: 0.01,
+          { name: 'amount', label: 'รับชำระ (รวม VAT)', type: 'number', format: 'money', required: true },
+          { name: 'whtBase', label: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)', type: 'number', format: 'money',
             help: 'ตามหนังสือรับรอง 50 ทวิ ของลูกค้า — ว่าง = เฉพาะค่าบริการในใบกำกับ (ถ้าไม่มีรายการบริการ = ยอดก่อน VAT ทั้งหมด)' },
         ],
       },
@@ -331,7 +331,7 @@ export default defineUi({
       fields: [
         { name: 'orderId', label: 'ใบสั่งขาย', type: 'lookup', lookup: { path: '/orders', label: ['no', 'customer_name', 'ref'], assign: { orderId: 'id' } }, help: 'ลูกค้าจะเติมจากใบสั่งขาย' },
         { name: 'customerId', label: 'ลูกค้า (ถ้าไม่มีใบสั่งขาย)', type: 'lookup', lookup: customerLookup },
-        { name: 'depositAmount', label: 'จำนวนเงินมัดจำ', type: 'number', step: 0.01, required: true },
+        { name: 'depositAmount', label: 'จำนวนเงินมัดจำ', type: 'number', format: 'money', required: true },
         { name: 'receiptDate', label: 'วันที่รับเงิน', type: 'date' },
         { name: 'method', label: 'ชำระโดย', type: 'select', default: 'transfer', required: true, options: methods },
         { name: 'reference', label: 'เลขที่เช็ค / อ้างอิงการโอน', type: 'text' },
@@ -367,8 +367,8 @@ export default defineUi({
       kind: 'list', title: 'ลูกหนี้คงค้างตามลูกค้า', endpoint: '/receivables', rows: 'rows', perm: 'sales.receivable.read', mobile: true,
       filters: [{ name: 'asOf', label: 'ณ วันที่', type: 'date' }],
       columns: [
-        { key: 'customer_name', label: 'ลูกค้า' }, { key: 'invoices', label: 'ใบกำกับค้าง', format: 'qty' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' },
-        { key: 'overdue', label: 'เกินกำหนด', format: 'money' }, { key: 'max_days_overdue', label: 'ค้างนานสุด (วัน)', format: 'qty' },
+        { key: 'customer_name', label: 'ลูกค้า' }, { key: 'invoices', label: 'ใบกำกับค้าง', format: 'number' }, { key: 'outstanding', label: 'ค้างชำระ', format: 'money' },
+        { key: 'overdue', label: 'เกินกำหนด', format: 'money' }, { key: 'max_days_overdue', label: 'ค้างนานสุด (วัน)', format: 'number' },
         { key: 'credit_balance', label: 'เครดิตจากใบลดหนี้', format: 'money' },
         { key: 'deposits', label: 'มัดจำคงเหลือ', format: 'money' }, { key: 'net_outstanding', label: 'สุทธิ', format: 'money' },
       ],
@@ -387,7 +387,7 @@ export default defineUi({
   },
   widgets: [
     { id: 'so-kpi', kind: 'kpi', title: 'ขาย', endpoint: '/summary', perm: 'sales.order.read', size: 'sm', href: 'soList',
-      items: [{ key: 'toDeliver', label: 'รอส่งของ', format: 'qty', tone: 'warn' }, { key: 'toInvoice', label: 'รอออกใบกำกับ', format: 'qty' }, { key: 'revenueMonth', label: 'ยอดขายเดือนนี้', format: 'money', tone: 'ok' }] },
+      items: [{ key: 'toDeliver', label: 'รอส่งของ', format: 'number', tone: 'warn' }, { key: 'toInvoice', label: 'รอออกใบกำกับ', format: 'number' }, { key: 'revenueMonth', label: 'ยอดขายเดือนนี้', format: 'money', tone: 'ok' }] },
     { id: 'ar-kpi', kind: 'kpi', title: 'ลูกหนี้', endpoint: '/summary', perm: 'sales.receivable.read', size: 'sm', href: 'aging',
       items: [{ key: 'outstanding', label: 'ค้างรับทั้งหมด', format: 'money' }, { key: 'overdue', label: 'เกินกำหนดชำระ', format: 'money', tone: 'stop' }, { key: 'receivedMonth', label: 'รับเงินเดือนนี้', format: 'money', tone: 'ok' }] },
     { id: 'so-trend', kind: 'trend', title: 'ยอดขาย 6 เดือน', endpoint: '/summary', perm: 'sales.order.read', size: 'md', href: 'soList', rows: 'months', x: 'month', y: 'total', format: 'money' },

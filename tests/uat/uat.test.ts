@@ -109,6 +109,7 @@ async function nav(label: string) {
   await page.waitForURL((u) => u.pathname === href);
   await page.locator('.screen').first().waitFor();
 }
+/** On-hand quantity as the list shows it: quantities carry the company's decimals (2 by default — ข้อมูลบริษัท → รูปแบบตัวเลข). */
 const balance = async (code: string, wh: string) => {
   await page.goto(`${base}/m/inventory/balances`);
   const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: code, exact: true }) }).filter({ has: page.getByRole('cell', { name: wh, exact: true }) }).first();
@@ -256,8 +257,8 @@ describe('UAT — full installation (uat-factory)', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'รับของที่ค้างทั้งหมด' }).click();
     await page.locator('.status', { hasText: 'รับครบ' }).waitFor();
     await erp.settle();
-    expect(await balance('RM-STEEL', 'MAIN')).toBe('100');
-    expect(await balance('SP-BOLT', 'MAIN')).toBe('500');
+    expect(await balance('RM-STEEL', 'MAIN')).toBe('100.00');
+    expect(await balance('SP-BOLT', 'MAIN')).toBe('500.00');
     await shot(page, 'UAT-08');
     await page.getByRole('row').filter({ hasText: 'RM-STEEL' }).first().click();
     await page.getByRole('cell', { name: 'PO-2569-0001' }).waitFor();
@@ -273,7 +274,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await page.locator('.form-error').waitFor();
     expect(await text(page, '.form-error')).toContain('สต็อกไม่พอ: RM-STEEL ที่คลัง MAIN คงเหลือ 100 ต้องการจ่าย 999');
     await shot(page, 'UAT-09');
-    expect(await balance('RM-STEEL', 'MAIN')).toBe('100');
+    expect(await balance('RM-STEEL', 'MAIN')).toBe('100.00');
   });
 
   it('UAT-10 โอนย้ายระหว่างคลัง', async () => {
@@ -289,8 +290,8 @@ describe('UAT — full installation (uat-factory)', () => {
     await page.locator('.lines-editor').getByLabel('จำนวน').fill('50');
     await page.getByRole('button', { name: 'บันทึกการโอน' }).click();
     await page.getByRole('heading', { name: 'ยอดคงเหลือ' }).waitFor();
-    expect(await balance('SP-BOLT', 'MAIN')).toBe('450');
-    expect(await balance('SP-BOLT', 'LINE1')).toBe('50');
+    expect(await balance('SP-BOLT', 'MAIN')).toBe('450.00');
+    expect(await balance('SP-BOLT', 'LINE1')).toBe('50.00');
     await shot(page, 'UAT-10');
   });
 
@@ -326,9 +327,9 @@ describe('UAT — full installation (uat-factory)', () => {
     await page.locator('.status', { hasText: 'ผลิตเสร็จ' }).waitFor();
     await shot(page, 'UAT-12');
     await erp.settle();
-    expect(await balance('RM-STEEL', 'MAIN')).toBe('90');
-    expect(await balance('SP-BOLT', 'MAIN')).toBe('370');
-    expect(await balance('FG-BRACKET', 'MAIN')).toBe('20');
+    expect(await balance('RM-STEEL', 'MAIN')).toBe('90.00');
+    expect(await balance('SP-BOLT', 'MAIN')).toBe('370.00');
+    expect(await balance('FG-BRACKET', 'MAIN')).toBe('20.00');
     await shot(page, 'UAT-12');
   });
 
@@ -384,7 +385,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await page.locator('.status', { hasText: 'ส่งของแล้ว' }).waitFor();
     await shot(page, 'UAT-15');
     await erp.settle();
-    expect(await balance('FG-BRACKET', 'MAIN')).toBe('5');
+    expect(await balance('FG-BRACKET', 'MAIN')).toBe('5.00');
     const so = page.url();
     void so;
   });
@@ -443,7 +444,7 @@ describe('UAT — full installation (uat-factory)', () => {
     await phone.locator('.status', { hasText: 'เสร็จแล้ว' }).waitFor();
     await shot(phone, 'UAT-19', 'phone');
     await erp.settle();
-    expect(await balance('SP-BOLT', 'MAIN')).toBe('364');
+    expect(await balance('SP-BOLT', 'MAIN')).toBe('364.00');
     await page.goto(`${base}/m/maintenance/machines`);
     await expect(page.getByRole('row').filter({ hasText: 'PRESS-01' }).innerText()).resolves.toContain('เดินเครื่อง');
   });

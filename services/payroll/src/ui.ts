@@ -23,8 +23,8 @@ const profileFields: Field[] = [
   { name: 'userId', label: 'บัญชีผู้ใช้ (ให้เห็นสลิปของตนเอง)', type: 'lookup',
     lookup: { module: 'identity', path: '/users', label: ['name', 'email'], assign: { userId: 'id', userName: 'name' } } },
   { name: 'payType', label: 'ประเภทการจ่าย', type: 'select', required: true, default: 'monthly', options: payTypes },
-  { name: 'baseSalary', label: 'เงินเดือน (บาท/เดือน)', type: 'number', step: 0.01, help: 'พนักงานรายเดือน' },
-  { name: 'dailyWage', label: 'ค่าจ้างรายวัน (บาท/วัน)', type: 'number', step: 0.01, help: 'พนักงานรายวัน' },
+  { name: 'baseSalary', label: 'เงินเดือน (บาท/เดือน)', type: 'number', format: 'money', help: 'พนักงานรายเดือน' },
+  { name: 'dailyWage', label: 'ค่าจ้างรายวัน (บาท/วัน)', type: 'number', format: 'money', help: 'พนักงานรายวัน' },
   { name: 'startDate', label: 'วันเริ่มงาน', type: 'date', help: 'เข้างานกลางเดือน ระบบคิดเงินเดือนตามสัดส่วนวัน' },
   { name: 'endDate', label: 'วันสิ้นสุดการจ้าง', type: 'date' },
   { name: 'bankName', label: 'ธนาคาร', type: 'text', help: 'เช่น กสิกรไทย, กรุงเทพ, ไทยพาณิชย์' },
@@ -36,16 +36,16 @@ const profileFields: Field[] = [
   { name: 'taxChildren', label: 'จำนวนบุตร (ลดหย่อนคนละ 30,000)', type: 'number', step: 1 },
   { name: 'taxChildren2018', label: 'บุตรคนที่ 2 ขึ้นไปที่เกิดตั้งแต่ปี 2561 (60,000)', type: 'number', step: 1 },
   { name: 'taxParents', label: 'จำนวนบิดามารดาที่อุปการะ (0–4)', type: 'number', step: 1 },
-  { name: 'taxLifeInsurance', label: 'เบี้ยประกันชีวิต (บาท/ปี)', type: 'number', step: 0.01 },
-  { name: 'taxHealthInsurance', label: 'เบี้ยประกันสุขภาพตนเอง (บาท/ปี)', type: 'number', step: 0.01 },
-  { name: 'taxParentHealth', label: 'เบี้ยประกันสุขภาพบิดามารดา (บาท/ปี)', type: 'number', step: 0.01 },
-  { name: 'taxHomeLoan', label: 'ดอกเบี้ยเงินกู้ที่อยู่อาศัย (บาท/ปี)', type: 'number', step: 0.01 },
-  { name: 'taxOther', label: 'ลดหย่อนอื่นๆ (บาท/ปี)', type: 'number', step: 0.01, help: 'เช่น RMF/SSF/Thai ESG หลังคำนวณเพดานแล้ว' },
-  { name: 'openingYear', label: 'ยอดยกมา: ปี ค.ศ.', type: 'number', step: 1, help: 'เริ่มใช้ระบบกลางปี — ยอดสะสมจากโปรแกรมเงินเดือนเดิม' },
-  { name: 'openingIncome', label: 'ยอดยกมา: เงินได้สะสม', type: 'number', step: 0.01 },
-  { name: 'openingTax', label: 'ยอดยกมา: ภาษีที่หักแล้ว', type: 'number', step: 0.01 },
-  { name: 'openingSso', label: 'ยอดยกมา: ประกันสังคมสะสม', type: 'number', step: 0.01 },
-  { name: 'openingPvd', label: 'ยอดยกมา: กองทุนสำรองเลี้ยงชีพสะสม', type: 'number', step: 0.01 },
+  { name: 'taxLifeInsurance', label: 'เบี้ยประกันชีวิต (บาท/ปี)', type: 'number', format: 'money' },
+  { name: 'taxHealthInsurance', label: 'เบี้ยประกันสุขภาพตนเอง (บาท/ปี)', type: 'number', format: 'money' },
+  { name: 'taxParentHealth', label: 'เบี้ยประกันสุขภาพบิดามารดา (บาท/ปี)', type: 'number', format: 'money' },
+  { name: 'taxHomeLoan', label: 'ดอกเบี้ยเงินกู้ที่อยู่อาศัย (บาท/ปี)', type: 'number', format: 'money' },
+  { name: 'taxOther', label: 'ลดหย่อนอื่นๆ (บาท/ปี)', type: 'number', format: 'money', help: 'เช่น RMF/SSF/Thai ESG หลังคำนวณเพดานแล้ว' },
+  { name: 'openingYear', label: 'ยอดยกมา: ปี ค.ศ.', type: 'number', comma: false, step: 1, help: 'เริ่มใช้ระบบกลางปี — ยอดสะสมจากโปรแกรมเงินเดือนเดิม' },
+  { name: 'openingIncome', label: 'ยอดยกมา: เงินได้สะสม', type: 'number', format: 'money' },
+  { name: 'openingTax', label: 'ยอดยกมา: ภาษีที่หักแล้ว', type: 'number', format: 'money' },
+  { name: 'openingSso', label: 'ยอดยกมา: ประกันสังคมสะสม', type: 'number', format: 'money' },
+  { name: 'openingPvd', label: 'ยอดยกมา: กองทุนสำรองเลี้ยงชีพสะสม', type: 'number', format: 'money' },
   { name: 'active', label: 'ใช้งาน (รวมในรอบเงินเดือน)', type: 'boolean', default: true },
   { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
 ];
@@ -80,9 +80,9 @@ const inputFields: Field[] = [
   { name: 'ot2Hours', label: 'ทำงานวันหยุด 2 เท่า (ชั่วโมง)', type: 'number', step: 0.5, help: 'พนักงานรายวันทำงานในวันหยุด' },
   { name: 'ot3Hours', label: 'OT วันหยุด 3 เท่า (ชั่วโมง)', type: 'number', step: 0.5 },
   { name: 'unpaidLeaveDays', label: 'ลาไม่รับค่าจ้าง / ขาดงาน (วัน)', type: 'number', step: 0.5 },
-  { name: 'bonus', label: 'โบนัส', type: 'number', step: 0.01 },
-  { name: 'otherIncome', label: 'รายได้อื่น (ครั้งเดียว)', type: 'number', step: 0.01 },
-  { name: 'otherDeduction', label: 'รายการหักอื่น (ครั้งเดียว)', type: 'number', step: 0.01 },
+  { name: 'bonus', label: 'โบนัส', type: 'number', format: 'money' },
+  { name: 'otherIncome', label: 'รายได้อื่น (ครั้งเดียว)', type: 'number', format: 'money' },
+  { name: 'otherDeduction', label: 'รายการหักอื่น (ครั้งเดียว)', type: 'number', format: 'money' },
   { name: 'note', label: 'หมายเหตุ', type: 'text' },
 ];
 
@@ -105,17 +105,17 @@ const itemFields: Field[] = [
   { name: 'kind', label: 'ประเภท', type: 'select', required: true, default: 'earning', options: [{ value: 'earning', label: 'รายได้ประจำ' }, { value: 'deduction', label: 'รายการหักประจำ' }] },
   { name: 'code', label: 'รหัส', type: 'text', required: true, help: 'เช่น POSITION, TRANSPORT, LOAN' },
   { name: 'name', label: 'ชื่อรายการ', type: 'text', required: true, help: 'เช่น ค่าตำแหน่ง, ค่าเดินทาง, หักเงินกู้สหกรณ์' },
-  { name: 'amount', label: 'จำนวนเงินต่อเดือน', type: 'number', step: 0.01, required: true },
+  { name: 'amount', label: 'จำนวนเงินต่อเดือน', type: 'number', format: 'money', required: true },
   { name: 'taxable', label: 'รายได้: นำไปคิดภาษี', type: 'boolean', default: true },
   { name: 'sso', label: 'รายได้: นับเป็นค่าจ้างประกันสังคม', type: 'boolean' },
-  { name: 'balance', label: 'รายการหัก: ยอดคงเหลือ (เงินกู้)', type: 'number', step: 0.01, help: 'หักจนครบแล้วหยุดเอง' },
+  { name: 'balance', label: 'รายการหัก: ยอดคงเหลือ (เงินกู้)', type: 'number', format: 'money', help: 'หักจนครบแล้วหยุดเอง' },
 ];
 
 const runColumns: Column[] = [
   { key: 'no', label: 'เลขที่' },
   { key: 'period', label: 'เดือน', format: 'month' },
   { key: 'pay_date', label: 'วันจ่าย', format: 'date' },
-  { key: 'headcount', label: 'จำนวนคน', format: 'qty' },
+  { key: 'headcount', label: 'จำนวนคน', format: 'number' },
   { key: 'gross', label: 'รายได้รวม', format: 'money' },
   { key: 'net', label: 'จ่ายสุทธิ', format: 'money' },
   { key: 'status', label: 'สถานะ', format: 'status' },
@@ -147,7 +147,7 @@ const slipLines = [
 
 const pickRun = (title: string, screen: string) => ({
   kind: 'list' as const, title, endpoint: '/runs', perm: READ,
-  filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number' as const }],
+  filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number' as const, comma: false }],
   columns: runColumns.filter((c) => c.key !== 'gross'),
   rowLink: { screen }, empty: 'ยังไม่มีรอบเงินเดือน',
 });
@@ -202,7 +202,7 @@ export default defineUi({
     /* ---- self-service ---- */
     myPayslips: {
       kind: 'list', title: 'สลิปเงินเดือนของฉัน', endpoint: '/my-payslips', perm: SELF, mobile: true,
-      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number' }],
+      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number', comma: false }],
       columns: [
         { key: 'period', label: 'เดือน', format: 'month' }, { key: 'pay_date', label: 'วันจ่าย', format: 'date' },
         { key: 'gross', label: 'รายได้', format: 'money' }, { key: 'total_deductions', label: 'รายการหัก', format: 'money' }, { key: 'net', label: 'รับสุทธิ', format: 'money' },
@@ -217,9 +217,9 @@ export default defineUi({
 
     myCertificates: {
       kind: 'list', title: 'หนังสือรับรอง 50 ทวิ ของฉัน', endpoint: '/my-certificates', perm: SELF, mobile: true,
-      filters: [{ name: 'year', label: 'ปีภาษี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ปีนี้)', type: 'number' }],
+      filters: [{ name: 'year', label: 'ปีภาษี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ปีนี้)', type: 'number', comma: false }],
       columns: [
-        { key: 'year_be', label: 'ปีภาษี' }, { key: 'months', label: 'จำนวนเดือน', format: 'qty' },
+        { key: 'year_be', label: 'ปีภาษี' }, { key: 'months', label: 'จำนวนเดือน', format: 'number' },
         { key: 'income', label: 'เงินได้ทั้งปี', format: 'money' }, { key: 'tax', label: 'ภาษีที่หัก', format: 'money' }, { key: 'sso', label: 'ประกันสังคม', format: 'money' },
       ],
       rowLink: { screen: 'myCertificate' }, empty: 'ยังไม่มีหนังสือรับรองของปีนี้ (ออกให้เมื่อบริษัทบันทึกจ่ายเงินเดือนแล้ว)',
@@ -236,7 +236,7 @@ export default defineUi({
       filters: [
         { name: 'q', label: 'ค้นหาเลขที่หรือเดือน', type: 'text' },
         { name: 'status', label: 'สถานะ', type: 'select', options: runStatuses },
-        { name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number' },
+        { name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number', comma: false },
       ],
       columns: runColumns,
       create: 'runNew', createLabel: 'ทำเงินเดือนเดือนใหม่', rowLink: { screen: 'runDetail' },
@@ -263,7 +263,7 @@ export default defineUi({
         { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'period_label', label: 'งวดเดือน' },
         { key: 'pay_date', label: 'วันที่จ่าย', format: 'date' },
-        { key: 'headcount', label: 'จำนวนพนักงาน', format: 'qty' },
+        { key: 'headcount', label: 'จำนวนพนักงาน', format: 'number' },
         { key: 'net', label: 'จ่ายสุทธิ', format: 'money', emphasis: true },
         { key: 'net_text', label: 'ตัวอักษร' },
         { key: 'salary', label: 'เงินเดือน/ค่าจ้าง', format: 'money', section: 'รายได้' },
@@ -314,7 +314,7 @@ export default defineUi({
       ],
       columns: [
         { key: 'run_no', label: 'รอบ' }, { key: 'period', label: 'เดือน', format: 'month' }, { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'ชื่อ' },
-        { key: 'work_days', label: 'วันทำงาน', format: 'qty' }, { key: 'ot_hours', label: 'OT (ชม.)', format: 'qty' }, { key: 'unpaid_leave_days', label: 'ลาไม่รับค่าจ้าง', format: 'qty' },
+        { key: 'work_days', label: 'วันทำงาน', format: 'number' }, { key: 'ot_hours', label: 'OT (ชม.)', format: 'number' }, { key: 'unpaid_leave_days', label: 'ลาไม่รับค่าจ้าง', format: 'number' },
         { key: 'gross', label: 'รายได้', format: 'money' }, { key: 'total_deductions', label: 'หัก', format: 'money' }, { key: 'net', label: 'สุทธิ', format: 'money' },
         { key: 'run_status', label: 'สถานะรอบ', format: 'status' }, { key: 'warning_text', label: 'ต้องตรวจสอบ' },
       ],
@@ -331,12 +331,12 @@ export default defineUi({
       fields: [
         ...slipFields,
         { key: 'run_no', label: 'รอบเงินเดือน', section: 'เวลาทำงานเดือนนี้' }, { key: 'run_status', label: 'สถานะรอบ', format: 'status' },
-        { key: 'pay_type_label', label: 'ประเภทการจ่าย' }, { key: 'employed_days', label: 'วันที่อยู่ในการจ้าง', format: 'qty' },
-        { key: 'work_days', label: 'วันทำงาน', format: 'qty' }, { key: 'ot15_hours', label: 'OT 1.5 (ชม.)', format: 'qty', hideZero: true }, { key: 'ot1_hours', label: 'OT 1 (ชม.)', format: 'qty', hideZero: true },
-        { key: 'ot2_hours', label: 'OT 2 (ชม.)', format: 'qty', hideZero: true }, { key: 'ot3_hours', label: 'OT 3 (ชม.)', format: 'qty', hideZero: true }, { key: 'unpaid_leave_days', label: 'ลาไม่รับค่าจ้าง (วัน)', format: 'qty', hideZero: true },
+        { key: 'pay_type_label', label: 'ประเภทการจ่าย' }, { key: 'employed_days', label: 'วันที่อยู่ในการจ้าง', format: 'number' },
+        { key: 'work_days', label: 'วันทำงาน', format: 'number' }, { key: 'ot15_hours', label: 'OT 1.5 (ชม.)', format: 'number', hideZero: true }, { key: 'ot1_hours', label: 'OT 1 (ชม.)', format: 'number', hideZero: true },
+        { key: 'ot2_hours', label: 'OT 2 (ชม.)', format: 'number', hideZero: true }, { key: 'ot3_hours', label: 'OT 3 (ชม.)', format: 'number', hideZero: true }, { key: 'unpaid_leave_days', label: 'ลาไม่รับค่าจ้าง (วัน)', format: 'number', hideZero: true },
         { key: 'sso_wage', label: 'ค่าจ้างที่ใช้คิดประกันสังคม', format: 'money', section: 'ที่มาของการหักประกันสังคมและภาษี' }, { key: 'sso_employer', label: 'ประกันสังคมส่วนนายจ้าง', format: 'money' },
         { key: 'tax_detail.projectedIncome', label: 'ประมาณการเงินได้ทั้งปี', format: 'money' }, { key: 'tax_detail.netIncome', label: 'เงินได้สุทธิ (หลังลดหย่อน)', format: 'money' },
-        { key: 'tax_detail.annualTax', label: 'ภาษีทั้งปี (ประมาณการ)', format: 'money' }, { key: 'tax_detail.remainingPeriods', label: 'งวดที่เหลือในปี', format: 'qty' },
+        { key: 'tax_detail.annualTax', label: 'ภาษีทั้งปี (ประมาณการ)', format: 'money' }, { key: 'tax_detail.remainingPeriods', label: 'งวดที่เหลือในปี', format: 'number' },
         { key: 'warning_text', label: 'ต้องตรวจสอบ', section: 'หมายเหตุ' }, { key: 'input_note', label: 'หมายเหตุ' },
       ],
       lines: slipLines,
@@ -357,7 +357,7 @@ export default defineUi({
         { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'ชื่อ' }, { key: 'department', label: 'แผนก' },
         { key: 'pay_type_label', label: 'ประเภท' }, { key: 'rate', label: 'เงินเดือน/ค่าจ้าง', format: 'money' },
         { key: 'bank_name', label: 'ธนาคาร' }, { key: 'bank_account_last4', label: 'บัญชี 4 หลักท้าย' },
-        { key: 'sso_enrolled', label: 'ประกันสังคม', format: 'boolean' }, { key: 'pvd_employee_pct', label: 'กองทุนฯ %', format: 'qty' },
+        { key: 'sso_enrolled', label: 'ประกันสังคม', format: 'boolean' }, { key: 'pvd_employee_pct', label: 'กองทุนฯ %', format: 'number' },
         { key: 'user_name', label: 'บัญชีผู้ใช้' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'profileNew', createLabel: 'เพิ่มข้อมูลเงินเดือน', rowLink: { screen: 'profileDetail' },
@@ -380,9 +380,9 @@ export default defineUi({
         { key: 'start_date', label: 'วันเริ่มงาน', format: 'date' }, { key: 'end_date', label: 'วันสิ้นสุดการจ้าง', format: 'date' },
         { key: 'bank_name', label: 'ธนาคาร' }, { key: 'bank_account', label: 'เลขบัญชี' },
         { key: 'sso_enrolled', label: 'ผู้ประกันตน', format: 'boolean' },
-        { key: 'pvd_employee_pct', label: 'กองทุนฯ ลูกจ้าง %', format: 'qty' }, { key: 'pvd_employer_pct', label: 'กองทุนฯ นายจ้าง %', format: 'qty' },
-        { key: 'tax_spouse', label: 'ลดหย่อนคู่สมรส', format: 'boolean' }, { key: 'tax_children', label: 'บุตร', format: 'qty' }, { key: 'tax_children2018', label: 'บุตรคนที่ 2+ (2561 ขึ้นไป)', format: 'qty' },
-        { key: 'tax_parents', label: 'บิดามารดา', format: 'qty' }, { key: 'tax_life_insurance', label: 'เบี้ยประกันชีวิต', format: 'money' },
+        { key: 'pvd_employee_pct', label: 'กองทุนฯ ลูกจ้าง %', format: 'number' }, { key: 'pvd_employer_pct', label: 'กองทุนฯ นายจ้าง %', format: 'number' },
+        { key: 'tax_spouse', label: 'ลดหย่อนคู่สมรส', format: 'boolean' }, { key: 'tax_children', label: 'บุตร', format: 'number' }, { key: 'tax_children2018', label: 'บุตรคนที่ 2+ (2561 ขึ้นไป)', format: 'number' },
+        { key: 'tax_parents', label: 'บิดามารดา', format: 'number' }, { key: 'tax_life_insurance', label: 'เบี้ยประกันชีวิต', format: 'money' },
         { key: 'tax_health_insurance', label: 'เบี้ยประกันสุขภาพ', format: 'money' }, { key: 'tax_home_loan', label: 'ดอกเบี้ยบ้าน', format: 'money' }, { key: 'tax_other', label: 'ลดหย่อนอื่น', format: 'money' },
         { key: 'user_name', label: 'บัญชีผู้ใช้ (ดูสลิปตนเอง)' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' }, { key: 'note', label: 'หมายเหตุ' },
       ],
@@ -409,7 +409,7 @@ export default defineUi({
       ],
       columns: [
         { key: 'period', label: 'เดือน' }, { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'พนักงาน' }, { key: 'leave_no', label: 'ใบลา' },
-        { key: 'from_date', label: 'ตั้งแต่', format: 'date' }, { key: 'to_date', label: 'ถึง', format: 'date' }, { key: 'days', label: 'วัน', format: 'qty' },
+        { key: 'from_date', label: 'ตั้งแต่', format: 'date' }, { key: 'to_date', label: 'ถึง', format: 'date' }, { key: 'days', label: 'วัน', format: 'number' },
         { key: 'status_label', label: 'สถานะ' }, { key: 'run_no', label: 'รอบเงินเดือน' },
       ],
       empty: 'ยังไม่มีวันลาไม่รับค่าจ้างที่ฝ่ายบุคคลอนุมัติ',
@@ -427,7 +427,7 @@ export default defineUi({
       ],
       rowActions: [
         { id: 'edit', label: 'แก้ไข', method: 'PATCH', endpoint: '/items/:id', perm: PROFILE_WRITE,
-          fields: [{ name: 'amount', label: 'จำนวนเงินต่อเดือน', type: 'number', step: 0.01 }, { name: 'balance', label: 'ยอดคงเหลือ (เงินกู้)', type: 'number', step: 0.01 }, { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true }] },
+          fields: [{ name: 'amount', label: 'จำนวนเงินต่อเดือน', type: 'number', format: 'money' }, { name: 'balance', label: 'ยอดคงเหลือ (เงินกู้)', type: 'number', format: 'money' }, { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true }] },
         { id: 'delete', label: 'ลบ', method: 'DELETE', endpoint: '/items/:id', perm: PROFILE_WRITE, tone: 'danger', confirm: 'ลบรายการนี้?' },
       ],
       empty: 'ยังไม่มีรายการประจำ — เพิ่มจากหน้าข้อมูลเงินเดือนของพนักงาน',
@@ -447,7 +447,7 @@ export default defineUi({
     ssoReport: {
       kind: 'list', title: 'แบบรายการแสดงการส่งเงินสมทบ สปส.1-10 (ส่วนที่ 2)', endpoint: '/runs/:id/sso', rows: 'rows', perm: READ,
       columns: [
-        { key: 'seq', label: 'ลำดับ', format: 'qty' }, { key: 'id_card', label: 'เลขประจำตัวประชาชน' }, { key: 'employee_code', label: 'รหัสพนักงาน' },
+        { key: 'seq', label: 'ลำดับ', format: 'number' }, { key: 'id_card', label: 'เลขประจำตัวประชาชน' }, { key: 'employee_code', label: 'รหัสพนักงาน' },
         { key: 'employee_name', label: 'ชื่อ-สกุล' }, { key: 'wage', label: 'ค่าจ้าง', format: 'accounting', total: true }, { key: 'sso_employee', label: 'เงินสมทบผู้ประกันตน', format: 'accounting', total: true },
         { key: 'sso_employer', label: 'เงินสมทบนายจ้าง', format: 'accounting', total: true },
       ],
@@ -457,19 +457,19 @@ export default defineUi({
     pnd1Report: {
       kind: 'detail', title: 'ภ.ง.ด.1 รายเดือน', endpoint: '/runs/:id/pnd1', perm: READ, heading: 'period_label', printable: true,
       fields: [
-        { key: 'run_no', label: 'รอบเงินเดือน' }, { key: 'pay_date', label: 'วันที่จ่าย', format: 'date' }, { key: 'people', label: 'จำนวนราย', format: 'qty' },
+        { key: 'run_no', label: 'รอบเงินเดือน' }, { key: 'pay_date', label: 'วันที่จ่าย', format: 'date' }, { key: 'people', label: 'จำนวนราย', format: 'number' },
         { key: 'total_income', label: 'รวมเงินได้ 40(1)', format: 'money' }, { key: 'total_tax', label: 'รวมภาษีที่หักนำส่ง', format: 'money' }, { key: 'total_tax_text', label: 'ตัวอักษร' },
       ],
       lines: [{ path: 'rows', label: 'ใบแนบ ภ.ง.ด.1', columns: [
-        { key: 'seq', label: 'ลำดับ', format: 'qty' }, { key: 'tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'employee_name', label: 'ชื่อผู้มีเงินได้' },
+        { key: 'seq', label: 'ลำดับ', format: 'number' }, { key: 'tax_id', label: 'เลขประจำตัวผู้เสียภาษี' }, { key: 'employee_name', label: 'ชื่อผู้มีเงินได้' },
         { key: 'income', label: 'จำนวนเงินได้', format: 'accounting', total: true }, { key: 'wht', label: 'ภาษีที่หักนำส่ง', format: 'accounting', total: true }, { key: 'condition', label: 'เงื่อนไข' },
       ] }],
     },
     certificates: {
       kind: 'list', title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)', endpoint: '/certificates', perm: READ,
-      filters: [{ name: 'year', label: 'ปีภาษี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ปีนี้)', type: 'number' }, { name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }],
+      filters: [{ name: 'year', label: 'ปีภาษี (ค.ศ. หรือ พ.ศ., เว้นว่าง = ปีนี้)', type: 'number', comma: false }, { name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }],
       columns: [
-        { key: 'year_be', label: 'ปีภาษี' }, { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'ชื่อ' }, { key: 'months', label: 'จำนวนเดือน', format: 'qty' },
+        { key: 'year_be', label: 'ปีภาษี' }, { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'ชื่อ' }, { key: 'months', label: 'จำนวนเดือน', format: 'number' },
         { key: 'income', label: 'เงินได้ทั้งปี', format: 'money' }, { key: 'tax', label: 'ภาษีที่หัก', format: 'money' }, { key: 'sso', label: 'ประกันสังคม', format: 'money' }, { key: 'pvd', label: 'กองทุนฯ', format: 'money' },
       ],
       rowLink: { screen: 'certificate' }, empty: 'ยังไม่มีรอบเงินเดือนที่จ่ายแล้วในปีนี้',
@@ -484,29 +484,29 @@ export default defineUi({
     settings: {
       kind: 'detail', title: 'ตั้งค่าเงินเดือน', endpoint: '/settings', perm: READ, heading: 'title', edit: 'settingsEdit',
       fields: [
-        { key: 'ssoEmployeeRate', label: 'ประกันสังคม ลูกจ้าง %', format: 'qty' }, { key: 'ssoEmployerRate', label: 'ประกันสังคม นายจ้าง %', format: 'qty' },
+        { key: 'ssoEmployeeRate', label: 'ประกันสังคม ลูกจ้าง %', format: 'number' }, { key: 'ssoEmployerRate', label: 'ประกันสังคม นายจ้าง %', format: 'number' },
         { key: 'ssoWageMin', label: 'ฐานค่าจ้างต่ำสุด', format: 'money' }, { key: 'ssoWageMax', label: 'เพดานค่าจ้าง', format: 'money' },
         { key: 'ssoMaxContribution', label: 'เงินสมทบสูงสุด/เดือน', format: 'money' }, { key: 'ssoIncludeOvertime', label: 'นับ OT เป็นค่าจ้างประกันสังคม', format: 'boolean' },
         { key: 'ssoRuleFrom', label: 'อัตราประกันสังคมมีผลตั้งแต่', format: 'date' }, { key: 'ssoRuleSource', label: 'ที่มาของอัตรา' },
         { key: 'ssoEmployerAccount', label: 'เลขที่บัญชีนายจ้าง (สปส.)' }, { key: 'ssoBranch', label: 'ลำดับที่สาขา (สปส.)' },
-        { key: 'expenseRatePct', label: 'หักค่าใช้จ่าย 40(1) %', format: 'qty' }, { key: 'expenseCap', label: 'หักค่าใช้จ่ายไม่เกิน', format: 'money' },
+        { key: 'expenseRatePct', label: 'หักค่าใช้จ่าย 40(1) %', format: 'number' }, { key: 'expenseCap', label: 'หักค่าใช้จ่ายไม่เกิน', format: 'money' },
         { key: 'personalAllowance', label: 'ลดหย่อนส่วนตัว', format: 'money' }, { key: 'spouseAllowance', label: 'ลดหย่อนคู่สมรส', format: 'money' },
         { key: 'childAllowance', label: 'ลดหย่อนบุตร/คน', format: 'money' }, { key: 'child2018Allowance', label: 'บุตรคนที่ 2+ เกิดตั้งแต่ 2561/คน', format: 'money' },
         { key: 'parentAllowance', label: 'ลดหย่อนบิดามารดา/คน', format: 'money' }, { key: 'lifeInsuranceCap', label: 'เพดานเบี้ยประกันชีวิต', format: 'money' },
         { key: 'healthInsuranceCap', label: 'เพดานเบี้ยประกันสุขภาพ', format: 'money' }, { key: 'lifeHealthCap', label: 'เพดานประกันชีวิต+สุขภาพ', format: 'money' },
         { key: 'parentHealthCap', label: 'เพดานประกันสุขภาพบิดามารดา', format: 'money' }, { key: 'homeLoanCap', label: 'เพดานดอกเบี้ยบ้าน', format: 'money' },
-        { key: 'pvdRateCapPct', label: 'กองทุนสำรองฯ ลดหย่อนได้ไม่เกิน % ของค่าจ้าง', format: 'qty' }, { key: 'pvdCap', label: 'กองทุนสำรองฯ ไม่เกิน', format: 'money' },
-        { key: 'hoursPerDay', label: 'ชั่วโมงทำงานต่อวัน', format: 'qty' }, { key: 'daysPerMonth', label: 'หารเงินเดือนเป็นรายวันด้วย', format: 'qty' },
-        { key: 'proration', label: 'วิธีคิดเงินเดือนไม่เต็มเดือน' }, { key: 'defaultDailyWorkDays', label: 'วันทำงานรายวันเริ่มต้น', format: 'qty' },
-        { key: 'otX15', label: 'OT วันทำงาน (เท่า)', format: 'qty' }, { key: 'otX1', label: 'ทำงานวันหยุด รายเดือน (เท่า)', format: 'qty' },
-        { key: 'otX2', label: 'ทำงานวันหยุด รายวัน (เท่า)', format: 'qty' }, { key: 'otX3', label: 'OT วันหยุด (เท่า)', format: 'qty' },
+        { key: 'pvdRateCapPct', label: 'กองทุนสำรองฯ ลดหย่อนได้ไม่เกิน % ของค่าจ้าง', format: 'number' }, { key: 'pvdCap', label: 'กองทุนสำรองฯ ไม่เกิน', format: 'money' },
+        { key: 'hoursPerDay', label: 'ชั่วโมงทำงานต่อวัน', format: 'number' }, { key: 'daysPerMonth', label: 'หารเงินเดือนเป็นรายวันด้วย', format: 'number' },
+        { key: 'proration', label: 'วิธีคิดเงินเดือนไม่เต็มเดือน' }, { key: 'defaultDailyWorkDays', label: 'วันทำงานรายวันเริ่มต้น', format: 'number' },
+        { key: 'otX15', label: 'OT วันทำงาน (เท่า)', format: 'number' }, { key: 'otX1', label: 'ทำงานวันหยุด รายเดือน (เท่า)', format: 'number' },
+        { key: 'otX2', label: 'ทำงานวันหยุด รายวัน (เท่า)', format: 'number' }, { key: 'otX3', label: 'OT วันหยุด (เท่า)', format: 'number' },
         { key: 'updatedAt', label: 'แก้ไขล่าสุด', format: 'datetime' },
       ],
       lines: [{ path: 'ssoRules', label: 'ตารางอัตราประกันสังคมตามวันที่มีผล (รอบเงินเดือนใช้อัตราของเดือนนั้น)', columns: [
         { key: 'effective_from', label: 'มีผลตั้งแต่', format: 'date' }, { key: 'wage_min', label: 'ฐานต่ำสุด', format: 'money' }, { key: 'wage_max', label: 'เพดานค่าจ้าง', format: 'money' },
-        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'qty' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'qty' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
+        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'number' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'number' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
         { key: 'source', label: 'ที่มา' }, { key: 'note', label: 'หมายเหตุ' }] },
-      { path: 'brackets', label: 'อัตราภาษีเงินได้บุคคลธรรมดา (เงินได้สุทธิ)', columns: [{ key: 'from', label: 'ตั้งแต่', format: 'money' }, { key: 'label', label: 'ช่วง' }, { key: 'rate', label: 'อัตรา %', format: 'qty' }] }],
+      { path: 'brackets', label: 'อัตราภาษีเงินได้บุคคลธรรมดา (เงินได้สุทธิ)', columns: [{ key: 'from', label: 'ตั้งแต่', format: 'money' }, { key: 'label', label: 'ช่วง' }, { key: 'rate', label: 'อัตรา %', format: 'number' }] }],
     },
     settingsEdit: {
       kind: 'form', title: 'แก้ไขตั้งค่าเงินเดือน', method: 'PUT', endpoint: '/settings', load: '/settings', perm: 'payroll.setup.write',
@@ -548,7 +548,7 @@ export default defineUi({
       kind: 'list', title: 'อัตราประกันสังคมตามวันที่มีผล', endpoint: '/sso-rules', perm: READ,
       columns: [
         { key: 'effective_from', label: 'มีผลตั้งแต่', format: 'date' }, { key: 'wage_min', label: 'ฐานต่ำสุด', format: 'money' }, { key: 'wage_max', label: 'เพดานค่าจ้าง', format: 'money' },
-        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'qty' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'qty' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
+        { key: 'employee_rate', label: 'ลูกจ้าง %', format: 'number' }, { key: 'employer_rate', label: 'นายจ้าง %', format: 'number' }, { key: 'max_contribution', label: 'สมทบสูงสุด', format: 'money' },
         { key: 'source', label: 'ที่มา' }, { key: 'note', label: 'หมายเหตุ' },
       ],
       rowActions: [
@@ -561,8 +561,8 @@ export default defineUi({
   widgets: [
     { id: 'payroll-kpi', kind: 'kpi', title: 'เงินเดือน', endpoint: '/summary', perm: READ, size: 'md', href: 'runs',
       items: [
-        { key: 'activeProfiles', label: 'พนักงานในระบบเงินเดือน', format: 'qty' },
-        { key: 'toApprove', label: 'รอบรออนุมัติ', format: 'qty', tone: 'warn' },
+        { key: 'activeProfiles', label: 'พนักงานในระบบเงินเดือน', format: 'number' },
+        { key: 'toApprove', label: 'รอบรออนุมัติ', format: 'number', tone: 'warn' },
         { key: 'lastNet', label: 'จ่ายสุทธิรอบล่าสุด', format: 'money' },
         { key: 'lastCost', label: 'ต้นทุนค่าแรงรอบล่าสุด', format: 'money' },
       ] },

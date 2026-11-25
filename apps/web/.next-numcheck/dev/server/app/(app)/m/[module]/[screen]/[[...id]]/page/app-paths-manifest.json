@@ -1,0 +1,3 @@
+{
+  "/(app)/m/[module]/[screen]/[[...id]]/page": "app/(app)/m/[module]/[screen]/[[...id]]/page.js"
+}

@@ -36,7 +36,7 @@ const rejectWeek: Action = {
 
 const entryColumns = [
   { key: 'work_date', label: 'วันที่', format: 'date' as const }, { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' },
-  { key: 'task_title', label: 'งาน' }, { key: 'hours', label: 'ชั่วโมง', format: 'qty' as const }, { key: 'note', label: 'หมายเหตุ' },
+  { key: 'task_title', label: 'งาน' }, { key: 'hours', label: 'ชั่วโมง', format: 'number' as const }, { key: 'note', label: 'หมายเหตุ' },
 ];
 
 export default defineUi({
@@ -73,7 +73,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'name', label: 'โครงการ' }, { key: 'customer_name', label: 'ลูกค้า' }, { key: 'manager_name', label: 'ผู้จัดการ' },
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'progress', label: 'คืบหน้า', format: 'percent' },
-        { key: 'hours_logged', label: 'ชั่วโมงจริง', format: 'qty' }, { key: 'cost', label: 'ต้นทุนแรงงาน', format: 'money' },
+        { key: 'hours_logged', label: 'ชั่วโมงจริง', format: 'number' }, { key: 'cost', label: 'ต้นทุนแรงงาน', format: 'money' },
         { key: 'budget', label: 'งบประมาณ', format: 'money' }, { key: 'budget_at_risk', label: 'ใกล้เกินงบ', format: 'boolean' },
       ],
       create: 'projectNew', createLabel: 'สร้างโครงการ', rowLink: { screen: 'projectDetail' }, empty: 'ยังไม่มีโครงการ',
@@ -85,7 +85,7 @@ export default defineUi({
         { name: 'customerId', label: 'ลูกค้า', type: 'lookup',
           lookup: { module: 'master-data', path: '/partners', query: { kind: 'customer' }, label: ['code', 'name'], assign: { customerId: 'id', customerName: 'name' } } },
         userLookup('managerId', 'ผู้จัดการโครงการ', 'managerName'),
-        { name: 'budget', label: 'งบประมาณ (บาท)', type: 'number', step: 0.01, default: 0 },
+        { name: 'budget', label: 'งบประมาณ (บาท)', type: 'number', format: 'money', default: 0 },
         { name: 'startDate', label: 'วันเริ่ม', type: 'date' },
         { name: 'endDate', label: 'วันสิ้นสุด', type: 'date' },
         { name: 'description', label: 'รายละเอียด / ขอบเขตงาน', type: 'textarea' },
@@ -97,7 +97,7 @@ export default defineUi({
       fields: [
         { name: 'name', label: 'ชื่อโครงการ', type: 'text', required: true },
         { name: 'customerName', label: 'ชื่อลูกค้า', type: 'text' },
-        { name: 'budget', label: 'งบประมาณ (บาท)', type: 'number', step: 0.01 },
+        { name: 'budget', label: 'งบประมาณ (บาท)', type: 'number', format: 'money' },
         { name: 'startDate', label: 'วันเริ่ม', type: 'date' },
         { name: 'endDate', label: 'วันสิ้นสุด', type: 'date' },
         { name: 'description', label: 'รายละเอียด / ขอบเขตงาน', type: 'textarea' },
@@ -116,8 +116,8 @@ export default defineUi({
         { key: 'customer_name', label: 'ลูกค้า' }, { key: 'manager_name', label: 'ผู้จัดการโครงการ' },
         { key: 'start_date', label: 'วันเริ่ม', format: 'date' }, { key: 'end_date', label: 'วันสิ้นสุด', format: 'date' },
         { key: 'progress', label: 'ความคืบหน้า', format: 'percent' },
-        { key: 'tasks_done', label: 'งานเสร็จ', format: 'qty' }, { key: 'task_count', label: 'งานทั้งหมด', format: 'qty' }, { key: 'overdue_tasks', label: 'งานเลยกำหนด', format: 'qty' },
-        { key: 'hours_estimated', label: 'ชั่วโมงประมาณการ', format: 'qty' }, { key: 'hours_logged', label: 'ชั่วโมงที่ลงจริง', format: 'qty' },
+        { key: 'tasks_done', label: 'งานเสร็จ', format: 'number' }, { key: 'task_count', label: 'งานทั้งหมด', format: 'number' }, { key: 'overdue_tasks', label: 'งานเลยกำหนด', format: 'number' },
+        { key: 'hours_estimated', label: 'ชั่วโมงประมาณการ', format: 'number' }, { key: 'hours_logged', label: 'ชั่วโมงที่ลงจริง', format: 'number' },
         { key: 'budget', label: 'งบประมาณ', format: 'money' }, { key: 'cost', label: 'ต้นทุนแรงงาน (ชม. × อัตรา)', format: 'money' },
         { key: 'budget_used_pct', label: 'ใช้งบไปแล้ว', format: 'percent' }, { key: 'budget_left', label: 'งบคงเหลือ', format: 'money' },
         { key: 'budget_at_risk', label: 'ใกล้เกินงบ (>90%)', format: 'boolean' }, { key: 'description', label: 'รายละเอียด' },
@@ -125,16 +125,16 @@ export default defineUi({
       lines: [
         { path: 'milestones', label: 'งวดงาน', columns: [
           { key: 'name', label: 'งวดงาน' }, { key: 'due_date', label: 'กำหนด', format: 'date' }, { key: 'done', label: 'เสร็จ', format: 'boolean' },
-          { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' }, { key: 'tasks_done', label: 'งานเสร็จ', format: 'qty' }, { key: 'task_count', label: 'งานทั้งหมด', format: 'qty' },
+          { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' }, { key: 'tasks_done', label: 'งานเสร็จ', format: 'number' }, { key: 'task_count', label: 'งานทั้งหมด', format: 'number' },
         ] },
         { path: 'tasks', label: 'งาน', columns: [
           { key: 'title', label: 'งาน' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' }, { key: 'status', label: 'สถานะ', format: 'status' },
           { key: 'priority', label: 'ความสำคัญ', format: 'label' }, { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' },
-          { key: 'estimate_hours', label: 'ประมาณ (ชม.)', format: 'qty' }, { key: 'hours_logged', label: 'จริง (ชม.)', format: 'qty' },
+          { key: 'estimate_hours', label: 'ประมาณ (ชม.)', format: 'number' }, { key: 'hours_logged', label: 'จริง (ชม.)', format: 'number' },
         ] },
         { path: 'members', label: 'สมาชิก', columns: [
           { key: 'user_name', label: 'ชื่อ' }, { key: 'role', label: 'บทบาท' }, { key: 'hourly_rate', label: 'อัตรา/ชม.', format: 'money' },
-          { key: 'hours_logged', label: 'ชั่วโมง', format: 'qty' }, { key: 'cost', label: 'ต้นทุน', format: 'money' },
+          { key: 'hours_logged', label: 'ชั่วโมง', format: 'number' }, { key: 'cost', label: 'ต้นทุน', format: 'money' },
         ] },
       ],
       actions: [
@@ -146,7 +146,7 @@ export default defineUi({
           fields: [
             userLookup('userId', 'พนักงาน', 'userName', true),
             { name: 'role', label: 'บทบาท', type: 'text' },
-            { name: 'hourlyRate', label: 'ต้นทุนต่อชั่วโมง (บาท)', type: 'number', step: 0.01, default: 0, help: 'ใช้คำนวณต้นทุนแรงงานเทียบงบประมาณ' },
+            { name: 'hourlyRate', label: 'ต้นทุนต่อชั่วโมง (บาท)', type: 'number', format: 'money', default: 0, help: 'ใช้คำนวณต้นทุนแรงงานเทียบงบประมาณ' },
           ] },
         { id: 'milestone', label: 'เพิ่มงวดงาน', method: 'POST', endpoint: '/projects/:id/milestones', perm: 'projects.project.write', when: { field: 'status', in: ['planning', 'active', 'on_hold'] },
           fields: [{ name: 'name', label: 'ชื่องวดงาน', type: 'text', required: true }, { name: 'dueDate', label: 'กำหนดเสร็จ', type: 'date' }] },
@@ -192,7 +192,7 @@ export default defineUi({
         { key: 'title', label: 'งาน' }, { key: 'project_no', label: 'โครงการ' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' },
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'priority', label: 'ความสำคัญ', format: 'label' },
         { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' },
-        { key: 'estimate_hours', label: 'ประมาณ (ชม.)', format: 'qty' }, { key: 'hours_logged', label: 'จริง (ชม.)', format: 'qty' },
+        { key: 'estimate_hours', label: 'ประมาณ (ชม.)', format: 'number' }, { key: 'hours_logged', label: 'จริง (ชม.)', format: 'number' },
       ],
       create: 'taskNew', createLabel: 'สร้างงาน', rowLink: { screen: 'taskDetail' }, empty: 'ยังไม่มีงาน',
       rowActions: taskActions(false),
@@ -231,11 +231,11 @@ export default defineUi({
         { key: 'project_no', label: 'โครงการ' }, { key: 'project_name', label: 'ชื่อโครงการ' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'priority', label: 'ความสำคัญ', format: 'label' }, { key: 'assignee_name', label: 'ผู้รับผิดชอบ' }, { key: 'milestone_name', label: 'งวดงาน' },
         { key: 'due_date', label: 'กำหนดเสร็จ', format: 'date' }, { key: 'overdue', label: 'เลยกำหนด', format: 'boolean' },
-        { key: 'estimate_hours', label: 'ประมาณการ (ชม.)', format: 'qty' }, { key: 'hours_logged', label: 'ลงจริง (ชม.)', format: 'qty' },
+        { key: 'estimate_hours', label: 'ประมาณการ (ชม.)', format: 'number' }, { key: 'hours_logged', label: 'ลงจริง (ชม.)', format: 'number' },
         { key: 'completed_at', label: 'เสร็จเมื่อ', format: 'datetime' }, { key: 'description', label: 'รายละเอียด' },
       ],
       lines: [{ path: 'timesheets', label: 'ชั่วโมงที่ลงในงานนี้', columns: [
-        { key: 'work_date', label: 'วันที่', format: 'date' }, { key: 'user_name', label: 'ผู้ลง' }, { key: 'hours', label: 'ชั่วโมง', format: 'qty' }, { key: 'note', label: 'หมายเหตุ' },
+        { key: 'work_date', label: 'วันที่', format: 'date' }, { key: 'user_name', label: 'ผู้ลง' }, { key: 'hours', label: 'ชั่วโมง', format: 'number' }, { key: 'note', label: 'หมายเหตุ' },
       ] }],
       actions: [...taskActions(true), reopenTask],
     },
@@ -280,7 +280,7 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหาพนักงาน', type: 'text' }, { name: 'status', label: 'สถานะ', type: 'select', options: weekStatuses }],
       columns: [
         { key: 'user_name', label: 'พนักงาน' }, { key: 'week_start', label: 'สัปดาห์เริ่ม', format: 'date' }, { key: 'week_end', label: 'ถึง', format: 'date' },
-        { key: 'total_hours', label: 'รวมชั่วโมง', format: 'qty' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
+        { key: 'total_hours', label: 'รวมชั่วโมง', format: 'number' }, { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
       ],
       rowLink: { screen: 'weekDetail' }, empty: 'ไม่มีชั่วโมงทำงานรออนุมัติ',
       rowActions: [approveWeek, rejectWeek],
@@ -290,7 +290,7 @@ export default defineUi({
       flow: { field: 'status', steps: weekStatuses },
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'week_start', label: 'สัปดาห์เริ่ม', format: 'date' },
-        { key: 'total_hours', label: 'รวมชั่วโมง', format: 'qty' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
+        { key: 'total_hours', label: 'รวมชั่วโมง', format: 'number' }, { key: 'submitted_at', label: 'ส่งเมื่อ', format: 'datetime' },
         { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'approved_at', label: 'อนุมัติเมื่อ', format: 'datetime' },
         { key: 'reject_reason', label: 'เหตุผลที่ตีกลับ' }, { key: 'rejected_by_name', label: 'ตีกลับโดย' },
       ],
@@ -301,16 +301,16 @@ export default defineUi({
   widgets: [
     { id: 'pj-kpi', kind: 'kpi', title: 'โครงการ', endpoint: '/summary', perm: 'projects.project.read', size: 'md', href: 'projectList',
       items: [
-        { key: 'activeProjects', label: 'โครงการที่ดำเนินการ', format: 'qty', tone: 'ok' },
-        { key: 'overdueTasks', label: 'งานเลยกำหนด', format: 'qty', tone: 'stop' },
-        { key: 'tasksDueThisWeek', label: 'งานครบกำหนดสัปดาห์นี้', format: 'qty', tone: 'warn' },
-        { key: 'hoursThisWeek', label: 'ชั่วโมงสัปดาห์นี้', format: 'qty' },
-        { key: 'budgetAtRisk', label: 'ใกล้เกินงบ', format: 'qty', tone: 'stop' },
+        { key: 'activeProjects', label: 'โครงการที่ดำเนินการ', format: 'number', tone: 'ok' },
+        { key: 'overdueTasks', label: 'งานเลยกำหนด', format: 'number', tone: 'stop' },
+        { key: 'tasksDueThisWeek', label: 'งานครบกำหนดสัปดาห์นี้', format: 'number', tone: 'warn' },
+        { key: 'hoursThisWeek', label: 'ชั่วโมงสัปดาห์นี้', format: 'number' },
+        { key: 'budgetAtRisk', label: 'ใกล้เกินงบ', format: 'number', tone: 'stop' },
       ] },
     { id: 'pj-board', kind: 'pipeline', title: 'บอร์ดงาน', endpoint: '/summary', perm: 'projects.project.read', size: 'wide', href: 'taskList',
       rows: 'rows', field: 'status', stages: taskStatuses, title2: 'title', subtitle: 'project_no', link: { screen: 'taskDetail' } },
     { id: 'pj-hours', kind: 'trend', title: 'ชั่วโมงทำงาน 6 เดือน', endpoint: '/summary', perm: 'projects.project.read', size: 'md', href: 'entryList',
-      rows: 'months', x: 'month', y: 'hours', format: 'qty' },
+      rows: 'months', x: 'month', y: 'hours', format: 'number' },
     { id: 'pj-budget', kind: 'bars', title: 'ใช้งบโครงการ (%)', endpoint: '/summary', perm: 'projects.project.read', size: 'md', href: 'projectList',
       rows: 'budgetRows', label: 'label', value: 'budget_used_pct', threshold: 'limit', format: 'percent' },
   ],

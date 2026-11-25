@@ -119,6 +119,10 @@ const labelList = z
   .transform((v) => (Array.isArray(v) ? v : v.split(/[,\n]/)).map((x) => x.trim()).filter(Boolean))
   .pipe(z.array(z.string().max(60)).max(6, 'ลายเซ็นได้ไม่เกิน 6 ช่อง'));
 
+/** 0–4 decimals (money and quantities are numeric(18,4)); the form sends the choice of a select as text. */
+const decimalPlaces = z.coerce.number({ invalid_type_error: 'เลือกจำนวนทศนิยม 0–4 ตำแหน่ง' })
+  .int('เลือกจำนวนทศนิยม 0–4 ตำแหน่ง').min(0, 'ทศนิยมต่ำสุด 0 ตำแหน่ง').max(4, 'ทศนิยมได้ไม่เกิน 4 ตำแหน่ง');
+
 const CompanyInput = z.object({
   legalName: z.string().trim().min(1, 'กรอกชื่อนิติบุคคล').max(200),
   nameEn: optText(200),
@@ -136,6 +140,10 @@ const CompanyInput = z.object({
     .transform((v) => v || null),
   footerNote: optText(500),
   signatureLabels: labelList.optional(),
+  // number format (ui-schema number.ts). Left out = keep what the company has: older apps do not send these.
+  numberComma: z.boolean().optional(),
+  moneyDecimals: decimalPlaces.optional(),
+  qtyDecimals: decimalPlaces.optional(),
 });
 
 /** "สำนักงานใหญ่" for 00000, "สาขาที่ 00012" otherwise — the wording the Revenue Department expects. */
@@ -147,7 +155,8 @@ export const taxIdText = (id: string | null | undefined) => {
 };
 const companyView = (row: any) => ({ configured: true, ...row, branch_text: row.branch_label || branchText(row.branch_code), tax_id_text: taxIdText(row.tax_id) });
 
-const companyCols = `legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_at`;
+const companyCols = `legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels,
+  number_comma, money_decimals, qty_decimals, updated_at`;
 
 async function permissionsOf(c: Client, userId: string): Promise<string[]> {
   const r = await c.query<{ p: string }>(
@@ -909,7 +918,8 @@ export const definition: ServiceDefinition = {
         const t = (await c.query<{ name: string }>('select name from tenants where id = $1', [a.tenantId])).rows[0];
         return {
           configured: false, legal_name: t?.name ?? '', name_en: null, branch_code: '00000', branch_label: null, branch_text: branchText('00000'),
-          address: null, tax_id: null, tax_id_text: null, phone: null, email: null, website: null, logo: null, footer_note: null, signature_labels: [], updated_at: null,
+          address: null, tax_id: null, tax_id_text: null, phone: null, email: null, website: null, logo: null, footer_note: null, signature_labels: [],
+          number_comma: true, money_decimals: 2, qty_decimals: 2, updated_at: null,
         };
       });
     });
@@ -920,15 +930,21 @@ export const definition: ServiceDefinition = {
       const b = parse(CompanyInput, req.body);
       return k.db.tx(a.tenantId, async (c) => {
         const row = (await c.query(
-          `insert into company_profiles (legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_by)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          // the number format is kept when it is left out ($14–$16 null): a first save gets the defaults, a later one what is there
+          `insert into company_profiles (legal_name, name_en, branch_code, branch_label, address, tax_id, phone, email, website, logo, footer_note, signature_labels, updated_by,
+             number_comma, money_decimals, qty_decimals)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, coalesce($14::boolean, true), coalesce($15::smallint, 2), coalesce($16::smallint, 2))
            on conflict (tenant_id) do update set legal_name = excluded.legal_name, name_en = excluded.name_en, branch_code = excluded.branch_code,
              branch_label = excluded.branch_label, address = excluded.address, tax_id = excluded.tax_id, phone = excluded.phone, email = excluded.email,
              website = excluded.website, logo = excluded.logo, footer_note = excluded.footer_note, signature_labels = excluded.signature_labels,
+             number_comma = coalesce($14::boolean, company_profiles.number_comma),
+             money_decimals = coalesce($15::smallint, company_profiles.money_decimals),
+             qty_decimals = coalesce($16::smallint, company_profiles.qty_decimals),
              updated_by = excluded.updated_by, updated_at = now()
            returning ${companyCols}`,
           [b.legalName, b.nameEn ?? null, b.branchCode, b.branchLabel ?? null, b.address, b.taxId ?? null, b.phone ?? null, b.email ?? null,
-            b.website ?? null, b.logo ?? null, b.footerNote ?? null, b.signatureLabels ?? [], a.userId],
+            b.website ?? null, b.logo ?? null, b.footerNote ?? null, b.signatureLabels ?? [], a.userId,
+            b.numberComma ?? null, b.moneyDecimals ?? null, b.qtyDecimals ?? null],
         )).rows[0];
         return companyView(row);
       });

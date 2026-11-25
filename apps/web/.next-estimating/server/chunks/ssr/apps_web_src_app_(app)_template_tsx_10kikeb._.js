@@ -1,0 +1,3 @@
+module.exports=[27775,a=>{"use strict";a.s(["default",()=>b]);let b=(0,a.i(3046).registerClientReference)(function(){throw Error("Attempted to call the default export of [project]/apps/web/src/app/(app)/template.tsx from the server, but it's on the client. It's not possible to invoke a client function from the server, it can only be rendered as a Component or passed to props of a Client Component.")},"[project]/apps/web/src/app/(app)/template.tsx","default")},63836,a=>{"use strict";var b=a.i(27775);a.n(b)},10327,function(a){a.n(a.i(63836))}];
+
+//# sourceMappingURL=apps_web_src_app_%28app%29_template_tsx_10kikeb._.js.map

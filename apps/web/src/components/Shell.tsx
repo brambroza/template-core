@@ -6,6 +6,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, KeyRound, LogOut, Menu, Sparkles, Gauge } from 'lucide-react';
 import { AiGradientDefs, AiSpark, LogoMark, isAiModule } from './Brand';
 import { commandExample, groupByArea, hasPerm, moduleArea, type AreaId } from '@erp/ui-schema';
+import { restoreNumberFormat } from '@/lib/number-format';
 import { readPref, writePref } from '@/lib/prefs';
 import { useRegistry } from '@/lib/registry';
 import { clearSession, loadSession, logout, type Session } from '@/lib/session';
@@ -19,6 +20,7 @@ import { StarterBanner } from './StarterBanner';
 import { SetupBanner } from './SetupBanner';
 import { Toaster } from './Toaster';
 import { BottomNav } from './BottomNav';
+import { loadCompany } from './print/company';
 
 /** With more modules than this, menu areas start collapsed (except the one being worked in) until the user chooses. */
 const AUTO_COLLAPSE_OVER = 10;
@@ -35,8 +37,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const s = loadSession();
-    if (!s) router.replace('/login');
-    else setSession(s);
+    if (!s) { router.replace('/login'); return; }
+    // numbers the way this company writes them: what the browser remembers first (no flash of the default),
+    // then the company profile itself — api.ts takes the format from that answer
+    restoreNumberFormat();
+    setSession(s);
+    void loadCompany();
   }, [router]);
   useEffect(() => setMenuOpen(false), [path]);
   useEffect(() => { if (session) setUserCollapsed(readPref<AreaId[] | null>('nav.collapsed', null)); }, [session]);

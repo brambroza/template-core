@@ -22,7 +22,7 @@ const paperFields: Field[] = [
   { name: 'widthIn', label: 'กว้าง (นิ้ว)', type: 'number', required: true },
   { name: 'lengthIn', label: 'ยาว (นิ้ว)', type: 'number', required: true },
   { name: 'priceUnit', label: 'หน่วยราคา', type: 'select', options: priceUnits, default: 'ream', required: true, help: 'รีม = 500 แผ่น · กิโลกรัม = ระบบคิดน้ำหนักรีมจาก กว้าง × ยาว × แกรม ÷ 3100' },
-  { name: 'price', label: 'ราคาต่อหน่วย (บาท)', type: 'number', required: true },
+  { name: 'price', label: 'ราคาต่อหน่วย (บาท)', type: 'number', required: true, format: 'money' },
   { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true },
 ];
 const pressFields: Field[] = [
@@ -31,9 +31,9 @@ const pressFields: Field[] = [
   { name: 'maxWidthIn', label: 'แผ่นพิมพ์ใหญ่สุด กว้าง (นิ้ว)', type: 'number' },
   { name: 'maxLengthIn', label: 'แผ่นพิมพ์ใหญ่สุด ยาว (นิ้ว)', type: 'number' },
   { name: 'maxColors', label: 'จำนวนป้อมสี', type: 'number', step: 1 },
-  { name: 'plateCost', label: 'ค่าเพลทต่อแผ่น (บาท)', type: 'number' },
-  { name: 'makereadyCost', label: 'ค่าตั้งเครื่องต่อสี (บาท)', type: 'number' },
-  { name: 'runCostPerThousand', label: 'ค่าพิมพ์ต่อสีต่อ 1,000 รอบ (บาท)', type: 'number' },
+  { name: 'plateCost', label: 'ค่าเพลทต่อแผ่น (บาท)', type: 'number', format: 'money' },
+  { name: 'makereadyCost', label: 'ค่าตั้งเครื่องต่อสี (บาท)', type: 'number', format: 'money' },
+  { name: 'runCostPerThousand', label: 'ค่าพิมพ์ต่อสีต่อ 1,000 รอบ (บาท)', type: 'number', format: 'money' },
   { name: 'minImpressions', label: 'รอบพิมพ์ขั้นต่ำที่คิดเงิน', type: 'number', step: 1 },
   { name: 'makereadyWaste', label: 'แผ่นเผื่อเสียตอนตั้งเครื่อง ต่อสี', type: 'number', step: 1 },
   { name: 'runWastePct', label: 'เผื่อเสียระหว่างพิมพ์ %', type: 'number' },
@@ -44,8 +44,8 @@ const finishingFields: Field[] = [
   { name: 'name', label: 'ชื่องานหลังพิมพ์', type: 'text', required: true },
   { name: 'chargeBy', label: 'คิดราคา', type: 'select', options: chargeBys, default: 'per_piece', required: true, help: 'ต่อแผ่นพิมพ์และต่อตารางนิ้ว คิดจากจำนวนแผ่นพิมพ์รวม (สูตร pressSheets)' },
   { name: 'rate', label: 'อัตรา (บาท)', type: 'number', help: 'เช่น เคลือบ PVC 0.006 บาทต่อตารางนิ้ว' },
-  { name: 'setupCost', label: 'ค่าเริ่มงาน / บล็อก (บาท)', type: 'number' },
-  { name: 'minCharge', label: 'ขั้นต่ำต่องาน (บาท)', type: 'number' },
+  { name: 'setupCost', label: 'ค่าเริ่มงาน / บล็อก (บาท)', type: 'number', format: 'money' },
+  { name: 'minCharge', label: 'ขั้นต่ำต่องาน (บาท)', type: 'number', format: 'money' },
   { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true },
 ];
 
@@ -75,7 +75,7 @@ const formulaFields: Field[] = [
   { name: 'label', label: 'ชื่อรายการ', type: 'text', required: true, help: 'ชื่อที่แสดงในใบประเมินราคา เช่น ค่าขนส่ง' },
   { name: 'expression', label: 'สูตร', type: 'textarea', required: true, help: formulaHelp },
   { name: 'kind', label: 'ประเภท', type: 'select', options: formulaKinds, default: 'cost', required: true, help: 'ต้นทุน = รวมเข้าต้นทุนรวม · ค่าคำนวณระหว่างทาง = ให้สูตรอื่นใช้ต่อ · ราคาขาย = ราคาต่อชิ้น (มีได้สูตรเดียว)' },
-  { name: 'seq', label: 'ลำดับคำนวณ', type: 'number', step: 1, default: 100, help: 'เลขน้อยคำนวณก่อน สูตรอ่านผลของสูตรที่มาก่อนได้' },
+  { name: 'seq', label: 'ลำดับคำนวณ', type: 'number', step: 1, default: 100, comma: false, help: 'เลขน้อยคำนวณก่อน สูตรอ่านผลของสูตรที่มาก่อนได้' },
   { name: 'unit', label: 'หน่วย', type: 'text', default: 'บาท' },
   { name: 'note', label: 'คำอธิบาย', type: 'text' },
   { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true },
@@ -167,10 +167,10 @@ export default defineUi({
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'job_name', label: 'ชื่องาน' }, { key: 'customer_name', label: 'ลูกค้า' },
         { key: 'created_by_name', label: 'ผู้ประเมิน' }, { key: 'created_at', label: 'วันที่ประเมิน', format: 'date' },
-        { key: 'size_text', label: 'ขนาดงานสำเร็จ', section: 'งานพิมพ์' }, { key: 'bleed', label: 'ตัดตก (นิ้ว)', format: 'qty' }, { key: 'colors_text', label: 'พิมพ์ หน้า/หลัง' },
+        { key: 'size_text', label: 'ขนาดงานสำเร็จ', section: 'งานพิมพ์' }, { key: 'bleed', label: 'ตัดตก (นิ้ว)', format: 'number' }, { key: 'colors_text', label: 'พิมพ์ หน้า/หลัง' },
         { key: 'paper_text', label: 'กระดาษ' }, { key: 'press_text', label: 'เครื่องพิมพ์' }, { key: 'press_sheet_text', label: 'แผ่นพิมพ์' },
-        { key: 'ups', label: 'ชิ้นต่อแผ่นพิมพ์', format: 'qty' }, { key: 'cuts', label: 'แผ่นพิมพ์ต่อกระดาษแผ่นใหญ่', format: 'qty' },
-        { key: 'margin_pct', label: 'กำไรที่บวก', format: 'percent', section: 'ราคา' }, { key: 'confirmed_qty', label: 'ยอดพิมพ์ที่ยืนยัน', format: 'qty' },
+        { key: 'ups', label: 'ชิ้นต่อแผ่นพิมพ์', format: 'number' }, { key: 'cuts', label: 'แผ่นพิมพ์ต่อกระดาษแผ่นใหญ่', format: 'number' },
+        { key: 'margin_pct', label: 'กำไรที่บวก', format: 'percent', section: 'ราคา' }, { key: 'confirmed_qty', label: 'ยอดพิมพ์ที่ยืนยัน', format: 'number' },
         { key: 'confirmed_unit_price', label: 'ราคาต่อชิ้นที่ยืนยัน', format: 'money' }, { key: 'confirmed_price', label: 'ราคาที่ยืนยัน (ก่อน VAT)', format: 'money', emphasis: true },
         { key: 'confirmed_by_name', label: 'ผู้ยืนยันราคา' }, { key: 'note', label: 'หมายเหตุ' },
       ],
@@ -178,24 +178,24 @@ export default defineUi({
         {
           path: 'breaks', label: 'ราคาตามยอดพิมพ์',
           columns: [
-            { key: 'qty', label: 'ยอดพิมพ์', format: 'qty' }, { key: 'press_sheets', label: 'แผ่นพิมพ์รวม', format: 'qty' },
-            { key: 'total_cost', label: 'ต้นทุนรวม', format: 'money' }, { key: 'unit_cost', label: 'ต้นทุนต่อชิ้น', format: 'qty' },
-            { key: 'unit_price', label: 'ราคาขายต่อชิ้น', format: 'qty' }, { key: 'price', label: 'ราคาขาย (ก่อน VAT)', format: 'money' }, { key: 'profit', label: 'กำไร', format: 'money' },
+            { key: 'qty', label: 'ยอดพิมพ์', format: 'number' }, { key: 'press_sheets', label: 'แผ่นพิมพ์รวม', format: 'number' },
+            { key: 'total_cost', label: 'ต้นทุนรวม', format: 'money' }, { key: 'unit_cost', label: 'ต้นทุนต่อชิ้น', format: 'number' },
+            { key: 'unit_price', label: 'ราคาขายต่อชิ้น', format: 'number' }, { key: 'price', label: 'ราคาขาย (ก่อน VAT)', format: 'money' }, { key: 'profit', label: 'กำไร', format: 'money' },
           ],
         },
         {
           path: 'finishing_lines', label: 'งานหลังพิมพ์',
           columns: [
-            { key: 'qty', label: 'ยอดพิมพ์', format: 'qty', hideRepeats: true }, { key: 'code', label: 'รหัส' }, { key: 'name', label: 'รายการ' },
-            { key: 'chargeBy', label: 'คิดราคา', format: 'label' }, { key: 'basis', label: 'ปริมาณที่คิด', format: 'qty' }, { key: 'rate', label: 'อัตรา', format: 'qty' },
-            { key: 'times', label: 'ครั้ง', format: 'qty' }, { key: 'setupCost', label: 'ค่าเริ่มงาน', format: 'money' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
+            { key: 'qty', label: 'ยอดพิมพ์', format: 'number', hideRepeats: true }, { key: 'code', label: 'รหัส' }, { key: 'name', label: 'รายการ' },
+            { key: 'chargeBy', label: 'คิดราคา', format: 'label' }, { key: 'basis', label: 'ปริมาณที่คิด', format: 'number' }, { key: 'rate', label: 'อัตรา', format: 'number' },
+            { key: 'times', label: 'ครั้ง', format: 'number' }, { key: 'setupCost', label: 'ค่าเริ่มงาน', format: 'money' }, { key: 'amount', label: 'จำนวนเงิน', format: 'money' },
           ],
         },
         {
           path: 'cost_lines', label: 'รายละเอียดการคำนวณตามสูตร',
           columns: [
-            { key: 'qty', label: 'ยอดพิมพ์', format: 'qty', hideRepeats: true }, { key: 'label', label: 'รายการ' }, { key: 'kind', label: 'ประเภท', format: 'label' },
-            { key: 'value', label: 'ผลลัพธ์', format: 'qty' }, { key: 'unit', label: 'หน่วย' },
+            { key: 'qty', label: 'ยอดพิมพ์', format: 'number', hideRepeats: true }, { key: 'label', label: 'รายการ' }, { key: 'kind', label: 'ประเภท', format: 'label' },
+            { key: 'value', label: 'ผลลัพธ์', format: 'number' }, { key: 'unit', label: 'หน่วย' },
           ],
         },
       ],
@@ -218,8 +218,8 @@ export default defineUi({
       kind: 'list', title: 'กระดาษ', endpoint: '/papers', perm: 'estimating.rate.read',
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อกระดาษ' }, { key: 'gsm', label: 'แกรม', format: 'qty' },
-        { key: 'width_in', label: 'กว้าง (นิ้ว)', format: 'qty' }, { key: 'length_in', label: 'ยาว (นิ้ว)', format: 'qty' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อกระดาษ' }, { key: 'gsm', label: 'แกรม', format: 'number' },
+        { key: 'width_in', label: 'กว้าง (นิ้ว)', format: 'number' }, { key: 'length_in', label: 'ยาว (นิ้ว)', format: 'number' },
         { key: 'price_unit', label: 'หน่วยราคา', format: 'label' }, { key: 'price', label: 'ราคาต่อหน่วย', format: 'money' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'paperNew', createLabel: 'เพิ่มกระดาษ', rowLink: { screen: 'paperEdit' },
@@ -234,9 +234,9 @@ export default defineUi({
       kind: 'list', title: 'เครื่องพิมพ์', endpoint: '/presses', perm: 'estimating.rate.read',
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อเครื่องพิมพ์' }, { key: 'max_colors', label: 'ป้อมสี', format: 'qty' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อเครื่องพิมพ์' }, { key: 'max_colors', label: 'ป้อมสี', format: 'number' },
         { key: 'plate_cost', label: 'ค่าเพลท', format: 'money' }, { key: 'makeready_cost', label: 'ค่าตั้งเครื่องต่อสี', format: 'money' },
-        { key: 'run_cost_per_thousand', label: 'ค่าพิมพ์ต่อสีต่อพันรอบ', format: 'money' }, { key: 'min_impressions', label: 'รอบขั้นต่ำ', format: 'qty', phone: false },
+        { key: 'run_cost_per_thousand', label: 'ค่าพิมพ์ต่อสีต่อพันรอบ', format: 'money' }, { key: 'min_impressions', label: 'รอบขั้นต่ำ', format: 'number', phone: false },
         { key: 'run_waste_pct', label: 'เผื่อเสีย', format: 'percent', phone: false }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'pressNew', createLabel: 'เพิ่มเครื่องพิมพ์', rowLink: { screen: 'pressEdit' },
@@ -252,7 +252,7 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อ', type: 'text' }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่องานหลังพิมพ์' }, { key: 'charge_by', label: 'คิดราคา', format: 'label' },
-        { key: 'rate', label: 'อัตรา', format: 'qty' }, { key: 'setup_cost', label: 'ค่าเริ่มงาน', format: 'money' }, { key: 'min_charge', label: 'ขั้นต่ำต่องาน', format: 'money' },
+        { key: 'rate', label: 'อัตรา', format: 'number' }, { key: 'setup_cost', label: 'ค่าเริ่มงาน', format: 'money' }, { key: 'min_charge', label: 'ขั้นต่ำต่องาน', format: 'money' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
       create: 'finishingNew', createLabel: 'เพิ่มงานหลังพิมพ์', rowLink: { screen: 'finishingEdit' },
@@ -266,7 +266,7 @@ export default defineUi({
     formulas: {
       kind: 'list', title: 'สูตรคำนวณ', endpoint: '/formulas', perm: 'estimating.rate.read',
       columns: [
-        { key: 'seq', label: 'ลำดับ', format: 'qty' }, { key: 'label', label: 'รายการ' }, { key: 'code', label: 'ชื่อตัวแปร' }, { key: 'expression', label: 'สูตร' },
+        { key: 'seq', label: 'ลำดับ', format: 'number' }, { key: 'label', label: 'รายการ' }, { key: 'code', label: 'ชื่อตัวแปร' }, { key: 'expression', label: 'สูตร' },
         { key: 'kind', label: 'ประเภท', format: 'label' }, { key: 'unit', label: 'หน่วย', phone: false }, { key: 'active', label: 'ใช้งาน', format: 'boolean' },
         { key: 'updated_by_name', label: 'แก้ไขล่าสุดโดย', phone: false },
       ],
@@ -291,8 +291,8 @@ export default defineUi({
   widgets: [
     { id: 'estimating-kpi', kind: 'kpi', title: 'ประเมินราคางานพิมพ์', endpoint: '/summary', perm: 'estimating.estimate.read', size: 'sm', href: 'estimates',
       items: [
-        { key: 'drafts', label: 'ใบประเมินรอยืนยันราคา', format: 'qty', tone: 'warn' },
-        { key: 'confirmedThisMonth', label: 'ยืนยันราคาเดือนนี้', format: 'qty' },
+        { key: 'drafts', label: 'ใบประเมินรอยืนยันราคา', format: 'number', tone: 'warn' },
+        { key: 'confirmedThisMonth', label: 'ยืนยันราคาเดือนนี้', format: 'number' },
         { key: 'confirmedValueThisMonth', label: 'มูลค่าที่ยืนยันเดือนนี้', format: 'money', tone: 'ok' },
       ] },
   ],

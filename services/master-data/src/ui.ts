@@ -11,7 +11,7 @@ const itemFields: Field[] = [
   { name: 'name', label: 'ชื่อ', type: 'text', required: true },
   { name: 'type', label: 'ประเภท', type: 'select', options: itemTypes, required: true },
   { name: 'uom', label: 'หน่วยนับ', type: 'text', default: 'pcs' },
-  { name: 'stdPrice', label: 'ราคามาตรฐาน', type: 'number', step: 0.01 },
+  { name: 'stdPrice', label: 'ราคามาตรฐาน', type: 'number', format: 'money' },
 ];
 const partnerFields: Field[] = [
   { name: 'code', label: 'รหัส', type: 'text', required: true },

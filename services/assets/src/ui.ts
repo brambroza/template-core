@@ -25,12 +25,12 @@ const repairFields: Field[] = [
   { name: 'description', label: 'อาการ/งานซ่อม', type: 'textarea', required: true },
   { name: 'repairDate', label: 'วันที่', type: 'date' },
   { name: 'vendor', label: 'ร้าน/ช่างที่ซ่อม', type: 'text' },
-  { name: 'cost', label: 'ค่าซ่อม (บาท)', type: 'number', step: 0.01 },
+  { name: 'cost', label: 'ค่าซ่อม (บาท)', type: 'number', format: 'money' },
   { name: 'completed', label: 'ซ่อมเสร็จแล้ว (บันทึกย้อนหลัง)', type: 'boolean', help: 'ไม่ติ๊ก = ทรัพย์สินเปลี่ยนเป็น "ส่งซ่อม" จนกว่าจะปิดงานซ่อม' },
 ];
 const completeRepair: Action = {
   id: 'complete', label: 'ซ่อมเสร็จ', method: 'POST', endpoint: '/repairs/:id/complete', perm: 'assets.repair.report', when: { field: 'status', in: ['open'] }, tone: 'primary', mobile: true,
-  fields: [{ name: 'cost', label: 'ค่าซ่อม (บาท)', type: 'number', step: 0.01 }, { name: 'completedOn', label: 'วันที่ซ่อมเสร็จ', type: 'date' }, { name: 'vendor', label: 'ร้าน/ช่างที่ซ่อม', type: 'text' }],
+  fields: [{ name: 'cost', label: 'ค่าซ่อม (บาท)', type: 'number', format: 'money' }, { name: 'completedOn', label: 'วันที่ซ่อมเสร็จ', type: 'date' }, { name: 'vendor', label: 'ร้าน/ช่างที่ซ่อม', type: 'text' }],
 };
 
 const assetColumns = [
@@ -97,8 +97,8 @@ export default defineUi({
         { name: 'location', label: 'ที่ตั้ง', type: 'text' },
         custodian,
         { name: 'purchaseDate', label: 'วันที่ซื้อ', type: 'date', required: true },
-        { name: 'cost', label: 'ราคาทุน (บาท)', type: 'number', step: 0.01, required: true },
-        { name: 'salvageValue', label: 'มูลค่าซาก (บาท)', type: 'number', step: 0.01, help: 'เว้นว่าง = ตาม % ของหมวด' },
+        { name: 'cost', label: 'ราคาทุน (บาท)', type: 'number', format: 'money', required: true },
+        { name: 'salvageValue', label: 'มูลค่าซาก (บาท)', type: 'number', format: 'money', help: 'เว้นว่าง = ตาม % ของหมวด' },
         { name: 'usefulLifeYears', label: 'อายุการใช้งาน (ปี)', type: 'number', help: 'เว้นว่าง = ตามหมวด' },
         { name: 'supplierName', label: 'ผู้ขาย', type: 'text' },
         { name: 'warrantyUntil', label: 'ประกันถึง', type: 'date' },
@@ -128,9 +128,9 @@ export default defineUi({
         { key: 'purchase_date', label: 'วันที่ซื้อ', format: 'date' }, { key: 'supplier_name', label: 'ผู้ขาย' },
         { key: 'warranty_until', label: 'ประกันถึง', format: 'date' }, { key: 'warranty_active', label: 'อยู่ในประกัน', format: 'boolean' },
         { key: 'cost', label: 'ราคาทุน', format: 'money' }, { key: 'salvage_value', label: 'มูลค่าซาก', format: 'money' },
-        { key: 'useful_life_years', label: 'อายุการใช้งาน (ปี)', format: 'qty' }, { key: 'monthly_depreciation', label: 'ค่าเสื่อม/เดือน', format: 'money' },
+        { key: 'useful_life_years', label: 'อายุการใช้งาน (ปี)', format: 'number' }, { key: 'monthly_depreciation', label: 'ค่าเสื่อม/เดือน', format: 'money' },
         { key: 'accumulated', label: 'ค่าเสื่อมสะสม', format: 'money' }, { key: 'book_value', label: 'มูลค่าตามบัญชี', format: 'money' },
-        { key: 'months_left', label: 'เหลืออีก (เดือน)', format: 'qty' }, { key: 'repair_cost_total', label: 'ค่าซ่อมสะสม', format: 'money' },
+        { key: 'months_left', label: 'เหลืออีก (เดือน)', format: 'number' }, { key: 'repair_cost_total', label: 'ค่าซ่อมสะสม', format: 'money' },
         { key: 'disposed_on', label: 'วันที่ตัดจำหน่าย', format: 'date' }, { key: 'disposal_method', label: 'วิธีตัดจำหน่าย', format: 'label' },
         { key: 'disposal_price', label: 'ราคาขาย', format: 'money' }, { key: 'disposal_book_value', label: 'มูลค่าตามบัญชี ณ วันตัดจำหน่าย', format: 'money' },
         { key: 'disposal_gain_loss', label: 'กำไร(ขาดทุน)จากการจำหน่าย', format: 'money' }, { key: 'lost_on', label: 'แจ้งสูญหายเมื่อ', format: 'date' },
@@ -154,7 +154,7 @@ export default defineUi({
           fields: [
             { name: 'disposedOn', label: 'วันที่ตัดจำหน่าย', type: 'date', required: true },
             { name: 'method', label: 'วิธี', type: 'select', required: true, options: disposalMethods },
-            { name: 'price', label: 'ราคาขาย (บาท)', type: 'number', step: 0.01, default: 0 },
+            { name: 'price', label: 'ราคาขาย (บาท)', type: 'number', format: 'money', default: 0 },
             { name: 'note', label: 'หมายเหตุ', type: 'text' },
           ] },
       ],
@@ -164,7 +164,7 @@ export default defineUi({
       fields: [
         { key: 'name', label: 'ทรัพย์สิน' }, { key: 'category_name', label: 'หมวด' }, { key: 'method', label: 'วิธี', format: 'label' },
         { key: 'purchase_date', label: 'วันที่ซื้อ', format: 'date' }, { key: 'cost', label: 'ราคาทุน', format: 'money' }, { key: 'salvage_value', label: 'มูลค่าซาก', format: 'money' },
-        { key: 'useful_life_years', label: 'อายุการใช้งาน (ปี)', format: 'qty' }, { key: 'monthly_depreciation', label: 'ค่าเสื่อม/เดือน', format: 'money' },
+        { key: 'useful_life_years', label: 'อายุการใช้งาน (ปี)', format: 'number' }, { key: 'monthly_depreciation', label: 'ค่าเสื่อม/เดือน', format: 'money' },
         { key: 'as_of', label: 'ณ วันที่', format: 'date' }, { key: 'accumulated', label: 'ค่าเสื่อมสะสม', format: 'money' }, { key: 'book_value', label: 'มูลค่าตามบัญชี', format: 'money' },
       ],
       lines: [{ path: 'rows', label: 'รายเดือน', columns: [
@@ -178,8 +178,8 @@ export default defineUi({
       kind: 'list', title: 'หมวดทรัพย์สิน', endpoint: '/categories', perm: 'assets.asset.read',
       filters: [{ name: 'q', label: 'ค้นหา', type: 'text' }],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'หมวด' }, { key: 'useful_life_years', label: 'อายุ (ปี)', format: 'qty' },
-        { key: 'method', label: 'วิธีคิดค่าเสื่อม', format: 'label' }, { key: 'salvage_pct', label: 'มูลค่าซาก', format: 'percent' }, { key: 'asset_count', label: 'จำนวนทรัพย์สิน', format: 'qty' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'หมวด' }, { key: 'useful_life_years', label: 'อายุ (ปี)', format: 'number' },
+        { key: 'method', label: 'วิธีคิดค่าเสื่อม', format: 'label' }, { key: 'salvage_pct', label: 'มูลค่าซาก', format: 'percent' }, { key: 'asset_count', label: 'จำนวนทรัพย์สิน', format: 'number' },
       ],
       create: 'categoryNew', createLabel: 'เพิ่มหมวด', rowLink: { screen: 'categoryEdit' }, empty: 'ยังไม่มีหมวด — เช่น คอมพิวเตอร์ 3 ปี, เครื่องจักร 10 ปี, ยานพาหนะ 5 ปี',
     },
@@ -237,7 +237,7 @@ export default defineUi({
       kind: 'list', title: 'ค่าเสื่อมราคาตามหมวด', endpoint: '/depreciation', rows: 'byCategory', perm: FINANCE,
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM)', type: 'text', help: 'เว้นว่าง = เดือนนี้' }],
       columns: [
-        { key: 'category_code', label: 'รหัสหมวด' }, { key: 'category_name', label: 'หมวด' }, { key: 'count', label: 'จำนวน', format: 'qty' },
+        { key: 'category_code', label: 'รหัสหมวด' }, { key: 'category_name', label: 'หมวด' }, { key: 'count', label: 'จำนวน', format: 'number' },
         { key: 'cost', label: 'ราคาทุน', format: 'money' }, { key: 'depreciation', label: 'ค่าเสื่อมเดือนนี้', format: 'money' },
         { key: 'accumulated', label: 'ค่าเสื่อมสะสม', format: 'money' }, { key: 'book_value', label: 'มูลค่าตามบัญชี', format: 'money' },
       ],
@@ -250,8 +250,8 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหาเลขที่หรือที่ตั้ง', type: 'text' }, { name: 'status', label: 'สถานะ', type: 'select', options: [{ value: 'open', label: 'กำลังนับ' }, { value: 'closed', label: 'ปิดแล้ว' }] }],
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'location', label: 'ที่ตั้ง' }, { key: 'status', label: 'สถานะ', format: 'status' },
-        { key: 'expected_count', label: 'ตามทะเบียน', format: 'qty' }, { key: 'found_count', label: 'พบ', format: 'qty' },
-        { key: 'missing_count', label: 'ไม่พบ', format: 'qty' }, { key: 'unexpected_count', label: 'เกินมา', format: 'qty' }, { key: 'created_at', label: 'เริ่มเมื่อ', format: 'datetime' },
+        { key: 'expected_count', label: 'ตามทะเบียน', format: 'number' }, { key: 'found_count', label: 'พบ', format: 'number' },
+        { key: 'missing_count', label: 'ไม่พบ', format: 'number' }, { key: 'unexpected_count', label: 'เกินมา', format: 'number' }, { key: 'created_at', label: 'เริ่มเมื่อ', format: 'datetime' },
       ],
       create: 'auditNew', createLabel: 'เริ่มตรวจนับ', rowLink: { screen: 'auditDetail' }, empty: 'ยังไม่มีรอบตรวจนับ',
     },
@@ -268,9 +268,9 @@ export default defineUi({
       flow: { field: 'status', steps: [{ value: 'open', label: 'กำลังนับ' }, { value: 'closed', label: 'ปิดรอบ' }] },
       fields: [
         { key: 'location', label: 'ที่ตั้ง' }, { key: 'status', label: 'สถานะ', format: 'status' },
-        { key: 'expected_count', label: 'ตามทะเบียน', format: 'qty' }, { key: 'found_count', label: 'พบแล้ว', format: 'qty' },
-        { key: 'pending_count', label: 'ยังไม่สแกน', format: 'qty' }, { key: 'missing_count', label: 'ไม่พบ', format: 'qty' },
-        { key: 'unexpected_count', label: 'เกินมา/ไม่อยู่ในรายการ', format: 'qty' }, { key: 'lost_count', label: 'ตัดเป็นสูญหายแล้ว', format: 'qty' },
+        { key: 'expected_count', label: 'ตามทะเบียน', format: 'number' }, { key: 'found_count', label: 'พบแล้ว', format: 'number' },
+        { key: 'pending_count', label: 'ยังไม่สแกน', format: 'number' }, { key: 'missing_count', label: 'ไม่พบ', format: 'number' },
+        { key: 'unexpected_count', label: 'เกินมา/ไม่อยู่ในรายการ', format: 'number' }, { key: 'lost_count', label: 'ตัดเป็นสูญหายแล้ว', format: 'number' },
         { key: 'created_at', label: 'เริ่มเมื่อ', format: 'datetime' }, { key: 'closed_at', label: 'ปิดเมื่อ', format: 'datetime' }, { key: 'note', label: 'หมายเหตุ' },
       ],
       lines: [{ path: 'lines', label: 'รายการ', columns: [
@@ -291,10 +291,10 @@ export default defineUi({
   widgets: [
     { id: 'as-kpi', kind: 'kpi', title: 'ทรัพย์สิน', endpoint: '/summary', perm: 'assets.asset.read', size: 'md', href: 'assetList',
       items: [
-        { key: 'count', label: 'ทรัพย์สินในทะเบียน', format: 'qty' },
-        { key: 'inRepair', label: 'ส่งซ่อมอยู่', format: 'qty', tone: 'warn' },
-        { key: 'warrantyExpiring30d', label: 'ประกันหมดใน 30 วัน', format: 'qty', tone: 'warn' },
-        { key: 'lost', label: 'สูญหาย', format: 'qty', tone: 'stop' },
+        { key: 'count', label: 'ทรัพย์สินในทะเบียน', format: 'number' },
+        { key: 'inRepair', label: 'ส่งซ่อมอยู่', format: 'number', tone: 'warn' },
+        { key: 'warrantyExpiring30d', label: 'ประกันหมดใน 30 วัน', format: 'number', tone: 'warn' },
+        { key: 'lost', label: 'สูญหาย', format: 'number', tone: 'stop' },
       ] },
     { id: 'as-value', kind: 'kpi', title: 'มูลค่าทรัพย์สิน', endpoint: '/summary', perm: FINANCE, size: 'md', href: 'depreciationReport',
       items: [

@@ -8,7 +8,7 @@ export const viewport: Viewport = {
   // edge to edge on phones: the bottom navigator pads itself by the home-bar inset (env(safe-area-inset-bottom))
   viewportFit: 'cover',
   // light for everyone (globals.css does not follow the OS dark preference)
-  themeColor: '#F6F7FB',
+  themeColor: '#EEF1F9',
   colorScheme: 'light',
 };
 

@@ -7,7 +7,7 @@ const item: Field = {
   name: 'itemId', label: 'สินค้า', type: 'lookup', required: true,
   lookup: { module: 'master-data', path: '/items', label: ['code', 'name'], assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }, scanField: 'code' },
 };
-const qty: Field = { name: 'qty', label: 'จำนวน', type: 'number', required: true, step: 0.0001 };
+const qty: Field = { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true };
 const lines = (extra: Field[] = []): LinesSpec => ({ name: 'lines', label: 'รายการ', fields: [item, qty, ...extra], min: 1 });
 const ref: Field[] = [{ name: 'refId', label: 'เลขที่เอกสารอ้างอิง', type: 'text' }, { name: 'note', label: 'หมายเหตุ', type: 'textarea' }];
 
@@ -66,7 +66,7 @@ export default defineUi({
     },
     receipt: {
       kind: 'form', title: 'รับสินค้าเข้าคลัง', method: 'POST', endpoint: '/receipts', perm: 'inventory.move.write', mobile: true,
-      fields: [wh('warehouseCode', 'เข้าคลัง'), ...ref], lines: lines([{ name: 'unitCost', label: 'ต้นทุนต่อหน่วย', type: 'number', step: 0.01 }]),
+      fields: [wh('warehouseCode', 'เข้าคลัง'), ...ref], lines: lines([{ name: 'unitCost', label: 'ต้นทุนต่อหน่วย', type: 'number', format: 'money' }]),
       submitLabel: 'บันทึกรับเข้า', after: { screen: 'balances' },
     },
     issue: {
@@ -95,7 +95,7 @@ export default defineUi({
     },
     reorderSet: {
       kind: 'form', title: 'ตั้งจุดสั่งซื้อ', method: 'PUT', endpoint: '/reorder-points', perm: 'inventory.settings.write',
-      fields: [item, wh('warehouseCode', 'คลัง'), { name: 'minQty', label: 'สต็อกขั้นต่ำ', type: 'number', required: true }],
+      fields: [item, wh('warehouseCode', 'คลัง'), { name: 'minQty', label: 'สต็อกขั้นต่ำ', type: 'number', format: 'qty', required: true }],
       submitLabel: 'บันทึกจุดสั่งซื้อ', after: { screen: 'reorder' },
     },
     holds: {
@@ -113,7 +113,7 @@ export default defineUi({
       rowActions: [
         { id: 'release', label: 'ปล่อยเข้าคลัง', method: 'POST', endpoint: '/holds/:id/release', perm: 'inventory.hold.release', when: { field: 'status', in: ['pending', 'rejected'] },
           fields: [
-            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', step: 0.0001 },
+            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', format: 'qty' },
             { name: 'toWarehouseCode', label: 'ปล่อยเข้าคลัง (ว่าง = คลังเดิม)', type: 'text' },
             { name: 'note', label: 'เหตุผล/ผลการตัดสิน (เช่น ใช้ตามสภาพ อนุมัติโดย MRB, คัดแยกแล้ว)', type: 'textarea', required: true },
           ] },
@@ -134,7 +134,7 @@ export default defineUi({
       actions: [
         { id: 'release', label: 'ปล่อยเข้าคลัง', method: 'POST', endpoint: '/holds/:id/release', perm: 'inventory.hold.release', when: { field: 'status', in: ['pending', 'rejected'] }, tone: 'primary', mobile: true,
           fields: [
-            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', step: 0.0001 },
+            { name: 'qty', label: 'จำนวนที่ปล่อย (ว่าง = ทั้งหมด)', type: 'number', format: 'qty' },
             { name: 'toWarehouseCode', label: 'ปล่อยเข้าคลัง (ว่าง = คลังเดิม)', type: 'text' },
             { name: 'note', label: 'เหตุผล/ผลการตัดสิน (เช่น ใช้ตามสภาพ อนุมัติโดย MRB, คัดแยกแล้ว)', type: 'textarea', required: true },
           ] },
@@ -182,12 +182,12 @@ export default defineUi({
   },
   widgets: [
     { id: 'stock-negative-kpi', kind: 'kpi', title: 'สต็อกผิดปกติ', endpoint: '/summary', perm: 'inventory.stock.read', size: 'sm', href: 'anomalies',
-      items: [{ key: 'negative', label: 'สต็อกติดลบ', format: 'qty', tone: 'stop' }, { key: 'onHold', label: 'รายการในคลังกักกัน QC', format: 'qty', tone: 'warn' },
-        { key: 'openAnomalies', label: 'รายการผิดปกติรอตรวจ', format: 'qty', tone: 'warn' }] },
+      items: [{ key: 'negative', label: 'สต็อกติดลบ', format: 'number', tone: 'stop' }, { key: 'onHold', label: 'รายการในคลังกักกัน QC', format: 'number', tone: 'warn' },
+        { key: 'openAnomalies', label: 'รายการผิดปกติรอตรวจ', format: 'number', tone: 'warn' }] },
     { id: 'stock-negative-bars', kind: 'bars', title: 'สต็อกติดลบ (ขาดกี่หน่วย)', endpoint: '/summary', perm: 'inventory.stock.read', size: 'md', href: 'anomalies',
       rows: 'negativeRows', label: 'label', value: 'shortQty', format: 'qty' },
     { id: 'stock-kpi', kind: 'kpi', title: 'คลังสินค้า', endpoint: '/summary', perm: 'inventory.stock.read', size: 'sm', href: 'balances',
-      items: [{ key: 'skus', label: 'รายการในคลัง', format: 'qty' }, { key: 'lowStock', label: 'ต่ำกว่าจุดสั่งซื้อ', format: 'qty', tone: 'warn' }, { key: 'movesToday', label: 'เคลื่อนไหววันนี้', format: 'qty' }] },
+      items: [{ key: 'skus', label: 'รายการในคลัง', format: 'number' }, { key: 'lowStock', label: 'ต่ำกว่าจุดสั่งซื้อ', format: 'number', tone: 'warn' }, { key: 'movesToday', label: 'เคลื่อนไหววันนี้', format: 'number' }] },
     { id: 'stock-bars', kind: 'bars', title: 'ระดับสต็อกเทียบจุดสั่งซื้อ', endpoint: '/summary', perm: 'inventory.stock.read', size: 'md', href: 'balances',
       rows: 'rows', label: 'itemCode', value: 'onHand', threshold: 'minQty', format: 'qty' },
   ],

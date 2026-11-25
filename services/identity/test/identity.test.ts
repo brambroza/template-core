@@ -297,6 +297,34 @@ describe('company profile', () => {
     expect(named.body).toMatchObject({ branch_label: 'สาขาบางนา', branch_text: 'สาขาบางนา' });
   });
 
+  it('keeps the number format: thousands comma + 2 decimals by default, changed only when it is sent', async () => {
+    const tenant = '7b0c1d36-0000-4000-8000-00000000c0c3';
+    // before setup and after a save that does not mention it: the defaults
+    expect((await t.api('GET', '/company', undefined, reader(tenant))).body).toMatchObject({ number_comma: true, money_decimals: 2, qty_decimals: 2 });
+    const first = await t.api('PUT', '/company', profile, admin(tenant));
+    expect(first.body).toMatchObject({ number_comma: true, money_decimals: 2, qty_decimals: 2 });
+    // the settings form sends the selects as text
+    const set = await t.api('PUT', '/company', { ...profile, numberComma: false, moneyDecimals: '4', qtyDecimals: 3 }, admin(tenant));
+    expect(set.status).toBe(200);
+    expect(set.body).toMatchObject({ number_comma: false, money_decimals: 4, qty_decimals: 3 });
+    // an app that does not know the setting (setup wizard, older mobile build) must not reset it
+    const later = await t.api('PUT', '/company', { ...profile, phone: '02-111-1111' }, admin(tenant));
+    expect(later.body).toMatchObject({ phone: '02-111-1111', number_comma: false, money_decimals: 4, qty_decimals: 3 });
+    expect((await t.api('GET', '/company', undefined, reader(tenant))).body).toMatchObject({ number_comma: false, money_decimals: 4, qty_decimals: 3 });
+    // one part may change alone
+    expect((await t.api('PUT', '/company', { ...profile, qtyDecimals: 0 }, admin(tenant))).body).toMatchObject({ number_comma: false, money_decimals: 4, qty_decimals: 0 });
+    // another company is untouched
+    expect((await t.api('GET', '/company', undefined, reader(tenantB))).body).toMatchObject({ number_comma: true, money_decimals: 2, qty_decimals: 2 });
+  });
+
+  it('refuses decimals outside 0–4 and a comma setting that is not yes/no', async () => {
+    for (const patch of [{ moneyDecimals: 5 }, { moneyDecimals: -1 }, { qtyDecimals: 2.5 }, { qtyDecimals: 'many' }, { numberComma: 'yes' }]) {
+      const r = await t.api('PUT', '/company', { ...profile, ...patch }, admin());
+      expect(r.status, JSON.stringify(patch)).toBe(400);
+    }
+    expect((await t.api('PUT', '/company', { ...profile, moneyDecimals: 3 }, reader())).status).toBe(403);
+  });
+
   it('needs identity.company.write to change it', async () => {
     expect((await t.api('PUT', '/company', profile, reader())).status).toBe(403);
     expect((await t.svc.app.inject({ method: 'GET', url: '/company' })).statusCode).toBe(401);

@@ -33,7 +33,7 @@ export default defineUi({
       kind: 'form', title: 'สร้างใบสั่งผลิต', method: 'POST', endpoint: '/orders', perm: 'production.order.write',
       fields: [
         item('สินค้าที่จะผลิต'),
-        { name: 'qty', label: 'จำนวน', type: 'number', required: true },
+        { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true },
         { name: 'warehouseCode', label: 'คลังวัตถุดิบและสินค้า', type: 'text', default: 'MAIN', required: true },
         { name: 'dueDate', label: 'กำหนดเสร็จ', type: 'date' },
       ],
@@ -51,7 +51,7 @@ export default defineUi({
       actions: [
         { id: 'release', label: 'ปล่อยงานเข้าไลน์', method: 'POST', endpoint: '/orders/:id/release', perm: 'production.order.write', when: { field: 'status', in: ['planned'] }, tone: 'primary', mobile: true },
         { id: 'complete', label: 'รายงานผลผลิต', method: 'POST', endpoint: '/orders/:id/complete', perm: 'production.order.write', when: { field: 'status', in: ['released'] }, tone: 'primary', mobile: true, impact: true,
-          fields: [{ name: 'qty', label: 'จำนวนที่ผลิตได้', type: 'number', help: 'เว้นว่าง = ผลิตครบส่วนที่เหลือ' }] },
+          fields: [{ name: 'qty', label: 'จำนวนที่ผลิตได้', type: 'number', format: 'qty', help: 'เว้นว่าง = ผลิตครบส่วนที่เหลือ' }] },
         { id: 'cancel', label: 'ยกเลิกใบสั่งผลิต', method: 'POST', endpoint: '/orders/:id/cancel', perm: 'production.order.write', when: { field: 'status', in: ['planned', 'released'] }, confirm: 'ยกเลิกแล้วแก้กลับไม่ได้', tone: 'danger' },
       ],
     },
@@ -63,11 +63,11 @@ export default defineUi({
     bomDetail: {
       kind: 'detail', title: 'สูตรการผลิต', endpoint: '/boms/:itemId', perm: 'production.bom.read', heading: 'item_code',
       fields: [{ key: 'item_name', label: 'สินค้า' }, { key: 'output_qty', label: 'ผลิตได้ต่อสูตร', format: 'qty' }],
-      lines: [{ path: 'lines', label: 'ส่วนประกอบ', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'ใช้', format: 'qty' }, { key: 'scrap_pct', label: 'เผื่อเสีย', format: 'percent' }] }],
+      lines: [{ path: 'lines', label: 'ส่วนประกอบ', columns: [{ key: 'item_code', label: 'รหัส' }, { key: 'item_name', label: 'ชื่อ' }, { key: 'qty', label: 'ใช้', format: 'number' }, { key: 'scrap_pct', label: 'เผื่อเสีย', format: 'percent' }] }],
     },
     bomEdit: {
       kind: 'form', title: 'สร้างหรือแก้ไขสูตรการผลิต', method: 'PUT', endpoint: '/boms', perm: 'production.bom.write',
-      fields: [item('สินค้าที่ผลิต'), { name: 'outputQty', label: 'ผลิตได้ต่อสูตร', type: 'number', default: 1 }],
+      fields: [item('สินค้าที่ผลิต'), { name: 'outputQty', label: 'ผลิตได้ต่อสูตร', type: 'number', format: 'qty', default: 1 }],
       lines: {
         name: 'lines', label: 'ส่วนประกอบ', min: 1,
         fields: [item('ส่วนประกอบ'), { name: 'qty', label: 'ใช้ต่อสูตร', type: 'number', required: true, step: 0.000001 }, { name: 'scrapPct', label: 'เผื่อเสีย %', type: 'number', default: 0 }],
@@ -77,7 +77,7 @@ export default defineUi({
   },
   widgets: [
     { id: 'mo-kpi', kind: 'kpi', title: 'การผลิต', endpoint: '/summary', perm: 'production.order.read', size: 'sm', href: 'moList',
-      items: [{ key: 'released', label: 'กำลังผลิต', format: 'qty' }, { key: 'late', label: 'เลยกำหนด', format: 'qty', tone: 'stop' }, { key: 'outputMonth', label: 'ผลผลิตเดือนนี้', format: 'qty', tone: 'ok' }] },
+      items: [{ key: 'released', label: 'กำลังผลิต', format: 'number' }, { key: 'late', label: 'เลยกำหนด', format: 'number', tone: 'stop' }, { key: 'outputMonth', label: 'ผลผลิตเดือนนี้', format: 'qty', tone: 'ok' }] },
     { id: 'mo-pipeline', kind: 'pipeline', title: 'สายการผลิต', endpoint: '/summary', perm: 'production.order.read', size: 'lg', href: 'moList',
       rows: 'rows', field: 'status', title2: 'no', subtitle: 'item_code', link: { screen: 'moDetail' },
       stages: [{ value: 'planned', label: 'วางแผน' }, { value: 'released', label: 'กำลังผลิต' }, { value: 'completed', label: 'ผลิตเสร็จ' }] },

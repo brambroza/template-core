@@ -1,6 +1,14 @@
 import { defineUi } from '@erp/ui-schema';
 
 const roleLookup = { path: '/roles', label: ['name'], assign: { roleIds: 'id' } };
+/** 0–4 decimals: money and quantities are stored as numeric(18,4). */
+const decimalOptions = [
+  { value: '0', label: '0 ตำแหน่ง — 1,250' },
+  { value: '1', label: '1 ตำแหน่ง — 1,250.5' },
+  { value: '2', label: '2 ตำแหน่ง — 1,250.50' },
+  { value: '3', label: '3 ตำแหน่ง — 1,250.500' },
+  { value: '4', label: '4 ตำแหน่ง — 1,250.5000' },
+];
 
 export default defineUi({
   module: 'identity',
@@ -22,8 +30,8 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหารหัสหรือชื่อบริษัท', type: 'text' }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'บริษัท' }, { key: 'plan_name', label: 'แพ็กเกจ' },
-        { key: 'status_th', label: 'สถานะ' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'qty' },
-        { key: 'paidThrough', label: 'ชำระถึง', format: 'date' }, { key: 'activeUsers', label: 'ผู้ใช้', format: 'qty' },
+        { key: 'status_th', label: 'สถานะ' }, { key: 'days_left', label: 'เหลือ (วัน)', format: 'number' },
+        { key: 'paidThrough', label: 'ชำระถึง', format: 'date' }, { key: 'activeUsers', label: 'ผู้ใช้', format: 'number' },
         { key: 'createdAt', label: 'สมัครเมื่อ', format: 'date' },
       ],
       rowLink: { screen: 'opsTenant', idFrom: 'code' },
@@ -46,7 +54,7 @@ export default defineUi({
       ],
       lines: [
         { path: 'payments', label: 'การชำระเงิน', print: false, columns: [
-          { key: 'paid_on', label: 'รับโอน', format: 'date' }, { key: 'plan', label: 'แพ็กเกจ' }, { key: 'months', label: 'เดือน', format: 'qty' },
+          { key: 'paid_on', label: 'รับโอน', format: 'date' }, { key: 'plan', label: 'แพ็กเกจ' }, { key: 'months', label: 'เดือน', format: 'number' },
           { key: 'amount', label: 'ยอด (ก่อน VAT)', format: 'money' }, { key: 'period_from', label: 'ตั้งแต่', format: 'date' },
           { key: 'period_to', label: 'ถึง', format: 'date' }, { key: 'ref', label: 'อ้างอิง' }, { key: 'by_name', label: 'ผู้บันทึก' },
         ] },
@@ -59,7 +67,7 @@ export default defineUi({
           fields: [
             { name: 'months', label: 'จำนวนเดือน', type: 'number', required: true, default: 1 },
             { name: 'paidOn', label: 'วันที่รับโอน', type: 'date' },
-            { name: 'amount', label: 'ยอดก่อน VAT (เว้นว่าง = ราคาแพ็กเกจ × เดือน)', type: 'number', step: 0.01 },
+            { name: 'amount', label: 'ยอดก่อน VAT (เว้นว่าง = ราคาแพ็กเกจ × เดือน)', type: 'number', format: 'money' },
             { name: 'plan', label: 'แพ็กเกจ (เว้นว่าง = เดิม)', type: 'select', options: [
               { value: 'starter', label: 'Starter' }, { value: 'factory', label: 'Factory' }, { value: 'business', label: 'Business' }] },
             { name: 'ref', label: 'อ้างอิงการโอน / เลขสลิป', type: 'text' },
@@ -122,6 +130,10 @@ export default defineUi({
         { key: 'signature_labels', label: 'ช่องลายเซ็นเริ่มต้น', format: 'list' },
         { key: 'footer_note', label: 'หมายเหตุท้ายเอกสาร' },
         { key: 'configured', label: 'ตั้งค่าแล้ว', format: 'boolean' },
+        // how every screen and printed document writes numbers (packages/ui-schema number.ts)
+        { key: 'number_comma', label: 'คั่นหลักพันด้วยจุลภาค (1,250)', format: 'boolean', section: 'รูปแบบตัวเลข' },
+        { key: 'money_decimals', label: 'ทศนิยมของจำนวนเงิน (ตำแหน่ง)', format: 'number' },
+        { key: 'qty_decimals', label: 'ทศนิยมของจำนวนสินค้า (ตำแหน่ง)', format: 'number' },
       ],
     },
     companyEdit: {
@@ -139,6 +151,12 @@ export default defineUi({
         { name: 'signatureLabels', label: 'ช่องลายเซ็นเริ่มต้น', type: 'text', help: 'คั่นด้วยจุลภาค เช่น ผู้จัดทำ, ผู้อนุมัติ — ใช้กับเอกสารที่ไม่ได้กำหนดเอง' },
         { name: 'footerNote', label: 'หมายเหตุท้ายเอกสาร', type: 'textarea', help: 'เงื่อนไขการชำระเงิน เช่น "ชำระภายใน 30 วัน…" — พิมพ์เฉพาะท้ายใบกำกับภาษี/ใบแจ้งหนี้และใบเสนอราคา (ไม่พิมพ์บนใบสั่งซื้อ ใบเสร็จ สลิป ใบเบิก)' },
         { name: 'logo', label: 'โลโก้บริษัท', type: 'image', help: 'ไฟล์รูป PNG, JPEG หรือ SVG ไม่เกิน 300 KB — พิมพ์ที่หัวเอกสารทุกฉบับ' },
+        // รูปแบบตัวเลข: ใช้ทั้งตอนพิมพ์ในช่องกรอกและตอนแสดงผล ทั้งเว็บ มือถือ และเอกสารพิมพ์
+        { name: 'numberComma', label: 'คั่นหลักพันด้วยจุลภาค (1,250)', type: 'boolean', default: true },
+        { name: 'moneyDecimals', label: 'ทศนิยมของจำนวนเงิน', type: 'select', default: '2', options: decimalOptions,
+          help: 'ใช้กับราคา ยอดเงิน และงบการเงิน ทั้งช่องกรอกและการแสดงผล — ใบกำกับภาษีคำนวณ VAT เป็นสตางค์ จึงควรใช้ 2 ตำแหน่ง' },
+        { name: 'qtyDecimals', label: 'ทศนิยมของจำนวนสินค้า', type: 'select', default: '2', options: decimalOptions,
+          help: 'ใช้กับจำนวนสินค้า/วัตถุดิบ (สั่งซื้อ รับ จ่าย ผลิต คงเหลือ) — ตัวนับ วัน และชั่วโมงไม่เติมทศนิยม' },
       ],
       after: { screen: 'company' },
     },

@@ -4,17 +4,20 @@ import Link from 'next/link';
 import { useLayoutEffect, useRef } from 'react';
 import { formatValue, get, type BarsWidget, type FeedWidget, type KpiWidget, type PipelineWidget, type TrendWidget } from '@erp/ui-schema';
 import { countUp, growX, gsap, reducedMotion } from '@/lib/motion';
+import { useNumberFormat } from '@/lib/number-format';
 
 const compact = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 1 });
 /** Big numbers on cards: money as ฿ + compact Thai units (1.4 แสน), counts as integers. */
-const kpiText = (n: number, format?: string) => (format === 'money' ? `฿${Math.abs(n) >= 10000 ? compact.format(n) : formatValue(Math.round(n), 'qty')}` : formatValue(Math.round(n), 'qty'));
-const shortQty = (n: number) => formatValue(Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10, 'qty');
+const kpiText = (n: number, format?: string) => (format === 'money' ? `฿${Math.abs(n) >= 10000 ? compact.format(n) : formatValue(Math.round(n), 'number')}` : formatValue(Math.round(n), 'number'));
+/** Bar values are rounded for the card, so they are written as plain numbers (no padded decimals). */
+const shortQty = (n: number) => formatValue(Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10, 'number');
 import { screenHref } from '@/lib/nav';
 import { safeHref } from '@/lib/href';
 
 type Data = Record<string, unknown>;
 
 export function Kpi({ w, data }: { w: KpiWidget; data: Data }) {
+  useNumberFormat();
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     ref.current?.querySelectorAll<HTMLElement>('[data-count]').forEach((el) => {
@@ -38,6 +41,7 @@ export function Kpi({ w, data }: { w: KpiWidget; data: Data }) {
 }
 
 export function Bars({ w, data }: { w: BarsWidget; data: Data }) {
+  useNumberFormat();
   const ref = useRef<HTMLDivElement>(null);
   const rows = ((get(data, w.rows) as Data[]) ?? []).slice(0, 10);
   const max = Math.max(1, ...rows.map((r) => Math.max(Number(get(r, w.value) ?? 0), Number(w.threshold ? get(r, w.threshold) ?? 0 : 0))));
@@ -65,6 +69,7 @@ export function Bars({ w, data }: { w: BarsWidget; data: Data }) {
 }
 
 export function Trend({ w, data }: { w: TrendWidget; data: Data }) {
+  useNumberFormat();
   const ref = useRef<SVGSVGElement>(null);
   const rows = (get(data, w.rows) as Data[]) ?? [];
   const W = 300, H = 110, pad = 6;
@@ -98,6 +103,7 @@ export function Trend({ w, data }: { w: TrendWidget; data: Data }) {
 const LANE_MAX = 4;
 
 export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; module: string }) {
+  useNumberFormat();
   const ref = useRef<HTMLDivElement>(null);
   const rows = (get(data, w.rows) as Data[]) ?? [];
   useLayoutEffect(() => {
@@ -117,7 +123,7 @@ export function Pipeline({ w, data, module }: { w: PipelineWidget; data: Data; m
               const body = (
                 <>
                   <b>{String(get(r, w.title2) ?? '')}</b>
-                  {w.subtitle && <span>{String(get(r, w.subtitle) ?? '')}{qty ? ` · ${formatValue(done, 'qty')}/${formatValue(qty, 'qty')}` : ''}</span>}
+                  {w.subtitle && <span>{String(get(r, w.subtitle) ?? '')}{qty ? ` · ${formatValue(done, 'number')}/${formatValue(qty, 'number')}` : ''}</span>}
                   {qty > 0 && <div className="meter"><i style={{ width: `${Math.min(100, (done / qty) * 100)}%` }} /></div>}
                 </>
               );

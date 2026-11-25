@@ -1,0 +1,20 @@
+{
+  "/(app)/app/page": "app/(app)/app/page.js",
+  "/(app)/m/[module]/[screen]/[[...id]]/page": "app/(app)/m/[module]/[screen]/[[...id]]/page.js",
+  "/(app)/page": "app/(app)/page.js",
+  "/(app)/setup/page": "app/(app)/setup/page.js",
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/[...path]/route": "app/api/[...path]/route.js",
+  "/assist/briefing/route": "app/assist/briefing/route.js",
+  "/assist/fill/route": "app/assist/fill/route.js",
+  "/assist/find/route": "app/assist/find/route.js",
+  "/assist/route": "app/assist/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/forgot-password/page": "app/forgot-password/page.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/login/page": "app/login/page.js",
+  "/reset-password/page": "app/reset-password/page.js",
+  "/signup/page": "app/signup/page.js",
+  "/signup/verify/page": "app/signup/verify/page.js"
+}

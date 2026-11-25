@@ -1,3 +1,4 @@
+import { applyCompanyNumberFormat } from './number-format';
 import { getSession } from './session';
 
 export class ApiError extends Error {
@@ -40,5 +41,7 @@ export async function api<T = any>(module: string, path: string, opts: { method?
     const err = data?.error ?? {};
     throw new ApiError(res.status, err.message && err.message !== 'Validation failed' ? err.message : MESSAGES[res.status] ?? 'ตรวจสอบข้อมูลที่กรอกอีกครั้ง', err.details?.fieldErrors ?? {});
   }
+  // the company profile carries the number format (comma, decimals): every read of it keeps the screens in step
+  if (module === 'identity' && path === '/company') applyCompanyNumberFormat(data);
   return data as T;
 }

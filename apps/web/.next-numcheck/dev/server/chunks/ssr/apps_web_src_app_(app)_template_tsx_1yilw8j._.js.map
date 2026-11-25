@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///Users/amnartkongpet/Project/GoAlong/2026/template-core/apps/web/src/app/(app)/template.tsx"],"sourcesContent":["'use client';\n\nimport { useLayoutEffect, useRef, type ReactNode } from 'react';\nimport { enterPage } from '@/lib/motion';\n\n/** Re-mounted on every navigation: gives each page the same short entrance. */\nexport default function PageTemplate({ children }: { children: ReactNode }) {\n  const ref = useRef<HTMLDivElement>(null);\n  useLayoutEffect(() => { if (ref.current) enterPage(ref.current); }, []);\n  return <div ref={ref}>{children}</div>;\n}\n"],"names":["PageTemplate","children","ref","current"],"mappings":";;;;;AAEA;AACA;AAHA;;;;AAMe,SAASA,aAAa,EAAEC,QAAQ,EAA2B;IACxE,MAAMC,MAAM,IAAA,qaAAM,EAAiB;IACnC,IAAA,8aAAe,EAAC;QAAQ,IAAIA,IAAIC,OAAO,EAAE,IAAA,gKAAS,EAACD,IAAIC,OAAO;IAAG,GAAG,EAAE;IACtE,qBAAO,ocAAC;QAAID,KAAKA;kBAAMD;;;;;;AACzB"}}]
+}

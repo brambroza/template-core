@@ -85,8 +85,8 @@ export default defineUi({
       ],
       columns: [
         { key: 'name', label: 'ห้อง/รถ' }, { key: 'kind_th', label: 'ประเภท' }, { key: 'slots', label: 'ช่วงที่ถูกจอง' },
-        { key: 'booked_hours', label: 'ชั่วโมงที่จอง', format: 'qty' }, { key: 'busy_now', label: 'ใช้งานอยู่ตอนนี้', format: 'boolean' },
-        { key: 'location', label: 'ที่ตั้ง' }, { key: 'capacity', label: 'รองรับ', format: 'qty' },
+        { key: 'booked_hours', label: 'ชั่วโมงที่จอง', format: 'number' }, { key: 'busy_now', label: 'ใช้งานอยู่ตอนนี้', format: 'boolean' },
+        { key: 'location', label: 'ที่ตั้ง' }, { key: 'capacity', label: 'รองรับ', format: 'number' },
       ],
       create: 'bookingNew', createLabel: 'จองใหม่', rowLink: { screen: 'resourceDetail' }, empty: 'ยังไม่มีห้องหรือรถ — เพิ่มที่เมนู "ห้อง รถ อุปกรณ์"',
     },
@@ -105,7 +105,7 @@ export default defineUi({
     approvals: {
       kind: 'list', title: 'การจองรออนุมัติ', endpoint: '/bookings/pending', perm: 'booking.book.approve', mobile: true,
       filters: [{ name: 'kind', label: 'ประเภท', type: 'select', options: kinds }],
-      columns: [...bookingColumns.filter((c) => c.key !== 'status'), { key: 'attendees', label: 'คน', format: 'qty' }, { key: 'destination', label: 'ปลายทาง' }],
+      columns: [...bookingColumns.filter((c) => c.key !== 'status'), { key: 'attendees', label: 'คน', format: 'number' }, { key: 'destination', label: 'ปลายทาง' }],
       rowLink: { screen: 'bookingDetail' }, empty: 'ไม่มีการจองรออนุมัติ',
       rowActions: [
         { id: 'approve', label: 'อนุมัติ', method: 'POST', endpoint: '/bookings/:id/approve', perm: 'booking.book.approve', tone: 'primary', mobile: true },
@@ -133,13 +133,13 @@ export default defineUi({
       fields: [
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'resource_name', label: 'ห้อง/รถ/อุปกรณ์' }, { key: 'resource_kind_th', label: 'ประเภท' },
         { key: 'plate_no', label: 'ทะเบียน' }, { key: 'location', label: 'ที่ตั้ง' }, { key: 'purpose', label: 'วัตถุประสงค์' },
-        { key: 'start_at', label: 'เริ่ม', format: 'datetime' }, { key: 'end_at', label: 'สิ้นสุด', format: 'datetime' }, { key: 'hours', label: 'ชั่วโมง', format: 'qty' },
-        { key: 'attendees', label: 'ผู้เข้าร่วม/ผู้โดยสาร', format: 'qty' }, { key: 'destination', label: 'ปลายทาง' },
+        { key: 'start_at', label: 'เริ่ม', format: 'datetime' }, { key: 'end_at', label: 'สิ้นสุด', format: 'datetime' }, { key: 'hours', label: 'ชั่วโมง', format: 'number' },
+        { key: 'attendees', label: 'ผู้เข้าร่วม/ผู้โดยสาร', format: 'number' }, { key: 'destination', label: 'ปลายทาง' },
         { key: 'requester_name', label: 'ผู้จอง' }, { key: 'requester_department', label: 'แผนก' }, { key: 'requester_phone', label: 'เบอร์ติดต่อ' },
         { key: 'approved_by_name', label: 'ผู้อนุมัติ' }, { key: 'decision_note', label: 'หมายเหตุผู้อนุมัติ' },
         { key: 'cancelled_by_name', label: 'ยกเลิกโดย' }, { key: 'cancel_reason', label: 'เหตุผลที่ยกเลิก' },
-        { key: 'mileage_start', label: 'เลขไมล์ก่อนใช้', format: 'qty' }, { key: 'mileage_end', label: 'เลขไมล์หลังใช้', format: 'qty' },
-        { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'qty' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
+        { key: 'mileage_start', label: 'เลขไมล์ก่อนใช้', format: 'number' }, { key: 'mileage_end', label: 'เลขไมล์หลังใช้', format: 'number' },
+        { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'number' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
         { key: 'completion_note', label: 'บันทึกหลังใช้งาน' },
       ],
       actions: [
@@ -152,7 +152,7 @@ export default defineUi({
           fields: [
             { name: 'mileageStart', label: 'เลขไมล์ก่อนใช้ (ว่าง = ต่อจากเที่ยวก่อน)', type: 'number', step: 0.1 },
             { name: 'mileageEnd', label: 'เลขไมล์หลังใช้', type: 'number', step: 0.1, required: true },
-            { name: 'fuelCost', label: 'ค่าน้ำมัน (บาท)', type: 'number', step: 0.01 },
+            { name: 'fuelCost', label: 'ค่าน้ำมัน (บาท)', type: 'number', format: 'money' },
             { name: 'note', label: 'บันทึก', type: 'text' },
           ] },
         { id: 'complete', label: 'ใช้งานเสร็จ', method: 'POST', endpoint: '/bookings/:id/complete', perm: 'booking.book.create', mobile: true,
@@ -166,8 +166,8 @@ export default defineUi({
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM)', type: 'text' }, { ...resource, label: 'รถ', required: false, lookup: resourceLookup('vehicle') }, { name: 'q', label: 'ค้นหา', type: 'text' }],
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'resource_name', label: 'รถ' }, { key: 'plate_no', label: 'ทะเบียน' }, { key: 'booking_date', label: 'วันที่', format: 'date' },
-        { key: 'requester_name', label: 'ผู้ใช้รถ' }, { key: 'destination', label: 'ปลายทาง' }, { key: 'mileage_start', label: 'ไมล์เริ่ม', format: 'qty' },
-        { key: 'mileage_end', label: 'ไมล์จบ', format: 'qty' }, { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'qty' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
+        { key: 'requester_name', label: 'ผู้ใช้รถ' }, { key: 'destination', label: 'ปลายทาง' }, { key: 'mileage_start', label: 'ไมล์เริ่ม', format: 'number' },
+        { key: 'mileage_end', label: 'ไมล์จบ', format: 'number' }, { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'number' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
       ],
       rowLink: { screen: 'bookingDetail' }, empty: 'ยังไม่มีการใช้รถเดือนนี้',
     },
@@ -176,7 +176,7 @@ export default defineUi({
       filters: [{ name: 'q', label: 'ค้นหารหัส/ชื่อ/ทะเบียน', type: 'text' }, { name: 'kind', label: 'ประเภท', type: 'select', options: kinds },
         { name: 'all', label: 'รวมที่ปิดใช้งาน', type: 'select', options: [{ value: 'true', label: 'แสดงทั้งหมด' }] }],
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'kind_th', label: 'ประเภท' }, { key: 'capacity', label: 'รองรับ', format: 'qty' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อ' }, { key: 'kind_th', label: 'ประเภท' }, { key: 'capacity', label: 'รองรับ', format: 'number' },
         { key: 'plate_no', label: 'ทะเบียน' }, { key: 'location', label: 'ที่ตั้ง' }, { key: 'requires_approval', label: 'ต้องอนุมัติ', format: 'boolean' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
@@ -194,17 +194,17 @@ export default defineUi({
     resourceDetail: {
       kind: 'detail', title: 'ห้อง / รถ / อุปกรณ์', endpoint: '/resources/:id', perm: 'booking.resource.read', heading: 'name', mobile: true, edit: 'resourceEdit', printable: true,
       fields: [
-        { key: 'kind_th', label: 'ประเภท' }, { key: 'capacity', label: 'รองรับ', format: 'qty' }, { key: 'location', label: 'ที่ตั้ง' },
+        { key: 'kind_th', label: 'ประเภท' }, { key: 'capacity', label: 'รองรับ', format: 'number' }, { key: 'location', label: 'ที่ตั้ง' },
         { key: 'plate_no', label: 'ทะเบียน' }, { key: 'requires_approval', label: 'ต้องอนุมัติ', format: 'boolean' }, { key: 'active', label: 'เปิดให้จอง', format: 'boolean' },
-        { key: 'tripsMonth', label: 'เที่ยวเดือนนี้', format: 'qty' }, { key: 'kmMonth', label: 'ระยะทางเดือนนี้ (กม.)', format: 'qty' },
-        { key: 'fuelMonth', label: 'ค่าน้ำมันเดือนนี้', format: 'money' }, { key: 'lastMileage', label: 'เลขไมล์ล่าสุด', format: 'qty' },
+        { key: 'tripsMonth', label: 'เที่ยวเดือนนี้', format: 'number' }, { key: 'kmMonth', label: 'ระยะทางเดือนนี้ (กม.)', format: 'number' },
+        { key: 'fuelMonth', label: 'ค่าน้ำมันเดือนนี้', format: 'money' }, { key: 'lastMileage', label: 'เลขไมล์ล่าสุด', format: 'number' },
         { key: 'code', label: 'รหัส / QR ติดหน้าห้องหรือในรถ', format: 'qr' }, { key: 'note', label: 'หมายเหตุ' },
       ],
       lines: [
         { path: 'upcoming', label: 'การจองที่จะถึง', columns: bookingColumns.filter((c) => c.key !== 'resource_name') },
         { path: 'recent', label: 'ใช้งานล่าสุด', columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'booking_date', label: 'วันที่', format: 'date' }, { key: 'time_range', label: 'เวลา' }, { key: 'purpose', label: 'วัตถุประสงค์' },
-          { key: 'requester_name', label: 'ผู้ใช้' }, { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'qty' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
+          { key: 'requester_name', label: 'ผู้ใช้' }, { key: 'distance_km', label: 'ระยะทาง (กม.)', format: 'number' }, { key: 'fuel_cost', label: 'ค่าน้ำมัน', format: 'money' },
         ] },
       ],
     },
@@ -212,15 +212,15 @@ export default defineUi({
   widgets: [
     { id: 'bk-kpi', kind: 'kpi', title: 'จองห้องและรถ', endpoint: '/summary', perm: 'booking.resource.read', size: 'md', href: 'board',
       items: [
-        { key: 'bookingsToday', label: 'การจองวันนี้', format: 'qty' },
-        { key: 'pendingApproval', label: 'รออนุมัติ', format: 'qty', tone: 'warn' },
+        { key: 'bookingsToday', label: 'การจองวันนี้', format: 'number' },
+        { key: 'pendingApproval', label: 'รออนุมัติ', format: 'number', tone: 'warn' },
         { key: 'utilization', label: 'อัตราใช้งานสัปดาห์นี้', format: 'percent', tone: 'ok' },
-        { key: 'kmMonth', label: 'ระยะทางรถเดือนนี้ (กม.)', format: 'qty' },
+        { key: 'kmMonth', label: 'ระยะทางรถเดือนนี้ (กม.)', format: 'number' },
       ] },
     { id: 'bk-next', kind: 'pipeline', title: 'การจองที่จะถึง', endpoint: '/summary', perm: 'booking.resource.read', size: 'md', href: 'approvals',
       rows: 'rows', field: 'status', stages: [{ value: 'pending', label: 'รออนุมัติ' }, { value: 'confirmed', label: 'ยืนยันแล้ว' }],
       title2: 'title', subtitle: 'subtitle', link: { screen: 'bookingDetail' } },
     { id: 'bk-trend', kind: 'trend', title: 'ชั่วโมงที่จอง 6 เดือน', endpoint: '/summary', perm: 'booking.resource.read', size: 'md', href: 'bookingList',
-      rows: 'months', x: 'month', y: 'hours', format: 'qty' },
+      rows: 'months', x: 'month', y: 'hours', format: 'number' },
   ],
 });

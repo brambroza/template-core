@@ -2,9 +2,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { dateInputText, get, initialValues, monthInputText, parseDateInput, parseMonthInput, type Field, type LinesSpec } from '@erp/ui-schema';
+import { dateInputText, get, initialValues, monthInputText, numberSpec, parseDateInput, parseMonthInput, plainNumber, showNumber, typeNumber, type Field, type LinesSpec } from '@erp/ui-schema';
 import { api } from '../lib/api';
 import { thaiDate } from '../lib/dates';
+import { useNumberFormat } from '../lib/number-format';
+import { commaAsPoint } from '../lib/numbers';
 import { radius, themed, useIsDark, usePalette } from '../lib/theme';
 import { Scanner } from './Scanner';
 import { Button, EmptyState, ErrorText, useS } from './ui';
@@ -154,17 +156,46 @@ function SelectInput({ field, values, onChange, error }: Props) {
   );
 }
 
-/** Keyboard for a field: whole numbers get the digit pad, other numbers the decimal pad. */
+/** Keyboard for a text field. Numbers have their own input (`NumberField`). */
 function keyboardFor(field: Field): KeyboardTypeOptions {
-  if (field.type === 'number') return field.step !== undefined && Number.isInteger(field.step) ? 'number-pad' : 'decimal-pad';
   if (field.type === 'email') return 'email-address';
   if (field.type === 'date') return 'numbers-and-punctuation';
   return 'default';
 }
 
-/** "12,5" (Thai/European keyboards) -> "12.5"; drops anything that is not part of a number. */
-export function cleanNumber(text: string): string {
-  return text.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+/**
+ * A number typed the way the company writes it (ข้อมูลบริษัท → รูปแบบตัวเลข, set on the web): thousands are grouped while the
+ * digits are typed, decimals stop at what the field allows (money / quantity = the company's setting) and are padded when the
+ * field is left ("1250.5" -> "1,250.50"). The form still holds the plain number. Whole numbers get the digit pad.
+ */
+function NumberField({ field, values, onChange, error }: Props) {
+  const c = usePalette();
+  const s = useS();
+  const spec = numberSpec(field, useNumberFormat());
+  /** the text while the field has focus; null = show the stored value */
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? showNumber(values[field.name], spec);
+  return (
+    <TextInput
+      accessibilityLabel={field.label}
+      style={[s.input, { fontSize: 18, fontVariant: ['tabular-nums'] }, error ? { borderColor: c.stop } : null]}
+      value={shown}
+      onFocus={() => setDraft(shown)}
+      onBlur={() => setDraft(null)}
+      onChangeText={(t) => {
+        const next = typeNumber(commaAsPoint(t, shown), spec);
+        setDraft(next);
+        onChange({ [field.name]: plainNumber(next) });
+      }}
+      keyboardType={spec.decimals > 0 ? 'decimal-pad' : 'number-pad'}
+      inputMode={spec.decimals > 0 ? 'decimal' : 'numeric'}
+      returnKeyType="done"
+      autoCapitalize="none"
+      autoCorrect={false}
+      placeholderTextColor={c.inkFaint}
+      selectTextOnFocus
+    />
+  );
 }
 
 export function FieldInput(props: Props) {
@@ -191,6 +222,7 @@ export function FieldInput(props: Props) {
     case 'multilookup':
     case 'permissions':
     case 'image': return <Text style={s.muted}>ตั้งค่ารายการนี้ได้จากหน้าเว็บ</Text>;
+    case 'number': return <NumberField {...props} />;
     default:
       return (
         <TextInput
@@ -198,20 +230,17 @@ export function FieldInput(props: Props) {
           style={[
             s.input,
             field.type === 'textarea' && { minHeight: 96, textAlignVertical: 'top', paddingTop: 12 },
-            field.type === 'number' && { fontSize: 18, fontVariant: ['tabular-nums'] },
             error ? { borderColor: c.stop } : null,
           ]}
           value={String(v ?? '')}
-          onChangeText={(t) => onChange({ [field.name]: field.type === 'number' ? cleanNumber(t) : t })}
+          onChangeText={(t) => onChange({ [field.name]: t })}
           multiline={field.type === 'textarea'}
           secureTextEntry={field.type === 'password'}
           keyboardType={keyboardFor(field)}
-          inputMode={field.type === 'number' ? (keyboardFor(field) === 'number-pad' ? 'numeric' : 'decimal') : undefined}
           returnKeyType={field.type === 'textarea' ? 'default' : 'done'}
           autoCapitalize="none"
           autoCorrect={field.type === 'textarea' || field.type === 'text'}
           placeholderTextColor={c.inkFaint}
-          selectTextOnFocus={field.type === 'number'}
         />
       );
   }

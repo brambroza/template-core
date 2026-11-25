@@ -66,9 +66,9 @@ export default defineUi({
   widgets: [{
     id: 'etaxPulse', kind: 'kpi', title: 'e-Tax Invoice', endpoint: '/summary', perm: READ, href: 'documents', size: 'md',
     items: [
-      { key: 'draft', label: 'รอสร้าง XML', format: 'qty', tone: 'warn' },
-      { key: 'ready', label: 'พร้อมส่ง (ยังไม่บันทึกส่ง)', format: 'qty', tone: 'neutral' },
-      { key: 'incomplete', label: 'ข้อมูลไม่พอ', format: 'qty', tone: 'stop' },
+      { key: 'draft', label: 'รอสร้าง XML', format: 'number', tone: 'warn' },
+      { key: 'ready', label: 'พร้อมส่ง (ยังไม่บันทึกส่ง)', format: 'number', tone: 'neutral' },
+      { key: 'incomplete', label: 'ข้อมูลไม่พอ', format: 'number', tone: 'stop' },
     ],
   }],
   search: [{ id: 'etaxDocs', title: 'เอกสาร e-Tax', endpoint: '/documents', label: ['doc_no', 'buyer_name'], screen: 'document', perm: READ }],

@@ -9,6 +9,8 @@
  * This file must stay dependency-free and browser-safe (no node imports): web and mobile both import it.
  */
 
+import { formatNumber, getNumberFormat, numberSpec, plainNumber } from './number.ts';
+
 /** `image`: a picture kept as a data URL in a text field (company logo) — web shows preview + file picker; mobile leaves it to the web. */
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'month' | 'select' | 'boolean' | 'lookup' | 'multilookup' | 'permissions' | 'password' | 'email' | 'image';
 
@@ -34,16 +36,25 @@ export interface Field {
   default?: string | number | boolean;
   options?: { value: string; label: string }[];
   lookup?: Lookup;
-  /** number input step */
+  /** number fields without `format`: the finest value that can be typed (0.5 = one decimal, 1 = whole numbers); omitted = up to 6 decimals */
   step?: number;
+  /**
+   * number fields: `money` / `qty` = typed and shown at the company's decimals with its thousands comma ("1,250.00",
+   * ข้อมูลบริษัท → รูปแบบตัวเลข). Omitted = a plain number (days, hours, %, a count): decimals as `step` allows, nothing padded.
+   */
+  format?: 'money' | 'qty';
+  /** number fields: `false` = never group thousands (a year, a sequence number) */
+  comma?: boolean;
   help?: string;
 }
 
 /**
  * status = coloured state badge; label = Thai name of a code (item type, partner kind…) without a badge;
  * accounting = money as accountants print it: negatives in parentheses "(1,250.00)", zero as "–".
+ * money / accounting / qty follow the company's number format (decimals + thousands comma, see number.ts): `qty` is a real
+ * quantity of goods ("10.00"); `number` is any other number — a count, days, hours, a rate — shown as it is ("5", "2.5").
  */
-export type Format = 'text' | 'money' | 'accounting' | 'qty' | 'date' | 'datetime' | 'month' | 'status' | 'label' | 'boolean' | 'list' | 'qr' | 'percent';
+export type Format = 'text' | 'money' | 'accounting' | 'qty' | 'number' | 'date' | 'datetime' | 'month' | 'status' | 'label' | 'boolean' | 'list' | 'qr' | 'percent';
 
 export interface Column {
   /** dotted path into the record: "customer.name" */
@@ -839,9 +850,6 @@ export function statusTone(status: string): Tone {
   return 'neutral';
 }
 
-const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const qty = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 4 });
-
 /** Thai date with Buddhist year: "2 ต.ค. 2569". Accepts YYYY-MM-DD or ISO timestamps. */
 export function formatDate(value: string, withTime = false): string {
   const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
@@ -854,10 +862,11 @@ export function formatDate(value: string, withTime = false): string {
 export function formatValue(value: unknown, format: Format = 'text', labels?: Record<string, string>): string {
   if (value === null || value === undefined || value === '') return '—';
   switch (format) {
-    case 'money': return money.format(Number(value));
+    case 'money': return formatNumber(Number(value), 'money');
     case 'accounting': return accounting(Number(value));
-    case 'qty': return qty.format(Number(value));
-    case 'percent': return `${qty.format(Number(value))}%`;
+    case 'qty': return formatNumber(Number(value), 'qty');
+    case 'number': return formatNumber(Number(value));
+    case 'percent': return `${formatNumber(Number(value))}%`;
     case 'date': return formatDate(String(value));
     case 'month': {
       const d = new Date(`${String(value).slice(0, 7)}-01T00:00:00`);
@@ -894,7 +903,13 @@ export function toBody(fields: Field[], values: Record<string, unknown>, lines?:
       const f = fs.find((x) => x.name === k);
       if (k.startsWith('__')) continue;
       if (raw === '' || raw === undefined || raw === null) continue;
-      out[k] = f?.type === 'number' ? Number(raw) : raw;
+      if (f?.type === 'number') {
+        // commas are only on screen: "1,250.50" is 1250.5; a lone "-" is nothing yet
+        const plain = plainNumber(raw);
+        if (plain !== '') out[k] = Number(plain);
+        continue;
+      }
+      out[k] = raw;
     }
     return out;
   };
@@ -1085,7 +1100,12 @@ export function csvDate(value: string, withTime = false): string {
   return withTime ? `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : date;
 }
 
-const NUMERIC_FORMATS: Format[] = ['money', 'accounting', 'qty', 'percent'];
+const NUMERIC_FORMATS: Format[] = ['money', 'accounting', 'qty', 'number', 'percent'];
+
+/** Formats whose value is a number: right-aligned in tables, tabular digits. */
+export function isNumericFormat(format?: Format): boolean {
+  return !!format && NUMERIC_FORMATS.includes(format);
+}
 
 /** One cell's text for a CSV export: numbers stay plain (no grouping) so Excel can sum them; codes get their Thai label. */
 export function csvValue(value: unknown, format: Format = 'text', labels?: Record<string, string>): string {
@@ -1094,10 +1114,11 @@ export function csvValue(value: unknown, format: Format = 'text', labels?: Recor
     case 'money':
     case 'accounting':
     case 'qty':
+    case 'number':
     case 'percent': {
       const n = Number(value);
       if (!Number.isFinite(n)) return String(value);
-      return format === 'money' || format === 'accounting' ? n.toFixed(2) : String(n);
+      return format === 'money' || format === 'accounting' ? n.toFixed(getNumberFormat().moneyDecimals) : String(n);
     }
     case 'date': return csvDate(String(value));
     case 'datetime': return csvDate(String(value), true);
@@ -1400,6 +1421,10 @@ export interface CompanyProfile {
   logo?: string | null;
   footer_note?: string | null;
   signature_labels?: string[];
+  /** how the company writes numbers (see number.ts): thousands comma, decimals of money and of quantities */
+  number_comma?: boolean;
+  money_decimals?: number;
+  qty_decimals?: number;
 }
 
 /**
@@ -1510,17 +1535,21 @@ export function auditActionLabel(row: { method: string; route: string }): string
 
 /* ---------------- reports: accounting numbers, row styles, totals, date ranges ---------------- */
 
-/** Money as accountants print it: "1,250.00", "(1,250.00)" for a negative, "–" for zero (rounded to satang). */
+/** 10^decimals of money in the company's number format: 100 for satang. */
+const moneyUnit = () => 10 ** getNumberFormat().moneyDecimals;
+
+/** Money as accountants print it: "1,250.00", "(1,250.00)" for a negative, "–" for zero (rounded to the company's money decimals). */
 export function accounting(n: number): string {
   if (!Number.isFinite(n)) return String(n);
-  const r = Math.round(n * 100) / 100;
+  const unit = moneyUnit();
+  const r = Math.round(n * unit) / unit;
   if (r === 0) return '–';
-  return r < 0 ? `(${money.format(-r)})` : money.format(r);
+  return r < 0 ? `(${formatNumber(-r, 'money')})` : formatNumber(r, 'money');
 }
 
 /** A number is negative in a report cell (drawn in red on screen, never on paper). */
 export function isNegative(value: unknown, format?: Format): boolean {
-  return (format === 'accounting' || format === 'money') && value !== null && value !== '' && Math.round(Number(value) * 100) < 0;
+  return (format === 'accounting' || format === 'money') && value !== null && value !== '' && Math.round(Number(value) * moneyUnit()) < 0;
 }
 
 export type ReportRowStyle = 'heading' | 'subtotal' | 'total' | 'muted';
@@ -1564,7 +1593,10 @@ export function columnTotals(columns: Column[], rows: unknown[], spec?: ReportSp
       if (Number.isFinite(v)) out[k] += v;
     }
   }
-  for (const k of keys) out[k] = Math.round(out[k] * 100) / 100;
+  // rounded to satang as before, or finer when the company shows money or quantities with more decimals
+  const nf = getNumberFormat();
+  const unit = 10 ** Math.max(2, nf.moneyDecimals, nf.qtyDecimals);
+  for (const k of keys) out[k] = Math.round(out[k] * unit) / unit;
   return out;
 }
 
@@ -1589,7 +1621,7 @@ export function fillTemplate(template: string, data: unknown): string {
       const d = new Date(`${String(v).slice(0, 7)}-01T00:00:00`);
       return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' });
     }
-    if (pipe === 'money') return money.format(Number(v));
+    if (pipe === 'money') return formatNumber(Number(v), 'money');
     if (pipe === 'year') { const y = Number(v); return Number.isFinite(y) ? String(y < 2400 ? y + 543 : y) : String(v); }
     return String(v);
   });
@@ -1689,7 +1721,7 @@ export function toIsoDate(raw: unknown): string | undefined {
 }
 
 /**
- * Clean one value an AI proposed for a field: numbers to 2 decimals ("1,070.00 บาท" -> 1070), dates to
+ * Clean one value an AI proposed for a field: numbers to the field's decimals, 2 for a plain number ("1,070.00 บาท" -> 1070), dates to
  * YYYY-MM-DD in ค.ศ., selects must be one of the options (value or Thai label). `undefined` = leave the field alone.
  * Lookup ids are returned as text — the caller checks them against the records it offered.
  */
@@ -1698,7 +1730,8 @@ export function cleanAiValue(field: Field, raw: unknown): unknown {
   switch (field.type) {
     case 'number': {
       const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[,\s]|บาท|฿/g, ''));
-      return Number.isFinite(n) ? Math.round(n * 100) / 100 : undefined;
+      const unit = 10 ** (field.format || field.step !== undefined ? numberSpec(field).decimals : 2);
+      return Number.isFinite(n) ? Math.round(n * unit) / unit : undefined;
     }
     case 'date': return toIsoDate(raw);
     case 'month': {
@@ -1876,6 +1909,7 @@ export function planNotice(p: PlanView | null): { text: string; urgent: boolean 
   return null;
 }
 export * from './xlsx.ts';
+export * from './number.ts';
 
 /* ------------------------------------------------------------------ opening receivables / payables (phase 2) ------------------------------------------------------------------ */
 

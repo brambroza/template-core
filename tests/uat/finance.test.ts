@@ -359,9 +359,10 @@ describe('UAT — finance, payroll, contracts (uat-finance)', () => {
     await page.getByRole('combobox', { name: 'หัก ณ ที่จ่าย', exact: true }).selectOption('3');
     const row = page.locator('.lines-editor tbody tr').first();
     await pick(page, row, 'ใบกำกับ', docs.inv.no);
-    await expect.poll(() => row.getByLabel('รับชำระ (รวม VAT)').inputValue()).toBe('107000');
+    // number fields show the company's format (thousands comma, 2 decimals); the form still sends 107000
+    await expect.poll(() => row.getByLabel('รับชำระ (รวม VAT)').inputValue()).toBe('107,000.00');
     // left empty = the invoice's service part before VAT (an installation job: all of it, 100,000)
-    expect(await row.getByRole('spinbutton', { name: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)' }).inputValue()).toBe('');
+    expect(await row.getByRole('textbox', { name: 'ฐานหัก ณ ที่จ่าย (ก่อน VAT)' }).inputValue()).toBe('');
     await shot(page, 'UAT-52');
     await page.getByRole('button', { name: 'ออกใบเสร็จ' }).click();
     await page.getByRole('heading', { name: /^RC-/ }).waitFor();

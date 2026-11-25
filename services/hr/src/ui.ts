@@ -64,7 +64,7 @@ const adminTime: Field[] = [
 const leaveColumns = [
   { key: 'no', label: 'เลขที่' }, { key: 'employee_name', label: 'พนักงาน' }, { key: 'leave_type_name', label: 'ประเภท' },
   { key: 'from_date', label: 'ตั้งแต่', format: 'date' as const }, { key: 'to_date', label: 'ถึง', format: 'date' as const },
-  { key: 'days', label: 'วัน', format: 'qty' as const }, { key: 'status', label: 'สถานะ', format: 'status' as const },
+  { key: 'days', label: 'วัน', format: 'number' as const }, { key: 'status', label: 'สถานะ', format: 'status' as const },
 ];
 
 export default defineUi({
@@ -113,18 +113,18 @@ export default defineUi({
         { key: 'message', label: 'หมายเหตุ' },
         { key: 'employee.code', label: 'รหัสพนักงาน' }, { key: 'employee.department_name', label: 'แผนก' }, { key: 'employee.position_name', label: 'ตำแหน่ง' },
         { key: 'schedule', label: 'เวลางาน' }, { key: 'approverName', label: 'ผู้อนุมัติใบลาของฉัน' },
-        { key: 'teamPending', label: 'ใบลาลูกทีมรอฉันอนุมัติ', format: 'qty' },
-        { key: 'today.check_in_at', label: 'เข้างานวันนี้', format: 'datetime' }, { key: 'today.late_minutes', label: 'สาย (นาที)', format: 'qty' },
+        { key: 'teamPending', label: 'ใบลาลูกทีมรอฉันอนุมัติ', format: 'number' },
+        { key: 'today.check_in_at', label: 'เข้างานวันนี้', format: 'datetime' }, { key: 'today.late_minutes', label: 'สาย (นาที)', format: 'number' },
         { key: 'today.check_out_at', label: 'ออกงานวันนี้', format: 'datetime' },
       ],
       lines: [
         { path: 'balance', label: 'วันลาคงเหลือปีนี้', columns: [
-          { key: 'name', label: 'ประเภท' }, { key: 'quota', label: 'สิทธิ์ (วัน)', format: 'qty' }, { key: 'used', label: 'ใช้แล้ว', format: 'qty' },
-          { key: 'pending', label: 'รออนุมัติ', format: 'qty' }, { key: 'remaining', label: 'คงเหลือ', format: 'qty' },
+          { key: 'name', label: 'ประเภท' }, { key: 'quota', label: 'สิทธิ์ (วัน)', format: 'number' }, { key: 'used', label: 'ใช้แล้ว', format: 'number' },
+          { key: 'pending', label: 'รออนุมัติ', format: 'number' }, { key: 'remaining', label: 'คงเหลือ', format: 'number' },
         ] },
         { path: 'leaves', label: 'ใบลาล่าสุด', columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'leave_type_name', label: 'ประเภท' }, { key: 'from_date', label: 'ตั้งแต่', format: 'date' },
-          { key: 'to_date', label: 'ถึง', format: 'date' }, { key: 'days', label: 'วัน', format: 'qty' }, { key: 'status', label: 'สถานะ', format: 'status' },
+          { key: 'to_date', label: 'ถึง', format: 'date' }, { key: 'days', label: 'วัน', format: 'number' }, { key: 'status', label: 'สถานะ', format: 'status' },
         ] },
       ],
       actions: [
@@ -206,8 +206,8 @@ export default defineUi({
         { key: 'status', label: 'สถานะ', format: 'status' }, { key: 'employee_code', label: 'รหัสพนักงาน' }, { key: 'employee_name', label: 'พนักงาน' },
         { key: 'department_name', label: 'แผนก' }, { key: 'leave_type_name', label: 'ประเภทการลา' },
         { key: 'from_date', label: 'ตั้งแต่วันที่', format: 'date' }, { key: 'to_date', label: 'ถึงวันที่', format: 'date' },
-        { key: 'half_day', label: 'ครึ่งวัน', format: 'boolean' }, { key: 'days', label: 'จำนวนวันทำงานที่ลา', format: 'qty' },
-        { key: 'reason', label: 'เหตุผล' }, { key: 'balance.remaining', label: 'คงเหลือหลังหักใบนี้ (วัน)', format: 'qty' },
+        { key: 'half_day', label: 'ครึ่งวัน', format: 'boolean' }, { key: 'days', label: 'จำนวนวันทำงานที่ลา', format: 'number' },
+        { key: 'reason', label: 'เหตุผล' }, { key: 'balance.remaining', label: 'คงเหลือหลังหักใบนี้ (วัน)', format: 'number' },
         { key: 'approver_label', label: 'ผู้อนุมัติ' },
         { key: 'requested_by_name', label: 'ยื่นโดย' }, { key: 'created_at', label: 'ยื่นเมื่อ', format: 'datetime' },
         { key: 'decided_by_name', label: 'พิจารณาโดย' }, { key: 'decided_at', label: 'พิจารณาเมื่อ', format: 'datetime' },
@@ -236,7 +236,7 @@ export default defineUi({
         { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'พนักงาน' }, { key: 'nickname', label: 'ชื่อเล่น' },
         { key: 'department_name', label: 'แผนก' }, { key: 'status', label: 'สถานะ', format: 'status' },
         { key: 'check_in_at', label: 'เข้า', format: 'datetime' }, { key: 'check_out_at', label: 'ออก', format: 'datetime' },
-        { key: 'late_minutes', label: 'สาย (นาที)', format: 'qty' }, { key: 'leave_type', label: 'ลา' },
+        { key: 'late_minutes', label: 'สาย (นาที)', format: 'number' }, { key: 'leave_type', label: 'ลา' },
       ],
       rowLink: { screen: 'employeeDetail', idFrom: 'employee_id' }, empty: 'ยังไม่มีพนักงาน',
     },
@@ -245,10 +245,10 @@ export default defineUi({
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM)', type: 'text' }, department, { name: 'q', label: 'ค้นหาพนักงาน', type: 'text' }],
       columns: [
         { key: 'employee_code', label: 'รหัส' }, { key: 'employee_name', label: 'พนักงาน' }, { key: 'department_name', label: 'แผนก' },
-        { key: 'work_days', label: 'วันทำงาน', format: 'qty' }, { key: 'present_days', label: 'มาทำงาน', format: 'qty' },
-        { key: 'late_count', label: 'สาย (ครั้ง)', format: 'qty' }, { key: 'late_minutes', label: 'สาย (นาที)', format: 'qty' },
-        { key: 'leave_days', label: 'ลา (วัน)', format: 'qty' }, { key: 'absent_days', label: 'ขาด (วัน)', format: 'qty' },
-        { key: 'work_hours', label: 'ชั่วโมงทำงาน', format: 'qty' },
+        { key: 'work_days', label: 'วันทำงาน', format: 'number' }, { key: 'present_days', label: 'มาทำงาน', format: 'number' },
+        { key: 'late_count', label: 'สาย (ครั้ง)', format: 'number' }, { key: 'late_minutes', label: 'สาย (นาที)', format: 'number' },
+        { key: 'leave_days', label: 'ลา (วัน)', format: 'number' }, { key: 'absent_days', label: 'ขาด (วัน)', format: 'number' },
+        { key: 'work_hours', label: 'ชั่วโมงทำงาน', format: 'number' },
       ],
       rowLink: { screen: 'employeeDetail', idFrom: 'employee_id' }, empty: 'ไม่มีข้อมูลเดือนนี้',
     },
@@ -283,8 +283,8 @@ export default defineUi({
       ],
       lines: [
         { path: 'balance', label: 'วันลาปีนี้', columns: [
-          { key: 'name', label: 'ประเภท' }, { key: 'quota', label: 'สิทธิ์', format: 'qty' }, { key: 'used', label: 'ใช้แล้ว', format: 'qty' },
-          { key: 'pending', label: 'รออนุมัติ', format: 'qty' }, { key: 'remaining', label: 'คงเหลือ', format: 'qty' },
+          { key: 'name', label: 'ประเภท' }, { key: 'quota', label: 'สิทธิ์', format: 'number' }, { key: 'used', label: 'ใช้แล้ว', format: 'number' },
+          { key: 'pending', label: 'รออนุมัติ', format: 'number' }, { key: 'remaining', label: 'คงเหลือ', format: 'number' },
         ] },
         { path: 'leaves', label: 'ใบลาล่าสุด', columns: leaveColumns.filter((c) => c.key !== 'employee_name') },
         { path: 'reports', label: 'ลูกทีม (หัวหน้าโดยตรง)', columns: [
@@ -292,7 +292,7 @@ export default defineUi({
         ] },
         { path: 'attendance', label: 'ลงเวลาล่าสุด', columns: [
           { key: 'work_date', label: 'วันที่', format: 'date' }, { key: 'check_in_at', label: 'เข้า', format: 'datetime' },
-          { key: 'check_out_at', label: 'ออก', format: 'datetime' }, { key: 'late_minutes', label: 'สาย (นาที)', format: 'qty' },
+          { key: 'check_out_at', label: 'ออก', format: 'datetime' }, { key: 'late_minutes', label: 'สาย (นาที)', format: 'number' },
           { key: 'source', label: 'บันทึกโดย', format: 'label' }, { key: 'note', label: 'หมายเหตุ' },
         ] },
       ],
@@ -313,7 +313,7 @@ export default defineUi({
     departments: {
       kind: 'list', title: 'แผนก', endpoint: '/departments', perm: 'hr.employee.read',
       filters: [{ name: 'q', label: 'ค้นหา', type: 'text' }],
-      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อแผนก' }, { key: 'manager_name', label: 'หัวหน้าแผนก' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'qty' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' }],
+      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ชื่อแผนก' }, { key: 'manager_name', label: 'หัวหน้าแผนก' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'number' }, { key: 'active', label: 'ใช้งาน', format: 'boolean' }],
       create: 'departmentNew', createLabel: 'เพิ่มแผนก', rowLink: { screen: 'departmentDetail' }, empty: 'ยังไม่มีแผนก',
     },
     departmentNew: {
@@ -328,7 +328,7 @@ export default defineUi({
     },
     departmentDetail: {
       kind: 'detail', title: 'แผนก', endpoint: '/departments/:id', perm: 'hr.employee.read', heading: 'name', edit: 'departmentEdit',
-      fields: [{ key: 'code', label: 'รหัส' }, { key: 'manager_name', label: 'หัวหน้าแผนก' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'qty' }],
+      fields: [{ key: 'code', label: 'รหัส' }, { key: 'manager_name', label: 'หัวหน้าแผนก' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'number' }],
       lines: [{ path: 'employees', label: 'พนักงานในแผนก', columns: [
         { key: 'code', label: 'รหัส' }, { key: 'full_name', label: 'ชื่อ-สกุล' }, { key: 'nickname', label: 'ชื่อเล่น' }, { key: 'position_name', label: 'ตำแหน่ง' }, { key: 'status', label: 'สถานะ', format: 'status' },
       ] }],
@@ -336,7 +336,7 @@ export default defineUi({
     positions: {
       kind: 'list', title: 'ตำแหน่งงาน', endpoint: '/positions', perm: 'hr.employee.read',
       filters: [{ name: 'q', label: 'ค้นหา', type: 'text' }],
-      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ตำแหน่ง' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'qty' }],
+      columns: [{ key: 'code', label: 'รหัส' }, { key: 'name', label: 'ตำแหน่ง' }, { key: 'headcount', label: 'พนักงาน (คน)', format: 'number' }],
       create: 'positionNew', createLabel: 'เพิ่มตำแหน่ง', empty: 'ยังไม่มีตำแหน่ง',
     },
     positionNew: {
@@ -347,7 +347,7 @@ export default defineUi({
     leaveTypes: {
       kind: 'list', title: 'ประเภทการลาและสิทธิ์ต่อปี', endpoint: '/leave-types', perm: 'hr.employee.read',
       columns: [
-        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ประเภท' }, { key: 'days_per_year', label: 'สิทธิ์ต่อปี (วัน, ว่าง = ไม่จำกัด)', format: 'qty' },
+        { key: 'code', label: 'รหัส' }, { key: 'name', label: 'ประเภท' }, { key: 'days_per_year', label: 'สิทธิ์ต่อปี (วัน, ว่าง = ไม่จำกัด)', format: 'number' },
         { key: 'allow_half_day', label: 'ลาครึ่งวันได้', format: 'boolean' }, { key: 'unpaid', label: 'ไม่รับค่าจ้าง', format: 'boolean' },
         { key: 'active', label: 'ใช้งาน', format: 'boolean' },
       ],
@@ -378,7 +378,7 @@ export default defineUi({
     },
     holidays: {
       kind: 'list', title: 'วันหยุดบริษัท', endpoint: '/holidays', perm: 'hr.employee.read',
-      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number' }],
+      filters: [{ name: 'year', label: 'ปี (ค.ศ. หรือ พ.ศ.)', type: 'number', comma: false }],
       columns: [{ key: 'date', label: 'วันที่', format: 'date' }, { key: 'name', label: 'วันหยุด' }],
       create: 'holidayNew', createLabel: 'เพิ่มวันหยุด', empty: 'ยังไม่มีวันหยุด',
       rowActions: [{ id: 'delete', label: 'ลบ', method: 'DELETE', endpoint: '/holidays/:id', perm: 'hr.setup.write', tone: 'danger', confirm: 'ลบวันหยุดนี้?' }],
@@ -402,16 +402,16 @@ export default defineUi({
   widgets: [
     { id: 'hr-kpi', kind: 'kpi', title: 'บุคคลวันนี้', endpoint: '/summary', perm: 'hr.employee.read', size: 'md', href: 'attendanceDaily',
       items: [
-        { key: 'presentToday', label: 'มาทำงาน', format: 'qty', tone: 'ok' },
-        { key: 'lateToday', label: 'มาสาย', format: 'qty', tone: 'warn' },
-        { key: 'onLeaveToday', label: 'ลาวันนี้', format: 'qty' },
-        { key: 'pendingLeave', label: 'ใบลารออนุมัติ', format: 'qty', tone: 'warn' },
-        { key: 'headcount', label: 'พนักงานทั้งหมด', format: 'qty' },
+        { key: 'presentToday', label: 'มาทำงาน', format: 'number', tone: 'ok' },
+        { key: 'lateToday', label: 'มาสาย', format: 'number', tone: 'warn' },
+        { key: 'onLeaveToday', label: 'ลาวันนี้', format: 'number' },
+        { key: 'pendingLeave', label: 'ใบลารออนุมัติ', format: 'number', tone: 'warn' },
+        { key: 'headcount', label: 'พนักงานทั้งหมด', format: 'number' },
       ] },
     { id: 'hr-leaves', kind: 'pipeline', title: 'ใบลา', endpoint: '/summary', perm: 'hr.employee.read', size: 'md', href: 'leaveInbox',
       rows: 'rows', field: 'status', stages: [{ value: 'pending', label: 'รออนุมัติ' }, { value: 'approved', label: 'อนุมัติแล้ว' }, { value: 'rejected', label: 'ไม่อนุมัติ' }],
       title2: 'title', subtitle: 'subtitle', link: { screen: 'leaveDetail' } },
     { id: 'hr-trend', kind: 'trend', title: 'วันลาที่อนุมัติ 6 เดือน', endpoint: '/summary', perm: 'hr.employee.read', size: 'md', href: 'attendanceMonthly',
-      rows: 'months', x: 'month', y: 'leaveDays', format: 'qty' },
+      rows: 'months', x: 'month', y: 'leaveDays', format: 'number' },
   ],
 });

@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { formatValue, isNegative, statusTone, type Format } from '@erp/ui-schema';
+import { formatValue, isNegative, isNumericFormat, statusTone, type Format } from '@erp/ui-schema';
+import { useNumberFormat } from '@/lib/number-format';
 
 function Qr({ payload }: { payload: string }) {
   const [src, setSrc] = useState('');
@@ -26,6 +27,7 @@ function Chips({ items, max }: { items: string[]; max?: number }) {
 
 export function Value({ value, format, max, cell }: { value: unknown; format?: Format; max?: number; cell?: boolean }) {
   const labels = useContext(LabelsContext);
+  useNumberFormat(); // drawn again when the company changes its number format (formatValue reads it)
   // in a table column of yes/no, "ไม่ใช่" on every row is noise: a quiet dash, and a mark for yes
   if (cell && format === 'boolean' && value !== null && value !== undefined && value !== '') {
     return value ? <span className="bool-yes">✓ ใช่</span> : <span className="bool-no" aria-label="ไม่ใช่">–</span>;
@@ -56,4 +58,4 @@ export function isWideColumn(rows: unknown[], get: (r: unknown) => unknown, form
   return rows.some((r) => { const v = get(r); return typeof v === 'string' && v.length > 36; });
 }
 
-export const isNumeric = (f?: Format) => f === 'money' || f === 'accounting' || f === 'qty' || f === 'percent';
+export const isNumeric = (f?: Format) => isNumericFormat(f);

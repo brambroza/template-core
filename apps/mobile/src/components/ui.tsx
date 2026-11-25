@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { formatValue, statusTone, type Format } from '@erp/ui-schema';
+import { formatValue, isNumericFormat, statusTone, type Format } from '@erp/ui-schema';
+import { useNumberFormat } from '../lib/number-format';
 import { displayValue } from '../lib/dates';
 import { light, radius, themed, toneColor, usePalette } from '../lib/theme';
 
@@ -38,6 +39,7 @@ export function ValueText({ value, format }: { value: unknown; format?: Format }
   const labels = useContext(LabelsContext);
   const c = usePalette();
   const s = useS();
+  useNumberFormat(); // drawn again when the company changes its number format (formatValue reads it)
   if (format === 'status' && typeof value === 'string' && value) {
     const color = toneColor(c, statusTone(value));
     return (
@@ -48,7 +50,7 @@ export function ValueText({ value, format }: { value: unknown; format?: Format }
     );
   }
   if (format === 'qr') return null; // payment QR is printed from the web app
-  return <Text style={[s.value, (format === 'money' || format === 'qty') && { fontVariant: ['tabular-nums'] }]}>{displayValue(value, format, labels)}</Text>;
+  return <Text style={[s.value, isNumericFormat(format) && { fontVariant: ['tabular-nums'] }]}>{displayValue(value, format, labels)}</Text>;
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: ViewStyle }) {

@@ -192,6 +192,11 @@ web เรียก endpoint เดิมด้วย `?_dryRun=1` (route ต้
 ## Field types
 
 `text` `textarea` `number` `date` `month` `select` `boolean` `email` `password`
+`number` — ช่องตัวเลขใส่จุลภาคหลักพันให้ขณะพิมพ์ และส่งค่าเป็นตัวเลขล้วนเสมอ (`typeNumber` / `showNumber` / `plainNumber` ใน ui-schema `number.ts`):
+  - `format: 'money'` (ราคา ยอดเงิน) / `format: 'qty'` (จำนวนสินค้า วัตถุดิบ) — ทศนิยมตามที่บริษัทตั้งใน **ข้อมูลบริษัท → รูปแบบตัวเลข**
+    (เริ่มต้น จุลภาค + 2 ตำแหน่ง) เติมศูนย์ให้เมื่อออกจากช่อง: `1250.5` → `1,250.50`
+  - ไม่ใส่ `format` = ตัวเลขทั่วไป (วัน ชั่วโมง % ตัวนับ): ทศนิยมตาม `step` (`step: 1` = จำนวนเต็ม, `0.5` = 1 ตำแหน่ง, ไม่ใส่ = ไม่เกิน 6) ไม่เติมศูนย์
+  - `comma: false` — ไม่คั่นหลักพัน (ปี, ลำดับที่)
 `date` / `month` — ค่ายังเป็น ISO (`2026-10-03` / `2026-10`) แต่ผู้ใช้เห็นและพิมพ์เป็น พ.ศ.: web = ช่องพิมพ์ + ปฏิทินอาทิตย์ขึ้นก่อน (`components/ThaiDate.tsx`, ปุ่มวันนี้, ลูกศร/PageUp/PageDown, Alt+↓ เปิด) · มือถือ = ช่องพิมพ์ + ปุ่ม เมื่อวาน/วันนี้/พรุ่งนี้ · รับ `03/10/2569`, `3/10/69`, `3 ต.ค. 2569`, `2026-10-03`, `03102569` (`parseDateInput` / `parseMonthInput` ใน ui-schema)
 `lookup` — ค้นหาจากโมดูลอื่นแล้วเติมหลายช่อง: `assign: { itemId: 'id', itemCode: 'code', itemName: 'name' }`, `scanField: 'code'` = มือถือสแกน QR/บาร์โค้ดได้
 `multilookup` — เลือกหลายรายการ (เช่น บทบาท) · `permissions` — เลือกสิทธิ์จาก manifest ของโมดูลที่ติดตั้ง
@@ -200,7 +205,16 @@ web เรียก endpoint เดิมด้วย `?_dryRun=1` (route ต้
 
 ## Formats (columns / fields)
 
-`text` `money` `accounting` (งบ: (1,250.00) / –) `qty` `percent` `date` `datetime` (ปี พ.ศ.) `month` `status` (ป้ายสีตามสถานะ) `label` (ชื่อไทยของรหัส) `boolean` `list` `qr`
+`text` `money` `accounting` (งบ: (1,250.00) / –) `qty` `number` `percent` `date` `datetime` (ปี พ.ศ.) `month` `status` (ป้ายสีตามสถานะ) `label` (ชื่อไทยของรหัส) `boolean` `list` `qr`
+
+รูปแบบตัวเลขของบริษัท (identity `GET /company`: `number_comma`, `money_decimals`, `qty_decimals` — ตั้งในหน้า ข้อมูลบริษัท, เริ่มต้น จุลภาค + 2 ตำแหน่ง)
+ใช้กับทุกจอ ทั้งเว็บ มือถือ และเอกสารพิมพ์ ผ่าน `formatValue()`:
+- `money` / `accounting` — ทศนิยมเงินของบริษัท (0–4) เติมศูนย์ครบ: `1,250.00`
+- `qty` — **จำนวนสินค้า/วัตถุดิบจริงเท่านั้น** (สั่ง รับ จ่าย ผลิต คงเหลือ): ทศนิยมจำนวนของบริษัท (0–4) เติมศูนย์ครบ: `10.00`
+- `number` — ตัวเลขอื่นทั้งหมด (ตัวนับ วัน ชั่วโมง อัตรา ลำดับ): แสดงตามจริง ไม่เติมศูนย์ ไม่เกิน 4 ตำแหน่ง: `5`, `2.5` — ใช้ `qty` กับตัวนับจะได้ "5.00 คน"
+- `percent` — เหมือน `number` ตามด้วย `%`
+แอปโหลดค่านี้ครั้งเดียวตอนเข้าใช้งาน (`setNumberFormat()` ใน ui-schema; web `lib/number-format.ts`, mobile `lib/number-format.ts`) และจำไว้ในเครื่อง
+ข้อความที่ server แต่งเอง (ข้อความ error, ผลกระทบเมื่อกดยืนยัน) และ CSV ยังเป็นรูปแบบเดิม — CSV เป็นตัวเลขล้วนไม่มีจุลภาค
 
 ## กฎ (ตรวจโดย `tests/ui/descriptors.test.ts`)
 

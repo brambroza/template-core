@@ -48,7 +48,7 @@ const checkpointFields: Field[] = [
 ];
 const resultColumns = [
   { key: 'seq', label: '#' }, { key: 'name', label: 'จุดตรวจ' }, { key: 'method', label: 'วิธีตรวจ' }, { key: 'type_th', label: 'ชนิด' },
-  { key: 'spec', label: 'สเปก' }, { key: 'critical_th', label: 'วิกฤต' }, { key: 'value', label: 'ค่าที่วัด', format: 'qty' as const },
+  { key: 'spec', label: 'สเปก' }, { key: 'critical_th', label: 'วิกฤต' }, { key: 'value', label: 'ค่าที่วัด', format: 'number' as const },
   { key: 'passed_th', label: 'ผล' }, { key: 'note', label: 'หมายเหตุ' },
 ];
 
@@ -87,7 +87,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'stage_th', label: 'ขั้นตอน' }, { key: 'item_code', label: 'สินค้า' }, { key: 'item_name', label: 'ชื่อ' },
         { key: 'lot_no', label: 'ล็อต' }, { key: 'source_ref', label: 'อ้างอิง' }, { key: 'qty', label: 'จำนวน', format: 'qty' },
-        { key: 'sample_size', label: 'สุ่มตรวจ', format: 'qty' }, { key: 'open_points', label: 'จุดที่ยังไม่ตรวจ', format: 'qty' },
+        { key: 'sample_size', label: 'สุ่มตรวจ', format: 'number' }, { key: 'open_points', label: 'จุดที่ยังไม่ตรวจ', format: 'number' },
         { key: 'status_th', label: 'สถานะ' }, { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' },
       ],
       create: 'inspNew', createLabel: 'สร้างงานตรวจ', rowLink: { screen: 'inspDetail' },
@@ -108,7 +108,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'stage_th', label: 'ขั้นตอน' }, { key: 'item_code', label: 'สินค้า' }, { key: 'lot_no', label: 'ล็อต' },
         { key: 'source_ref', label: 'อ้างอิง' }, { key: 'supplier_name', label: 'ผู้ขาย' }, { key: 'qty', label: 'จำนวน', format: 'qty' },
-        { key: 'status_th', label: 'สถานะ' }, { key: 'result_th', label: 'ผลตรวจ' }, { key: 'failed_points', label: 'จุดไม่ผ่าน', format: 'qty' },
+        { key: 'status_th', label: 'สถานะ' }, { key: 'result_th', label: 'ผลตรวจ' }, { key: 'failed_points', label: 'จุดไม่ผ่าน', format: 'number' },
         { key: 'created_at', label: 'สร้างเมื่อ', format: 'datetime' },
       ],
       create: 'inspNew', createLabel: 'สร้างงานตรวจ', rowLink: { screen: 'inspDetail' }, empty: 'ยังไม่มีงานตรวจ',
@@ -121,7 +121,7 @@ export default defineUi({
         { name: 'lotNo', label: 'เลขล็อต', type: 'text' },
         { name: 'sourceRef', label: 'อ้างอิง (เลข PO / ใบสั่งผลิต)', type: 'text' },
         { name: 'warehouseCode', label: 'ของอยู่ที่คลัง (ถ้าไม่ผ่าน ระบบย้ายเข้าคลังกักกัน QC-HOLD)', type: 'text' },
-        { name: 'qty', label: 'จำนวนทั้งล็อต', type: 'number', required: true },
+        { name: 'qty', label: 'จำนวนทั้งล็อต', type: 'number', format: 'qty', required: true },
         { name: 'sampleSize', label: 'จำนวนสุ่มตรวจ (เว้นว่าง = ตามแผน)', type: 'number' },
         supplier, inspector,
         { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
@@ -140,8 +140,8 @@ export default defineUi({
         { key: 'status_th', label: 'สถานะ' }, { key: 'result_th', label: 'ผลตรวจ' }, { key: 'stage_th', label: 'ขั้นตอน' },
         { key: 'item_code', label: 'รหัสสินค้า' }, { key: 'item_name', label: 'ชื่อสินค้า' }, { key: 'lot_no', label: 'ล็อต' },
         { key: 'source_th', label: 'ที่มา' }, { key: 'source_ref', label: 'อ้างอิง' }, { key: 'supplier_name', label: 'ผู้ขาย' },
-        { key: 'warehouse_code', label: 'คลัง' }, { key: 'plan_name', label: 'แผนการตรวจ' }, { key: 'qty', label: 'จำนวนทั้งล็อต', format: 'qty' }, { key: 'sample_size', label: 'จำนวนสุ่มตรวจ', format: 'qty' },
-        { key: 'recorded_points', label: 'บันทึกผลแล้ว (จุด)', format: 'qty' }, { key: 'failed_points', label: 'ไม่ผ่าน (จุด)', format: 'qty' },
+        { key: 'warehouse_code', label: 'คลัง' }, { key: 'plan_name', label: 'แผนการตรวจ' }, { key: 'qty', label: 'จำนวนทั้งล็อต', format: 'qty' }, { key: 'sample_size', label: 'จำนวนสุ่มตรวจ', format: 'number' },
+        { key: 'recorded_points', label: 'บันทึกผลแล้ว (จุด)', format: 'number' }, { key: 'failed_points', label: 'ไม่ผ่าน (จุด)', format: 'number' },
         { key: 'accepted_qty', label: 'รับ', format: 'qty' }, { key: 'rejected_qty', label: 'ปฏิเสธ', format: 'qty' },
         { key: 'inspector_name', label: 'ผู้ตรวจ' }, { key: 'started_at', label: 'เริ่มตรวจ', format: 'datetime' },
         { key: 'completed_at', label: 'ตรวจเสร็จ', format: 'datetime' }, { key: 'ncr_no', label: 'NCR' }, { key: 'note', label: 'หมายเหตุ' },
@@ -155,8 +155,8 @@ export default defineUi({
         { id: 'complete', label: 'ปิดงานตรวจ', method: 'POST', endpoint: '/inspections/:id/complete', perm: 'quality.inspection.record', when: { field: 'status', in: ['pending', 'in_progress'] },
           tone: 'primary', mobile: true,
           fields: [
-            { name: 'acceptedQty', label: 'จำนวนรับ (เว้นว่าง = ตามผลตรวจ)', type: 'number' },
-            { name: 'rejectedQty', label: 'จำนวนปฏิเสธ', type: 'number' },
+            { name: 'acceptedQty', label: 'จำนวนรับ (เว้นว่าง = ตามผลตรวจ)', type: 'number', format: 'qty' },
+            { name: 'rejectedQty', label: 'จำนวนปฏิเสธ', type: 'number', format: 'qty' },
             { name: 'note', label: 'หมายเหตุ', type: 'textarea' },
           ] },
         { id: 'ncr', label: 'ออก NCR', method: 'POST', endpoint: '/inspections/:id/ncr', perm: 'quality.ncr.write', when: { field: 'result', in: ['fail', 'conditional'] },
@@ -164,7 +164,7 @@ export default defineUi({
           fields: [
             { name: 'severity', label: 'ความรุนแรง (เว้นว่าง = ตามผลตรวจ)', type: 'select', options: severityOptions },
             { name: 'disposition', label: 'การจัดการของเสีย', type: 'select', options: dispositionOptions },
-            { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number' },
+            { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number', format: 'qty' },
             { name: 'description', label: 'รายละเอียด (เว้นว่าง = สรุปจากจุดที่ไม่ผ่าน)', type: 'textarea' },
           ] },
         { id: 'cancel', label: 'ยกเลิกงานตรวจ', method: 'POST', endpoint: '/inspections/:id/cancel', perm: 'quality.inspection.record', when: { field: 'status', in: ['pending', 'in_progress'] },
@@ -174,12 +174,12 @@ export default defineUi({
     inspResults: {
       kind: 'list', title: 'บันทึกผลตรวจรายจุด', endpoint: '/inspections/:id/results', perm: 'quality.inspection.read', mobile: true,
       columns: [
-        { key: 'name', label: 'จุดตรวจ' }, { key: 'passed_th', label: 'ผล' }, { key: 'spec', label: 'สเปก' }, { key: 'value', label: 'ค่าที่วัด', format: 'qty' },
+        { key: 'name', label: 'จุดตรวจ' }, { key: 'passed_th', label: 'ผล' }, { key: 'spec', label: 'สเปก' }, { key: 'value', label: 'ค่าที่วัด', format: 'number' },
         { key: 'method', label: 'วิธีตรวจ' }, { key: 'type_th', label: 'ชนิด' }, { key: 'critical_th', label: 'วิกฤต' }, { key: 'note', label: 'หมายเหตุ' },
       ],
       actions: [
         { id: 'complete', label: 'ปิดงานตรวจ', method: 'POST', endpoint: '/inspections/:id/complete', perm: 'quality.inspection.record', tone: 'primary',
-          fields: [{ name: 'acceptedQty', label: 'จำนวนรับ (เว้นว่าง = ตามผลตรวจ)', type: 'number' }, { name: 'rejectedQty', label: 'จำนวนปฏิเสธ', type: 'number' }] },
+          fields: [{ name: 'acceptedQty', label: 'จำนวนรับ (เว้นว่าง = ตามผลตรวจ)', type: 'number', format: 'qty' }, { name: 'rejectedQty', label: 'จำนวนปฏิเสธ', type: 'number', format: 'qty' }] },
       ],
       rowActions: [
         { id: 'measure', label: 'บันทึกค่า', method: 'POST', endpoint: '/inspection-results/:id', perm: 'quality.inspection.record', tone: 'primary', mobile: true,
@@ -205,7 +205,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'severity_th', label: 'ความรุนแรง' }, { key: 'item_code', label: 'สินค้า' }, { key: 'lot_no', label: 'ล็อต' },
         { key: 'description', label: 'รายละเอียด' }, { key: 'qty_affected', label: 'จำนวน', format: 'qty' }, { key: 'disposition_th', label: 'การจัดการ' },
-        { key: 'status_th', label: 'สถานะ' }, { key: 'open_actions', label: 'CA ค้าง', format: 'qty' }, { key: 'created_at', label: 'ออกเมื่อ', format: 'datetime' },
+        { key: 'status_th', label: 'สถานะ' }, { key: 'open_actions', label: 'CA ค้าง', format: 'number' }, { key: 'created_at', label: 'ออกเมื่อ', format: 'datetime' },
       ],
       create: 'ncrNew', createLabel: 'ออก NCR', rowLink: { screen: 'ncrDetail' }, empty: 'ไม่มี NCR',
     },
@@ -218,7 +218,7 @@ export default defineUi({
         { name: 'lotNo', label: 'เลขล็อต', type: 'text' },
         { name: 'sourceRef', label: 'อ้างอิง (PO / ใบสั่งผลิต / ลูกค้าร้องเรียน)', type: 'text' },
         supplier,
-        { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number' },
+        { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number', format: 'qty' },
         { name: 'severity', label: 'ความรุนแรง', type: 'select', required: true, default: 'minor', options: severityOptions },
         { name: 'disposition', label: 'การจัดการของเสีย', type: 'select', options: dispositionOptions },
       ],
@@ -228,7 +228,7 @@ export default defineUi({
       kind: 'form', title: 'แก้ไข NCR / วิเคราะห์สาเหตุ', method: 'PATCH', endpoint: '/ncrs/:id', load: '/ncrs/:id', perm: 'quality.ncr.write',
       fields: [
         { name: 'description', label: 'สิ่งที่ไม่เป็นไปตามข้อกำหนด', type: 'textarea', required: true },
-        { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number' },
+        { name: 'qtyAffected', label: 'จำนวนที่ได้รับผลกระทบ', type: 'number', format: 'qty' },
         { name: 'severity', label: 'ความรุนแรง', type: 'select', options: severityOptions },
         { name: 'disposition', label: 'การจัดการของเสีย', type: 'select', options: dispositionOptions },
         { name: 'whyAnalysis', label: 'วิเคราะห์ 5 Why (ทำไม 1…5)', type: 'textarea' },
@@ -252,7 +252,7 @@ export default defineUi({
         { key: 'created_at', label: 'ออกเมื่อ', format: 'datetime' }, { key: 'closed_at', label: 'ปิดเมื่อ', format: 'datetime' },
       ],
       lines: [
-        { path: 'failedCheckpoints', label: 'จุดตรวจที่ไม่ผ่าน', columns: [{ key: 'name', label: 'จุดตรวจ' }, { key: 'spec', label: 'สเปก' }, { key: 'value', label: 'ค่าที่วัด', format: 'qty' }, { key: 'note', label: 'หมายเหตุ' }] },
+        { path: 'failedCheckpoints', label: 'จุดตรวจที่ไม่ผ่าน', columns: [{ key: 'name', label: 'จุดตรวจ' }, { key: 'spec', label: 'สเปก' }, { key: 'value', label: 'ค่าที่วัด', format: 'number' }, { key: 'note', label: 'หมายเหตุ' }] },
         { path: 'actions', label: 'การแก้ไขและป้องกัน (CA)', columns: [
           { key: 'no', label: 'เลขที่' }, { key: 'action', label: 'การแก้ไข' }, { key: 'owner_name', label: 'ผู้รับผิดชอบ' }, { key: 'due_on', label: 'กำหนดเสร็จ', format: 'date' },
           { key: 'status_th', label: 'สถานะ' }, { key: 'overdue_th', label: '' },
@@ -323,7 +323,7 @@ export default defineUi({
       ],
       columns: [
         { key: 'name', label: 'แผน' }, { key: 'item_code', label: 'สินค้า' }, { key: 'item_name', label: 'ชื่อสินค้า' }, { key: 'stage_th', label: 'ขั้นตอน' },
-        { key: 'sampling_th', label: 'สุ่มตรวจ' }, { key: 'checkpoint_count', label: 'จุดตรวจ', format: 'qty' }, { key: 'critical_count', label: 'จุดวิกฤต', format: 'qty' },
+        { key: 'sampling_th', label: 'สุ่มตรวจ' }, { key: 'checkpoint_count', label: 'จุดตรวจ', format: 'number' }, { key: 'critical_count', label: 'จุดวิกฤต', format: 'number' },
         { key: 'active_th', label: 'สถานะ' },
       ],
       create: 'planNew', createLabel: 'สร้างแผนการตรวจ', rowLink: { screen: 'planDetail' }, empty: 'ยังไม่มีแผนการตรวจ — สร้างแผนให้สินค้าที่ต้องตรวจรับ/ตรวจก่อนส่ง',
@@ -364,7 +364,7 @@ export default defineUi({
       actions: [
         { id: 'addCheckpoint', label: 'เพิ่มจุดตรวจ', method: 'POST', endpoint: '/plans/:id/checkpoints', perm: 'quality.plan.write', tone: 'primary', fields: checkpointFields },
         { id: 'removeCheckpoint', label: 'ลบจุดตรวจ', method: 'POST', endpoint: '/plans/:id/checkpoints/remove', perm: 'quality.plan.write',
-          fields: [{ name: 'seq', label: 'ลำดับ (#) ที่จะลบ', type: 'number', required: true }] },
+          fields: [{ name: 'seq', label: 'ลำดับ (#) ที่จะลบ', type: 'number', comma: false, required: true }] },
         { id: 'deactivate', label: 'ปิดใช้แผน', method: 'POST', endpoint: '/plans/:id/deactivate', perm: 'quality.plan.write', when: { field: 'active', in: [true] }, tone: 'danger',
           confirm: 'ปิดใช้แล้วจะไม่สร้างงานตรวจอัตโนมัติจากแผนนี้' },
         { id: 'activate', label: 'เปิดใช้แผน', method: 'POST', endpoint: '/plans/:id/activate', perm: 'quality.plan.write', when: { field: 'active', in: [false] } },
@@ -376,8 +376,8 @@ export default defineUi({
       kind: 'list', title: 'อัตราผ่านการตรวจรายเดือน', endpoint: '/reports/pass-rate', perm: 'quality.inspection.read',
       filters: [{ name: 'stage', label: 'ขั้นตอน', type: 'select', options: stageOptions }, { name: 'months', label: 'ย้อนหลัง (เดือน)', type: 'number' }],
       columns: [
-        { key: 'month', label: 'เดือน', format: 'month' }, { key: 'inspections', label: 'ตรวจ (ครั้ง)', format: 'qty' }, { key: 'passed', label: 'ผ่าน', format: 'qty' },
-        { key: 'conditional', label: 'มีเงื่อนไข', format: 'qty' }, { key: 'failed', label: 'ไม่ผ่าน', format: 'qty' },
+        { key: 'month', label: 'เดือน', format: 'month' }, { key: 'inspections', label: 'ตรวจ (ครั้ง)', format: 'number' }, { key: 'passed', label: 'ผ่าน', format: 'number' },
+        { key: 'conditional', label: 'มีเงื่อนไข', format: 'number' }, { key: 'failed', label: 'ไม่ผ่าน', format: 'number' },
         { key: 'pass_rate', label: 'อัตราผ่าน', format: 'percent' }, { key: 'rejected_qty', label: 'ปฏิเสธ (หน่วย)', format: 'qty' },
       ],
       empty: 'ยังไม่มีข้อมูล',
@@ -390,8 +390,8 @@ export default defineUi({
         { name: 'from', label: 'ตั้งแต่', type: 'date' }, { name: 'to', label: 'ถึง', type: 'date' },
       ],
       columns: [
-        { key: 'label', label: 'จุดตรวจ/สินค้า' }, { key: 'fails', label: 'ไม่ผ่าน (ครั้ง)', format: 'qty' }, { key: 'checks', label: 'ตรวจทั้งหมด', format: 'qty' },
-        { key: 'inspections_failed', label: 'งานตรวจที่พบ', format: 'qty' }, { key: 'fail_rate', label: 'อัตราไม่ผ่าน', format: 'percent' },
+        { key: 'label', label: 'จุดตรวจ/สินค้า' }, { key: 'fails', label: 'ไม่ผ่าน (ครั้ง)', format: 'number' }, { key: 'checks', label: 'ตรวจทั้งหมด', format: 'number' },
+        { key: 'inspections_failed', label: 'งานตรวจที่พบ', format: 'number' }, { key: 'fail_rate', label: 'อัตราไม่ผ่าน', format: 'percent' },
       ],
       empty: 'ยังไม่พบข้อบกพร่อง',
     },
@@ -399,24 +399,24 @@ export default defineUi({
       kind: 'list', title: 'คุณภาพผู้ขาย (ตรวจรับเข้า)', endpoint: '/reports/suppliers', perm: 'quality.inspection.read',
       filters: [{ name: 'from', label: 'ตั้งแต่', type: 'date' }, { name: 'to', label: 'ถึง', type: 'date' }],
       columns: [
-        { key: 'supplier', label: 'ผู้ขาย' }, { key: 'inspections', label: 'ล็อตที่ตรวจ', format: 'qty' }, { key: 'passed', label: 'ผ่าน', format: 'qty' },
-        { key: 'conditional', label: 'มีเงื่อนไข', format: 'qty' }, { key: 'failed', label: 'ไม่ผ่าน', format: 'qty' }, { key: 'pass_rate', label: 'อัตราผ่าน', format: 'percent' },
+        { key: 'supplier', label: 'ผู้ขาย' }, { key: 'inspections', label: 'ล็อตที่ตรวจ', format: 'number' }, { key: 'passed', label: 'ผ่าน', format: 'number' },
+        { key: 'conditional', label: 'มีเงื่อนไข', format: 'number' }, { key: 'failed', label: 'ไม่ผ่าน', format: 'number' }, { key: 'pass_rate', label: 'อัตราผ่าน', format: 'percent' },
         { key: 'received_qty', label: 'รับเข้า (หน่วย)', format: 'qty' }, { key: 'rejected_qty', label: 'ปฏิเสธ (หน่วย)', format: 'qty' },
       ],
       empty: 'ยังไม่มีงานตรวจรับเข้าที่ตรวจเสร็จ',
     },
     ncrSeverity: {
       kind: 'list', title: 'NCR ตามความรุนแรง', endpoint: '/reports/ncr-severity', perm: 'quality.ncr.read',
-      columns: [{ key: 'severity_th', label: 'ความรุนแรง' }, { key: 'open', label: 'ยังไม่ปิด', format: 'qty' }, { key: 'closed', label: 'ปิดแล้ว', format: 'qty' }, { key: 'total', label: 'ทั้งหมด', format: 'qty' }],
+      columns: [{ key: 'severity_th', label: 'ความรุนแรง' }, { key: 'open', label: 'ยังไม่ปิด', format: 'number' }, { key: 'closed', label: 'ปิดแล้ว', format: 'number' }, { key: 'total', label: 'ทั้งหมด', format: 'number' }],
     },
   },
   widgets: [
     { id: 'qc-kpi', kind: 'kpi', title: 'ควบคุมคุณภาพ', endpoint: '/summary', perm: 'quality.inspection.read', size: 'md', href: 'queue',
       items: [
-        { key: 'pendingInspections', label: 'งานรอตรวจ', format: 'qty', tone: 'warn' },
+        { key: 'pendingInspections', label: 'งานรอตรวจ', format: 'number', tone: 'warn' },
         { key: 'passRateMonth', label: 'อัตราผ่านเดือนนี้', format: 'percent', tone: 'ok' },
-        { key: 'openNcr', label: 'NCR ยังไม่ปิด', format: 'qty', tone: 'stop' },
-        { key: 'overdueActions', label: 'CA เลยกำหนด', format: 'qty', tone: 'stop' },
+        { key: 'openNcr', label: 'NCR ยังไม่ปิด', format: 'number', tone: 'stop' },
+        { key: 'overdueActions', label: 'CA เลยกำหนด', format: 'number', tone: 'stop' },
       ] },
     { id: 'qc-trend', kind: 'trend', title: 'อัตราผ่านการตรวจ 6 เดือน', endpoint: '/summary', perm: 'quality.inspection.read', size: 'md', href: 'passRate',
       rows: 'months', x: 'month', y: 'pass_rate', format: 'percent' },
@@ -424,6 +424,6 @@ export default defineUi({
       rows: 'rows', field: 'status', title2: 'no', subtitle: 'title', link: { screen: 'ncrDetail' },
       stages: [{ value: 'open', label: 'เปิด' }, { value: 'investigating', label: 'สอบสวน' }, { value: 'action', label: 'แก้ไข' }] },
     { id: 'qc-defects', kind: 'bars', title: 'จุดตรวจที่ไม่ผ่านบ่อย (90 วัน)', endpoint: '/summary', perm: 'quality.inspection.read', size: 'sm', href: 'defects',
-      rows: 'defects', label: 'label', value: 'fails', format: 'qty' },
+      rows: 'defects', label: 'label', value: 'fails', format: 'number' },
   ],
 });

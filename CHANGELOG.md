@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-20 · ใช้งานเร็วขึ้น: ตัดสินใจจากหน้าแรกและ LINE, เห็นผลก่อนกด
 
+- **รูปแบบตัวเลขของบริษัท** (2026-11-24): "ข้อมูลบริษัท" has three new settings — thousands comma, decimals of money, decimals of
+  quantities (0–4; default comma + 2 decimals; identity migration 009). They apply to **typing and display**, web, mobile and printed
+  documents: number boxes group thousands while you type and pad on leaving (`1250.5` → `1,250.50`), the API still gets plain numbers.
+  Column format `qty` now means a real quantity of goods (padded to the company's decimals); counts, days, hours and rates use the new
+  `number` format and stay as they are (`5`, `2.5`). Number fields are tagged `format: 'money' | 'qty'`; years and sequence numbers
+  `comma: false`. Custom modules: change `format: 'qty'` to `'number'` on columns that are not quantities of goods.
+
 - **โมดูลใหม่ `estimating` — ประเมินราคางานพิมพ์** (2026-11-24): rate tables for paper (ream / kg / sheet), presses (plates, make-ready,
   run per 1,000, minimum, waste) and finishing (per job / sheet / piece / square inch), each with "นำเข้าจาก Excel"; **cost formulas kept
   as data** that the company edits on screen (a safe formula language — no `eval` — checked on a sample job before saving, with

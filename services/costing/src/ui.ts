@@ -40,14 +40,14 @@ export default defineUi({
       kind: 'form', title: 'คำนวณต้นทุนสินค้า', method: 'POST', endpoint: '/cost-sheets', perm: 'costing.cost.write',
       fields: [
         item('สินค้า', { itemId: 'id', itemCode: 'code', itemName: 'name' }),
-        { name: 'qty', label: 'จำนวนที่คำนวณ', type: 'number', default: 1 },
+        { name: 'qty', label: 'จำนวนที่คำนวณ', type: 'number', format: 'qty', default: 1 },
         { name: 'laborHours', label: 'ชั่วโมงแรงงาน', type: 'number', default: 0 },
-        { name: 'laborRatePerHour', label: 'ค่าแรงต่อชั่วโมง', type: 'number', default: 0 },
+        { name: 'laborRatePerHour', label: 'ค่าแรงต่อชั่วโมง', type: 'number', format: 'money', default: 0 },
         { name: 'overheadPct', label: 'โสหุ้ย % ของวัตถุดิบ+แรงงาน', type: 'number', default: 0 },
       ],
       lines: {
         name: 'materials', label: 'วัตถุดิบ', min: 1,
-        fields: [item('วัตถุดิบ', { itemId: 'id', itemCode: 'code', itemName: 'name' }), { name: 'qty', label: 'จำนวน', type: 'number', required: true }],
+        fields: [item('วัตถุดิบ', { itemId: 'id', itemCode: 'code', itemName: 'name' }), { name: 'qty', label: 'จำนวน', type: 'number', format: 'qty', required: true }],
       },
       submitLabel: 'คำนวณและบันทึก', after: { screen: 'sheetDetail', idFrom: 'id' },
     },
@@ -72,7 +72,7 @@ export default defineUi({
   },
   widgets: [
     { id: 'cost-kpi', kind: 'kpi', title: 'ต้นทุน', endpoint: '/summary', perm: 'costing.cost.read', size: 'sm', href: 'costs',
-      items: [{ key: 'itemsCosted', label: 'สินค้ามีต้นทุน', format: 'qty' }, { key: 'materialMonth', label: 'ค่าวัตถุดิบเดือนนี้', format: 'money' }, { key: 'jobsMissingCost', label: 'งานที่ขาดต้นทุน', format: 'qty', tone: 'warn' }] },
+      items: [{ key: 'itemsCosted', label: 'สินค้ามีต้นทุน', format: 'number' }, { key: 'materialMonth', label: 'ค่าวัตถุดิบเดือนนี้', format: 'money' }, { key: 'jobsMissingCost', label: 'งานที่ขาดต้นทุน', format: 'number', tone: 'warn' }] },
     { id: 'cost-bars', kind: 'bars', title: 'ต้นทุนเฉลี่ยต่อหน่วยสูงสุด', endpoint: '/summary', perm: 'costing.cost.read', size: 'md', href: 'costs',
       rows: 'rows', label: 'item_code', value: 'avg_cost', format: 'money' },
   ],

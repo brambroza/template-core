@@ -18,8 +18,8 @@ const claimLines: LinesSpec = {
     { name: 'categoryId', label: 'หมวด', type: 'lookup', required: true,
       lookup: { path: '/categories', query: { active: 'true' }, label: ['code', 'name'], assign: { categoryId: 'id' } } },
     { name: 'description', label: 'รายละเอียด', type: 'text' },
-    { name: 'amount', label: 'จำนวนเงิน (ก่อน VAT)', type: 'number', step: 0.01, required: true },
-    { name: 'vat', label: 'VAT (ถ้ามี)', type: 'number', step: 0.01, help: '0 หรือ 7% ของจำนวนเงิน — ร้านที่ไม่ได้จด VAT ให้กรอก 0' },
+    { name: 'amount', label: 'จำนวนเงิน (ก่อน VAT)', type: 'number', format: 'money', required: true },
+    { name: 'vat', label: 'VAT (ถ้ามี)', type: 'number', format: 'money', help: '0 หรือ 7% ของจำนวนเงิน — ร้านที่ไม่ได้จด VAT ให้กรอก 0' },
     { name: 'receiptType', label: 'หลักฐานที่ได้รับ', type: 'select', options: [
       { value: 'full_tax_invoice', label: 'ใบกำกับภาษีเต็มรูป (ขอคืน VAT ได้)' }, { value: 'abbreviated', label: 'ใบกำกับภาษีอย่างย่อ' }, { value: 'none', label: 'ใบเสร็จธรรมดา / ไม่มี' }],
       help: 'ขอคืนภาษีซื้อได้เฉพาะใบกำกับภาษีเต็มรูปที่มีเลขผู้เสียภาษีของผู้ขาย (หมวดค่ารับรอง/รถยนต์นั่งขอคืนไม่ได้)' },
@@ -195,7 +195,7 @@ export default defineUi({
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'claimant_name', label: 'ผู้เบิก' }, { key: 'purpose', label: 'วัตถุประสงค์' },
         { key: 'total', label: 'ยอดเบิก', format: 'money' }, { key: 'advance_amount', label: 'หักเงินทดรอง', format: 'money' },
-        { key: 'net_payable', label: 'ต้องจ่าย', format: 'money' }, { key: 'days_waiting', label: 'รอมาแล้ว (วัน)', format: 'qty' },
+        { key: 'net_payable', label: 'ต้องจ่าย', format: 'money' }, { key: 'days_waiting', label: 'รอมาแล้ว (วัน)', format: 'number' },
       ],
       rowLink: { screen: 'claimDetail' },
       rowActions: [{ id: 'pay', label: 'โอนแล้ว', method: 'POST', endpoint: '/claims/:id/pay', perm: 'expense.claim.pay', fields: payFields, tone: 'primary' }],
@@ -215,7 +215,7 @@ export default defineUi({
       kind: 'list', title: 'เงินทดรองจ่ายแล้ว รอเคลียร์', endpoint: '/reports/outstanding', rows: 'advances', perm: PAY,
       columns: [
         { key: 'no', label: 'เลขที่' }, { key: 'requester_name', label: 'ผู้ขอ' }, { key: 'purpose', label: 'วัตถุประสงค์' },
-        { key: 'amount', label: 'จำนวนเงิน', format: 'money' }, { key: 'paid_date', label: 'จ่ายเมื่อ', format: 'date' }, { key: 'days_open', label: 'ค้าง (วัน)', format: 'qty' },
+        { key: 'amount', label: 'จำนวนเงิน', format: 'money' }, { key: 'paid_date', label: 'จ่ายเมื่อ', format: 'date' }, { key: 'days_open', label: 'ค้าง (วัน)', format: 'number' },
       ],
       rowLink: { screen: 'advanceDetail' }, empty: 'ไม่มีเงินทดรองค้างเคลียร์',
     },
@@ -223,7 +223,7 @@ export default defineUi({
       kind: 'form', title: 'ขอเงินทดรองจ่าย', method: 'POST', endpoint: '/advances', perm: 'expense.claim.write', mobile: true,
       fields: [
         { name: 'purpose', label: 'วัตถุประสงค์', type: 'text', required: true },
-        { name: 'amount', label: 'จำนวนเงิน', type: 'number', step: 0.01, required: true },
+        { name: 'amount', label: 'จำนวนเงิน', type: 'number', format: 'money', required: true },
         { name: 'neededBy', label: 'ต้องการภายในวันที่', type: 'date' },
         { name: 'department', label: 'แผนก', type: 'text' },
       ],
@@ -260,13 +260,13 @@ export default defineUi({
       filters: [{ name: 'month', label: 'เดือน (YYYY-MM, เว้นว่าง = เดือนนี้)', type: 'text' }],
       columns: [
         { key: 'code', label: 'รหัส' }, { key: 'name', label: 'หมวด' }, { key: 'total', label: 'ยอดรวม', format: 'money' },
-        { key: 'monthly_limit', label: 'วงเงิน/คน/เดือน', format: 'money' }, { key: 'claims', label: 'ใบเบิก', format: 'qty' }, { key: 'people', label: 'จำนวนคน', format: 'qty' },
+        { key: 'monthly_limit', label: 'วงเงิน/คน/เดือน', format: 'money' }, { key: 'claims', label: 'ใบเบิก', format: 'number' }, { key: 'people', label: 'จำนวนคน', format: 'number' },
       ],
       rowLink: { screen: 'categoryDetail' }, empty: 'ยังไม่มีหมวดค่าใช้จ่าย',
     },
     monthly: {
       kind: 'list', title: 'ยอดเบิกรายเดือน (6 เดือน)', endpoint: '/summary', rows: 'months', perm: APPROVE,
-      columns: [{ key: 'month', label: 'เดือน', format: 'month' }, { key: 'claims', label: 'จำนวนใบเบิก', format: 'qty' }, { key: 'total', label: 'ยอดเบิก', format: 'money' }],
+      columns: [{ key: 'month', label: 'เดือน', format: 'month' }, { key: 'claims', label: 'จำนวนใบเบิก', format: 'number' }, { key: 'total', label: 'ยอดเบิก', format: 'money' }],
       empty: 'ยังไม่มีข้อมูล',
     },
     categories: {
@@ -285,7 +285,7 @@ export default defineUi({
       fields: [
         { name: 'code', label: 'รหัส', type: 'text', required: true, help: 'เช่น TRAVEL, FUEL, ENTERTAIN, HOTEL, MISC' },
         { name: 'name', label: 'ชื่อ', type: 'text', required: true },
-        { name: 'monthlyLimit', label: 'วงเงินต่อคนต่อเดือน (เว้นว่าง = ไม่จำกัด)', type: 'number', step: 0.01, help: 'เกินวงเงินระบบจะเตือน แต่ไม่บล็อก' },
+        { name: 'monthlyLimit', label: 'วงเงินต่อคนต่อเดือน (เว้นว่าง = ไม่จำกัด)', type: 'number', format: 'money', help: 'เกินวงเงินระบบจะเตือน แต่ไม่บล็อก' },
         { name: 'requiresReceipt', label: 'ต้องระบุเลขที่ใบเสร็จก่อนส่ง', type: 'boolean' },
         { name: 'note', label: 'หมายเหตุ / ระเบียบการเบิก', type: 'textarea', help: 'หมวดชื่อ "ค่ารับรอง" หรือ "รถยนต์นั่ง" จะตั้งเป็นภาษีซื้อต้องห้ามให้อัตโนมัติ (แก้ได้ภายหลัง)' },
         { name: 'active', label: 'ใช้งาน', type: 'boolean', default: true },
@@ -304,7 +304,7 @@ export default defineUi({
       kind: 'form', title: 'แก้ไขหมวดค่าใช้จ่าย', method: 'PUT', endpoint: '/categories/:id', load: '/categories/:id', perm: 'expense.category.write',
       fields: [
         { name: 'name', label: 'ชื่อ', type: 'text', required: true },
-        { name: 'monthlyLimit', label: 'วงเงินต่อคนต่อเดือน', type: 'number', step: 0.01 },
+        { name: 'monthlyLimit', label: 'วงเงินต่อคนต่อเดือน', type: 'number', format: 'money' },
         { name: 'requiresReceipt', label: 'ต้องระบุเลขที่ใบเสร็จก่อนส่ง', type: 'boolean' },
         { name: 'vatClaimable', label: 'ขอคืนภาษีซื้อได้', type: 'boolean', help: 'ปิดสำหรับภาษีซื้อต้องห้าม (ม.82/5) เช่น ค่ารับรอง รถยนต์นั่ง — VAT จะลงเป็นค่าใช้จ่าย' },
         { name: 'note', label: 'หมายเหตุ / ระเบียบการเบิก', type: 'textarea' },
@@ -325,7 +325,7 @@ export default defineUi({
   widgets: [
     { id: 'expense-kpi', kind: 'kpi', title: 'เบิกค่าใช้จ่าย', endpoint: '/summary', perm: APPROVE, size: 'md', href: 'claims',
       items: [
-        { key: 'toApprove', label: 'รออนุมัติ', format: 'qty', tone: 'warn' },
+        { key: 'toApprove', label: 'รออนุมัติ', format: 'number', tone: 'warn' },
         { key: 'toPayAmount', label: 'ค้างจ่าย (บาท)', format: 'money' },
         { key: 'claimedThisMonth', label: 'ยอดเบิกเดือนนี้', format: 'money' },
         { key: 'advancesOutstanding', label: 'เงินทดรองค้างเคลียร์', format: 'money', tone: 'stop' },

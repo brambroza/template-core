@@ -1,5 +1,6 @@
 'use client';
 
+import { applyCompanyNumberFormat } from './number-format';
 import { SESSION_TOKEN_HEADER } from './proxy-headers';
 import { clearSession, isRevokedError, loadSession, replaceSessionToken } from './session';
 import { SHOWCASE_READ_ONLY } from './showcase';
@@ -77,5 +78,7 @@ export async function api<T = any>(module: string, path: string, opts: { method?
     // server messages are specific (e.g. "สต็อกไม่พอ: RM-STEEL …"); fall back to Thai generic text
     throw new ApiError(res.status, thaiMessage(res.status, err.message), fieldErrors, err.code);
   }
+  // the company profile carries the number format (comma, decimals): every read or save of it keeps the screens in step
+  if (module === 'identity' && path === '/company') applyCompanyNumberFormat(data);
   return data as T;
 }

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { restoreNumberFormat } from '../src/lib/number-format';
 import { RegistryProvider } from '../src/lib/registry';
 import { getSession, restoreSession } from '../src/lib/session';
 import { useIsDark, usePalette, type Palette } from '../src/lib/theme';
@@ -23,7 +24,8 @@ export default function RootLayout() {
   const c = usePalette();
   const dark = useIsDark();
 
-  useEffect(() => { restoreSession().then(() => setReady(true)); }, []);
+  // the session, then the number format this phone remembers for that company (no flash of the default on the first screen)
+  useEffect(() => { restoreSession().then((s) => restoreNumberFormat(s?.tenant.code)).then(() => setReady(true)); }, []);
   // anything but the login screen needs a session
   useEffect(() => {
     if (ready && !getSession() && segments[0] !== 'login') router.replace('/login');

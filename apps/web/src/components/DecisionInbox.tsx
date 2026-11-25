@@ -6,6 +6,7 @@
 import Link from 'next/link';
 import { CheckCircle2, ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNumberFormat } from '@/lib/number-format';
 import { buildTodo, formatValue, listRows, rowLinkScreen, todoActions, todoSources, type ListScreen, type ModuleUi, type TodoItem, type TodoSpec } from '@erp/ui-schema';
 import { api } from '@/lib/api';
 import { screenHref } from '@/lib/nav';
@@ -93,6 +94,7 @@ function countByGroup(items: TodoItem[]) {
 }
 
 function DecisionCard({ item, modules, perms, onDone }: { item: TodoItem; modules: ModuleUi[]; perms: string[]; onDone: () => void }) {
+  useNumberFormat();
   const m = modules.find((x) => x.module === item.module)!;
   const screen = m.screens[item.spec.screen] as ListScreen;
   const actions = todoActions(item, screen, perms);
