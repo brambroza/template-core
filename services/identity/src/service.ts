@@ -5,9 +5,9 @@ import {
 import { formatThaiDate, isValidThaiTaxId } from '@erp/thai';
 import { fileURLToPath } from 'node:url';
 import { applyTemplate, ROLE_TEMPLATES } from './role-templates.ts';
-import { createHash, randomBytes } from 'node:crypto';
-import { captchaOk } from './captcha.ts';
-import { buttonMail, createMailer } from './mailer.ts';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { captchaConfigWarning, captchaOk, captchaPublicConfig } from './captcha.ts';
+import { buttonMail, codeMail, createMailer } from './mailer.ts';
 import { attempts, clear as clearAttempts, note as noteAttempts, overLimit, type Queryable } from './throttle.ts';
 import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '@erp/starter';
 import { runStarter, starterOf, starterView } from './starter.ts';
@@ -48,7 +48,7 @@ const OpsPlanInput = z.object({
   note: z.string().trim().min(3, 'ระบุเหตุผล (อย่างน้อย 3 ตัวอักษร)').max(500),
 }).refine((v) => v.plan || v.status || v.trialDays !== undefined || v.maxUsers !== undefined, 'ไม่มีค่าที่จะเปลี่ยน');
 
-/** Self-serve sign-up (public). The company is created only when the e-mailed link is opened. */
+/** Self-serve sign-up (public). The company is created only when the 6-digit code from the mail is typed in. */
 const SignupInput = z.object({
   companyName: s.name,
   name: s.name,
@@ -60,7 +60,12 @@ const SignupInput = z.object({
   captchaToken: z.string().max(4096).optional(),
 });
 const ClearStarterInput = z.object({ confirm: z.literal('ล้างข้อมูลตัวอย่าง', { errorMap: () => ({ message: 'พิมพ์คำว่า "ล้างข้อมูลตัวอย่าง" เพื่อยืนยัน' }) }) });
-const TokenInput = z.object({ token: z.string().min(20).max(200) });
+/** the ticket `POST /signup` answered with (kept by the browser that signed up) */
+const TicketInput = z.object({ ticket: z.string().min(20).max(200) });
+/** ticket + the 6-digit code from the mail (spaces and dashes a mail app adds when copying are dropped) */
+const SignupCodeInput = TicketInput.extend({
+  code: z.string().max(20).transform((v) => v.replace(/[\s-]/g, '')).pipe(z.string().regex(/^\d{6}$/, 'รหัสยืนยันเป็นตัวเลข 6 หลัก')),
+});
 const ForgotInput = z.object({ email, captchaToken: z.string().max(4096).optional() });
 const ResetInput = z.object({ token: z.string().min(20).max(200), newPassword: z.string().min(8, 'รหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร').max(200) });
 
@@ -313,13 +318,21 @@ function requireOpen(e: Entitlement | null): void {
 
 /* ---- self-serve sign-up and password reset (migration 005) ---- */
 
-export const SIGNUP_LINK_HOURS = 24;
+/** how long a sign-up waits for its code (the browser keeps the ticket; a new code can be asked for meanwhile) */
+export const SIGNUP_PENDING_HOURS = 24;
+/** a mailed 6-digit code: minutes it can be used, and wrong tries before it dies (a new one must be asked for) */
+export const SIGNUP_CODE_MINUTES = 10;
+export const SIGNUP_CODE_MAX_TRIES = 5;
+/** seconds before another code may be mailed for the same sign-up */
+export const SIGNUP_RESEND_SECONDS = 60;
 export const RESET_LINK_MINUTES = 60;
 /** an invitation link (set your password) lasts longer than a reset: the colleague may read the mail days later */
 export const INVITE_LINK_HOURS = 72;
 const HOUR_MS = 60 * 60 * 1000;
 /** per hour: sign-ups per IP / per e-mail, reset requests per e-mail / per IP, bad reset links per IP */
 export const SIGNUP_LIMITS = { ip: 5, email: 3 } as const;
+/** per hour: "send the code again" per sign-up / per IP */
+export const SIGNUP_RESEND_LIMITS = { ticket: 3, ip: 10 } as const;
 export const FORGOT_LIMITS = { email: 3, ip: 10 } as const;
 const BAD_LINK_PER_IP = 20;
 
@@ -327,6 +340,26 @@ const BAD_LINK_PER_IP = 20;
 function newLinkToken(): { token: string; hash: string } {
   const token = randomBytes(32).toString('base64url');
   return { token, hash: sha256(token) };
+}
+
+/** A fresh 6-digit code, every value equally likely ("004219" keeps its zeros). */
+export function newSignupCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/**
+ * What is kept of a sign-up code: an HMAC with the service secret, bound to the sign-up's ticket hash. A plain hash of six digits
+ * could be reversed by trying all million values; with the secret a copy of the table alone is not enough.
+ */
+export function signupCodeHash(secret: string, ticketHash: string, code: string): string {
+  return createHmac('sha256', secret).update(`signup-code|${ticketHash}|${code}`).digest('hex');
+}
+
+/** Compare two hex digests without leaking where they differ. */
+function sameDigest(a: string, b: string): boolean {
+  const x = Buffer.from(a, 'hex');
+  const y = Buffer.from(b, 'hex');
+  return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
@@ -403,7 +436,7 @@ export const definition: ServiceDefinition = {
       return `${base.slice(0, 20)}-${randomBytes(3).toString('hex')}`;
     }
 
-    /** Login answer for a user who just proved who they are (password, or a sign-up link). Inside the company's transaction. */
+    /** Login answer for a user who just proved who they are (password, or a sign-up code). Inside the company's transaction. */
     async function session(c: Client, tenant: { id: string; code: string; name: string }, u: { id: string; email: string; name: string }) {
       // cloud plan: closed companies get the reason (402); the token lists the plan's modules and ends when access ends
       const plan = await entitlement(c);
@@ -416,6 +449,8 @@ export const definition: ServiceDefinition = {
     }
 
     const mailer = createMailer(k.env);
+    const captchaWarning = captchaConfigWarning(k.env);
+    if (captchaWarning) app.log.warn(`[identity] ${captchaWarning}`);
 
     app.post('/tenants', { config: { internal: true } }, async (req, reply) => {
       const body = parse(TenantInput, req.body);
@@ -436,10 +471,29 @@ export const definition: ServiceDefinition = {
       industries: INDUSTRY_IDS.map((id) => ({ id, nameTh: INDUSTRIES[id].nameTh, blurb: INDUSTRIES[id].blurb })),
     }));
 
+    /** Site key of the CAPTCHA widget on the public forms (sign-up, forgot password); nulls when none is configured. */
+    app.get('/captcha', { config: { public: true } }, async () => captchaPublicConfig(k.env));
+
+    /** The mail of one pending sign-up: its code — or, when the e-mail already had an account, the pointer to "ลืมรหัสผ่าน". */
+    function signupMail(p: { email: string; name: string; companyName: string; accountExists: boolean; code: string; base: string }) {
+      if (p.accountExists) {
+        return buttonMail(p.email, 'มีบัญชี GO Along สำหรับอีเมลนี้อยู่แล้ว', [
+          `มีคนพยายามสมัครใช้งาน GO Along ด้วยอีเมลนี้ แต่อีเมลนี้มีบัญชีอยู่แล้ว`,
+          'ถ้าเป็นคุณ เข้าสู่ระบบได้เลย หรือตั้งรหัสผ่านใหม่ถ้าจำไม่ได้',
+        ], { label: 'ตั้งรหัสผ่านใหม่', url: `${p.base}/forgot-password` }, 'ถ้าไม่ได้สมัครเอง ไม่ต้องทำอะไร บัญชีของคุณยังปลอดภัย');
+      }
+      return codeMail(p.email, `รหัสยืนยัน GO Along: ${p.code}`, [
+        `สวัสดีคุณ${p.name}`,
+        `กรอกรหัสนี้ในหน้าสมัครใช้งาน เพื่อยืนยันอีเมลและเริ่มทดลองใช้ ${p.companyName} ฟรี ${TRIAL_DAYS} วัน`,
+      ], p.code, `รหัสใช้ได้ ${SIGNUP_CODE_MINUTES} นาที · อย่าบอกรหัสนี้กับใคร ทีม GO Along จะไม่ขอรหัสจากคุณ · ถ้าไม่ได้สมัครเอง ไม่ต้องทำอะไร`);
+    }
+
     /**
-     * Self-serve sign-up: `{ companyName, name, email, password, plan?, captchaToken? }` → 202 with the same Thai answer whether or not
-     * the e-mail already has an account (no account discovery). New e-mail: a confirmation link (24 h). Taken: a mail pointing to
-     * "ลืมรหัสผ่าน". CAPTCHA (Turnstile) when TURNSTILE_SECRET is set; 5 per hour per IP, 3 per hour per e-mail.
+     * Self-serve sign-up: `{ companyName, name, email, password, plan?, captchaToken? }` → 202 `{ ticket, codeMinutes, resendSeconds,
+     * message }` and a mail with a 6-digit code (SIGNUP_CODE_MINUTES). The browser keeps the ticket and sends it back with the code
+     * (`POST /signup/verify`). Same work and the same answer whether or not the e-mail already has an account (no account
+     * discovery): a taken e-mail also gets a ticket and a pending row, but its mail points to "ลืมรหัสผ่าน" and its code is told to
+     * nobody. CAPTCHA (Turnstile) when TURNSTILE_SECRET is set; 5 per hour per IP, 3 per hour per e-mail.
      */
     app.post('/signup', { config: { public: true } }, async (req, reply) => {
       const b = parse(SignupInput, req.body);
@@ -449,46 +503,52 @@ export const definition: ServiceDefinition = {
       if (!(await captchaOk(k.env, b.captchaToken, ip))) throw new HttpError(400, 'captcha_failed', 'ยืนยันว่าไม่ใช่โปรแกรมอัตโนมัติไม่ผ่าน — ลองใหม่อีกครั้ง');
       await noteAttempts(k.db.pool, keys.map(([key]) => key));
       const base = appUrl(k.env, req.headers);
-      let mail;
-      if ((await usersByEmail(k, b.email, false)).length) {
-        hashPassword(b.password); // same work as a new sign-up, so the answer time does not tell whether the e-mail exists
-        mail = buttonMail(b.email, 'มีบัญชี GO Along สำหรับอีเมลนี้อยู่แล้ว', [
-          `มีคนพยายามสมัครใช้งาน GO Along ด้วยอีเมลนี้ แต่อีเมลนี้มีบัญชีอยู่แล้ว`,
-          'ถ้าเป็นคุณ เข้าสู่ระบบได้เลย หรือตั้งรหัสผ่านใหม่ถ้าจำไม่ได้',
-        ], { label: 'ตั้งรหัสผ่านใหม่', url: `${base}/forgot-password` }, 'ถ้าไม่ได้สมัครเอง ไม่ต้องทำอะไร บัญชีของคุณยังปลอดภัย');
-      } else {
-        const link = newLinkToken();
-        await k.db.pool.query(
-          `insert into signups (email, company_name, name, password_hash, plan, token_hash, expires_at, industry)
-           values ($1, $2, $3, $4, $5, $6, now() + make_interval(hours => $7), $8)`,
-          [b.email, b.companyName, b.name, hashPassword(b.password), b.plan, link.hash, SIGNUP_LINK_HOURS, b.industry === 'none' ? null : b.industry]);
-        mail = buttonMail(b.email, 'ยืนยันอีเมลเพื่อเริ่มใช้งาน GO Along', [
-          `สวัสดีคุณ${b.name}`,
-          `กดปุ่มด้านล่างเพื่อยืนยันอีเมลและเริ่มทดลองใช้ ${b.companyName} ฟรี ${TRIAL_DAYS} วัน`,
-        ], { label: 'ยืนยันอีเมลและเริ่มใช้งาน', url: `${base}/signup/verify?token=${link.token}` }, `ลิงก์นี้ใช้ได้ ${SIGNUP_LINK_HOURS} ชั่วโมง · ถ้าไม่ได้สมัครเอง ไม่ต้องทำอะไร`);
-      }
-      try { await mailer(mail); } catch (e) {
+      const accountExists = (await usersByEmail(k, b.email, false)).length > 0;
+      const passwordHash = hashPassword(b.password); // also for a taken e-mail: the answer time must not tell whether it exists
+      const ticket = newLinkToken();
+      const code = newSignupCode();
+      // a taken e-mail keeps nothing of what was typed (no name, no password hash) — its row only answers like a real one
+      const kept = accountExists ? { companyName: '-', name: '-', passwordHash: '-' } : { companyName: b.companyName, name: b.name, passwordHash };
+      await k.db.pool.query(
+        `insert into signups (email, company_name, name, password_hash, plan, token_hash, expires_at, industry, code_hash, code_expires_at, account_exists)
+         values ($1, $2, $3, $4, $5, $6, now() + make_interval(hours => $7), $8, $9, now() + make_interval(mins => $10), $11)`,
+        [b.email, kept.companyName, kept.name, kept.passwordHash, b.plan, ticket.hash, SIGNUP_PENDING_HOURS, b.industry === 'none' ? null : b.industry,
+          signupCodeHash(secret, ticket.hash, code), SIGNUP_CODE_MINUTES, accountExists]);
+      await noteAttempts(k.db.pool, [`signup-sent|${ticket.hash}`]); // starts the "send again" wait of this sign-up
+      try { await mailer(signupMail({ email: b.email, name: b.name, companyName: b.companyName, accountExists, code, base })); } catch (e) {
         req.log.error(e);
         throw new HttpError(503, 'mail_failed', 'ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้งในอีกสักครู่');
       }
       reply.code(202);
-      return { ok: true, message: `ส่งลิงก์ยืนยันไปที่ ${b.email} แล้ว — เปิดอีเมลแล้วกดยืนยันภายใน ${SIGNUP_LINK_HOURS} ชั่วโมง (ถ้าไม่เห็น ลองดูในโฟลเดอร์สแปม)` };
+      return {
+        ok: true, ticket: ticket.token, email: b.email, codeMinutes: SIGNUP_CODE_MINUTES, resendSeconds: SIGNUP_RESEND_SECONDS,
+        message: `ส่งรหัสยืนยัน 6 หลักไปที่ ${b.email} แล้ว — กรอกรหัสภายใน ${SIGNUP_CODE_MINUTES} นาที (ถ้าไม่เห็น ลองดูในโฟลเดอร์สแปม)`,
+      };
     });
 
-    /** The link in the sign-up mail: creates the company + first admin + trial, then answers like a login (the app goes straight in). */
+    /**
+     * The code from the sign-up mail: `{ ticket, code }` → creates the company + first admin + trial, then answers like a login (the
+     * app goes straight in). One answer for every failure (wrong code, code older than SIGNUP_CODE_MINUTES, SIGNUP_CODE_MAX_TRIES
+     * wrong tries, unknown ticket, e-mail that already had an account): 400 `code_invalid`. 20 failures per IP per 15 minutes.
+     */
     app.post('/signup/verify', { config: { public: true } }, async (req, reply) => {
-      const { token } = parse(TokenInput, req.body);
+      const { ticket, code } = parse(SignupCodeInput, req.body);
       const ip = clientIp(req.headers);
-      if (await overLimit(k.db.pool, [[`badlink-ip|${ip}`, BAD_LINK_PER_IP]])) throw new HttpError(429, 'too_many_attempts', TOO_MANY);
+      if (await overLimit(k.db.pool, [[`badlink-ip|${ip}`, BAD_LINK_PER_IP]])) throw new HttpError(429, 'too_many_attempts', 'ใส่รหัสยืนยันผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่');
+      const ticketHash = sha256(ticket);
       const pending = await k.db.rawTx(async (c) => {
         const row = (await c.query(
-          `select * from signups where token_hash = $1 and verified_at is null and expires_at > now() for update`, [sha256(token)])).rows[0];
-        if (row) await c.query('update signups set verified_at = now() where id = $1', [row.id]);
-        return row;
+          `select *, (code_hash is not null and code_expires_at > now() and code_attempts < $2) as code_live
+             from signups where token_hash = $1 and verified_at is null and expires_at > now() for update`, [ticketHash, SIGNUP_CODE_MAX_TRIES])).rows[0];
+        if (!row?.code_live) return null;
+        // the row of a taken e-mail holds a code too (never mailed): a lucky guess of it still opens nothing
+        const right = sameDigest(row.code_hash, signupCodeHash(secret, ticketHash, code)) && !row.account_exists;
+        await c.query(right ? 'update signups set verified_at = now() where id = $1' : 'update signups set code_attempts = code_attempts + 1 where id = $1', [row.id]);
+        return right ? row : null;
       });
       if (!pending) {
         await noteAttempts(k.db.pool, [`badlink-ip|${ip}`]);
-        throw new HttpError(400, 'link_invalid', 'ลิงก์ยืนยันหมดอายุหรือถูกใช้ไปแล้ว — สมัครใหม่อีกครั้ง หรือเข้าสู่ระบบถ้ายืนยันไปแล้ว');
+        throw new HttpError(400, 'code_invalid', 'รหัสยืนยันไม่ถูกต้องหรือหมดอายุ — ตรวจรหัสในอีเมลอีกครั้ง หรือกด "ส่งรหัสอีกครั้ง"');
       }
       const { tenant, user } = await provision({
         code: await freeCode(companyCodeBase(pending.email)), name: pending.company_name, plan: pending.plan, by: 'สมัครใช้งานเอง',
@@ -498,6 +558,42 @@ export const definition: ServiceDefinition = {
       await startStarter(tenant.id, pending.industry);
       reply.code(201);
       return k.db.tx(tenant.id, (c) => session(c, tenant, user));
+    });
+
+    /**
+     * "ส่งรหัสอีกครั้ง": `{ ticket }` → 202 and a new code for the same pending sign-up (the old code stops working, the wrong-try
+     * count starts again). One per SIGNUP_RESEND_SECONDS (429 `too_soon`), 3 per hour per sign-up, 10 per hour per IP. The answer
+     * is the same for an unknown or used ticket (nothing is sent).
+     */
+    app.post('/signup/resend', { config: { public: true } }, async (req, reply) => {
+      const { ticket } = parse(TicketInput, req.body);
+      const ip = clientIp(req.headers);
+      const ticketHash = sha256(ticket);
+      const sentKey = `signup-sent|${ticketHash}`;
+      if ((await attempts(k.db.pool, sentKey, SIGNUP_RESEND_SECONDS * 1000)) >= 1) {
+        throw new HttpError(429, 'too_soon', `เพิ่งส่งรหัสไปเมื่อสักครู่ — ขอรหัสใหม่ได้อีกครั้งใน ${SIGNUP_RESEND_SECONDS} วินาที`);
+      }
+      if (await overLimit(k.db.pool, [[sentKey, 1 + SIGNUP_RESEND_LIMITS.ticket], [`signup-resend-ip|${ip}`, SIGNUP_RESEND_LIMITS.ip]], HOUR_MS)) {
+        throw new HttpError(429, 'too_many_attempts', 'ขอรหัสใหม่หลายครั้งเกินไป กรุณารอ 1 ชั่วโมงแล้วลองใหม่');
+      }
+      await noteAttempts(k.db.pool, [sentKey, `signup-resend-ip|${ip}`]);
+      const base = appUrl(k.env, req.headers);
+      const code = newSignupCode();
+      const row = (await k.db.pool.query<{ email: string; name: string; company_name: string; account_exists: boolean }>(
+        `update signups set code_hash = $2, code_attempts = 0, code_expires_at = now() + make_interval(mins => $3)
+          where token_hash = $1 and verified_at is null and expires_at > now()
+          returning email, name, company_name, account_exists`, [ticketHash, signupCodeHash(secret, ticketHash, code), SIGNUP_CODE_MINUTES])).rows[0];
+      if (row) {
+        try { await mailer(signupMail({ email: row.email, name: row.name, companyName: row.company_name, accountExists: row.account_exists, code, base })); } catch (e) {
+          req.log.error(e);
+          throw new HttpError(503, 'mail_failed', 'ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้งในอีกสักครู่');
+        }
+      }
+      reply.code(202);
+      return {
+        ok: true, codeMinutes: SIGNUP_CODE_MINUTES, resendSeconds: SIGNUP_RESEND_SECONDS,
+        message: `ส่งรหัสยืนยันใหม่แล้ว — ใช้รหัสล่าสุดในอีเมล (รหัสเดิมใช้ไม่ได้แล้ว) ภายใน ${SIGNUP_CODE_MINUTES} นาที`,
+      };
     });
 
     /**

@@ -627,6 +627,15 @@ a.decide-title:hover { color: var(--accent-text); text-decoration: underline; }
 .plan-opt small { color: var(--ink-2); font-weight: 400; line-height: 1.45; }
 .plan-note { margin: 0; font-size: .8rem; color: var(--ink-3); }
 .turnstile { min-height: 65px; }
+/* sign-up step 2: the 6-digit code from the mail */
+.linklike:disabled { color: var(--ink-3); cursor: default; text-decoration: none; }
+.login-card .code-input { text-align: center; font-size: 1.75rem; font-weight: 600; letter-spacing: .4em; padding-left: calc(12px + .4em); font-variant-numeric: tabular-nums; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.login-card .code-input::placeholder { color: var(--ink-3); opacity: .5; }
+.code-mail { overflow-wrap: anywhere; }
+.code-meta { margin: -6px 0 0; font-size: .85rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.code-meta.is-over { color: var(--warn-text); font-weight: 500; }
+.form-note { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--ok-soft); color: var(--ok-text); font-size: .9rem; }
+.login-card .btn-primary .spin { vertical-align: -3px; margin-right: 4px; }
 
 /* ---------- bottom navigator (phones only; see BottomNav.tsx) ---------- */
 .bottom-nav { display: none; }

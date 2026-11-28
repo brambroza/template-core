@@ -11,7 +11,8 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
 - `users`, `roles` (`permissions text[]`), `user_roles` — tenant tables
 - `company_profiles` (one row per tenant, `tenant_id` is the key) — seller details printed on every document
 - Global tables of migration 005 (`-- @global`, used before anyone is signed in; tokens kept as SHA-256 only): `signups` (pending sign-up,
-  24 h link), `password_resets` (one-time, 60 min), `auth_attempts` (throttle rows: key + time).
+  24 h; migration 010: `token_hash` = hash of the browser's ticket, `code_hash` = HMAC of the 6-digit code, `code_expires_at`,
+  `code_attempts`, `account_exists`), `password_resets` (one-time, 60 min), `auth_attempts` (throttle rows: key + time).
 - `tenant_subscriptions` (migration 004, one row per cloud company; none = no plan limit, e.g. self-hosted) — `plan starter|factory|business`,
   `status trial|active|suspended|cancelled`, `trial_ends_at`, `paid_through` (Bangkok day), overrides `modules`, `max_users`, `note`.
   `tenant_subscription_log` — every change with `by_name`. Policy `ops_read` (SELECT, on while `app.ops_read = 'on'`) only for `/_ops` lists.
@@ -24,17 +25,26 @@ Companies (tenants), users, roles, login. Issues the JWT every module trusts (`t
   modules) and never outlives access (`tokenTtl`). Login and `/me` return `subscription` (plan, status, daysLeft, modules, maxUsers, blocked).
   `POST /users` → 409 `user_limit` when the plan's active users are all taken. `GET /subscription` (any signed-in user) → `subscription`,
   `usedUsers`, `plans` + flat fields for the "แพ็กเกจของบริษัท" screen.
-- **Self-serve sign-up (public):** `GET /plans` (plans + Thai module names + trial days) · `POST /signup { companyName, name, email,
-  password, plan? = factory, captchaToken? }` → 202, the same Thai answer whether or not the e-mail has an account: new e-mail → confirmation
-  link `<APP_URL>/signup/verify?token=…`, taken → a mail pointing to "ลืมรหัสผ่าน" (same scrypt work, so timing does not tell). 5/h per IP,
-  3/h per e-mail. `POST /signup/verify { token }` → creates company (code from the e-mail domain, `-2`… when taken, random for free mail),
-  first admin and the trial, and answers like a login (201). Bad/expired links: 400 `link_invalid`, 20 per IP per 15 min.
+- **Self-serve sign-up by 6-digit code (public):** `GET /plans` (plans + Thai module names + trial days) · `POST /signup { companyName,
+  name, email, password, plan? = factory, captchaToken? }` → 202 `{ ticket, email, codeMinutes, resendSeconds, message }` and a mail with a
+  6-digit code (no link). The browser keeps the ticket; the code only counts together with it. Same work and the same answer whether or
+  not the e-mail has an account: a taken e-mail also gets a ticket and a row (`account_exists`, nothing typed is kept, its code is told to
+  nobody) but its mail points to "ลืมรหัสผ่าน". 5/h per IP, 3/h per e-mail.
+  `POST /signup/verify { ticket, code }` → creates company (code from the e-mail domain, `-2`… when taken, random for free mail), first
+  admin and the trial, and answers like a login (201). Every failure answers the same 400 `code_invalid` (wrong code, older than
+  `SIGNUP_CODE_MINUTES` = 10, `SIGNUP_CODE_MAX_TRIES` = 5 wrong tries, unknown ticket, taken e-mail); 20 failures per IP per 15 min → 429.
+  `POST /signup/resend { ticket }` → 202 and a new code (the old one dies, tries start again): one per 60 s (429 `too_soon`), 3/h per
+  sign-up, 10/h per IP; unknown ticket → same answer, nothing sent. Never tell "expired" from "wrong" or count tries in the answer —
+  that would tell a taken e-mail from a new one.
+- `GET /captcha` (public) → `{ provider: 'turnstile' | null, siteKey }` — the web app's Turnstile widget reads its site key here.
 - **Password reset (public):** `POST /auth/forgot { email, captchaToken? }` → 202 same answer always; an active user gets
   `<APP_URL>/reset-password?token=…` (60 min, once). 3/h per e-mail, 10/h per IP. `POST /auth/reset { token, newPassword }` → new password,
   other links of the user die, every session is revoked (`password_changed`), the login throttle for that e-mail + IP is cleared.
 - **Settings:** `APP_URL` (public web address for mail links — required in production; elsewhere the forwarded host is used), `EMAIL_PROVIDER`
   `resend|sendgrid|log` (default: resend when `RESEND_API_KEY` is set, else log = print + keep in `sentMail`), `EMAIL_FROM`, `RESEND_API_KEY`,
-  `SENDGRID_API_KEY`, `TURNSTILE_SECRET` (CAPTCHA on sign-up and forgot; unset = no check). Mail failure → 503 `mail_failed`.
+  `SENDGRID_API_KEY`, `TURNSTILE_SECRET` + `TURNSTILE_SITE_KEY` (Cloudflare Turnstile on sign-up and forgot: set both; no secret = no
+  check, no site key = no widget unless the web app was built with `NEXT_PUBLIC_TURNSTILE_SITE_KEY`; a half-set pair is warned about in the
+  log at start). Mail failure → 503 `mail_failed`.
 - **Back office for GO Along staff (signed in):** the operator company is `OPS_TENANT_CODE`; its staff hold `identity.ops.read` /
   `identity.ops.write` **by name** — `<module>.ops.*` is never granted by `*` or `identity.*` (kernel `isExplicitPerm`, ui-schema `hasPerm`,
   `canGrant`), and `requireOps` also refuses any other company. `GET /ops/tenants?q=` (flat list) · `GET /ops/tenants/:code` (plan, company

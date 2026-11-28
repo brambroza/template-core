@@ -1,5 +1,5 @@
 /**
- * Transactional e-mail for identity (sign-up confirmation, password reset). One small HTTP call per provider, no SDK.
+ * Transactional e-mail for identity (sign-up code, password reset). One small HTTP call per provider, no SDK.
  *
  *   EMAIL_PROVIDER = resend (default when RESEND_API_KEY is set) | sendgrid | log (default otherwise: prints the mail, sends nothing)
  *   EMAIL_FROM     = "GO Along <no-reply@example.co.th>" — must be a sender/domain verified at the provider
@@ -70,6 +70,20 @@ export function buttonMail(to: string, subject: string, lines: string[], button?
 ${lines.map((l) => `<p style="margin:0 0 12px">${esc(l)}</p>`).join('\n')}
 ${button ? `<p style="margin:20px 0"><a href="${esc(button.url)}" style="display:inline-block;background:#1E40D8;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">${esc(button.label)}</a></p>
 <p style="margin:0 0 12px;font-size:13px;color:#5B6478">ถ้าปุ่มกดไม่ได้ คัดลอกลิงก์นี้ไปเปิดในเบราว์เซอร์:<br>${esc(button.url)}</p>` : ''}
+${footer ? `<p style="margin:16px 0 0;font-size:13px;color:#5B6478">${esc(footer)}</p>` : ''}
+<p style="margin:24px 0 0;font-size:13px;color:#5B6478">— GO Along · บริษัท โกอะลอง จำกัด</p></div>`;
+  return { to, subject, text, html };
+}
+
+/**
+ * A short Thai mail whose point is a one-time code the reader types into the page (large, spaced digits; no link to click).
+ * `lines` are plain text (escaped in the HTML part). The text part carries the code as "รหัสยืนยัน: 123456".
+ */
+export function codeMail(to: string, subject: string, lines: string[], code: string, footer?: string): Mail {
+  const text = [...lines, '', `รหัสยืนยัน: ${code}`, ...(footer ? ['', footer] : []), '', '— GO Along · บริษัท โกอะลอง จำกัด'].join('\n');
+  const html = `<div style="font-family:system-ui,-apple-system,'Noto Sans Thai',sans-serif;font-size:15px;line-height:1.6;color:#0B1530;max-width:520px">
+${lines.map((l) => `<p style="margin:0 0 12px">${esc(l)}</p>`).join('\n')}
+<p style="margin:20px 0;padding:14px 20px;display:inline-block;background:#EEF2FF;border-radius:8px;font-size:30px;font-weight:700;letter-spacing:8px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#14203D">${esc(code)}</p>
 ${footer ? `<p style="margin:16px 0 0;font-size:13px;color:#5B6478">${esc(footer)}</p>` : ''}
 <p style="margin:24px 0 0;font-size:13px;color:#5B6478">— GO Along · บริษัท โกอะลอง จำกัด</p></div>`;
   return { to, subject, text, html };

@@ -2,6 +2,16 @@
 
 ## Unreleased — 2026-11-20 · ใช้งานเร็วขึ้น: ตัดสินใจจากหน้าแรกและ LINE, เห็นผลก่อนกด
 
+- **สมัครใช้งานด้วยรหัสยืนยัน 6 หลัก** (2026-11-28): `/signup` now mails a 6-digit code instead of a link; the next page
+  (`/signup/verify`) takes the code and opens the new company. A code lasts 10 minutes and 5 wrong tries, "ส่งรหัสอีกครั้ง" once a
+  minute (3 per hour). The code only counts in the browser that signed up (it holds a ticket), and a taken e-mail still gets the same
+  answer. The code box accepts pasted "123 456", Thai numerals and the number row of a Thai keyboard layout. Identity migration 010;
+  `POST /signup/verify` takes `{ ticket, code }` (was `{ token }`), new `POST /signup/resend`. Sign-ups started before the update
+  must be sent again.
+- **Cloudflare Turnstile without a rebuild** (2026-11-28): set `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET` in `.env` (identity);
+  the web app reads the site key from `GET /api/identity/captcha` at run time. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` at build time still
+  works. Identity warns in its log when only one of the two keys is set.
+
 - **รูปแบบตัวเลขของบริษัท** (2026-11-24): "ข้อมูลบริษัท" has three new settings — thousands comma, decimals of money, decimals of
   quantities (0–4; default comma + 2 decimals; identity migration 009). They apply to **typing and display**, web, mobile and printed
   documents: number boxes group thousands while you type and pad on leaving (`1250.5` → `1,250.50`), the API still gets plain numbers.

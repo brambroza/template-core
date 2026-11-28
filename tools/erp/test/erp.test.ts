@@ -47,6 +47,11 @@ describe('compose', () => {
     expect(yml).toContain('APP_DIR: apps/web');
     expect(yml).toContain('GATEWAY_URL: http://gateway:8080');
     expect(readFileSync(join(out, 'init-db.sh'), 'utf8')).toContain('create database erp_master_data owner erp_app;');
+    // Cloudflare Turnstile: both keys go to identity — the web app reads the site key from it at run time (no rebuild)
+    expect(yml).toContain('TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}');
+    expect(yml).toContain('TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}');
+    const env = readFileSync(join(out, '.env.example'), 'utf8');
+    for (const key of ['TURNSTILE_SITE_KEY=', 'TURNSTILE_SECRET=']) expect(env).toContain(key);
   });
 
   it('ships daily backups with a restore test, an off-site copy and Sentry settings', () => {

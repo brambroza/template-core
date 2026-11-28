@@ -89,8 +89,10 @@ gateway รับ body ได้ 8 MB และส่งต่อ `content-dispo
 - บริษัทที่สมัครแพ็กเกจมีแถวใน `identity.tenant_subscriptions` (Starter / Factory / Business ใน `services/identity/src/plans.ts`) — ไม่มีแถว = ไม่จำกัด (ติดตั้งเอง)
 - login ใส่รายการโมดูลของแพ็กเกจใน token (`mods`) → kernel ของทุกโมดูลปฏิเสธบริษัทที่แพ็กเกจไม่รวมโมดูลนั้น (403 `module_not_in_plan`)
   และ gateway ซ่อนเมนูของโมดูลนั้นใน `/api/_catalog` (อ่าน claim โดยไม่ตรวจลายเซ็น — ใช้แค่ซ่อนเมนู)
-- สมัครเอง: หน้า `/signup` → อีเมลยืนยัน (Resend/SendGrid) → สร้างบริษัท + ทดลอง 14 วัน · ลืมรหัสผ่าน `/forgot-password` → `/reset-password`
-  · Turnstile CAPTCHA เมื่อตั้ง `TURNSTILE_SECRET` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` · ลิงก์ในอีเมลใช้ `APP_URL` เท่านั้นใน production
+- สมัครเอง: หน้า `/signup` → อีเมลรหัสยืนยัน 6 หลัก (Resend/SendGrid, ใช้ได้ 10 นาที ผิดได้ 5 ครั้ง) → กรอกรหัสที่ `/signup/verify`
+  (เบราว์เซอร์ที่สมัครถือ ticket คู่กับรหัส; "ส่งรหัสอีกครั้ง" ได้นาทีละครั้ง) → สร้างบริษัท + ทดลอง 14 วัน · ลืมรหัสผ่าน `/forgot-password` → `/reset-password`
+  · Cloudflare Turnstile บนฟอร์มสมัครและลืมรหัสผ่านเมื่อตั้ง `TURNSTILE_SECRET` + `TURNSTILE_SITE_KEY` ที่ identity (เว็บอ่าน site key จาก
+  `GET /api/identity/captcha` ตอนรัน ไม่ต้อง build ใหม่) · ลิงก์ในอีเมลใช้ `APP_URL` เท่านั้นใน production
 - ทดลอง 14 วัน → ชำระด้วยการโอน แล้วทีม GO Along ยืนยัน (`pnpm erp plan set <code> --status active --paid-through …`) · เลยกำหนด 7 วัน หรือถูกระงับ → login ได้ 402 พร้อมเหตุผล
   token ไม่มีอายุเกินวันที่ใช้ได้ · เปลี่ยนแพ็กเกจ/สถานะ → ยกเลิก token ของทุกคนในบริษัท ให้ login ใหม่พร้อมโมดูลชุดใหม่
 - หลังบ้าน: GO Along ใช้ระบบของตัวเอง — บริษัท `OPS_TENANT_CODE` + สิทธิ์ `identity.ops.*` ที่ต้องให้ตรงชื่อ (`*` ไม่ครอบคลุม `<module>.ops.*`)
